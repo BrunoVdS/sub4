@@ -194,6 +194,7 @@ struct SettingsView: View {
                 // explain why the app is behaving differently from yesterday.
                 // Hidden inside a disclosure group that would be a riddle.
                 ReleaseGatesView()
+                DataLifecycleView()
                 // Strava stays open — connection state is the one thing here
                 // you'd actually come looking for. Everything else is either
                 // set once or only interesting when something is wrong.
@@ -280,7 +281,9 @@ struct SettingsView: View {
     private var detailRows: some View {
         switch pane {
         case .appearance:   appearanceSection
-        case .privacy:      ReleaseGatesView()
+        // Switches first, inventory second — patch 180. The controls are what
+        // a reader came to act on; the inventory is what they read to decide.
+        case .privacy:      ReleaseGatesView(); DataLifecycleView()
         case .strava:       stravaSection
         case .apiKeys:      Section { credentialRows }
         case .claudeKey:    Section { claudeRows }
