@@ -113,6 +113,21 @@ struct ContentView: View {
         // single constant. Removing the lock is the whole patch; the palette
         // work only matters because this line no longer forces one answer.
         .appearanceScheme()
+        // Applies the protection class to files written before patch 190 —
+        // DATA-05. Detached because it walks Application Support, and the main
+        // actor has no business doing that at launch. Idempotent, so it runs
+        // every time rather than behind a flag that could lie.
+        .task {
+            let n = await Task.detached(priority: .utility) {
+                FileProtection.applyToExistingFiles()
+            }.value
+            if n > 0, FileProtection.lastError != nil {
+                // Nothing user-facing: the privacy pane reads `lastError`
+                // itself. This exists so a failure is not invisible in a debug
+                // session either.
+                print("[FileProtection] \(n) items, last error: \(FileProtection.lastError ?? "")")
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             // Ask for the next background wake on the way out. Submitting again
             // replaces the pending request rather than stacking a second one,

@@ -449,7 +449,7 @@ final class WeatherStore {
 
     private func save() {
         guard let d = try? JSONEncoder().encode(byActivity) else { return }
-        try? d.write(to: fileURL, options: .atomic)
+        try? d.write(to: fileURL, options: FileProtection.options)
     }
 
     func resetCache() {

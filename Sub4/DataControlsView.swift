@@ -59,10 +59,12 @@ struct DataControlsView: View {
     /// for its summary — and the least readable part of it. Opting in is a
     /// deliberate choice to wait for a large file.
     @State private var includeTraces = false
+    @State private var clearedWeather = false
 
     var body: some View {
         Section {
             exportRow
+            weatherRow
             deleteRow
 
             // From the log, not from @State. The delete tears this view's
@@ -150,6 +152,33 @@ struct DataControlsView: View {
                 exportError = error.localizedDescription
             }
         }
+    }
+
+    /// The one concrete item left in plan step 2.1.6. `WeatherStore` has had a
+    /// `resetCache()` with no caller since it was written, so the inventory said
+    /// the cache could not be cleared from inside the app — a gap closed by
+    /// giving the function a button rather than by building a retention sweep
+    /// with nothing to sweep. Every other category's retention is indefinite,
+    /// and the one that should not be — Strava's seven days — cannot be enforced
+    /// before Phase 4A without emptying the app.
+    ///
+    /// Its own property rather than a second view inside `deleteRow`, which is
+    /// not a `@ViewBuilder` and would not have compiled.
+    private var weatherRow: some View {
+        Button {
+            WeatherStore.shared.resetCache()
+            clearedWeather = true
+        } label: {
+            HStack {
+                Label(clearedWeather ? "Weather cache cleared" : "Clear cached weather",
+                      systemImage: "cloud.sun")
+                    .font(.subheadline)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(clearedWeather)
     }
 
     private var deleteRow: some View {

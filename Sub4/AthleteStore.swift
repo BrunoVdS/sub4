@@ -343,6 +343,6 @@ final class AthleteStore {
 
     private func save() {
         let c = Cache(zones: hrZones, shoes: shoes, fetched: lastFetch, ftp: ftp)
-        try? JSONEncoder().encode(c).write(to: fileURL, options: .atomic)
+        try? JSONEncoder().encode(c).write(to: fileURL, options: FileProtection.options)
     }
 }

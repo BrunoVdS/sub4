@@ -226,7 +226,7 @@ final class NotesStore {
 
     private func save() {
         guard let data = try? JSONEncoder.sub4.encode(notes) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        try? data.write(to: fileURL, options: FileProtection.options)
     }
 
     /// Migrates forward. Never clears — see the header. A future version 2 adds
@@ -329,7 +329,9 @@ final class NotesStore {
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
         guard let data = csv(plan: plan).data(using: .utf8) else { return nil }
         do {
-            try data.write(to: url, options: .atomic)
+            // Temporary, but it holds the same words as the store it came
+            // from, so it gets the same protection class — patch 190.
+            try data.write(to: url, options: FileProtection.options)
             return url
         } catch {
             return nil

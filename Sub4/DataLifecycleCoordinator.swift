@@ -510,7 +510,12 @@ enum DataLifecycleCoordinator {
     /// objects, only file URLs and two blobs of prepared JSON.
     nonisolated static func write(_ plan: ExportPlan,
                                   using fm: FileManager = .default) throws -> URL {
-        fm.createFile(atPath: plan.destination.path, contents: nil)
+        // An export is the single most sensitive file this app produces —
+        // every route, every trace, in one place. It gets the protection
+        // class at creation rather than after, so there is no window in
+        // which it exists unprotected.
+        fm.createFile(atPath: plan.destination.path, contents: nil,
+                      attributes: [.protectionKey: FileProtection.attribute])
         let h = try FileHandle(forWritingTo: plan.destination)
         defer { try? h.close() }
 

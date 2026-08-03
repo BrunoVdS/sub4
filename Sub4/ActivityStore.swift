@@ -407,7 +407,7 @@ final class ActivityStore {
     private func save() {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try? enc.encode(activities).write(to: fileURL, options: .atomic)
+        try? enc.encode(activities).write(to: fileURL, options: FileProtection.options)
     }
 
     /// Wipe local cache and re-pull from the cutoff.

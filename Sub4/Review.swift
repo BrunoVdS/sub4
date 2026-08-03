@@ -582,7 +582,9 @@ extension Review {
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
         guard let data = markdown().data(using: .utf8) else { return nil }
         do {
-            try data.write(to: url, options: .atomic)
+            // Temporary, but it holds the same words as the store it came
+            // from, so it gets the same protection class — patch 190.
+            try data.write(to: url, options: FileProtection.options)
             return url
         } catch {
             return nil

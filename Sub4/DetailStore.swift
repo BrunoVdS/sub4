@@ -88,6 +88,12 @@ final class DetailStore {
                                                  withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: streamsDir,
                                                  withIntermediateDirectories: true)
+        // Set on the DIRECTORY so the per-activity files created inside it
+        // inherit the class — patch 190, DATA-05. Files here are written from a
+        // background task, which is why the class is until-first-unlock rather
+        // than complete; see FileProtection.
+        FileProtection.protect(directory: detailsDir)
+        FileProtection.protect(directory: streamsDir)
         failed     = Set(UserDefaults.standard.stringArray(forKey: failedKey) ?? [])
         noStreams  = Set(UserDefaults.standard.stringArray(forKey: noStreamsKey) ?? [])
         load()
@@ -102,6 +108,7 @@ final class DetailStore {
             try? FileManager.default.removeItem(at: streamsDir)
             try? FileManager.default.createDirectory(at: streamsDir,
                                                      withIntermediateDirectories: true)
+            FileProtection.protect(directory: streamsDir)
             UserDefaults.standard.removeObject(forKey: noStreamsKey)
             UserDefaults.standard.set(schemaVersion, forKey: schemaKey)
         }
@@ -406,7 +413,7 @@ final class DetailStore {
 
         Task.detached(priority: .utility) { [payload, legacy] in
             for (url, data) in payload {
-                try? data.write(to: url, options: .atomic)
+                try? data.write(to: url, options: FileProtection.options)
             }
             for url in legacy {
                 try? FileManager.default.removeItem(at: url)
@@ -435,6 +442,8 @@ final class DetailStore {
                                                  withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: streamsDir,
                                                  withIntermediateDirectories: true)
+        FileProtection.protect(directory: detailsDir)
+        FileProtection.protect(directory: streamsDir)
         try? FileManager.default.removeItem(at: legacyDetailURL)
         try? FileManager.default.removeItem(at: legacyStreamsURL)
     }

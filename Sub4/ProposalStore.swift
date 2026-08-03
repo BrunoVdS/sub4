@@ -134,7 +134,7 @@ final class ProposalStore {
 
     private func save() {
         guard let data = try? JSONEncoder.sub4.encode(records) else { return }
-        try? data.write(to: fileURL, options: .atomic)
+        try? data.write(to: fileURL, options: FileProtection.options)
     }
 
     private func migrateIfNeeded() {
@@ -198,7 +198,9 @@ final class ProposalStore {
             .appendingPathComponent("sub4-proposal-\(r.startDay)-to-\(r.endDay).md")
         guard let data = markdown(r).data(using: .utf8) else { return nil }
         do {
-            try data.write(to: url, options: .atomic)
+            // Temporary, but it holds the same words as the store it came
+            // from, so it gets the same protection class — patch 190.
+            try data.write(to: url, options: FileProtection.options)
             return url
         } catch {
             return nil

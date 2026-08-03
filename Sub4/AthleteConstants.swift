@@ -409,6 +409,6 @@ final class ConstantsStore {
     private func save() {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try? enc.encode(c).write(to: fileURL, options: .atomic)
+        try? enc.encode(c).write(to: fileURL, options: FileProtection.options)
     }
 }

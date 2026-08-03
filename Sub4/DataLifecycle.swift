@@ -109,7 +109,7 @@ enum AppSupportItem: Equatable, Hashable {
     /// Application Support for this app, or nil if the system will not give it
     /// to us. Nil is a real answer — every caller must handle it rather than
     /// force-unwrapping and crashing a delete flow.
-    static var container: URL? {
+    nonisolated static var container: URL? {
         try? FileManager.default.url(for: .applicationSupportDirectory,
                                      in: .userDomainMask,
                                      appropriateFor: nil,
@@ -327,9 +327,7 @@ enum DataLifecycle {
             isExportable: true,
             aiShareable: false,
             deletionRule: "Removed with the Strava disconnect, and by Delete local data.",
-            gaps: ["No file protection class is applied — the route history is "
-                 + "readable on an unlocked-once device (DATA-05, step 2.1.9).",
-                   "Retention is indefinite; the Strava API Policy permits seven "
+            gaps: ["Retention is indefinite; the Strava API Policy permits seven "
                  + "days (ADR-0002, purge at 4A M8).",
                    "There is no consent screen before a coordinate reaches a "
                  + "weather provider; the release gate stands in for one "
@@ -353,8 +351,7 @@ enum DataLifecycle {
             isExportable: true,
             aiShareable: false,
             deletionRule: "Removed with the Strava disconnect, and by Delete local data.",
-            gaps: ["No file protection class is applied (DATA-05, step 2.1.9).",
-                   "Retention is indefinite (ADR-0002)."],
+            gaps: ["Retention is indefinite (ADR-0002)."],
             onStravaDisconnect: .removeEverything),
 
         DataCategoryEntry(
@@ -462,8 +459,7 @@ enum DataLifecycle {
             isExportable: true,
             aiShareable: false,
             deletionRule: "Removed with the Strava disconnect, and by Delete local data.",
-            gaps: ["No file protection class is applied (DATA-05, step 2.1.9).",
-                   "Retention is indefinite (ADR-0002).",
+            gaps: ["Retention is indefinite (ADR-0002).",
                    "Rejected recordings leave a permanent note behind — date, "
                  + "name, distance, duration — that survives deleting the "
                  + "activity itself (`strava.rejectedByRule`, ADR-0002)."],
@@ -505,8 +501,6 @@ enum DataLifecycle {
             deletionRule: "Removed by Delete local data.",
             gaps: ["No consent screen before the coordinate is sent (PRIV-04, "
                  + "step 2.4.5); the release gate stands in for one.",
-                   "The store has a reset function with no caller, so this cache "
-                 + "cannot be cleared from inside the app (step 2.1.6).",
                    "Rows are keyed by Strava activity id, so the key itself "
                  + "carries Strava lineage (ADR-0002 — re-key at 4A M4)."],
             onStravaDisconnect: .removeEverything),
