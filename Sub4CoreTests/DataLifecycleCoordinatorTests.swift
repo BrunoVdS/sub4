@@ -77,20 +77,37 @@ struct DataLifecycleCoordinatorTests {
             "proposals.json",    // ProposalStore
             "athlete.json",      // AthleteStore
             "constants.json",    // ConstantsStore
-            "weather.json"       // WeatherStore
+            "weather.json",      // WeatherStore
+            // DECLARED BEFORE ANYTHING WRITES IT — patch 195, and the only line
+            // in this list that is not true yet.
+            //
+            // `Sub4Database` creates this folder and nothing in the app calls
+            // it until 3.2b. Declaring it early is the deliberate choice: the
+            // alternative leaves a window in which the database exists on disk
+            // and "Delete local data" walks straight past it — which is exactly
+            // how `details.json` outlived four versions of this app. A declared
+            // path with no file behind it costs one receipt line reading
+            // "Nothing stored", which `LocationOutcome` already treats as a
+            // normal answer rather than a failure.
+            "db"                 // Sub4Database.directoryName
         ]
         #expect(declared == written,
                 "missing: \(written.subtracting(declared)); undeclared: \(declared.subtracting(written))")
     }
 
-    /// `details` and `streams` are directories of per-activity files; the rest
-    /// are single files. Getting this wrong means `removeItem` is pointed at a
-    /// path that does not exist, and the receipt reports "nothing stored" for
-    /// a directory holding four hundred sessions.
+    /// `details` and `streams` are directories of per-activity files, and `db`
+    /// is a directory for a different reason: SQLite writes `-wal`, `-shm` and
+    /// `-journal` beside the database, creates them itself, and they hold the
+    /// same rows. Naming only the `.sqlite` would leave the user's data in
+    /// files the receipt never mentions.
+    ///
+    /// Getting any of these wrong means `removeItem` is pointed at a path that
+    /// does not exist, and the receipt reports "nothing stored" for a directory
+    /// holding four hundred sessions.
     @Test("Directories are declared as directories")
     func directoriesAreDirectories() {
         let dirs = Set(DataLifecycle.appSupportItems.filter(\.isDirectory).map(\.pathComponent))
-        #expect(dirs == ["details", "streams"], "directory set is \(dirs)")
+        #expect(dirs == ["details", "streams", "db"], "directory set is \(dirs)")
     }
 
     // MARK: Preference keys
@@ -151,18 +168,62 @@ struct DataLifecycleCoordinatorTests {
 
     // MARK: Export
 
-    /// The rule that keeps secrets out. Credentials are `isExportable == false`
-    /// and live only in the Keychain, so no Application Support item should
-    /// ever belong to them.
-    @Test("No exportable file belongs to a non-exportable category")
+    /// The rule that keeps secrets out — NARROWED IN 195, and the narrowing is
+    /// the point rather than a way past a red test.
+    ///
+    /// What it said was: no Application Support item may belong to any category
+    /// that is not exportable. That was one assertion doing two jobs, and the
+    /// database is what made them come apart.
+    ///
+    /// The job worth keeping is about SECRECY. Credentials are
+    /// `isExportable == false` because they must never be handed out, and if an
+    /// Application Support file ever belonged to them the export would skip it
+    /// for a reason invisible from the file list.
+    ///
+    /// The database is not exportable for a different reason entirely: the
+    /// export writes JSON and a SQLite file is not JSON. That is a FORMAT
+    /// limitation, it is recorded as a gap on the category, and the export
+    /// manifest names the file in `excluded` with the reason — so nothing is
+    /// skipped silently, which is what the original assertion was defending.
+    ///
+    /// Collapsing the two would mean either shipping a file no delete flow
+    /// covers, or exporting a binary blob wrapped as unreadable text. So they
+    /// are separated here, and the exemption comes with the trap below it.
+    @Test("No Application Support file belongs to a secret-bearing category")
     func exportSkipsNonExportableStores() {
+        // Exempt on FORMAT grounds. Anything else that is not exportable is
+        // withheld on secrecy grounds and must not hold a file at all.
+        let exemptOnFormatGrounds: Set<DataCategory> = [.database]
+
         for item in DataLifecycle.appSupportItems {
             let owners = DataLifecycle.categories(holding: item)
             #expect(owners.isEmpty == false, "\(item.displayName) belongs to no category")
-            let mixed = owners.contains { DataLifecycle.entry($0)?.isExportable == false }
-            #expect(mixed == false,
-                    "\(item.displayName) is shared with a non-exportable category and would be skipped")
+            let secretive = owners.filter {
+                DataLifecycle.entry($0)?.isExportable == false
+                    && !exemptOnFormatGrounds.contains($0)
+            }
+            #expect(secretive.isEmpty,
+                    "\(item.displayName) is held by \(secretive.map(\.rawValue)) and would be skipped with no visible reason")
         }
+    }
+
+    /// THE TRAP THAT MAKES THE EXEMPTION ABOVE SAFE, and the reason it is a
+    /// test rather than a line in an ADR.
+    ///
+    /// The database may be left out of the export only while it is empty. Its
+    /// lineage is `[.device]` today because the file holds nothing that came
+    /// from anywhere. The moment step 3.4 moves a category's data into it, that
+    /// stops being true — and an export that omits the database then omits
+    /// everything, which is the opposite of what "Export my data" means.
+    ///
+    /// This fails on the day that happens. A sentence in ADR-0003 §9.4 relies
+    /// on somebody rereading ADR-0003 §9.4.
+    @Test("The database may be left out of the export only while it is empty")
+    func theDatabaseExemptionExpiresWhenItHoldsSomething() throws {
+        let entry = try #require(DataLifecycle.entry(.database))
+        guard entry.lineage != [.device] else { return }
+        #expect(entry.isExportable,
+                "the database now holds data from \(entry.lineage.map(\.rawValue).sorted()) and must be in the export")
     }
 
     /// An export that runs on a device with no data must still be a valid file

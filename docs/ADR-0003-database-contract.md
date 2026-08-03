@@ -51,6 +51,32 @@ recorded here as a prerequisite so the decision is not made by accident later.
 underneath a migration engine is the one dependency where a silent minor bump is
 unacceptable. CI proves the pin builds from clean.
 
+**The pin, recorded 3 August 2026:**
+
+| | |
+|---|---|
+| Package | `https://github.com/groue/GRDB.swift` |
+| Rule | Exact Version |
+| Version | **7.11.1** |
+| Revision | `b83108d10f42680d78f23fe4d4d80fc88dab3212` |
+| Linked product | `GRDB` (static), on the `Sub4` target only |
+
+`GRDB-dynamic` is deliberately not linked. It is the same library built as a
+dynamic framework; taking both would put two copies of SQLite's symbols in one
+binary.
+
+`Sub4CoreTests` does not link GRDB either — it reaches it through
+`@testable import Sub4`. A test target with its own copy of a database library
+is a way to test a different database from the one that ships.
+
+Recorded because the resolved version is not obvious from anywhere a reader
+would look: GRDB's GitHub releases page fetched as 7.10.0 dated February 2025
+while Xcode's own package metadata offered 7.11.1, and Xcode's "Exact Version"
+field pre-fills `1.0.0` — a 2017 tag whose manifest declares
+`swift-tools-version: 3.1.0` and which Swift 6.3 refuses to read. Accepting the
+pre-filled value fails resolution with an error that names the tools version and
+not the cause.
+
 ---
 
 ## 3. Identity — the decision this ADR exists for
@@ -273,9 +299,26 @@ and `Activity.minutes` already work this way and stay.
   common way a schema with declared relationships turns out never to have
   enforced them.
 - **CHECK constraints on structural measurements**: distance ≥ 0, duration ≥ 0,
-  latitude in −90…90, longitude in −180…180. The 199 km / 694,865 s "Afternoon
-  Ride" artifact from August 2025 is exactly what these reject at the boundary
-  rather than three screens later.
+  latitude in −90…90, longitude in −180…180 — **and upper bounds, which this
+  paragraph originally got wrong.**
+
+  **Correction, 3 August 2026, made while writing the migration.** This section
+  claimed the floors above are "exactly what these reject" for the 199 km /
+  694,865 s "Afternoon Ride" artifact from August 2025. They are not. 694,865 is
+  a positive number and passes `duration ≥ 0` without complaint, and 199 km is
+  an ordinary long ride. A non-negativity check cannot catch that artifact and
+  never could.
+
+  What catches it is a ceiling, so `2026-08-03-initial` carries two:
+  `Sub4Migrations.maximumPlausibleElapsedSeconds` = 604,800 (7 days) and
+  `maximumPlausibleDistanceM` = 1,000,000. The artifact's 8.04 days trips the
+  first. Both are judgements rather than laws, which is why they are named
+  constants, asserted against the real artifact in `SchemaConstraintTests`, and
+  written here rather than buried in a SQL string.
+
+  A ceiling means an import can hard-fail on a malformed activity. That is the
+  intended behaviour — reject at the boundary rather than three screens later —
+  and 3.3's quarantine is what makes a rejection recoverable instead of fatal.
 - **File protection** `completeUntilFirstUserAuthentication` on the database
   directory and every sidecar — `-wal`, `-shm`, and any backup. Patch 190
   established the class and the reasoning (background writes fail silently under
@@ -448,6 +491,38 @@ paragraph instead.
 ## 10. Acceptance criteria for 3.1
 
 - [x] This ADR is approved or amended, with all six questions answered — 3 Aug 2026.
-- [ ] Every table in §8 maps to a domain concept, not a transport DTO.
-- [ ] The identity rules here, `DataLifecycle`, and the schema diagram agree.
-- [ ] The GRDB version is pinned and builds in the clean CI baseline.
+- [x] Every table in §8 maps to a domain concept, not a transport DTO — for the
+      five tables of groups 1 and 3, shipped in patch 195. Groups 2 and 4–10 are
+      3.2b and this box reopens for them.
+- [x] The identity rules here, `DataLifecycle`, and the schema diagram agree —
+      the schema is the diagram, and `DatabaseInventoryTests` asserts the
+      agreement with `DataLifecycle` rather than leaving it to a reading.
+- [x] The GRDB version is pinned and builds in the clean CI baseline — 7.11.1,
+      §2. CI green is what closes this one; see the run for patch 195.
+
+## 11. What 3.2a actually shipped, and what it did not
+
+Patch 195, 3 August 2026. 162 tests in 18 suites green.
+
+**Shipped:** `Sub4Database` (connection, configuration, file protection on the
+database directory, `quick_check` / `foreign_key_check` reporting),
+`Sub4Migrations` with `2026-08-03-initial` creating `account`, `source`,
+`activity`, `activity_source_record` and `activity_alias`, and the inventory
+entry that makes the database deletable.
+
+**Deliberately not shipped:** nothing in the app opens the database. There is no
+caller for `Sub4Database.open()` and no health screen. Both arrive with 3.2b.
+Recorded rather than implied, because a step that cannot be seen on hardware has
+not been verified — six of the eleven defects found in Phase 2 were reachable
+only on a device.
+
+**Two things this step changed about the ADR itself**, both because writing the
+code exposed them:
+
+1. §7's CHECK-constraint claim was wrong — see the correction there.
+2. Seeding `source` from `DataSource.allCases` was written, then removed. A
+   migration body is history: one that reads a live Swift enum silently gives a
+   fresh install a different database from an existing one the moment a case is
+   added, under one migration identifier. The lists are frozen in the migration
+   and coupled to the enums by test instead. Worth stating in the ADR because
+   the same temptation will return at every later migration.

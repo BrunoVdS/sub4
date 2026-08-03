@@ -85,12 +85,28 @@ enum AppSupportItem: Equatable, Hashable {
     /// and `streams.json` hold the full history of every device that upgraded
     /// through the per-activity split, and nothing has ever removed them.
     case legacyFile(String)
+    /// A directory holding a SQLite database and the journal files SQLite
+    /// writes beside it.
+    ///
+    /// WHY A DIRECTORY AND NOT `.file("sub4.sqlite")` — patch 195. SQLite does
+    /// not write one file. Depending on journal mode it also writes `-journal`,
+    /// `-wal` and `-shm`, it creates them itself, and they hold the same rows
+    /// as the database. Naming only the `.sqlite` would give this inventory a
+    /// delete that leaves the user's data in a file the receipt never mentions
+    /// — the same failure as `details.json`, which outlived four versions of
+    /// this app because nothing listed it.
+    ///
+    /// A directory removes the whole set in one call and cannot leave a
+    /// sidecar behind, and the protection class set on it is inherited by
+    /// everything SQLite creates inside.
+    case databaseDirectory(String)
 
     var displayName: String {
         switch self {
         case .file(let f):       f
         case .directory(let d):  "\(d)/<activity>.json"
         case .legacyFile(let f): "\(f) — written by an older version"
+        case .databaseDirectory(let d): "\(d)/ — the database and its journal files"
         }
     }
 
@@ -101,10 +117,16 @@ enum AppSupportItem: Equatable, Hashable {
         case .file(let f):       f
         case .directory(let d):  d
         case .legacyFile(let f): f
+        case .databaseDirectory(let d): d
         }
     }
 
-    var isDirectory: Bool { if case .directory = self { return true }; return false }
+    var isDirectory: Bool {
+        switch self {
+        case .directory, .databaseDirectory: true
+        case .file, .legacyFile:             false
+        }
+    }
 
     /// Application Support for this app, or nil if the system will not give it
     /// to us. Nil is a real answer — every caller must handle it rather than
@@ -257,6 +279,11 @@ enum DataCategory: String, CaseIterable, Identifiable, Codable {
     case matchDecisions
     case trainingPlan
     case credentials
+    /// Added in 195, when `Sub4Database` gave the app somewhere to put a
+    /// SQLite file. Declared before it holds anything, on purpose: the
+    /// alternative is a window in which the database exists on disk and
+    /// "Delete local data" walks past it.
+    case database
     case diagnostics
     /// Added in 183. Not a discovery of new data — a discovery that data
     /// already being written was undeclared. The inventory named seven
@@ -590,9 +617,23 @@ enum DataLifecycle {
             sharedWith: [],
             isExportable: false,
             aiShareable: false,
-            deletionRule: "Never exported, and never included in a backup or a "
-                        + "diagnostic. Removed on disconnect.",
-            gaps: ["Disconnecting removes the tokens but not the application keys "
+            // CORRECTED IN 195, and the correction is the finding. This read
+            // "Never exported, and never included in a backup or a diagnostic."
+            // The first and last clauses were true. The middle one was false and
+            // had been since the Keychain wrapper was written: `Keychain.save`
+            // uses `kSecAttrAccessibleAfterFirstUnlock` WITHOUT
+            // `ThisDeviceOnly`, and items at that accessibility are included in
+            // encrypted device backups and restore onto a new phone. Verified
+            // from the source while writing ADR-0003 §9.4 rather than assumed.
+            deletionRule: "Never exported, and never put in a diagnostic. "
+                        + "Removed on disconnect. Your encrypted device backup "
+                        + "does include these — see below.",
+            gaps: ["These are in your encrypted device backup and restore onto a "
+                 + "new phone. That is deliberate for the sign-in tokens — it is "
+                 + "why reconnecting is one tap — and is worth a separate "
+                 + "decision for the Anthropic API key, whose loss costs nothing "
+                 + "and whose leakage costs money (ADR-0003 §9.4).",
+                   "Disconnecting removes the tokens but not the application keys "
                  + "— there is no code path that deletes `strava.credentials` "
                  + "(step 4.2.9).",
                    "Keychain writes do not check their result, so a failure is "
@@ -603,6 +644,41 @@ enum DataLifecycle {
                 removesFiles: [],
                 removesKeychain: ["strava.tokens"],
                 clearsFields: [])),
+
+        DataCategoryEntry(
+            category: .database,
+            title: "The database",
+            whatItIs: "A SQLite file and the journal files SQLite keeps beside "
+                    + "it. Today it holds no training data at all — only an "
+                    + "empty schema.",
+            purpose: "Phase 3 replaces the folder of JSON files above with one "
+                   + "database, so that a note you wrote against a session "
+                   + "still finds it after the source it came from is gone.",
+            // HONEST FOR TODAY, AND WRONG BY 3.4. The file is created by this
+            // phone and contains nothing from anywhere else, so `.device` is
+            // the only true answer right now. The moment 3.4 imports the
+            // stores, this set becomes the union of every category's lineage
+            // and the disconnect rule below stops being `.keep`. Recorded as a
+            // gap rather than pre-declared, because an inventory that describes
+            // next month's behaviour is the thing this file exists to prevent.
+            lineage: [.device],
+            storage: [.applicationSupport(.databaseDirectory("db"))],
+            retention: .indefinite,
+            sharedWith: [],
+            isExportable: false,
+            aiShareable: false,
+            deletionRule: "Removed by Delete local data — the whole folder, so "
+                        + "the database and its journal files go together.",
+            gaps: ["Holds no training data yet. When step 3.4 moves the stores "
+                 + "into it, this entry's lineage, export rule and disconnect "
+                 + "rule must all be rewritten — a disconnect will have to "
+                 + "delete Strava-derived ROWS rather than a file (ADR-0003 §8).",
+                   "Not included in an export. The export writes JSON and a "
+                 + "SQLite file is not JSON, so a readable dump has to exist "
+                 + "before any category's data moves here (ADR-0003 §9.4).",
+                   "Included in your device backup, like everything else under "
+                 + "Application Support (ADR-0003 §9.4)."],
+            onStravaDisconnect: .keep(why: "it is empty. When step 3.4 moves the training data into it, this rule has to change to one that deletes the Strava-derived rows")),
 
         DataCategoryEntry(
             category: .diagnostics,
@@ -750,10 +826,25 @@ enum DataLifecycle {
 
     /// The single sentence the privacy pane opens with. Computed rather than
     /// written, so it cannot fall out of step with the table underneath it.
+    ///
+    /// THE SECOND SENTENCE WAS FALSE AND IS CORRECTED IN 195. It read "Nothing
+    /// leaves this phone while the transfers above are switched off." Everything
+    /// this app writes lives in Application Support, which iOS includes in
+    /// iCloud and encrypted local backups by default. So every route Sub4 holds
+    /// has left this phone in a backup, and has since the first version.
+    ///
+    /// That is not a bug — it is what a backup is for, and excluding a year of
+    /// training from it so that a new phone starts empty would be the worse
+    /// choice. What was wrong is that the sentence gave a reader no way to know
+    /// it excluded backups from "leaves this phone". A disclosure that is
+    /// technically about transfers and reads as being about everything is
+    /// PRIV-01 in one line, written in the file that exists to stop PRIV-01.
     static var summary: String {
         let shared = entries.filter { !$0.sharedWith.isEmpty }.count
         return "\(entries.count) kinds of data, \(shared) of which can reach "
-             + "another company. Nothing leaves this phone while the transfers "
-             + "above are switched off."
+             + "another company. Nothing is sent to another company while the "
+             + "transfers above are switched off. Your device backup does "
+             + "include what is stored here, as it does everything else on "
+             + "this phone."
     }
 }

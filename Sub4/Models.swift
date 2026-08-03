@@ -57,7 +57,15 @@ struct Week: Codable, Identifiable, Hashable {
 
 // MARK: - Session
 
-enum Discipline: String, Codable, Hashable {
+/// `CaseIterable` added in patch 195, for a test rather than for the UI.
+///
+/// `activity.discipline` carries a CHECK constraint listing these values, and
+/// that list is FROZEN inside the migration that created the table — a
+/// migration body is history and must not change when a Swift enum does. So the
+/// two are held together by `SchemaAgreementTests` instead: add a case here and
+/// the test fails, which is the prompt to write the migration that adds it to
+/// the constraint.
+enum Discipline: String, Codable, Hashable, CaseIterable {
     case run, bike, swim, strength, rest, other
 
     init(from decoder: Decoder) throws {
