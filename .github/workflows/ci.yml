@@ -56,7 +56,7 @@ jobs:
     timeout-minutes: 40
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # BEFORE the inventory, not after — the previous version had these the
       # wrong way round and dutifully printed the simulator list belonging to a
@@ -143,7 +143,7 @@ jobs:
 
       - name: Upload results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: TestResults
           path: TestResults.xcresult
@@ -160,7 +160,7 @@ jobs:
     # project that flag decides whether the release gates can be opened. A
     # Debug-only CI would never compile the branch that actually ships.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Select Xcode
         run: |
