@@ -159,7 +159,22 @@ final class HealthStore {
     // MARK: Authorisation
 
     /// Info.plist key iOS demands before ANY HealthKit read call.
-    private static let usageKey = "NSHealthShareUsageDescription"
+    nonisolated static let usageKey = "NSHealthShareUsageDescription"
+
+    /// The bundle this class was compiled into.
+    ///
+    /// In the running app this is `Bundle.main` and nothing changes. In the test
+    /// target it is the app bundle rather than the xctest runner, and that is
+    /// the entire reason it exists: the purpose string is a build setting, so
+    /// the only way to hold it to the type list is to read it back out of the
+    /// product. `Bundle.main` would have returned the runner and found nothing.
+    nonisolated static var hostBundle: Bundle { Bundle(for: HealthStore.self) }
+
+    /// The text a person is shown at the permission prompt, read back from the
+    /// built product. `nil` means the build setting is missing.
+    nonisolated static var usageDescription: String? {
+        hostBundle.object(forInfoDictionaryKey: usageKey) as? String
+    }
 
     /// True only if the privacy string is actually present in the built bundle.
     ///
@@ -167,8 +182,7 @@ final class HealthStore {
     /// an Objective-C `NSException` — which Swift's `do/catch` CANNOT intercept,
     /// so the process terminates. Pre-flighting is the only way to fail safely.
     var hasUsageDescription: Bool {
-        let s = Bundle.main.object(forInfoDictionaryKey: Self.usageKey) as? String
-        return !(s ?? "").isEmpty
+        !(Self.usageDescription ?? "").isEmpty
     }
 
     @MainActor

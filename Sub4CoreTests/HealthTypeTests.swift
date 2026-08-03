@@ -73,6 +73,43 @@ struct HealthTypeTests {
         }
     }
 
+    // MARK: The purpose string
+
+    /// PRIV-02, and the reason this test exists rather than a line in the
+    /// privacy inventory.
+    ///
+    /// The string shown at the permission prompt lives in the target's build
+    /// settings — `INFOPLIST_KEY_NSHealthShareUsageDescription` — not in any
+    /// file this project compiles. It said "Reads your daily step count" while
+    /// seven types were being requested, and nothing could have noticed: no
+    /// Swift file references it, and the app runs perfectly with it wrong.
+    ///
+    /// So it is read back out of the built product and held to the same list the
+    /// request is built from. If a type is added to `typesRead` without the
+    /// prompt being updated, this goes red.
+    @Test("The permission prompt names every type the app reads")
+    func usageDescriptionNamesEveryTypeRead() throws {
+        let text = try #require(HealthStore.usageDescription,
+                                "INFOPLIST_KEY_NSHealthShareUsageDescription is not set on the Sub4 target")
+        #expect(text.isEmpty == false)
+
+        // One subject per requested type. Deliberately loose — these check that
+        // the subject is named, not how the sentence is worded. REWORDING THE
+        // STRING IS FINE; rewording it so that one of these no longer appears
+        // means a type is being read without being disclosed, which is the thing
+        // being prevented. If you change the wording, change this list with it
+        // and know which type you are dropping.
+        let subjects = ["step", "walking", "running", "cycling",
+                        "swim", "workout", "heart rate", "resting"]
+        #expect(subjects.count >= HealthStore.shared.typesRead.count,
+                "\(subjects.count) subjects for \(HealthStore.shared.typesRead.count) types")
+
+        for s in subjects {
+            #expect(text.localizedCaseInsensitiveContains(s),
+                    "the prompt does not mention \(s), but that type is requested")
+        }
+    }
+
     // MARK: The status model
 
     /// `noData` must not read as a fault. A device with no swims is not broken,

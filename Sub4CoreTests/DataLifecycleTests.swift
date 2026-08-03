@@ -213,12 +213,18 @@ struct DataLifecycleTests {
         // `collect` now returns an outcome rather than an empty dictionary, so
         // there is nothing left to disclose.
         //
-        // What survives is the purpose string, which cannot be fixed from Swift.
-        let health = try #require(DataLifecycle.entry(.healthMetrics))
-        #expect(health.gaps.contains { $0.localizedCaseInsensitiveContains("purpose")
-                                    || $0.localizedCaseInsensitiveContains("prompt") },
-                "the Health purpose string still names step count alone (PRIV-02)")
-
+        // AND THE PURPOSE STRING WENT IN 182, for the same reason: it was
+        // fixed. That one is worth a note, because it is the only gap so far
+        // that was closed outside this project's source — the text is a build
+        // setting. Deleting the disclosure would have left nothing watching it,
+        // so `usageDescriptionNamesEveryTypeRead` in HealthTypeTests took over:
+        // it reads the string out of the built product and holds it to
+        // `typesRead`. A disclosure was traded for an assertion, which is the
+        // right direction.
+        //
+        // healthMetrics now records no gaps at all. That is deliberate and it
+        // is checked — `gapsAreActionable` iterates whatever is there, and an
+        // empty list is a legitimate answer.
         let profile = try #require(DataLifecycle.entry(.athleteProfile))
         #expect(profile.gaps.contains { $0.localizedCaseInsensitiveContains("athlete.json") },
                 "athlete.json has no deletion path")
