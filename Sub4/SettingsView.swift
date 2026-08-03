@@ -47,6 +47,7 @@ struct SettingsView: View {
 
     @State private var notes = NotesStore.shared
     @State private var notesCSV: ShareItem?
+    @State private var confirmingDisconnect = false
     @State private var exportFailed = false
     @State private var copiedVersion = false
 
@@ -181,6 +182,24 @@ struct SettingsView: View {
             Text("The file could not be written. Free some space and try again.")
         }
         .tint(.accent4)
+    }
+
+    /// Built from `onStravaDisconnect`, not written by hand — patch 187.
+    ///
+    /// The point of declaring the rules in the inventory is that this sentence
+    /// and the code that runs are the same source. A hand-written warning here
+    /// would be one more disclosure free to drift from what actually happens.
+    private var disconnectMessage: String {
+        let goes = DataLifecycle.entries
+            .filter { $0.onStravaDisconnect.removesAnything }
+            .map(\.title)
+        let stays = DataLifecycle.entries
+            .filter { if case .keep = $0.onStravaDisconnect { return true }; return false }
+            .map(\.title)
+        return "Removed: " + goes.joined(separator: ", ") + ".\n\n"
+             + "Kept: " + stays.joined(separator: ", ") + ".\n\n"
+             + "Your Strava account is untouched. Reconnecting re-downloads "
+             + "everything, but anything you deleted at Strava's end is gone."
     }
 
     // MARK: Compact — one column, disclosure groups
@@ -370,7 +389,14 @@ struct SettingsView: View {
                 }
                 .disabled(activities.isSyncing)
 
-                Button("Disconnect", role: .destructive) { auth.disconnect() }
+                Button("Disconnect", role: .destructive) { confirmingDisconnect = true }
+                    // On the button, not the container — patch 185's lesson.
+                    .alert("Disconnect Strava?", isPresented: $confirmingDisconnect) {
+                        Button("Cancel", role: .cancel) { }
+                        Button("Disconnect", role: .destructive) { auth.disconnect() }
+                    } message: {
+                        Text(disconnectMessage)
+                    }
             } else {
                 Button("Connect Strava") { Task { await auth.connect() } }
                     .font(.body.weight(.semibold))

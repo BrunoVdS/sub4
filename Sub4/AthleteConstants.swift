@@ -378,6 +378,34 @@ final class ConstantsStore {
         hrMaxRoseFrom = nil
     }
 
+    /// Clears the three fields read off Strava activity data, and KEEPS the
+    /// rest — patch 187, plan step 2.1.5.
+    ///
+    /// This is the one place a disconnect has to reach inside a file rather
+    /// than remove it. `constants.json` holds your typed maximum, your resting
+    /// override and the sex coefficient — none of which came from Strava — next
+    /// to a maximum heart rate read off a Strava activity, the day it happened,
+    /// and that activity's NAME. Removing the file would take your own figures
+    /// with it; leaving it whole would keep an activity name after you
+    /// disconnected the source it came from.
+    ///
+    /// `version` is bumped because HR_max is global: every training-load figure
+    /// ever computed was computed under the old maximum, and that counter is
+    /// what tells the load engine they are stale. Clearing the maximum without
+    /// bumping it would leave a curve built on a number the app no longer holds.
+    ///
+    /// THE COST IS REAL AND NOT HIDDEN: with no override typed, the app has no
+    /// maximum heart rate afterwards and cannot score a session until one
+    /// arrives from Health or you type one. The disconnect sheet says so.
+    func clearStravaDerived() {
+        c.hrMaxObserved = nil
+        c.hrMaxObservedOn = nil
+        c.hrMaxObservedName = nil
+        c.version += 1
+        hrMaxRoseFrom = nil
+        save()
+    }
+
     private func save() {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]

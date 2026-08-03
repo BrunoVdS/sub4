@@ -178,6 +178,70 @@ enum Retention: Equatable {
     }
 }
 
+// MARK: - What a disconnect does
+
+/// What disconnecting Strava does to one category.
+///
+/// WHY THIS IS DECLARED AND NOT WRITTEN AS CODE
+/// -------------------------------------------
+/// Three entries below have said "Removed with the Strava disconnect" since
+/// patch 180, while `StravaAuth.disconnect()` deleted the sign-in tokens and
+/// nothing else. That is the same shape of finding as "Delete local data" was
+/// before 183 — a sentence describing a feature rather than a behaviour.
+///
+/// The fix is not a function that deletes four files. Disconnect is not a
+/// smaller delete: it has to remove what came from Strava and keep what you
+/// wrote, and those two live in the same file in one case. Declaring the rule
+/// beside the disclosure is what stops the two drifting, and lets the pane show
+/// a person exactly what disconnecting will cost them BEFORE they tap it.
+///
+/// NAMED FOR STRAVA DELIBERATELY. Strava is the only source that can be
+/// disconnected today; Health is revoked in Apple's own Settings and the plan
+/// is part of the app. A general `disconnect(source:)` would be generality
+/// nobody has asked for, and the day a second source arrives, renaming this is
+/// a change the compiler walks you through rather than one that fails quietly.
+enum DisconnectRule: Equatable {
+
+    /// Every location this category names is removed.
+    case removeEverything
+
+    /// Untouched, and the reason is shown to the reader rather than assumed.
+    case keep(why: String)
+
+    /// Some of it goes.
+    ///
+    /// `clearsFields` names fields INSIDE a file that survives, which no generic
+    /// walker can do — a handler in the coordinator does it, and a test pins
+    /// every named field to a category that has one. The names are also what the
+    /// pane shows, so the reader sees `hrMaxObserved` rather than "some data".
+    case partial(keeps: String,
+                 removesFiles: [AppSupportItem],
+                 removesKeychain: [String],
+                 clearsFields: [String])
+
+    /// One line for the privacy pane.
+    var label: String {
+        switch self {
+        case .removeEverything:
+            "Removed when you disconnect Strava"
+        case .keep(let why):
+            "Kept — \(why)"
+        case .partial(let keeps, _, _, let fields):
+            fields.isEmpty
+                ? "Partly removed. Kept: \(keeps)"
+                : "Partly removed — \(fields.joined(separator: ", ")) cleared. Kept: \(keeps)"
+        }
+    }
+
+    var removesAnything: Bool {
+        switch self {
+        case .removeEverything: true
+        case .keep:             false
+        case .partial(_, let f, let k, let c): !(f.isEmpty && k.isEmpty && c.isEmpty)
+        }
+    }
+}
+
 // MARK: - The categories
 
 enum DataCategory: String, CaseIterable, Identifiable, Codable {
@@ -226,6 +290,13 @@ struct DataCategoryEntry {
     /// Where today's behaviour falls short of the policy above. Empty means the
     /// two agree. Every entry here should name the plan step that closes it.
     let gaps: [String]
+    /// LAST, and it has to stay last. This struct is built through its
+    /// memberwise initialiser at fourteen call sites, which pass arguments in
+    /// declaration order; a new property inserted anywhere but the end silently
+    /// shifts every one of them. That has cost this project three builds, and
+    /// the diagnostic it produces reads "unable to type-check this expression
+    /// in reasonable time", which points nowhere near the cause.
+    let onStravaDisconnect: DisconnectRule
 
     var isStravaDerived: Bool { lineage.contains(.strava) }
 }
@@ -262,7 +333,8 @@ enum DataLifecycle {
                  + "days (ADR-0002, purge at 4A M8).",
                    "There is no consent screen before a coordinate reaches a "
                  + "weather provider; the release gate stands in for one "
-                 + "(PRIV-04, step 2.4.5)."]),
+                 + "(PRIV-04, step 2.4.5)."],
+            onStravaDisconnect: .removeEverything),
 
         DataCategoryEntry(
             category: .sensorStreams,
@@ -282,7 +354,8 @@ enum DataLifecycle {
             aiShareable: false,
             deletionRule: "Removed with the Strava disconnect, and by Delete local data.",
             gaps: ["No file protection class is applied (DATA-05, step 2.1.9).",
-                   "Retention is indefinite (ADR-0002)."]),
+                   "Retention is indefinite (ADR-0002)."],
+            onStravaDisconnect: .removeEverything),
 
         DataCategoryEntry(
             category: .healthMetrics,
@@ -316,7 +389,8 @@ enum DataLifecycle {
             // drifting again — `usageDescriptionNamesEveryTypeRead` in
             // HealthTypeTests reads the string back out of the built product and
             // holds it to `typesRead`. That test is what replaces this line.
-            gaps: []),
+            gaps: [],
+            onStravaDisconnect: .keep(why: "it comes from Apple Health, which is a separate permission you revoke in the Health app")),
 
         DataCategoryEntry(
             category: .sessionNotes,
@@ -338,7 +412,8 @@ enum DataLifecycle {
             gaps: ["A save can fail without saying so, and a decode failure reads "
                  + "as no notes at all (DATA-01, step 3.4.6).",
                    "Notes are included in the AI payload by default rather than "
-                 + "by opt-in (PRIV-03, step 2.3.5)."]),
+                 + "by opt-in (PRIV-03, step 2.3.5)."],
+            onStravaDisconnect: .keep(why: "you wrote it")),
 
         DataCategoryEntry(
             category: .reviews,
@@ -359,7 +434,8 @@ enum DataLifecycle {
             gaps: ["The stored evidence embeds Strava-derived figures, so these "
                  + "records carry a restriction the rest of your history does "
                  + "not (ADR-0002 — purge the evidence, keep the verdict).",
-                   "A save can fail silently (DATA-01, step 3.4.6)."]),
+                   "A save can fail silently (DATA-01, step 3.4.6)."],
+            onStravaDisconnect: .keep(why: "the verdicts are yours. The evidence quoted inside them is Strava-derived and is purged separately at 4A M6 — recorded as a gap above")),
 
         DataCategoryEntry(
             category: .activitySummaries,
@@ -390,7 +466,8 @@ enum DataLifecycle {
                    "Retention is indefinite (ADR-0002).",
                    "Rejected recordings leave a permanent note behind — date, "
                  + "name, distance, duration — that survives deleting the "
-                 + "activity itself (`strava.rejectedByRule`, ADR-0002)."]),
+                 + "activity itself (`strava.rejectedByRule`, ADR-0002)."],
+            onStravaDisconnect: .removeEverything),
 
         DataCategoryEntry(
             category: .trainingLoad,
@@ -408,7 +485,8 @@ enum DataLifecycle {
             deletionRule: "Nothing to delete — it is recomputed from the activities "
                         + "each time the app runs, and disappears with them.",
             gaps: ["Derived from Strava data, so the restriction travels with it "
-                 + "even though no file holds it (ADR-0002, step 2.1.11)."]),
+                 + "even though no file holds it (ADR-0002, step 2.1.11)."],
+            onStravaDisconnect: .keep(why: "nothing is stored. It is recomputed from whatever activities remain, which after a disconnect is none")),
 
         DataCategoryEntry(
             category: .weather,
@@ -430,7 +508,8 @@ enum DataLifecycle {
                    "The store has a reset function with no caller, so this cache "
                  + "cannot be cleared from inside the app (step 2.1.6).",
                    "Rows are keyed by Strava activity id, so the key itself "
-                 + "carries Strava lineage (ADR-0002 — re-key at 4A M4)."]),
+                 + "carries Strava lineage (ADR-0002 — re-key at 4A M4)."],
+            onStravaDisconnect: .removeEverything),
 
         DataCategoryEntry(
             category: .athleteProfile,
@@ -451,7 +530,18 @@ enum DataLifecycle {
                  + "is overwritten on refresh and never removed (step 2.1.5).",
                    "`constants.json` stores the NAME of the activity where your "
                  + "maximum heart rate was seen, which is Strava data with no "
-                 + "deletion path (ADR-0002)."]),
+                 + "deletion path (ADR-0002)."],
+            onStravaDisconnect: .partial(
+                keeps: "your typed maximum heart rate, resting override and sex "
+                     + "coefficient, and the monthly resting figures from Health",
+                removesFiles: [.file("athlete.json")],
+                removesKeychain: [],
+                // Read off Strava activity data, and `hrMaxObservedName` is the
+                // NAME of the activity it was seen in. Cleared per ADR-0002.
+                // The cost is stated rather than hidden: with no override typed,
+                // the app has no maximum heart rate afterwards and cannot score
+                // a session until Health supplies one.
+                clearsFields: ["hrMaxObserved", "hrMaxObservedOn", "hrMaxObservedName"])),
 
         DataCategoryEntry(
             category: .matchDecisions,
@@ -470,7 +560,8 @@ enum DataLifecycle {
                         + "the recording is remapped rather than dropped.",
             gaps: ["Stored against Strava activity ids, so the decisions must be "
                  + "remapped rather than lost when the source changes "
-                 + "(ADR-0002, step 4A M4)."]),
+                 + "(ADR-0002, step 4A M4)."],
+            onStravaDisconnect: .keep(why: "you made these corrections. They reference Strava ids and are remapped rather than dropped — step 4A M4")),
 
         DataCategoryEntry(
             category: .trainingPlan,
@@ -487,7 +578,8 @@ enum DataLifecycle {
             aiShareable: true,
             deletionRule: "Part of the app. Replaced by an app update, removed by "
                         + "deleting the app.",
-            gaps: []),
+            gaps: [],
+            onStravaDisconnect: .keep(why: "it ships inside the app and has nothing to do with Strava")),
 
         DataCategoryEntry(
             category: .credentials,
@@ -495,7 +587,13 @@ enum DataLifecycle {
             whatItIs: "Your Strava application keys and sign-in tokens, and your "
                     + "Anthropic API key.",
             purpose: "Connecting to those services on your behalf.",
-            lineage: [.authored],
+            // BOTH, and the second was missing until 187. You typed the
+            // application keys, so `.authored` is right for them — but the
+            // sign-in tokens were ISSUED BY Strava, and `onlyStravaLineageIsRemoved`
+            // caught the omission: a disconnect removes the tokens, and a
+            // category with no Strava lineage has no business being altered by
+            // a Strava disconnect. The rule was correct; this line was not.
+            lineage: [.authored, .strava],
             storage: [.keychain("strava.credentials"),
                       .keychain("strava.tokens"),
                       .keychain("claude.apiKey")],
@@ -509,7 +607,13 @@ enum DataLifecycle {
                  + "— there is no code path that deletes `strava.credentials` "
                  + "(step 4.2.9).",
                    "Keychain writes do not check their result, so a failure is "
-                 + "reported to you as success (AUTH-03, step 4.2.10)."]),
+                 + "reported to you as success (AUTH-03, step 4.2.10)."],
+            onStravaDisconnect: .partial(
+                keeps: "the Strava application keys, so reconnecting is one tap "
+                     + "rather than a trip to the Strava developer page",
+                removesFiles: [],
+                removesKeychain: ["strava.tokens"],
+                clearsFields: [])),
 
         DataCategoryEntry(
             category: .diagnostics,
@@ -517,7 +621,13 @@ enum DataLifecycle {
             whatItIs: "When the last background refresh ran, whether it worked, "
                     + "and which activities a source refused to hand over.",
             purpose: "Working out why something did not update, without guessing.",
-            lineage: [.device],
+            // `.strava` added in 187. The gap below has said since 180 that
+            // `bg.lastResult` embeds counts and error text from Strava and
+            // "inherits that lineage" — and the lineage set did not say so.
+            // A disclosure that describes itself correctly in prose and
+            // incorrectly in the field the code reads is the same drift this
+            // file exists to stop, one level down.
+            lineage: [.device, .strava],
             storage: [.preferences(["bg.lastRun", "bg.runCount", "bg.lastResult",
                                     "bg.scheduleError", "detail.failed",
                                     "detail.noStreams"])],
@@ -527,7 +637,8 @@ enum DataLifecycle {
             aiShareable: false,
             deletionRule: "Removed by Delete local data.",
             gaps: ["`bg.lastResult` embeds counts and error text from Strava, so "
-                 + "it inherits that lineage (ADR-0002)."]),
+                 + "it inherits that lineage (ADR-0002)."],
+            onStravaDisconnect: .removeEverything),
 
         DataCategoryEntry(
             category: .appSettings,
@@ -553,7 +664,8 @@ enum DataLifecycle {
             aiShareable: false,
             deletionRule: "Removed by Delete local data, which returns the app to "
                         + "its defaults — including switching every transfer off.",
-            gaps: [])
+            gaps: [],
+            onStravaDisconnect: .keep(why: "these are your settings, including the record of which transfers you permitted"))
     ]
 
     // MARK: Queries

@@ -176,9 +176,27 @@ final class StravaAuth: NSObject {
         await exchange(code: code)
     }
 
-    func disconnect() {
+    /// Forgets the sign-in and NOTHING ELSE — patch 187.
+    ///
+    /// This is what a dead refresh token needs: clear the credentials so the UI
+    /// says "reconnect" instead of failing forever, and leave thirteen months of
+    /// training exactly where it is. It used to be called `disconnect()`, which
+    /// is why the failure path below and the Settings button called the same
+    /// function while the privacy pane promised they did different things.
+    func signOut() {
         tokens = nil
         Keychain.delete(keychainKey)
+    }
+
+    /// What the Disconnect button means: sign out AND remove what came from
+    /// Strava, per the rules declared in `DataLifecycle`.
+    ///
+    /// Deliberately NOT what an expired token triggers. Wiring the two together
+    /// would mean a refresh token dying overnight silently destroyed the
+    /// history — a data-loss bug dressed as a privacy feature.
+    func disconnect() {
+        signOut()
+        DataLifecycleCoordinator.disconnectStrava()
     }
 
     // MARK: Token lifecycle
@@ -257,7 +275,9 @@ final class StravaAuth: NSObject {
                 // of retrying fixes that; the user must reconnect. Clearing the
                 // tokens makes the UI say so instead of failing forever.
                 if code == 400, body["grant_type"] == "refresh_token" {
-                    disconnect()
+                    // signOut, NOT disconnect — see the note on both. An expired
+                    // token must not delete the training history.
+                    signOut()
                     lastError = "Strava sign-in expired. Tap Connect Strava to reconnect."
                 } else {
                     lastError = "Strava auth failed (\(code)) — \(text.prefix(200))"

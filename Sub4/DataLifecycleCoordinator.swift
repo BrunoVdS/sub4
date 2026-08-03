@@ -89,6 +89,7 @@ struct ReceiptLine: Identifiable, Equatable {
 struct LifecycleReceipt: Equatable {
     enum Operation: String, Equatable {
         case deleteEverything = "Delete local data"
+        case disconnectStrava = "Disconnect Strava"
         case export           = "Export"
     }
 
@@ -120,6 +121,13 @@ struct LifecycleReceipt: Equatable {
             : ""
         if retained.isEmpty {
             return "\(removedCount) removed\(size). Nothing is left behind."
+        }
+        // Worded by operation. After a disconnect the retained lines are things
+        // KEPT ON PURPOSE — your notes, your corrections — and calling them
+        // "not this app's to delete" would read as a failure to remove them.
+        if operation == .disconnectStrava {
+            return "\(removedCount) removed\(size). "
+                 + "\(retained.count) thing\(retained.count == 1 ? " is" : "s are") kept — listed below."
         }
         return "\(removedCount) removed\(size). "
              + "\(retained.count) thing\(retained.count == 1 ? " is" : "s are") not this app's to delete — "
@@ -265,6 +273,114 @@ enum DataLifecycleCoordinator {
             }
         }
         return total
+    }
+
+    // MARK: Disconnect
+
+    /// Removes what came from Strava and keeps what did not — plan step 2.1.5.
+    ///
+    /// NOT A SMALLER DELETE. `deleteEverything` walks storage; this walks the
+    /// per-category `onStravaDisconnect` rules, because the answer differs by
+    /// category and in one case by FIELD. Your session notes survive. Your
+    /// corrections survive. `athlete.json` — zones, FTP and shoes, all three
+    /// fetched from Strava with nothing of yours in them — does not.
+    ///
+    /// Every line of the receipt, including the kept ones, comes from a rule
+    /// declared next to the disclosure it belongs to. A reader can see what a
+    /// disconnect will cost before tapping it, and what it did afterwards, from
+    /// the same source.
+    @discardableResult
+    static func disconnectStrava(using fm: FileManager = .default) -> LifecycleReceipt {
+        var lines: [ReceiptLine] = []
+        var removed: Set<AppSupportItem> = []
+
+        for e in DataLifecycle.entries {
+            switch e.onStravaDisconnect {
+
+            case .keep(let why):
+                lines.append(ReceiptLine(what: e.title,
+                                         categories: [e.category],
+                                         outcome: .notOurs("Kept — \(why)")))
+
+            case .removeEverything:
+                for s in e.storage {
+                    switch s {
+                    case .applicationSupport(let item):
+                        // Deduplicated: `activities.json` belongs to two
+                        // categories and `details/` to two more. Removing twice
+                        // would report a phantom "nothing stored" the second
+                        // time and understate what actually went.
+                        guard removed.insert(item).inserted else { continue }
+                        lines.append(ReceiptLine(what: item.displayName,
+                                                 categories: DataLifecycle.categories(holding: item),
+                                                 outcome: remove(item, using: fm)))
+                    case .preferences(let keys):
+                        for k in keys { lines.append(removePreference(k, in: e)) }
+                    case .keychain(let item):
+                        Keychain.delete(item)
+                        lines.append(ReceiptLine(what: "Keychain · \(item)",
+                                                 categories: [e.category],
+                                                 outcome: .removed(bytes: 0)))
+                    case .memoryOnly, .appBundle, .systemOwned:
+                        continue
+                    }
+                }
+
+            case .partial(let keeps, let files, let keychain, let fields):
+                for item in files where removed.insert(item).inserted {
+                    lines.append(ReceiptLine(what: item.displayName,
+                                             categories: [e.category],
+                                             outcome: remove(item, using: fm)))
+                }
+                for item in keychain {
+                    Keychain.delete(item)
+                    lines.append(ReceiptLine(what: "Keychain · \(item)",
+                                             categories: [e.category],
+                                             outcome: .removed(bytes: 0)))
+                }
+                if !fields.isEmpty {
+                    clearFields(fields, for: e.category)
+                    lines.append(ReceiptLine(what: "\(e.title) · \(fields.joined(separator: ", "))",
+                                             categories: [e.category],
+                                             outcome: .removed(bytes: 0)))
+                }
+                lines.append(ReceiptLine(what: "\(e.title) — what stays",
+                                         categories: [e.category],
+                                         outcome: .notOurs("Kept — \(keeps)")))
+            }
+        }
+
+        // The stores whose files just went, emptied. Same reason as the delete:
+        // leave them loaded and the next save writes the history back out of
+        // memory. `ConstantsStore` is deliberately absent — its file survives,
+        // and `clearFields` has already written the redacted version.
+        ActivityStore.shared.dropInMemory()
+        DetailStore.shared.dropInMemory()
+        WeatherStore.shared.dropInMemory()
+        AthleteStore.shared.dropInMemory()
+
+        let receipt = LifecycleReceipt(operation: .disconnectStrava, lines: lines)
+        LifecycleLog.shared.record(receipt)
+        return receipt
+    }
+
+    /// The one hand-written part of a disconnect: fields inside a file that
+    /// survives. `everyClearedFieldHasAHandler` in the tests fails the build if
+    /// a category declares `clearsFields` and lands in `default` here.
+    private static func clearFields(_ fields: [String], for category: DataCategory) {
+        switch category {
+        case .athleteProfile: ConstantsStore.shared.clearStravaDerived()
+        default:
+            assertionFailure("\(category.rawValue) declares clearsFields with no handler")
+        }
+    }
+
+    private static func removePreference(_ key: String, in e: DataCategoryEntry) -> ReceiptLine {
+        let present = UserDefaults.standard.object(forKey: key) != nil
+        if present { UserDefaults.standard.removeObject(forKey: key) }
+        return ReceiptLine(what: "Preference · \(key)",
+                           categories: [e.category],
+                           outcome: present ? .removed(bytes: 0) : .absent)
     }
 
     // MARK: Export
