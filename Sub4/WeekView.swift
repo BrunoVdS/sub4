@@ -429,6 +429,10 @@ struct DayRow: View {
     let onOpen: (Session) -> Void
 
     @State private var matcher = Matcher.shared
+    /// For `dayZones` only. Observed rather than read statically so the marker
+    /// appears when the history finishes loading rather than one navigation
+    /// later.
+    @State private var store = ActivityStore.shared
 
     /// Owned here rather than passed down from WeekView and PlanWeekDetail —
     /// one row is the only thing that can be open at a time anyway, and it keeps
@@ -502,12 +506,30 @@ struct DayRow: View {
                 .font(.caption2.weight(.bold)).tracking(0.5)
                 .foregroundStyle(isToday ? Color.accent4 : Color.dim)
             Text(dayNumber).font(.caption2).foregroundStyle(Color.dim)
+            // Which clock this day was lived on, shown only when it was not the
+            // reader's — patch 201, ADR-0003 §4.5. Silent on the 640 days at
+            // home, which is what makes it worth reading on the twenty-three it
+            // is not.
+            if let zone = zoneMarker {
+                Text(zone)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color.accent4)
+            }
             Spacer()
             if let km = dayKm, km > 0 {
                 Text(String(format: "%.1f km", km))
                     .font(.caption2.weight(.semibold)).foregroundStyle(Color.dim)
             }
         }
+    }
+
+    /// `"JST"` for a day counted from another midnight, nil for a day at home.
+    ///
+    /// Read from `ActivityStore` rather than computed here: `DayZones.from`
+    /// walks the whole history, and seven `DayRow`s recomputing it on every
+    /// body pass would do that seven times a frame during a scroll.
+    private var zoneMarker: String? {
+        store.dayZones.marker(forDay: dayKey)
     }
 
     private var dayKm: Double? {

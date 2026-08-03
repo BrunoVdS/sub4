@@ -20,8 +20,30 @@ final class ActivityStore {
     /// three chances to forget one. Attached to the property, it cannot go
     /// stale, because it is not separately maintained.
     private(set) var activities: [Activity] = [] {
-        didSet { byDay = Dictionary(grouping: activities, by: \.dayKey) }
+        didSet {
+            byDay = Dictionary(grouping: activities, by: \.dayKey)
+            dayZones = DayZones.from(activities: activities)
+        }
     }
+
+    /// Which clock each training day was lived on — patch 201, ADR-0003 §4.5.
+    ///
+    /// HERE RATHER THAN IN `HealthStore`, WHICH IS WHERE IT STARTED.
+    ///
+    /// Patch 198 built this inside the Health refresh, because Health was the
+    /// only consumer. That made it depend on a Health refresh having run — so
+    /// on a device where Health is unavailable or unauthorised, `refresh()`
+    /// returns early and the zones stay empty for ever. The zones are derived
+    /// from ACTIVITIES and have nothing to do with Health; the dependency was
+    /// backwards.
+    ///
+    /// Attached to the `didSet` above for the reason stated there: derived
+    /// state maintained beside the thing it derives from cannot go stale. It is
+    /// also what makes it cheap enough for a view — `DayZones.from` walks all
+    /// 661 activities, and a `DayRow` computing it per body pass would do that
+    /// seven times a frame.
+    private(set) var dayZones = DayZones(changes: [],
+                                         trailingOffsetSeconds: TimeZone.current.secondsFromGMT())
 
     /// THE DAY INDEX — patch 168.
     ///

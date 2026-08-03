@@ -35,14 +35,16 @@ final class HealthStore {
     /// ever compute. Read-only, like everything else here.
     private(set) var restingHRByDay: [String: Double] = [:]
 
-    /// The clock each of the days above was counted on — patch 198.
+    /// The clock each of the days above was counted on.
     ///
-    /// Exposed because the freeze on its own is silent. A Japanese day now
-    /// keeps its own step count, correctly, and looks exactly like a Belgian
-    /// one on screen. `marker(forDay:)` is what lets a view say which midnight
-    /// a total was counted from, so the number and its basis are both visible.
-    private(set) var dayZones = DayZones(changes: [],
-                                         trailingOffsetSeconds: TimeZone.current.secondsFromGMT())
+    /// MOVED TO `ActivityStore` IN PATCH 201. It lived here for one patch, and
+    /// that was wrong in a way worth leaving a note about: it was populated
+    /// inside `refresh()`, which returns early when Health is unavailable or
+    /// unauthorised — so on those devices the zones would have stayed empty for
+    /// ever, and the Week tab would have shown no marker for a trip it had all
+    /// the evidence for. The zones come from activities. Health is a consumer,
+    /// not the owner.
+    var dayZones: DayZones { ActivityStore.shared.dayZones }
 
     private(set) var isAvailable = HKHealthStore.isHealthDataAvailable()
     private(set) var lastError: String?
@@ -267,8 +269,7 @@ final class HealthStore {
         //
         // On a device that has never left home this yields a single run and
         // every query below is exactly the one query it was before.
-        let zones = DayZones.from(activities: ActivityStore.shared.activities)
-        dayZones = zones
+        let zones = ActivityStore.shared.dayZones
 
         async let steps = collect(stepType, unit: .count(), from: start, to: end,
                                   zones: zones)
