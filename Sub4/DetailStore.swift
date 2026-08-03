@@ -372,6 +372,21 @@ final class DetailStore {
         url.deletingPathExtension().lastPathComponent
     }
 
+
+    /// Drops everything held in memory WITHOUT writing to disk.
+    ///
+    /// The counterpart to `DataLifecycleCoordinator.deleteEverything`, and the
+    /// reason it is not simply `resetCache`: reset saves an empty file, which
+    /// after a delete recreates the very store that was just removed. Worse,
+    /// leaving the in-memory copy alive means the next save resurrects the
+    /// whole history from RAM — a delete that undoes itself the first time the
+    /// app touches the store. Nothing here writes.
+    func dropInMemory() {
+        details = [:]
+        streams = [:]
+        pending = []
+    }
+
     private func save(retiring legacy: [URL] = []) {
         guard !dirtyDetails.isEmpty || !dirtyStreams.isEmpty || !legacy.isEmpty
         else { return }

@@ -105,22 +105,23 @@ struct DataLifecycleTests {
     /// silently going undisclosed.
     @Test("Every store the app writes is covered by a category")
     func everyStoreIsCovered() {
+        // PATH COMPONENTS, not display names — patch 183. A location used to be
+        // the string `"streams/<activity>.json"`, which was prose pretending to
+        // be a path. It is now an `AppSupportItem` that resolves to a real URL,
+        // and this list is what the stores actually name.
         let storesTheAppActuallyWrites = [
             "activities.json",
-            "details/<activity>.json",
-            "streams/<activity>.json",
+            "details",          // a directory of per-activity files
+            "streams",
+            "details.json",     // written by versions before the split
+            "streams.json",
             "notes.json",
             "proposals.json",
             "athlete.json",
             "constants.json",
             "weather.json"
         ]
-        var covered: Set<String> = []
-        for e in DataLifecycle.entries {
-            for s in e.storage {
-                if case .applicationSupport(let f) = s { covered.insert(f) }
-            }
-        }
+        let covered = Set(DataLifecycle.appSupportItems.map(\.pathComponent))
         for store in storesTheAppActuallyWrites {
             #expect(covered.contains(store),
                     "\(store) is written by the app but appears in no category")
@@ -161,8 +162,19 @@ struct DataLifecycleTests {
     /// in the bundle; both say so rather than implying otherwise.
     @Test("Categories the app cannot delete do not claim that it can")
     func deletionClaimsAreHonest() throws {
+        // NARROWED IN 183, and the narrowing is the point rather than a
+        // convenience. The category gained `health.authVersion` and
+        // `health.authorized` — two preference keys the app writes and can
+        // therefore delete. The original assertion said nothing in this
+        // category is app-deletable, which stopped being true.
+        //
+        // What must stay true is the thing the assertion was protecting: the
+        // READINGS are Apple's, and no delete flow may imply otherwise. So the
+        // check moves to the system-owned location itself.
         let health = try #require(DataLifecycle.entry(.healthMetrics))
-        #expect(health.storage.allSatisfy { !$0.isAppDeletable },
+        let readings = health.storage.filter { if case .systemOwned = $0 { return true }; return false }
+        #expect(readings.isEmpty == false, "the Health readings are no longer declared system-owned")
+        #expect(readings.allSatisfy { !$0.isAppDeletable },
                 "Health readings are system-owned and must not be app-deletable")
         #expect(health.deletionRule.localizedCaseInsensitiveContains("Health app"),
                 "the Health rule must point at where the data actually lives")

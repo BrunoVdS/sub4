@@ -63,9 +63,68 @@ enum DataSource: String, CaseIterable, Codable, Hashable {
 
 // MARK: - Where it rests
 
+/// Something this app owns under Application Support.
+///
+/// WHY THIS EXISTS RATHER THAN A STRING
+/// ------------------------------------
+/// Until patch 183 a location was `"streams/<activity>.json"` — fine for a
+/// privacy pane to print, useless to anything that has to delete it. The
+/// coordinator needed real URLs, and the alternative was a second list mapping
+/// category to path, which is exactly the drift this whole file exists to stop.
+/// So the inventory resolves itself, and the sentence shown to the reader and
+/// the file that actually gets unlinked come from the same value.
+enum AppSupportItem: Equatable, Hashable {
+    /// One named file: `activities.json`.
+    case file(String)
+    /// A directory holding one file per activity: `streams`, `details`.
+    case directory(String)
+    /// Written by an older version of the app and no longer read.
+    ///
+    /// Listed because it is still on disk and still the user's. A delete flow
+    /// that skips these is wrong in the direction that matters — `details.json`
+    /// and `streams.json` hold the full history of every device that upgraded
+    /// through the per-activity split, and nothing has ever removed them.
+    case legacyFile(String)
+
+    var displayName: String {
+        switch self {
+        case .file(let f):       f
+        case .directory(let d):  "\(d)/<activity>.json"
+        case .legacyFile(let f): "\(f) — written by an older version"
+        }
+    }
+
+    /// The name the store itself uses. `displayName` is prose; this is the
+    /// thing on disk, and the two must not be confused when matching.
+    var pathComponent: String {
+        switch self {
+        case .file(let f):       f
+        case .directory(let d):  d
+        case .legacyFile(let f): f
+        }
+    }
+
+    var isDirectory: Bool { if case .directory = self { return true }; return false }
+
+    /// Application Support for this app, or nil if the system will not give it
+    /// to us. Nil is a real answer — every caller must handle it rather than
+    /// force-unwrapping and crashing a delete flow.
+    static var container: URL? {
+        try? FileManager.default.url(for: .applicationSupportDirectory,
+                                     in: .userDomainMask,
+                                     appropriateFor: nil,
+                                     create: false)
+    }
+
+    var url: URL? {
+        guard let base = Self.container else { return nil }
+        return base.appendingPathComponent(pathComponent, isDirectory: isDirectory)
+    }
+}
+
 enum StorageLocation: Equatable {
-    /// A file under Application Support, named.
-    case applicationSupport(String)
+    /// A file or directory under Application Support.
+    case applicationSupport(AppSupportItem)
     /// One or more UserDefaults keys.
     case preferences([String])
     /// A Keychain item, named.
@@ -79,7 +138,7 @@ enum StorageLocation: Equatable {
 
     var label: String {
         switch self {
-        case .applicationSupport(let f): "Application Support / \(f)"
+        case .applicationSupport(let i): "Application Support / \(i.displayName)"
         case .preferences(let keys):     "Preferences (\(keys.count) key\(keys.count == 1 ? "" : "s"))"
         case .keychain(let item):        "Keychain / \(item)"
         case .memoryOnly:                "Memory only"
@@ -135,6 +194,11 @@ enum DataCategory: String, CaseIterable, Identifiable, Codable {
     case trainingPlan
     case credentials
     case diagnostics
+    /// Added in 183. Not a discovery of new data — a discovery that data
+    /// already being written was undeclared. The inventory named seven
+    /// preference keys; the app writes twenty-four, and the seventeen missing
+    /// ones would have survived a delete-my-data flow written against it.
+    case appSettings
 
     var id: String { rawValue }
 }
@@ -183,9 +247,9 @@ enum DataLifecycle {
             purpose: "Drawing the map on an activity, playing a session back, "
                    + "and looking up the weather at the time and place it happened.",
             lineage: [.strava],
-            storage: [.applicationSupport("streams/<activity>.json"),
-                      .applicationSupport("details/<activity>.json"),
-                      .applicationSupport("activities.json")],
+            storage: [.applicationSupport(.directory("streams")),
+                      .applicationSupport(.directory("details")),
+                      .applicationSupport(.file("activities.json"))],
             retention: .indefinite,
             sharedWith: ["Apple Weather and Open-Meteo receive the START coordinate "
                        + "and time of an activity — never the track"],
@@ -209,7 +273,9 @@ enum DataLifecycle {
             purpose: "The profile chart, time in heart-rate zone, interval "
                    + "detection, and the training-load figure for the session.",
             lineage: [.strava],
-            storage: [.applicationSupport("streams/<activity>.json")],
+            storage: [.applicationSupport(.directory("streams")),
+                      .applicationSupport(.legacyFile("streams.json")),
+                      .preferences(["streams.schema"])],
             retention: .indefinite,
             sharedWith: [],
             isExportable: true,
@@ -228,7 +294,8 @@ enum DataLifecycle {
                    + "the recording has none, a swim's real duration, and the "
                    + "resting heart rate the training-load model needs.",
             lineage: [.appleHealth],
-            storage: [.systemOwned("Apple Health"), .memoryOnly],
+            storage: [.systemOwned("Apple Health"), .memoryOnly,
+                      .preferences(["health.authVersion", "health.authorized"])],
             retention: .forThisSessionOnly,
             sharedWith: [],
             isExportable: false,
@@ -259,7 +326,8 @@ enum DataLifecycle {
             purpose: "Reading back what a week was actually like, rather than "
                    + "what the numbers say it was.",
             lineage: [.authored],
-            storage: [.applicationSupport("notes.json")],
+            storage: [.applicationSupport(.file("notes.json")),
+                      .preferences(["notes.schema"])],
             retention: .indefinite,
             sharedWith: ["Anthropic, but only inside a review you run deliberately "
                        + "— and that path is switched off"],
@@ -280,7 +348,8 @@ enum DataLifecycle {
             purpose: "An audit trail — what the model was told, and what it said "
                    + "back, so a proposal can be judged later.",
             lineage: [.strava, .appleHealth, .authored],
-            storage: [.applicationSupport("proposals.json")],
+            storage: [.applicationSupport(.file("proposals.json")),
+                      .preferences(["proposals.schema"])],
             retention: .indefinite,
             sharedWith: ["Anthropic received the evidence text when the review ran"],
             isExportable: true,
@@ -301,8 +370,17 @@ enum DataLifecycle {
             purpose: "Matching what you did against what the plan asked for, and "
                    + "every total, trend and chart built on top of that.",
             lineage: [.strava],
-            storage: [.applicationSupport("activities.json"),
-                      .applicationSupport("details/<activity>.json")],
+            storage: [.applicationSupport(.file("activities.json")),
+                      .applicationSupport(.directory("details")),
+                      .applicationSupport(.legacyFile("details.json")),
+                      // The sync bookkeeping. `strava.rejectedByRule` is the
+                      // one that matters: it keeps date, name, distance and
+                      // duration of recordings the app declined, and outlives
+                      // the activity it describes.
+                      .preferences(["strava.cursor", "strava.lastSync",
+                                    "strava.cutoffUsed", "strava.rejectedByRule",
+                                    "strava.geoBackfill", "strava.powerBackfill",
+                                    "strava.speedBackfill"])],
             retention: .indefinite,
             sharedWith: [],
             isExportable: true,
@@ -340,7 +418,8 @@ enum DataLifecycle {
             purpose: "Reading a slow session correctly — 28° and a headwind is "
                    + "an explanation, not a decline in form.",
             lineage: [.weatherProvider, .strava],
-            storage: [.applicationSupport("weather.json")],
+            storage: [.applicationSupport(.file("weather.json")),
+                      .preferences(["weather.unavailable"])],
             retention: .indefinite,
             sharedWith: ["Apple Weather, or Open-Meteo where Apple has no answer"],
             isExportable: true,
@@ -361,8 +440,8 @@ enum DataLifecycle {
             purpose: "Every intensity judgement the app makes. Without these it "
                    + "can measure a session but not interpret it.",
             lineage: [.strava, .appleHealth, .authored],
-            storage: [.applicationSupport("athlete.json"),
-                      .applicationSupport("constants.json")],
+            storage: [.applicationSupport(.file("athlete.json")),
+                      .applicationSupport(.file("constants.json"))],
             retention: .indefinite,
             sharedWith: [],
             isExportable: true,
@@ -448,7 +527,33 @@ enum DataLifecycle {
             aiShareable: false,
             deletionRule: "Removed by Delete local data.",
             gaps: ["`bg.lastResult` embeds counts and error text from Strava, so "
-                 + "it inherits that lineage (ADR-0002)."])
+                 + "it inherits that lineage (ADR-0002)."]),
+
+        DataCategoryEntry(
+            category: .appSettings,
+            title: "Your settings",
+            whatItIs: "How you have set the app up: light or dark, which sport a "
+                    + "card shows, hours or kilometres, the zone window — and "
+                    + "which transfers you have switched on.",
+            purpose: "Keeping the app the way you left it, and remembering what "
+                   + "you have permitted it to send.",
+            lineage: [.authored],
+            storage: [.preferences(["appearance.selected", "discipline.selected",
+                                    "volume.unit", "zones.window",
+                                    // The release gates. Recorded here rather
+                                    // than under diagnostics because they are a
+                                    // record of consent, not of behaviour: each
+                                    // one is a transfer this person allowed.
+                                    "gate.stravaConnect", "gate.stravaSync",
+                                    "gate.stravaBackground", "gate.aiReview",
+                                    "gate.coordinateWeather"])],
+            retention: .indefinite,
+            sharedWith: [],
+            isExportable: true,
+            aiShareable: false,
+            deletionRule: "Removed by Delete local data, which returns the app to "
+                        + "its defaults — including switching every transfer off.",
+            gaps: [])
     ]
 
     // MARK: Queries
@@ -474,6 +579,61 @@ enum DataLifecycle {
     /// than promised and quietly skipped.
     static var appDeletable: [DataCategoryEntry] {
         entries.filter { $0.storage.contains { $0.isAppDeletable } }
+    }
+
+    // MARK: The resolvable view of the inventory
+    //
+    // Everything below is the same list seen as things-on-disk rather than as
+    // categories, DEDUPLICATED. `activities.json` belongs to two categories and
+    // `details/` to two more; a delete that walked the categories naively would
+    // try to remove them twice and report a phantom failure the second time.
+
+    /// Every distinct Application Support file or directory the inventory names.
+    static var appSupportItems: [AppSupportItem] {
+        var seen: Set<AppSupportItem> = []
+        var out: [AppSupportItem] = []
+        for e in entries {
+            for s in e.storage {
+                if case .applicationSupport(let i) = s, seen.insert(i).inserted {
+                    out.append(i)
+                }
+            }
+        }
+        return out
+    }
+
+    /// Every distinct UserDefaults key.
+    static var preferenceKeys: [String] {
+        var seen: Set<String> = []
+        return entries.flatMap { e in
+            e.storage.flatMap { s -> [String] in
+                if case .preferences(let keys) = s { return keys }
+                return []
+            }
+        }.filter { seen.insert($0).inserted }
+    }
+
+    /// Every distinct Keychain item.
+    static var keychainItems: [String] {
+        var seen: Set<String> = []
+        return entries.flatMap { e in
+            e.storage.compactMap { s -> String? in
+                if case .keychain(let item) = s { return item }
+                return nil
+            }
+        }.filter { seen.insert($0).inserted }
+    }
+
+    /// The categories a given Application Support item belongs to. Used by the
+    /// receipt, so a line reads "activities.json — Activity summaries, Routes"
+    /// rather than naming one category and quietly deleting another's data too.
+    static func categories(holding item: AppSupportItem) -> [DataCategory] {
+        entries.filter { e in
+            e.storage.contains { s in
+                if case .applicationSupport(let i) = s { return i == item }
+                return false
+            }
+        }.map(\.category)
     }
 
     /// Every recorded difference between stated policy and actual behaviour.
