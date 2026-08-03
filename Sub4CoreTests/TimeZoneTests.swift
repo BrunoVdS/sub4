@@ -105,15 +105,22 @@ struct TimeZoneDisplayTests {
     private let brussels = TimeZone(identifier: "Europe/Brussels")!
     private let tokyo = TimeZone(identifier: "Asia/Tokyo")!
 
+    /// `positioned` defaults to true — the ordinary case, an outdoor recording
+    /// with a coordinate. The false case is a pool swim or a gym session, and
+    /// it is the one the `Africa/Blantyre` finding is about.
     private func activity(startLocal: String, startUTC: String?,
-                          zone: String?, offset: Int?) -> Activity {
-        Activity(id: "A", name: "Morning Run", sportType: "Run",
+                          zone: String?, offset: Int?,
+                          positioned: Bool = true,
+                          sport: String = "Run") -> Activity {
+        Activity(id: "A", name: "Morning Run", sportType: sport,
                  startLocal: startLocal, distance: 10_000,
                  movingTime: 3_000, elapsedTime: 3_100,
                  elevationGain: nil, averageHeartrate: nil, isTrainer: nil,
                  maxHeartrate: nil, gearId: nil, maxSpeed: nil,
                  deviceWatts: nil, averageWatts: nil,
-                 startUTC: startUTC, startLat: nil, startLon: nil,
+                 startUTC: startUTC,
+                 startLat: positioned ? 51.2194 : nil,
+                 startLon: positioned ? 4.4025 : nil,
                  timeZoneIdentifier: zone, startOffsetSeconds: offset)
     }
 
@@ -252,6 +259,84 @@ struct TimeZoneDisplayTests {
                          zone: "Asia/Tokyo", offset: 32_400)
         #expect(a.zoneSuffix(forReaderIn: brussels) == nil)
         #expect(a.timeLabel(forReaderIn: brussels) == "07:00")
+    }
+
+    // MARK: What the real backfill turned up — patch 197
+
+    /// THE DEFECT PATCH 196 SHIPPED AND THE 661-ACTIVITY BACKFILL EXPOSED.
+    ///
+    /// Strava returned `Africa/Blantyre` for 28 activities and `Africa/Algiers`
+    /// for 27, and every one of the 55 has no coordinate — 43 pool swims, six
+    /// gym sessions, five workouts, one indoor ride. Those are the
+    /// alphabetically first IANA zones at +2 and +1 respectively, and neither
+    /// keeps daylight saving: it is a representative zone for the offset, not a
+    /// place.
+    ///
+    /// At home this is invisible, because the offset is correct and no suffix
+    /// is drawn when the offsets agree. Read from Tokyo in September, the
+    /// offsets differ, a suffix is drawn, and it says a swim in Antwerp
+    /// happened on Central Africa Time.
+    @Test("A pool swim does not claim to have happened in Malawi")
+    func indoorSwimDoesNotInheritStravasFilledInZone() throws {
+        let swim = activity(startLocal: "2026-07-14T07:00:00",
+                            startUTC: "2026-07-14T05:00:00Z",
+                            zone: "Africa/Blantyre", offset: 7_200,
+                            positioned: false, sport: "Swim")
+        let suffix = try #require(swim.zoneSuffix(forReaderIn: tokyo))
+        #expect(suffix == "GMT+2", "got \(suffix)")
+        #expect(suffix != "CAT", "a swim in Antwerp was labelled Central Africa Time")
+    }
+
+    /// And the same activity is still silent at home, which is why the defect
+    /// could not have been found without either the trip or the real data.
+    @Test("The same swim says nothing at home")
+    func indoorSwimIsSilentAtHome() {
+        let swim = activity(startLocal: "2026-07-14T07:00:00",
+                            startUTC: "2026-07-14T05:00:00Z",
+                            zone: "Africa/Blantyre", offset: 7_200,
+                            positioned: false, sport: "Swim")
+        #expect(swim.zoneSuffix(forReaderIn: brussels) == nil)
+    }
+
+    /// The winter half of the same finding: `Africa/Algiers` is +1 all year and
+    /// so is Brussels in December.
+    @Test("A winter gym session does not claim to have happened in Algeria")
+    func winterIndoorSessionIsNotAlgiers() throws {
+        let gym = activity(startLocal: "2026-12-14T07:00:00",
+                           startUTC: "2026-12-14T06:00:00Z",
+                           zone: "Africa/Algiers", offset: 3_600,
+                           positioned: false, sport: "WeightTraining")
+        #expect(gym.zoneSuffix(forReaderIn: brussels) == nil)
+        let suffix = try #require(gym.zoneSuffix(forReaderIn: tokyo))
+        #expect(suffix == "GMT+1", "got \(suffix)")
+    }
+
+    /// The trust rule cuts both ways, and this is the half that keeps it from
+    /// being a blanket downgrade: an activity WITH a coordinate keeps its real
+    /// abbreviation. The 27 Istanbul walks and 24 Bucharest ones in the
+    /// backfill all have GPS and are real travel.
+    @Test("A positioned activity still uses its real zone name")
+    func positionedActivityKeepsItsAbbreviation() throws {
+        let run = activity(startLocal: "2026-09-14T07:00:00",
+                           startUTC: "2026-09-13T22:00:00Z",
+                           zone: "Asia/Tokyo", offset: 32_400, positioned: true)
+        let suffix = try #require(run.zoneSuffix(forReaderIn: brussels))
+        #expect(["JST", "GMT+9"].contains(suffix), "got \(suffix)")
+    }
+
+    /// The offset is untouched by any of this. Strava's filled-in identifier is
+    /// wrong about the place and right about the clock, which is precisely why
+    /// ADR-0003 §4.3 makes the offset the authority — a decision taken before
+    /// this case was known to exist.
+    @Test("A filled-in identifier still carries a correct offset")
+    func filledInZoneStillHasTheRightOffset() {
+        let swim = activity(startLocal: "2026-07-14T07:00:00",
+                            startUTC: "2026-07-14T05:00:00Z",
+                            zone: "Africa/Blantyre", offset: 7_200,
+                            positioned: false, sport: "Swim")
+        let instant = ISO8601DateFormatter().date(from: "2026-07-14T05:00:00Z")!
+        #expect(swim.offsetSeconds(at: instant) == brussels.secondsFromGMT(for: instant),
+                "the stored offset disagrees with where the swim actually was")
     }
 
     /// ADR-0003 §4.2's second failure: `dayKey` derives from `startLocal`, so

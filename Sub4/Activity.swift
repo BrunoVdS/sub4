@@ -256,8 +256,39 @@ struct Activity: Codable, Identifiable, Hashable {
         return tz.secondsFromGMT(for: instant)
     }
 
-    /// `"JST"` where the system knows a real abbreviation, `"GMT+9"` where it
-    /// does not.
+    /// True when Strava had a position to work from, which is the only
+    /// circumstance in which `timeZoneIdentifier` names a real place.
+    ///
+    /// WHY THIS EXISTS — FOUND IN THE PATCH 196 BACKFILL, IN THE REAL DATA.
+    ///
+    /// Backfilling 661 activities produced these identifiers:
+    ///
+    ///     476 Europe/Brussels    38 Europe/Berlin      38 Europe/Paris
+    ///      28 Africa/Blantyre    27 Africa/Algiers     27 Europe/Istanbul
+    ///      24 Europe/Bucharest    3 Europe/Amsterdam
+    ///
+    /// The two African zones are not trips. `Africa/Algiers` is the
+    /// alphabetically first IANA zone at +1 and `Africa/Blantyre` the first at
+    /// +2, neither observes daylight saving, and cross-referencing showed all
+    /// 55 of them have no coordinate: 43 pool swims, six gym sessions, five
+    /// workouts and one indoor ride. Strava fills in a representative zone for
+    /// the offset when it has no position to geolocate.
+    ///
+    /// So the identifier is not always a place. The OFFSET always is correct —
+    /// it is what the uploading device reported — which is why ADR-0003 §4.3
+    /// makes the offset the authority, and why nothing about the comparison
+    /// rule is affected.
+    ///
+    /// Six no-GPS activities did come back `Europe/Brussels`, so the fill-in is
+    /// not purely mechanical and a real identifier cannot be told from a
+    /// substituted one at ingest. Having a coordinate is the proxy that can be
+    /// checked, and it is conservative in the right direction: a genuine pool
+    /// swim in Brussels loses `CEST` and gains `GMT+2`, which is less pretty
+    /// and never wrong.
+    var hasStartPosition: Bool { startLat != nil && startLon != nil }
+
+    /// `"JST"` where the system knows a real abbreviation and the identifier
+    /// can be trusted, `"GMT+9"` where either is missing.
     ///
     /// Apple returns a genuine short name for some zones and a `GMT±n` string
     /// for others, and which is which is an ICU detail this app does not
@@ -265,7 +296,13 @@ struct Activity: Codable, Identifiable, Hashable {
     /// the fallback is computed from the offset — so the label is always
     /// correct and sometimes prettier.
     func zoneAbbreviation(at instant: Date, offset: Int) -> String {
-        if let id = timeZoneIdentifier, let tz = TimeZone(identifier: id) {
+        // The coordinate check is not defensive tidiness — without it a July
+        // pool swim in Antwerp, read from Tokyo in September, prints "CAT" and
+        // tells you it happened in Malawi. It cannot misfire at home, because
+        // no suffix is shown at all when the offsets agree, which is exactly
+        // why it would have shipped unnoticed.
+        if hasStartPosition,
+           let id = timeZoneIdentifier, let tz = TimeZone(identifier: id) {
             let style: NSTimeZone.NameStyle = tz.isDaylightSavingTime(for: instant)
                 ? .shortDaylightSaving : .shortStandard
             if let name = tz.localizedName(for: style, locale: Locale(identifier: "en_US_POSIX")),
