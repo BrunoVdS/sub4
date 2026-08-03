@@ -63,21 +63,36 @@ jobs:
           echo "=== selected ==="
           xcodebuild -version
           swift --version
+          echo "=== iOS SDKs available to the default Xcode ==="
+          xcodebuild -showsdks | grep -i ios || true
           echo "=== available iPhone simulators ==="
           xcrun simctl list devices available | grep -i iphone || echo "(none)"
 
-      # Selects Xcode 26 if the image has it and otherwise carries on with
-      # whatever is default, so a missing version shows up as a compile error
-      # against a known compiler rather than as an opaque step failure.
+      # NEWEST Xcode 26 ON THE IMAGE, AND FAIL IF THERE IS NONE.
+      #
+      # The first version of this looked for `/Applications/Xcode_26.app`, which
+      # does not exist: the runner carries Xcode_26.0, 26.1, 26.2 and 26.3 as
+      # separate bundles. The check failed, the step warned and carried on, and
+      # the build ran on Xcode 16.4 against the iOS 18.5 SDK with a 26.5
+      # deployment target. That produced three pages of availability and
+      # isolation errors pointing at code that is perfectly fine.
+      #
+      # So: glob, sort by version, take the newest — and EXIT rather than warn.
+      # Carrying on with the wrong compiler does not degrade gracefully, it
+      # produces confident nonsense, which costs more than a red step.
       - name: Select Xcode
         run: |
-          if [ -d /Applications/Xcode_26.app ]; then
-            sudo xcode-select -switch /Applications/Xcode_26.app
-            echo "selected Xcode_26"
-          else
-            echo "::warning::Xcode_26.app not present; using the image default."
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XC" ]; then
+            echo "::error::No Xcode 26 on this runner. Available:"
+            ls -d /Applications/Xcode*.app || true
+            exit 1
           fi
+          echo "selecting $XC"
+          sudo xcode-select -switch "$XC"
           xcodebuild -version
+          echo "=== iOS SDKs in this Xcode ==="
+          xcodebuild -showsdks | grep -i ios || true
 
       # A clean clone must build without relying on anything untracked. That is
       # the acceptance criterion for plan step 1.1, and this is what enforces it
@@ -127,9 +142,12 @@ jobs:
 
       - name: Select Xcode
         run: |
-          if [ -d /Applications/Xcode_26.app ]; then
-            sudo xcode-select -switch /Applications/Xcode_26.app
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XC" ]; then
+            echo "::error::No Xcode 26 on this runner."
+            exit 1
           fi
+          sudo xcode-select -switch "$XC"
           xcodebuild -version
 
       - name: Build Release
