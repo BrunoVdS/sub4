@@ -84,24 +84,39 @@ jobs:
           echo "=== available iPhone simulators ==="
           xcrun simctl list devices available | grep -i iphone || echo "(none)"
 
-      # DISCOVERED, NOT NAMED. Which iPhone models a runner carries changes
-      # between images and Xcode versions, and naming one is a guess that fails
-      # a whole run to disprove. The first available iPhone is taken by UDID,
-      # which is unambiguous — no OS matching, no model-name drift.
+      # ASK XCODEBUILD, NOT SIMCTL — and this distinction cost a run.
+      #
+      # `simctl list devices available` enumerates every device on every
+      # installed runtime and knows nothing about this project. The image
+      # carries iOS 26.2, 26.4 and 26.5, so there are THREE devices named
+      # "iPhone 17 Pro"; `head -1` took the one on 26.2, which a deployment
+      # target of 26.5 makes ineligible. xcodebuild then reported it could not
+      # find the destination — while listing an iPhone 17 Pro of its own, with a
+      # different UDID, two lines further down.
+      #
+      # `-showdestinations` is xcodebuild's own answer for THIS scheme, with
+      # eligibility already applied. It cannot disagree with the build that
+      # follows it, which is the entire point.
+      #
+      # arm64 only: each simulator appears twice, once per architecture, and
+      # taking both would make `head -1` a coin toss.
       - name: Choose a simulator
         id: sim
         run: |
-          UDID=$(xcrun simctl list devices available \
-                 | grep -E '^ +iPhone' \
+          xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showdestinations 2>/dev/null \
+            | tee /tmp/destinations.txt >/dev/null
+          UDID=$(grep 'platform:iOS Simulator' /tmp/destinations.txt \
+                 | grep 'arch:arm64' \
+                 | grep 'name:iPhone' \
                  | head -1 \
-                 | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')
+                 | grep -oE 'id:[0-9A-F-]{36}' | cut -d: -f2)
           if [ -z "$UDID" ]; then
-            echo "::error::No iPhone simulator on this runner. Available devices:"
-            xcrun simctl list devices available
+            echo "::error::No eligible iPhone simulator for this scheme. xcodebuild offers:"
+            cat /tmp/destinations.txt
             exit 1
           fi
-          NAME=$(xcrun simctl list devices available | grep "$UDID" | sed -E 's/^ *([^(]+).*/\1/')
-          echo "using $NAME ($UDID)"
+          echo "chosen destination:"
+          grep "$UDID" /tmp/destinations.txt | head -1
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
       # A clean clone must build without relying on anything untracked. That is
