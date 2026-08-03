@@ -157,6 +157,24 @@ enum ReleaseGate: String, CaseIterable, Identifiable {
     /// stops and existing data is frozen rather than extended. Shipping it open
     /// would make the decision a comment.
     var defaultOpen: Bool { false }
+
+    /// Whether opening this gate needs a consent screen before the first
+    /// transfer — PRIV-04, patch 193.
+    ///
+    /// A property of the GATE rather than a check in the view, so the answer
+    /// travels with the thing it describes and a new transmitting gate has to
+    /// decide. The test `everyGateThatSendsALocationAsksFirst` fails the build
+    /// if a gate says it sends a coordinate and does not ask.
+    var needsLocationConsent: Bool {
+        switch self {
+        case .coordinateWeather: true
+        // The Strava gates send an authorisation request and fetch the
+        // athlete's own recordings; nothing about where they are goes out that
+        // they have not already given Strava. The AI review sends figures, and
+        // its own consent problem is PRIV-03, handled by the payload preflight.
+        case .stravaConnect, .stravaSync, .stravaBackground, .aiReview: false
+        }
+    }
 }
 
 // MARK: - The check
@@ -167,6 +185,11 @@ enum ReleaseGates {
     /// opened. Both halves are required; neither is inferable from the other.
     static func isOpen(_ gate: ReleaseGate) -> Bool {
         guard gate.permitted else { return false }
+        // Consent outranks the stored switch — patch 193. A `gate.` key
+        // restored from a backup, or written before this check existed, cannot
+        // open a transfer nobody agreed to. The consent key is in the same
+        // backup, so the pair travels together or the gate stays shut.
+        if gate.needsLocationConsent, !hasLocationConsent { return false }
         guard let stored = UserDefaults.standard.object(forKey: key(gate)) as? Bool
         else { return gate.defaultOpen }
         return stored
@@ -187,6 +210,24 @@ enum ReleaseGates {
     }
 
     static func key(_ gate: ReleaseGate) -> String { "gate." + gate.rawValue }
+
+    /// Whether the athlete has agreed to a coordinate leaving the phone.
+    ///
+    /// SEPARATE FROM THE GATE, deliberately. The gate is "is this feature on";
+    /// this is "did somebody agree to the transfer". Switching weather off and
+    /// on again should not re-ask — the answer has not changed — but a delete
+    /// removes this key along with everything else in `appSettings`, so a fresh
+    /// install or a wiped one asks again. That is the right behaviour: consent
+    /// belongs to the person, and there is no longer a record of it.
+    static let locationConsentKey = "consent.locationToWeather"
+
+    static var hasLocationConsent: Bool {
+        UserDefaults.standard.bool(forKey: locationConsentKey)
+    }
+
+    static func recordLocationConsent() {
+        UserDefaults.standard.set(true, forKey: locationConsentKey)
+    }
 
     /// For the Settings header and the support bundle.
     ///

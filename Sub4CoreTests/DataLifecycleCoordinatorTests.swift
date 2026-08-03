@@ -125,7 +125,11 @@ struct DataLifecycleCoordinatorTests {
             "match.overrides",
             // Display
             "appearance.selected", "discipline.selected",
-            "volume.unit", "zones.window"
+            "volume.unit", "zones.window",
+            // Consent — patch 193, PRIV-04. Separate from the gate it guards:
+            // "the feature is on" and "somebody agreed to the transfer" are
+            // different facts, and a delete must remove the second.
+            "consent.locationToWeather"
         ]
         let covered = Set(DataLifecycle.preferenceKeys)
         for k in written {

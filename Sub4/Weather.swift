@@ -328,37 +328,88 @@ final class WeatherStore {
     nonisolated static func reduce(_ samples: [HourSample], id: String,
                                    start: Date, end: Date,
                                    source: WeatherSource) -> ActivityWeather? {
-        // Only the samples that overlap the session. The half-hour padding on
-        // the request exists to make sure the surrounding hours are RETURNED,
-        // not to widen what gets averaged.
-        let inSession = samples.filter { $0.date >= start.addingTimeInterval(-1800)
-                                      && $0.date <= end }
+        // Only the samples that overlap the session — patch 193, and this is a
+        // CORRECTION, not a tidy-up.
+        //
+        // The old filter kept samples whose timestamp fell after `start - 30min`.
+        // That is not an overlap test, it is a proximity test, and it dropped the
+        // hour a session actually began in whenever the session started more
+        // than half an hour past the hour. A run at 07:55 lost the 07:00 hour
+        // entirely — five minutes of real running, reported as if it happened in
+        // the 08:00 hour.
+        //
+        // The right test is whether the hour's own span intersects the session
+        // at all: an hour counts if it has not ended before the session started
+        // and did not begin after it finished. What varies then is the WEIGHT,
+        // which is exactly what the block below computes.
+        let inSession = samples.filter { h in
+            h.date <= end && h.date.addingTimeInterval(3600) > start
+        }
         let used = inSession.isEmpty ? Array(samples.prefix(1)) : inSession
         guard !used.isEmpty else { return nil }
 
-        let n = Double(used.count)
-        let temp = used.reduce(0.0) { $0 + $1.tempC } / n
-        let feels = used.reduce(0.0) { $0 + $1.feelsLikeC } / n
-        let hum = used.reduce(0.0) { $0 + $1.humidity } / n
-        let wind = used.reduce(0.0) { $0 + $1.windKmh } / n
-        let rain = used.reduce(0.0) { $0 + $1.precipitationMm }
+        // WEIGHTED BY OVERLAP — patch 193, plan step 2.4.
+        //
+        // Every figure below used to be a flat mean over the hours the session
+        // touched, which is wrong whenever a session straddles an hour unevenly.
+        // A run from 07:55 to 08:50 touches two hours: five minutes of the first
+        // and fifty of the second. A flat mean gives them equal say, so 12° at
+        // 07:00 and 18° at 08:00 reported 15° for a session run almost entirely
+        // at 18°. The error is largest exactly where it is most noticeable — a
+        // dawn run in spring, when the temperature is climbing fastest.
+        //
+        // The weight is the seconds of the session that fell inside each hour.
+        let weights = used.map { h -> Double in
+            let hourStart = h.date
+            let hourEnd = h.date.addingTimeInterval(3600)
+            let from = max(hourStart, start)
+            let to = min(hourEnd, end)
+            return max(0, to.timeIntervalSince(from))
+        }
+        // A zero-length activity, or samples that turn out not to overlap at
+        // all, would divide by zero. Falling back to equal weights keeps the old
+        // behaviour for that case rather than returning nil — a rough figure is
+        // better than no row, and `samples` records how many hours it came from.
+        let total = weights.reduce(0, +)
+        let w: [Double] = total > 0 ? weights : Array(repeating: 1, count: used.count)
+        let n = total > 0 ? total : Double(used.count)
+
+        func mean(_ value: (HourSample) -> Double) -> Double {
+            zip(used, w).reduce(0.0) { $0 + value($1.0) * $1.1 } / n
+        }
+
+        let temp = mean(\.tempC)
+        let feels = mean(\.feelsLikeC)
+        let hum = mean(\.humidity)
+        let wind = mean(\.windKmh)
+
+        // RAIN IS A TOTAL, NOT A MEAN, and that is why it needs the weighting
+        // more than anything else here. The provider reports millimetres per
+        // hour; summing whole hours credited a session with all 4 mm of an hour
+        // it was only outdoors for five minutes of. Scaling each hour by the
+        // FRACTION of it the session occupied gives the rain that actually fell
+        // on the athlete.
+        let rain = zip(used, w).reduce(0.0) { $0 + $1.0.precipitationMm * ($1.1 / 3600) }
 
         // Wind direction is averaged as a VECTOR, not as a number. The
         // arithmetic mean of 350° and 10° is 180° — a southerly, when both
         // readings say northerly. Summing unit vectors and taking the angle back
-        // out is the only average that survives the wrap at zero.
+        // out is the only average that survives the wrap at zero. Weighted too:
+        // the hour the athlete was actually in should dominate the arrow.
         var vx = 0.0, vy = 0.0
-        for h in used {
+        for (h, weight) in zip(used, w) {
             let r = h.windFromDegrees * .pi / 180
-            vx += cos(r); vy += sin(r)
+            vx += cos(r) * weight; vy += sin(r) * weight
         }
         var dir = atan2(vy, vx) * 180 / .pi
         if dir < 0 { dir += 360 }
 
-        // The dominant condition is the MIDDLE sample's, not the mean of an
-        // enumeration — averaging "Cloudy" and "Rain" has no meaning. The middle
-        // of the session is the most representative single moment.
-        let mid = used[used.count / 2]
+        // The dominant condition is a single sample's, not the mean of an
+        // enumeration — averaging "Cloudy" and "Rain" has no meaning. It is now
+        // the HEAVIEST hour rather than the middle one: for that 07:55 run the
+        // middle sample was the five-minute hour, so the card could report the
+        // conditions of a period the athlete barely experienced.
+        let mid = zip(used, w).max { $0.1 < $1.1 }?.0 ?? used[used.count / 2]
 
         return ActivityWeather(activityId: id,
                                tempC: temp,

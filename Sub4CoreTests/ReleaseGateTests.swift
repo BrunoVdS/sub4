@@ -175,16 +175,32 @@ struct ReleaseGateTests {
 
     // MARK: The summary
 
+    /// UPDATED IN 193, and the failure that forced it is the point rather than
+    /// an inconvenience.
+    ///
+    /// This test used to open `.coordinateWeather` with `set` alone and expect
+    /// it in `openGates`. It now stays shut, because that gate sends a location
+    /// and consent has not been recorded — which is exactly the protection
+    /// PRIV-04 asked for, working. The fix is to record consent, not to relax
+    /// the check.
     @Test("openGates lists exactly what is open")
     func openGatesIsAccurate() {
         withCleanDefaults {
+            UserDefaults.standard.removeObject(forKey: ReleaseGates.locationConsentKey)
             #expect(ReleaseGates.openGates.isEmpty)
 
+            // Without consent, setting it is not enough.
             ReleaseGates.set(.coordinateWeather, open: true)
+            #expect(ReleaseGates.openGates.isEmpty,
+                    "a location gate opened without consent")
+
+            ReleaseGates.recordLocationConsent()
             #expect(ReleaseGates.openGates == [.coordinateWeather])
 
             ReleaseGates.set(.stravaSync, open: true)
             #expect(Set(ReleaseGates.openGates) == [.coordinateWeather, .stravaSync])
+
+            UserDefaults.standard.removeObject(forKey: ReleaseGates.locationConsentKey)
         }
     }
 
@@ -206,5 +222,79 @@ struct ReleaseGateTests {
         #expect(gate.transmits.isEmpty == false)
         #expect(gate.reasonClosed.isEmpty == false)
         #expect(gate.id == gate.rawValue)
+    }
+}
+
+// MARK: - Consent before a location leaves
+
+/// PRIV-04, patch 193. Separate suite because these touch the consent key as
+/// well as the gate keys, and `withCleanDefaults` in the suite above is written
+/// around gates alone.
+@Suite(.serialized)
+@MainActor
+struct LocationConsentTests {
+
+    private func clean(_ body: () -> Void) {
+        let d = UserDefaults.standard
+        for g in ReleaseGate.allCases { d.removeObject(forKey: ReleaseGates.key(g)) }
+        d.removeObject(forKey: ReleaseGates.locationConsentKey)
+        body()
+        for g in ReleaseGate.allCases { d.removeObject(forKey: ReleaseGates.key(g)) }
+        d.removeObject(forKey: ReleaseGates.locationConsentKey)
+    }
+
+    /// THE ONE THAT MATTERS. A stored `gate.coordinateWeather = true` — written
+    /// before this check existed, or restored from a backup — must not open a
+    /// transfer nobody agreed to. Consent outranks the switch.
+    @Test("A stored open gate stays shut without consent")
+    func consentOutranksTheStoredSwitch() {
+        clean {
+            UserDefaults.standard.set(true, forKey: ReleaseGates.key(.coordinateWeather))
+            #expect(ReleaseGates.isOpen(.coordinateWeather) == false,
+                    "a gate that sends a location opened without consent")
+        }
+    }
+
+    @Test("With consent recorded, the gate opens normally")
+    func consentThenOpen() {
+        clean {
+            ReleaseGates.recordLocationConsent()
+            ReleaseGates.set(.coordinateWeather, open: true)
+            #expect(ReleaseGates.isOpen(.coordinateWeather))
+        }
+    }
+
+    /// Consent alone is not the feature being on. Somebody who agrees and then
+    /// switches weather off has not withdrawn consent, but the gate is shut.
+    @Test("Consent alone does not open the gate")
+    func consentIsNotTheSwitch() {
+        clean {
+            ReleaseGates.recordLocationConsent()
+            #expect(ReleaseGates.isOpen(.coordinateWeather) == false)
+        }
+    }
+
+    /// The gate declares whether it needs asking, so a new transmitting gate
+    /// has to decide rather than inherit silence. Today exactly one sends a
+    /// coordinate.
+    @Test("Exactly the gate that sends a coordinate asks first")
+    func onlyTheCoordinateGateAsks() {
+        let asking = ReleaseGate.allCases.filter { $0.needsLocationConsent }
+        #expect(asking.map { $0.rawValue } == ["coordinateWeather"],
+                "gates asking for location consent: \(asking.map { $0.rawValue })")
+    }
+
+    /// And the converse, worded so it fails if a gate starts describing itself
+    /// as sending a location without asking.
+    @Test("No gate mentions sending a location without asking first")
+    func aGateThatSaysItSendsALocationAsks() {
+        for gate in ReleaseGate.allCases {
+            let saysLocation = gate.transmits.localizedCaseInsensitiveContains("where an activity started")
+                || gate.transmits.localizedCaseInsensitiveContains("coordinate")
+            if saysLocation {
+                #expect(gate.needsLocationConsent,
+                        "\(gate.rawValue) says it sends a location and does not ask for consent")
+            }
+        }
     }
 }

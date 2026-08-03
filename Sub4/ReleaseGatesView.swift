@@ -28,6 +28,15 @@ struct ReleaseGatesView: View {
     /// from. Seeded on appear and written straight through on change.
     @State private var open: [String: Bool] = [:]
 
+    /// Set when a gate needs consent before it may be opened — patch 193.
+    /// A value rather than a Bool so the sheet cannot be shown without knowing
+    /// which gate asked for it.
+    struct ConsentRequest: Identifiable {
+        let id = UUID()
+        let gate: ReleaseGate
+    }
+    @State private var consent: ConsentRequest?
+
     var body: some View {
         Section {
             ForEach(ReleaseGate.allCases) { gate in
@@ -49,6 +58,20 @@ struct ReleaseGatesView: View {
         }
         .onAppear {
             for g in ReleaseGate.allCases { open[g.rawValue] = ReleaseGates.isOpen(g) }
+        }
+        // PRIV-04. The only gate that needs it today is coordinateWeather; the
+        // sheet is chosen by gate rather than hard-coded here so a second one
+        // that transmits something identifying can ask too.
+        .sheet(item: $consent) { request in
+            switch request.gate {
+            case .coordinateWeather:
+                LocationConsentView { grant(request.gate) }
+            default:
+                // Unreachable while coordinateWeather is the only gate that
+                // requires consent, and a screen rather than a crash if that
+                // stops being true.
+                LocationConsentView { grant(request.gate) }
+            }
         }
     }
 
@@ -101,6 +124,18 @@ struct ReleaseGatesView: View {
         Binding(
             get: { isOpen(gate) },
             set: { v in
+                // OPENING a gate that transmits a location asks first — PRIV-04.
+                // Closing never does: withdrawing consent is not a decision that
+                // needs confirming, and a sheet in front of "stop sending my
+                // location" would be the wrong kind of friction.
+                if v, gate.needsLocationConsent, !ReleaseGates.hasLocationConsent {
+                    consent = ConsentRequest(gate: gate)
+                    // The toggle stays where it was. It moves when the sheet
+                    // comes back with an answer, so the switch never shows a
+                    // state the app has not actually entered.
+                    open[gate.rawValue] = ReleaseGates.isOpen(gate)
+                    return
+                }
                 ReleaseGates.set(gate, open: v)
                 // Read BACK rather than trusting the write. In an external
                 // build `set` is a no-op, and the toggle must return to where
@@ -108,5 +143,12 @@ struct ReleaseGatesView: View {
                 open[gate.rawValue] = ReleaseGates.isOpen(gate)
             }
         )
+    }
+
+    /// Called by the consent sheet, and only by it.
+    private func grant(_ gate: ReleaseGate) {
+        ReleaseGates.recordLocationConsent()
+        ReleaseGates.set(gate, open: true)
+        open[gate.rawValue] = ReleaseGates.isOpen(gate)
     }
 }

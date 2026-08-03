@@ -328,10 +328,7 @@ enum DataLifecycle {
             aiShareable: false,
             deletionRule: "Removed with the Strava disconnect, and by Delete local data.",
             gaps: ["Retention is indefinite; the Strava API Policy permits seven "
-                 + "days (ADR-0002, purge at 4A M8).",
-                   "There is no consent screen before a coordinate reaches a "
-                 + "weather provider; the release gate stands in for one "
-                 + "(PRIV-04, step 2.4.5)."],
+                 + "days (ADR-0002, purge at 4A M8)."],
             onStravaDisconnect: .removeEverything),
 
         DataCategoryEntry(
@@ -499,9 +496,7 @@ enum DataLifecycle {
             isExportable: true,
             aiShareable: false,
             deletionRule: "Removed by Delete local data.",
-            gaps: ["No consent screen before the coordinate is sent (PRIV-04, "
-                 + "step 2.4.5); the release gate stands in for one.",
-                   "Rows are keyed by Strava activity id, so the key itself "
+            gaps: ["Rows are keyed by Strava activity id, so the key itself "
                  + "carries Strava lineage (ADR-0002 — re-key at 4A M4)."],
             onStravaDisconnect: .removeEverything),
 
@@ -651,7 +646,12 @@ enum DataLifecycle {
                                     // one is a transfer this person allowed.
                                     "gate.stravaConnect", "gate.stravaSync",
                                     "gate.stravaBackground", "gate.aiReview",
-                                    "gate.coordinateWeather"])],
+                                    "gate.coordinateWeather",
+                                    // Separate from the gate: "is the feature
+                                    // on" and "did somebody agree to the
+                                    // transfer" are different facts, and only
+                                    // the second is consent (PRIV-04).
+                                    "consent.locationToWeather"])],
             retention: .indefinite,
             sharedWith: [],
             isExportable: true,
