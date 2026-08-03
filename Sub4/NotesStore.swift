@@ -1,0 +1,354 @@
+//
+//  NotesStore.swift
+//  Sub4
+//
+//  Session notes — the only original data the app holds.
+//
+//  WHY THIS EXISTS
+//  ---------------
+//  The plan was written by an AI from a standing start. Nothing in it was
+//  calibrated against how the sessions actually feel, and there is no coach to
+//  notice that week 9 is too much. The intent is a monthly review: is the block
+//  landing where it should, or does it need to get easier or harder?
+//
+//  That review needs something you can trend. Prose cannot be trended — thirty
+//  entries of "felt rough" tell you nothing you can plot against planned load.
+//  So a note is two numbers and a paragraph:
+//
+//    rpe   1–10, perceived effort, the standard Borg CR10 scale
+//    feel  easier / as expected / harder, RELATIVE TO WHAT THE PLAN ASKED
+//    text  free, for the reason — the outlier explainer
+//
+//  RPE and feel answer different questions and both are needed. A 9/10 RPE on a
+//  session prescribed as a hard interval set is the plan working. The same 9 on
+//  an easy 5 km is the plan failing. `feel` carries that comparison explicitly
+//  so the review does not have to reconstruct it from the prescription.
+//
+//  THIS IS NOT A CACHE
+//  -------------------
+//  Every other store on disk (activities, details, streams, athlete) is a
+//  mirror of something Strava can send again. This one is not. If it is lost it
+//  is gone. Three consequences, all deliberate:
+//
+//    1. `resetCache()` does not exist here, and NotesStore must never be wired
+//       into the "Rebuild activity cache" button in Settings.
+//    2. The schema check MIGRATES. It never clears. The DetailStore pattern of
+//       "version changed → delete the file" is right for a cache and would be
+//       data loss here.
+//    3. Writes are atomic and happen on every mutation, not on a timer. A note
+//       typed and then backgrounded is a note that survives.
+//
+//  KEYING
+//  ------
+//  By `session.uid` alone, exactly like Matcher.overrides. Verified against
+//  plan.json: 260 sessions, 260 distinct uids, none reused across weeks, and no
+//  uid maps to more than one date. Dates would be worse — the eight logged
+//  prologue sessions have `date: nil`.
+//
+//  The known exposure, shared with Matcher: if the plan is re-extracted and the
+//  uid slugs change, notes orphan. `orphans(in:)` below exists so that is
+//  detectable rather than silent, and the export carries the session text so a
+//  re-key is always possible from the exported file.
+//
+
+import Foundation
+
+@Observable
+final class NotesStore {
+
+    static let shared = NotesStore()
+
+    // MARK: The note
+
+    struct Note: Codable, Hashable, Identifiable {
+
+        /// How the session landed against what the plan asked for. Raw values
+        /// are stable strings, not ints — a future insertion in the middle of
+        /// this enum must not silently rewrite existing notes.
+        enum Feel: String, Codable, CaseIterable, Identifiable {
+            case easier
+            case expected
+            case harder
+
+            var id: String { rawValue }
+
+            var label: String {
+                switch self {
+                case .easier:   "Easier"
+                case .expected: "As expected"
+                case .harder:   "Harder"
+                }
+            }
+
+            /// Spelled out, for the export and for anything that reads the
+            /// value without the surrounding UI to give it context.
+            var longLabel: String {
+                switch self {
+                case .easier:   "Easier than the target"
+                case .expected: "About what the plan asked"
+                case .harder:   "Harder than the target"
+                }
+            }
+
+            var symbol: String {
+                switch self {
+                case .easier:   "arrow.down.right"
+                case .expected: "equal"
+                case .harder:   "arrow.up.right"
+                }
+            }
+        }
+
+        var sessionUid: String
+        /// Borg CR10. nil means "not answered" — an unanswered RPE is a real
+        /// state and must not collapse to 0, which would drag every average
+        /// down and read as an effortless session.
+        var rpe: Int?
+        var feel: Feel?
+        var text: String
+        var created: Date
+        var edited: Date
+
+        var id: String { sessionUid }
+
+        /// A note with nothing in it is not worth storing. Used to decide
+        /// whether saving is really a delete.
+        var isEmpty: Bool {
+            rpe == nil && feel == nil
+                && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        /// One-line summary for a collapsed row.
+        var summary: String {
+            var parts: [String] = []
+            if let rpe { parts.append("RPE \(rpe)") }
+            if let feel { parts.append(feel.label) }
+            let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty {
+                let firstLine = t.split(separator: "\n").first.map(String.init) ?? t
+                parts.append(firstLine)
+            }
+            return parts.joined(separator: " · ")
+        }
+    }
+
+    // MARK: State
+
+    private(set) var notes: [String: Note] = [:]
+
+    private let fileURL: URL
+    private let schemaKey = "notes.schema"
+    private let schemaVersion = 1
+
+    // MARK: Init
+
+    private init() {
+        let dir = (try? FileManager.default.url(for: .applicationSupportDirectory,
+                                                in: .userDomainMask,
+                                                appropriateFor: nil, create: true))
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        fileURL = dir.appendingPathComponent("notes.json")
+        load()
+        migrateIfNeeded()
+    }
+
+    // MARK: Reading
+
+    func note(for session: Session) -> Note? { notes[session.uid] }
+    func note(uid: String) -> Note? { notes[uid] }
+    func has(_ session: Session) -> Bool { notes[session.uid] != nil }
+
+    var count: Int { notes.count }
+
+    /// Every note by session uid. Used by the load engine, which needs them all
+    /// at once rather than one lookup per day.
+    var all: [String: Note] { notes }
+
+    /// Notes whose session is no longer in the plan. Non-empty means the plan
+    /// was re-extracted with different uid slugs; the notes are still on disk
+    /// and still in the export, they just no longer attach to anything.
+    func orphans(in plan: PlanStore) -> [Note] {
+        let live = Set(plan.plan.sessions.map(\.uid))
+        return notes.values
+            .filter { !live.contains($0.sessionUid) }
+            .sorted { $0.created < $1.created }
+    }
+
+    // MARK: Writing
+
+    /// Saves, or deletes when everything has been cleared. Returns the stored
+    /// note, or nil if the call removed it.
+    @discardableResult
+    func save(session: Session, rpe: Int?, feel: Note.Feel?, text: String) -> Note? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let candidate = Note(sessionUid: session.uid, rpe: rpe, feel: feel,
+                             text: trimmed,
+                             created: notes[session.uid]?.created ?? Date(),
+                             edited: Date())
+
+        if candidate.isEmpty {
+            // Clearing every field is how you delete a note. Keeping an empty
+            // record would put a note marker on a session with nothing behind
+            // it, which reads as a bug.
+            remove(session: session)
+            return nil
+        }
+
+        notes[session.uid] = candidate
+        save()
+        return candidate
+    }
+
+    func remove(session: Session) {
+        guard notes.removeValue(forKey: session.uid) != nil else { return }
+        save()
+    }
+
+    // MARK: Disk
+
+    private func load() {
+        guard let data = try? Data(contentsOf: fileURL) else { return }
+        notes = (try? JSONDecoder.sub4.decode([String: Note].self, from: data)) ?? [:]
+    }
+
+    private func save() {
+        guard let data = try? JSONEncoder.sub4.encode(notes) else { return }
+        try? data.write(to: fileURL, options: .atomic)
+    }
+
+    /// Migrates forward. Never clears — see the header. A future version 2 adds
+    /// its own branch here and rewrites the file in the new shape.
+    private func migrateIfNeeded() {
+        let stored = UserDefaults.standard.integer(forKey: schemaKey)
+        guard stored != schemaVersion else { return }
+        // 0 → 1 is a fresh install or the first build with notes. Nothing to do
+        // but stamp it; there is no earlier shape to convert from.
+        UserDefaults.standard.set(schemaVersion, forKey: schemaKey)
+    }
+
+    // MARK: Export
+    //
+    // The monthly review does not happen in the app — it happens by reading the
+    // data somewhere it can be sorted and charted. So the export is the point
+    // of the feature, not an afterthought, and it carries the PLANNED session
+    // alongside the note. A note without its prescription is unreadable: "RPE
+    // 8, harder" means nothing until you know it was an easy 5 km.
+
+    struct ExportRow {
+        var date: String
+        var week: String
+        var day: String
+        var discipline: String
+        var intensity: String
+        var title: String
+        var planned: String
+        var rpe: String
+        var feel: String
+        var text: String
+    }
+
+    /// Every note joined to its session, oldest first. Orphans are included
+    /// with blank plan columns rather than dropped.
+    func exportRows(plan: PlanStore) -> [ExportRow] {
+        // uniquingKeysWith, not uniqueKeysWithValues: the latter TRAPS on a
+        // duplicate key. Both are unique in the shipped plan.json (260/260
+        // sessions, 37/37 weeks), but plan.json is regenerated by a script, and
+        // a crash on the export button is not the way to find out that a slug
+        // collided. First wins; the export is a read.
+        let byUid = Dictionary(plan.plan.sessions.map { ($0.uid, $0) },
+                               uniquingKeysWith: { a, _ in a })
+        let weekLabel = Dictionary(plan.plan.weeks.map { ($0.uid, $0.label) },
+                                   uniquingKeysWith: { a, _ in a })
+
+        return notes.values.map { n -> ExportRow in
+            let s = byUid[n.sessionUid]
+            return ExportRow(
+                date: s?.date ?? "",
+                week: s.flatMap { weekLabel[$0.weekUid] } ?? "",
+                day: s?.day ?? "",
+                discipline: s?.discipline.rawValue ?? "",
+                intensity: s?.intensity?.rawValue ?? "",
+                title: s?.title ?? "",
+                planned: s?.detail ?? "",
+                rpe: n.rpe.map(String.init) ?? "",
+                feel: n.feel?.longLabel ?? "",
+                text: n.text)
+        }
+        .sorted {
+            // Undated prologue notes sort last rather than first, where an
+            // empty string would otherwise put them.
+            ($0.date.isEmpty ? "9999" : $0.date, $0.day)
+                < ($1.date.isEmpty ? "9999" : $1.date, $1.day)
+        }
+    }
+
+    /// RFC 4180 CSV. Written rather than pulled from a library because the one
+    /// rule that matters — double the quotes, wrap anything containing a comma,
+    /// quote or newline — is three lines, and free-text notes will contain all
+    /// three characters.
+    func csv(plan: PlanStore) -> String {
+        let header = ["date", "week", "day", "discipline", "intensity",
+                      "title", "planned", "rpe", "feel", "note"]
+        // No version banner line here, deliberately. A leading `#` comment is
+        // not RFC 4180 — every parser, including a spreadsheet, reads it as a
+        // one-column row. The version travels in the FILENAME instead, where it
+        // costs the format nothing.
+        var out = header.joined(separator: ",") + "\r\n"
+        for r in exportRows(plan: plan) {
+            let cells = [r.date, r.week, r.day, r.discipline, r.intensity,
+                         r.title, r.planned, r.rpe, r.feel, r.text]
+            out += cells.map { Self.escape($0) }.joined(separator: ",") + "\r\n"
+        }
+        return out
+    }
+
+    private static func escape(_ s: String) -> String {
+        guard s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r")
+        else { return s }
+        return "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    /// Writes the CSV to a temporary file and returns it, for the share sheet.
+    /// Temporary is right: the file is a transport, and the notes themselves
+    /// live in notes.json.
+    func writeCSV(plan: PlanStore) -> URL? {
+        let name = "sub4-notes-\(Self.stamp.string(from: Date()))-p\(AppVersion.patch).csv"
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
+        guard let data = csv(plan: plan).data(using: .utf8) else { return nil }
+        do {
+            try data.write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    private static let stamp: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+}
+
+// MARK: - Coders
+//
+// ISO 8601 rather than the default double-since-2001, so notes.json can be read
+// by anything — including whatever ends up doing the monthly review.
+
+extension JSONEncoder {
+    static var sub4: JSONEncoder {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        e.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return e
+    }
+}
+
+extension JSONDecoder {
+    static var sub4: JSONDecoder {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }
+}

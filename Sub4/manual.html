@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Sub4 Manual</title>
+<style>
+:root {
+  --bg:#0f1115; --card:#181b22; --line:#262b35; --dim:#8b93a1;
+  --ink:#e9ecf1; --accent:#fb923c; --green:#59d399;
+}
+* { box-sizing:border-box; -webkit-text-size-adjust:100%; }
+body {
+  margin:0; padding:20px 18px 96px;
+  background:var(--bg); color:var(--ink);
+  font:16px/1.62 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+h1 { font-size:30px; line-height:1.2; margin:8px 0 6px; letter-spacing:-0.02em; }
+h2 {
+  font-size:21px; margin:38px 0 12px; padding-top:18px;
+  border-top:1px solid var(--line); letter-spacing:-0.01em;
+}
+h3 { font-size:17px; margin:26px 0 8px; color:var(--green); }
+h1 + p > strong:first-child { color:var(--accent); }
+p, li { color:#d3d8e0; }
+strong { color:var(--ink); }
+a { color:var(--accent); text-decoration:none; }
+code {
+  font:13px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  background:var(--card); border:1px solid var(--line);
+  border-radius:5px; padding:1px 5px; color:var(--green);
+}
+pre {
+  background:var(--card); border:1px solid var(--line); border-radius:10px;
+  padding:13px 14px; overflow-x:auto; margin:14px 0;
+}
+pre code { background:none; border:0; padding:0; color:#c7cdd6; font-size:12.5px; }
+table { border-collapse:collapse; width:100%; margin:16px 0; font-size:14px; }
+th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line);
+         vertical-align:top; }
+th { color:var(--dim); font-size:12px; text-transform:uppercase;
+     letter-spacing:0.04em; font-weight:700; }
+td:first-child { color:var(--ink); }
+blockquote {
+  margin:16px 0; padding:10px 14px; border-left:3px solid var(--accent);
+  background:var(--card); border-radius:0 8px 8px 0; color:var(--dim);
+}
+hr { border:0; border-top:1px solid var(--line); margin:30px 0; }
+ul, ol { padding-left:22px; }
+li { margin:5px 0; }
+
+/* Contents */
+.toc { background:var(--card); border:1px solid var(--line);
+       border-radius:14px; padding:14px 16px; margin:18px 0 8px; }
+.toc h2 { border:0; padding:0; margin:0 0 8px; font-size:12px;
+          letter-spacing:0.06em; text-transform:uppercase; color:var(--dim); }
+.toc ol { margin:0; padding-left:20px; }
+.toc li { margin:6px 0; }
+.toc a { color:var(--ink); }
+
+/* Figures
+   65% and centred, not full width. A phone screenshot at full column width is
+   taller than the screen it is printed on, so it stops being a visual aid and
+   becomes an interruption. Centring it stops the leftover column reading as a
+   layout mistake — and tapping the image opens it full size, which is where
+   you actually read the detail. */
+figure { margin:18px 0; }
+/* Two shots of the same screen read as one unit, so tighten the gap between
+   them — the full 18px reads as two unrelated figures. */
+figure.shot + figure.shot { margin-top:10px; }
+figure img {
+  width:65%; display:block; margin:0 auto;
+  border-radius:10px; border:1px solid var(--line);
+  background:var(--card); cursor:zoom-in;
+}
+/* The caption is centred with the image and held to its width, so the two
+   read as one object rather than a picture with a paragraph under it. */
+figcaption {
+  color:var(--dim); font-size:13px; margin:7px auto 0; line-height:1.45;
+  max-width:78%; text-align:center;
+}
+
+/* Tap-to-enlarge overlay */
+#lightbox {
+  position:fixed; inset:0; z-index:50; display:none;
+  background:rgba(6,8,11,.94); -webkit-backdrop-filter:blur(3px);
+  align-items:center; justify-content:center; padding:16px;
+  cursor:zoom-out;
+}
+#lightbox.on { display:flex; }
+#lightbox img {
+  max-width:100%; max-height:100%; object-fit:contain;
+  border-radius:10px; border:1px solid var(--line);
+}
+#lightbox .hint {
+  position:absolute; bottom:22px; left:0; right:0; text-align:center;
+  color:var(--dim); font-size:12px; letter-spacing:.03em;
+}
+
+/* Back to top */
+#top-btn {
+  position:fixed; right:16px; bottom:24px; z-index:20;
+  background:var(--card); color:var(--accent);
+  border:1px solid var(--line); border-radius:999px;
+  padding:10px 15px; font-size:13px; font-weight:600;
+  box-shadow:0 6px 18px rgba(0,0,0,.5);
+  opacity:0; pointer-events:none; transition:opacity .18s ease;
+  text-decoration:none;
+}
+#top-btn.on { opacity:1; pointer-events:auto; }
+h2, h3 { scroll-margin-top:14px; }
+
+/* Build stamp */
+.build {
+  margin:34px 0 0; padding-top:14px; border-top:1px solid var(--line);
+  color:var(--dim); font-size:12px; letter-spacing:.03em;
+}
+</style>
+</head><body>
+<h1 id="sub4--manual">Sub4 — Manual</h1>
+<p><strong>A personal iOS training app for Operation Sub-4: a 34-week marathon block ending 21 March 2027, target 4:00:00 (5:41 /km).</strong></p>
+<p>Version: build of 29 July 2026 · 56 Swift files · ~17,600 lines · iOS 26 / SwiftUI</p>
+<hr />
+<div class="toc"><h2 id="contents">Contents</h2>
+<ol>
+<li><a href="#1-what-sub4-is">What Sub4 is</a></li>
+<li><a href="#2-the-four-principles">The four principles</a></li>
+<li><a href="#3-the-four-tabs">The four tabs</a></li>
+<li><a href="#4-settings">Settings</a></li>
+<li><a href="#5-how-completion-is-decided--the-matcher">How completion is decided — the matcher</a></li>
+<li><a href="#6-the-activity-sheet">The activity sheet</a></li>
+<li><a href="#7-structured-workouts-and-the-apple-watch">Structured workouts and the Apple Watch</a></li>
+<li><a href="#8-background-refresh">Background refresh</a></li>
+<li><a href="#9-session-notes">Session notes</a></li>
+<li><a href="#10-fuelling-race-day-and-the-warm-up">Fuelling, race day and the warm-up</a></li>
+<li><a href="#11-where-the-data-lives">Where the data lives</a></li>
+<li><a href="#12-first-time-setup">First-time setup</a></li>
+<li><a href="#13-troubleshooting">Troubleshooting</a></li>
+<li><a href="#14-what-it-deliberately-does-not-do">What it deliberately does not do</a></li>
+<li><a href="#15-reference-numbers-thresholds-files">Reference: numbers, thresholds, files</a></li>
+</ol></div><hr />
+<h2 id="1-what-sub4-is">1. What Sub4 is</h2>
+<p>Sub4 shows a marathon training plan and tells you, honestly, whether you are doing it.</p>
+<p>The plan was written as an HTML document — 34 weeks and 252 sessions across running, cycling, swimming, strength and rest — 260 counting the logged July prologue the document opens with — plus a library of 20 strength exercises with video links. A Python script (<code>extract_plan.py</code>) parses that HTML into <code>plan.json</code>, which ships inside the app.</p>
+<p>Everything you actually <em>did</em> comes from <strong>Strava</strong>. The app never asks you to log anything, never has a "mark as complete" button, and never records a workout itself. It reads your Strava activities and works out which planned session each one satisfies.</p>
+<p>The result is three answers, always available:</p>
+<ul>
+<li><strong>What am I meant to do today?</strong> (Today, Week, Plan)</li>
+<li><strong>Did I do it?</strong> (derived from Strava, never self-reported)</li>
+<li><strong>Am I on track overall?</strong> (Progress)</li>
+</ul>
+<p>And, since July 2026, a fourth: <strong>the plan can be sent to your Apple Watch as a structured workout</strong>, so intervals run themselves.</p>
+<hr />
+<h2 id="2-the-four-principles">2. The four principles</h2>
+<p>These explain most of the design decisions and are worth understanding before the feature list.</p>
+<h3 id="strava-is-the-single-source-of-truth">Strava is the single source of truth</h3>
+<p>There is no manual logging of <em>training</em> anywhere in the app. If a session shows as not done, the activity has not arrived from Strava. This removes an entire class of bug — two records of the same run that disagree — and means almost all of the local database is a <strong>cache</strong>, not an original.</p>
+<p>Four things are exceptions and exist only on the phone: your Strava and Claude API keys, any manual match corrections you make, <a href="#9-session-notes">session notes</a>, and the saved monthly reviews. The keys and the corrections are settings. The notes and the reviews are the original data the app holds — Strava cannot send them back, and a review cannot be re-run against the state it saw, so they are the only things here worth backing up. Delete everything else and the app rebuilds itself completely.</p>
+<h3 id="never-guess">Never guess</h3>
+<p>Where the plan states a number, the app uses it. Where the plan states nothing, the app says so rather than inventing something plausible.</p>
+<p>Concrete examples you will see:</p>
+<ul>
+<li>11 of 103 run sessions refuse to become structured workouts: ten written as <em>"(pointer) — by feel, leave the watch"</em>, plus the December field test. The app shows "No structure — run on feel" instead of guessing a distance.</li>
+<li>Seven sessions prescribe intervals in minutes (<code>4×8min @4:55–5:10</code>). Kilometre splits cannot isolate an 8-minute rep from the warm-up around it, so those sessions are read as <strong>reps</strong> instead — see <a href="#6-the-activity-sheet">§6</a>. Where the reps cannot be found, the target is shown and no verdict is claimed.</li>
+<li>Weekly planned distances marked <strong>≈</strong> are estimates. Where the plan writes work in minutes rather than kilometres (<code>4×8min @4:55–5:10</code>, or a pointer run "by feel, ~30–45 min"), the app converts it at the pace that session states — the easy band where it states none. Fifteen of the 34 weeks are marked ≈ — eleven hold work written in minutes, and four more (12, 14, 32 and 33) only because a session ends in a bare "+ CD" that states no distance. They were floors until patch 19, which was worse: ten pointer runs contributed nothing at all, and weeks 7–9 read "≥0 km planned" against roughly 23 km each.</li>
+</ul>
+<p>There is exactly one deliberate exception, and it is labelled in the interface: strides. The plan writes <code>4×20s strides</code> and never states the jog between, because to a runner it is implied. Parsed literally that becomes 80 seconds of continuous strides, which is not the session. The app assumes 60 seconds easy and <strong>says so on screen</strong>.</p>
+<h3 id="a-missed-match-is-visible-a-wrong-match-is-silent">A missed match is visible; a wrong match is silent</h3>
+<p>The matcher is deliberately conservative. When it is not confident, it leaves the activity unmatched and shows it separately under "Extra movement", where you will notice. A wrong match would quietly corrupt your adherence numbers for the rest of the block.</p>
+<p>You can always correct it by hand — see <a href="#5-how-completion-is-decided--the-matcher">§5</a>.</p>
+<h3 id="everything-that-moves-gets-counted">Everything that moves gets counted</h3>
+<p>Activities that do not match a planned session are not discarded. Walks, kayaking, rowing, commutes — all kept and shown. The app tracks your <strong>whole movement picture</strong>, not just the plan.</p>
+<hr />
+<h2 id="3-the-four-tabs">3. The four tabs</h2>
+<h3 id="today">Today</h3><figure class="shot"><img src="shot-today.png" alt="Today — a session card, the recorded strip beneath it, and the day's movement totals."><figcaption>Today — a session card, the recorded strip beneath it, and the day's movement totals.</figcaption></figure>
+<p>The main screen. Shows one day at a time; arrows step backwards and forwards.</p>
+<p><strong>Race day</strong> — first card on the screen, counting down to 21 March 2027 with the target beneath it. It is at the top because it is the only figure here that does not change when you step to another day, and it is what every session on the screen is for.</p>
+<p><strong>Header</strong> — the date, the week number and that week's theme (e.g. <em>"Week 1 of 34 · Restart · running only"</em>). Days before the plan starts show "Post-Ironman · before the plan".</p>
+<p><strong>Session cards</strong> — one per planned session for that day. Each shows discipline, title, and the plan's own description. Tapping the upper part opens the full session detail; when a session is done, a strip underneath shows what you actually recorded (distance, time, pace, heart-rate zone) and tapping <em>that</em> opens the activity sheet.</p>
+<p>Between the prescription and the recorded strip, each card prints the plan's own <strong>fuelling line</strong> — 180 of the 260 sessions carry one, and the 78 that read "water only" are drawn quieter, because they mean there is nothing to carry. The four sessions that rehearse or run the race-day warm-up carry a second line above it. Both tap through to the fuelling reference, the long-run ladder or the race-day warm-up (see <a href="#10-fuelling-race-day-and-the-warm-up">§10</a>).</p>
+<p>An empty circle means not recorded; a filled tick means matched. On the right of each card is the <strong>note button</strong> — a pencil when there is no note, a filled quote mark when there is; any note you have written is printed on the card itself. Long-press a card for <strong>"Fix match…"</strong> and the note action.</p>
+<p><strong>Load</strong> — one strip under the movement card, and only on days that recorded something: the day's training load, and either your freshness or your fitness. Two figures, no chart — Today answers "what am I meant to do and did I do it"; the curve lives on Progress.</p>
+<p>Three things it is careful about. The freshness half is <strong>gated</strong>: inside the warm-up, or with too much of the window filled in, it shows fitness instead, because a freshness figure computed from three weeks of history looks exactly like a real one and this is the screen read in a hurry. Stepping back through the days pairs that day's load with <strong>that day's</strong> freshness, not with this morning's. And a <strong>gap</strong> day — one where training happened and nothing could be scored — reads "—  not scored", never "0", because those are different facts.</p>
+<p><strong>Extra movement</strong> — everything recorded that day which is not part of the plan. Each row opens the same activity sheet.</p>
+<p><strong>Movement card</strong> — the day's totals: plan kilometres, extra kilometres, and step count from Apple Health.</p>
+<p><strong>Toolbar</strong> — the cloud icon on the left shows sync status and syncs when tapped. The gear on the right opens Settings. Pull down anywhere to sync.</p>
+<h3 id="week">Week</h3><figure class="shot"><img src="shot-week.png" alt="Week — seven days, each with its planned sessions and anything extra."><figcaption>Week — seven days, each with its planned sessions and anything extra.</figcaption></figure>
+<p>Seven days at a glance, one card per day, with arrows to move between weeks. Weeks run from the ingest cutoff (1 January 2026) through race week, so the Ironman build, the post-race block and the plan proper form one continuous sequence.</p>
+<p>Each day card lists its planned sessions (tap to open) and its extra activities. Every session line carries the same <strong>note button</strong>, <strong>fuelling line</strong> and <strong>warm-up line</strong> as Today, with the note's one-line gist printed beneath it. A summary at the top gives sessions done/total, recorded distance against planned, and a session count.</p>
+<p>Today's card is outlined in the accent colour. (It is the Plan tab that outlines the current <em>week</em>.)</p>
+<h3 id="plan">Plan</h3><figure class="shot"><img src="shot-plan.png" alt="Plan — the volume chart over all 34 weeks, with completion shown only for weeks that have started."><figcaption>Plan — the volume chart over all 34 weeks, with completion shown only for weeks that have started.</figcaption></figure><figure class="shot"><img src="shot-plan-chart.png" alt="The chart with a week selected — its tag, composition and total."><figcaption>The chart with a week selected — its tag, composition and total.</figcaption></figure>
+<p>The whole 34-week block, one row per week: week number, date range, theme, planned running kilometres, the plan's own all-sport hours for that week, and — for weeks that have already started — a done/total count.</p>
+<p><strong>Weeks are weighted the way the plan weights them.</strong> The source document badges every week — and that classification, not one invented in the app, is what drives how each row is drawn:</p>
+<table>
+<thead>
+<tr>
+<th>Weight</th>
+<th>Weeks</th>
+<th>Treatment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Hard</strong></td>
+<td>17 and 32 (peak long run), 20 (December test), 34 (race week)</td>
+<td>Filled badge, a coloured leading bar and a faint edge — amber for the peaks, green for the test and race week</td>
+</tr>
+<tr>
+<td><strong>Recovery</strong></td>
+<td>16 cutback, down, holiday and taper weeks</td>
+<td>Outlined badge, and the row itself dimmed</td>
+</tr>
+<tr>
+<td><strong>Ordinary</strong></td>
+<td>the other 14</td>
+<td>No badge, no bar, full weight</td>
+</tr>
+</tbody>
+</table>
+<p>Recovery weeks are dimmed rather than the hard weeks merely brightened. Sixteen of the 34 are cutbacks; at full weight the list would still read as uniform, because half of it would be competing for attention. The current week is never dimmed — you need to find it. Every badge carries its own text, so the colour is never the only signal.</p>
+<p>The same badge appears in the Week tab header.</p>
+<p>Weeks that have not begun deliberately show no completion figure. "0/8" for a week in November would read as failure rather than as "hasn't happened yet".</p>
+<p>Tap any week for its seven days — the day cards there are the same ones Week uses, note buttons included.</p>
+<p><strong>The volume chart</strong> sits above the 34 rows and answers the one question a list cannot: is the load going where it should? A bar per week, a line for that week's longest run on the same axis — never a second scale — and a dashed rule on the current week. Hard weeks are amber, recovery weeks grey, everything else green; the same information is in the week numbers and the legend, so nothing depends on colour alone. Faded bars are the estimates described above — a run written in minutes, or a bare WU/CD with no distance stated. Tap a bar for that week's tag, composition and total; the ✕ returns to the block summary.</p>
+<p><strong>What is in the bar: every distance the plan states.</strong> Running in kilometres, swimming in metres, cycling in kilometres if a plan ever writes it that way — 1,223 km of running and 38 km of swimming in this block, ≈1,261 km in total. Running is drawn from the baseline in the week's own colour and everything else is stacked above it in blue, so a second sport is visible rather than hidden inside a total. The legend names it (<em>Swim</em> here, <em>Other sports</em> once there are two).</p>
+<p><strong>What is never in it: time.</strong> A session written as <em>"2 h outdoor Z2"</em> contributes zero. Converting an hour to a distance needs a pace the plan does not state for that sport, and the guess would arrive wearing the same units as the measurements next to it — which is how a chart starts lying. The bike's 61.5 required hours are not in this chart at all; Progress counts them in hours, where they belong. Running is the single exception, because the plan does state a pace for the runs it writes in minutes, and those weeks are faded and marked ≈.</p>
+<p><strong>Strength and rest days are excluded by sport, and that is a correctness rule rather than a tidiness one.</strong> Two strength sessions in this plan quote a running distance — <em>"Heavy · 30 km long run this week — keep 2 RIR honest"</em> and <em>"Heavy · 30 km + MP Saturday — 2 RIR honest"</em>. That 30 km belongs to Saturday's run; a parser trusting the text over the discipline would add 60 km of squatting to the block.</p>
+<p>It is computed from the same estimator as everything else, not drawn. If the plan is ever rewritten — which is exactly what the monthly review exists to do — the chart moves with it. A picture of the plan that could disagree with the plan would be worse than no picture.</p>
+<p><strong>Fuelling &amp; race day</strong> sits between the chart and the week rows: products, per-session targets, the long-run ladder and the race-day schema (see <a href="#10-fuelling-race-day-and-the-warm-up">§10</a>).</p>
+<p><strong>Note on the kilometre figures:</strong> the plan's own weekly headline (e.g. <em>"~275 km"</em>) is <strong>total multisport volume including the daily bike commute</strong>. The Plan tab shows <em>running</em> kilometres, computed from the sessions themselves, and labels the plan's own number "km all sports" so the two can't be confused.</p>
+<h3 id="progress">Progress</h3><figure class="shot"><img src="shot-progress.png" alt="Progress — plan position, then commute, shoes and the trend charts."><figcaption>Progress — plan position, then commute, shoes and the trend charts.</figcaption></figure>
+<p>Everything about how you are tracking.</p>
+<p><strong>Where we are in the plan</strong> — week N of 34, days to race, and a row per sport showing what you have done against the block total, each in the unit the plan actually uses:</p>
+<table>
+<thead>
+<tr>
+<th>Sport</th>
+<th>Unit</th>
+<th>Block total</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Run</td>
+<td>km</td>
+<td>≈1,223 km</td>
+<td>the sport the plan states distances for week after week</td>
+</tr>
+<tr>
+<td>Bike</td>
+<td><strong>hours</strong></td>
+<td>61.5 h</td>
+<td>every bike session reads "2.5 h Z2" — never a distance</td>
+</tr>
+<tr>
+<td>Swim</td>
+<td>km</td>
+<td>38.0 km</td>
+<td>always written in metres</td>
+</tr>
+<tr>
+<td>Strength</td>
+<td>sessions</td>
+<td>52</td>
+<td>no distance, no consistent duration</td>
+</tr>
+</tbody>
+</table>
+<p>Optional sessions are excluded — 24 of the block’s 51 bike sessions are "opt." Zwift, worth 25.75 hours. Counting those would show you permanently behind for skipping work the plan calls optional. Bike totals also exclude your commute.</p>
+<p>Each row shows a bar for block progress and a line for whether you are on plan <strong>to date</strong>.</p>
+<p><strong>Fitness</strong> — the curve, above the review because the review cites it. Two lines and a shaded gap:</p>
+<ul>
+<li><strong>Fitness (CTL)</strong> in green, the 42-day average</li>
+<li><strong>Fatigue (ATL)</strong> in amber, the 7-day average</li>
+<li><strong>the gap between them is freshness</strong> — TSB is literally CTL minus ATL, so it is drawn as a distance rather than as a third line. Green above amber means fresh, and the size of the gap is the number</li>
+</ul>
+<p>One axis, because all three are the same units. The top of the axis is set from the data rather than left to Swift Charts, whose "nice number" ladder is 1 / 2 / 5 × 10ⁿ — a peak of 110 was getting an axis to 200 and leaving the top 45% of the card empty. A finer ladder rounds it to 120, and the same chart uses 92% of its height instead of 55%. The headline is CTL with its <strong>ramp</strong> — <em>"building · +2.4 CTL/week"</em> — since the ramp is what a build is actually steered by, and reading it off a slope by eye is not the same as being told. A dashed rule marks the day the plan starts, so the Ironman block draining away and the marathon block beginning are one picture. The window is 120 days: far enough back to show where you are starting from, short enough that a week is still a visible distance.</p>
+<p><strong>Tap the chart to open it in a floating panel.</strong> The panel is inset from every edge with the page dimmed behind it — edge-to-edge would read as changing screens, whereas a panel reads as something opened on top of what you were looking at. A small red ✕ closes it, and so does tapping off the panel.</p>
+<p><strong>The picture is pinned to the world, not to the screen.</strong> It is always the wide chart. Turning the phone does not rotate the graph — it rotates the phone around it: same layout, same aspect, same marks in the same places, and it simply becomes readable. That needs one correction that is not obvious, because the interface is itself allowed to rotate: a fixed quarter-turn would be applied on top of the system's own rotation, so the graph would be sideways in portrait and sideways again once you turned the phone. The rotation is therefore applied only while the interface is portrait, cancelling the system's rather than adding to it, and the panel is built long-side-to-long-side either way so nothing reflows. Expanded means <em>more</em>, not bigger: the fitness chart shows the whole series from January instead of 120 days, with a cursor you can drag to read fitness, fatigue and freshness for any single day; the commute chart shows a year instead of a quarter. The remaining Progress charts get the same treatment next.</p>
+<p><strong>When the curve is not worth believing, the caveat replaces the headline</strong> rather than sitting under it. Inside the 42-day warm-up, or with more than a fifth of the recent window filled in for days nothing could score, there is no bold number and no chart — just the sentence saying why. A fitness curve is the most authoritative-looking object this app can draw, and authority is exactly what it should not have while it is guessing.</p>
+<p><strong>Monthly review</strong> — the review window and how many flags it raised, opening the review itself (see <a href="#9-session-notes">§9</a>). A blocking flag is visible without opening it.</p>
+<p><strong>Sessions / adherence</strong> — completed non-rest sessions as a count and a percentage.</p>
+<p><strong>Commute</strong> — this week, this month, all time, plus a 12-week bar chart. Tap for the full view with the recent-rides list. A commute is any ride below the 10 km training threshold; the app tracks these itself rather than using Strava's commute flag, because flagged rides drop off the heatmap.</p>
+<p><strong>Shoes</strong> — every pair with a wear bar, amber past 600 km. Lifetime distance comes from Strava.</p>
+<p><strong>Weekly run volume</strong> — recorded running against planned running, per week.</p>
+<p><strong>Longest run</strong> — the marathon metric that matters most, with the peak the plan builds to.</p>
+<p><strong>Run pace</strong> — every run over 3 km plotted against the 5:41 target line.</p>
+<p><strong>Time in zone</strong> — sessions grouped by average heart-rate zone, with the bpm ranges on the axis.</p>
+<p>Charts hide themselves until there is enough data to read.</p>
+<hr />
+<h2 id="4-settings">4. Settings</h2><figure class="shot"><img src="shot-settings.png" alt="Settings — Strava open, everything else collapsed."><figcaption>Settings — Strava open, everything else collapsed.</figcaption></figure>
+<p>Reached by the gear in the top-right of any tab.</p>
+<p><strong>Strava</strong> (always open) — connection status, token validity, activities held, last check. Buttons to connect, refresh the sign-in, check now, or disconnect.</p>
+<p>Seven collapsed groups:</p>
+<ul>
+<li><strong>Strava API keys</strong> — client ID and secret, stored in the iOS Keychain</li>
+<li><strong>Claude API key</strong> — the key the monthly review's verdict uses, also in the Keychain, with the model name and a remove button</li>
+<li><strong>Apple Health</strong> — step-count access, privacy-string check, days of data</li>
+<li><strong>Training load</strong> — the two heart-rate constants every load figure is divided by (below)</li>
+<li><strong>Sync &amp; data</strong> — ingest date, background-refresh diagnostics, refresh zones and gear, rebuild the activity cache</li>
+<li><strong>Structured workouts</strong> — the parsing audit (see <a href="#7-structured-workouts-and-the-apple-watch">§7</a>)</li>
+<li><strong>Matching rules</strong> — the noise-filter thresholds</li>
+<li><strong>Session notes</strong> — how many you have written, and the CSV export (see <a href="#9-session-notes">§9</a>)</li>
+</ul>
+<p>Below the groups is <strong>Manual</strong> — this document, readable inside the app. At the foot, always open, is <strong>Version</strong> — see <a href="#15-reference-numbers-thresholds-files">§15</a>.</p>
+<p>Heart-rate zones and shoes are <strong>not</strong> here — they moved to Progress, because they are things you read rather than things you set.</p>
+<h3 id="training-load-constants">Training-load constants</h3>
+<p>The app is being extended with a training-load engine — Banister TRIMP, a fitness/fatigue curve, and load flags in the monthly review. This group is the first piece of it, and it exists before any load figure does, deliberately.</p>
+<p>TRIMP is an exponential function of <strong>(HR − rest) / (max − rest)</strong>. Both ends of that fraction are estimates and both sit under an exponent, so a maximum that is 15 bpm wrong does not shift the answer slightly — it bends the whole curve. Nothing computed downstream is worth reading until these two numbers are ones you recognise.</p>
+<p><strong>Max heart rate</strong> is the highest recorded across the last 12 months of activities, which is only correct if a genuinely maximal effort is inside that window — worth re-checking after the December test. The screen names the activity it came from, so you can go and look at it. Your own value overrides it and always wins. A <em>fall</em> in the observed figure is ignored: it means the hardest effort has aged out of the window, which is not evidence that your maximum dropped. A <em>rise</em> is announced, because every load computed under the old figure was computed under a number now known to be wrong.</p>
+<p><strong>Resting heart rate</strong> is the tenth percentile of each month's daily readings from Apple Health — the tenth percentile rather than the minimum, because a single low reading is a nap or a bad contact rather than your resting rate, and five days minimum before a month gets a value at all. It is stored <strong>per month</strong>, so a January session is scored against January's resting rate rather than today's. Months with no Health data borrow from the nearest month within three; beyond that there is a manual fallback.</p>
+<p>Health is read-only here as everywhere else, and iOS never reveals whether a read was granted — so if resting heart rate stays empty, the group says so rather than quietly scoring everything with a fallback.</p>
+<h3 id="the-load-series">The load series</h3>
+<p>Every day from the ingest cutoff to today carries a number, computed in one currency.</p>
+<p><strong>The currency is Banister exponential TRIMP</strong>, from heart rate: <code>Σ minutes × ΔHR × 0.64 × exp(w × ΔHR)</code>, where <code>ΔHR = (HR − rest) / (max − rest)</code> clamped to 0–1, and <code>w</code> is 1.92. One computation for every sport, which is the entire reason for choosing it — a run, a ride and a swim can be added together honestly because the sum is of the same thing. TrainingPeaks adds rTSS to sTSS to power TSS; Strava mixes power load with HR load in one curve. Both are adding numbers from separately anchored scales, and neither can say what the sum means.</p>
+<p><strong>Each session lands on exactly one rung, and the rung is shown next to the number:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Rung</th>
+<th>Where it comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>HR trace</strong></td>
+<td>integrated over the cached per-bin heart rate, weighted by each bin's own duration</td>
+</tr>
+<tr>
+<td><strong>avg HR</strong></td>
+<td>the session's mean heart rate against its moving time. Arrives with the activity at no API cost, and is where every day starts before the detail queue reaches it</td>
+</tr>
+<tr>
+<td><strong>power</strong></td>
+<td>for an outdoor ride with a meter and no heart rate at all — TSS from average power, converted (below)</td>
+</tr>
+<tr>
+<td><strong>unscored</strong></td>
+<td>nothing usable. <strong>Not zero</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The two HR rungs are not interchangeable, and the difference is measurable. Simulated against the app's own resampling: a steady hour agrees between the two to <strong>0.1%</strong>, but an interval session with the <em>same average heart rate</em> scores <strong>8% higher</strong> from the trace. The exponential is convex — the average of the exponent is not the exponent of the average — so the session average systematically under-scores exactly the sessions that were hardest.</p>
+<p><strong>Four day states, and the distinction between two of them is the point:</strong></p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>measured</strong></td>
+<td>everything eligible that day scored</td>
+</tr>
+<tr>
+<td><strong>partial</strong></td>
+<td>something could not be scored — the day's figure is a floor</td>
+</tr>
+<tr>
+<td><strong>rest</strong></td>
+<td>nothing eligible happened. A true zero, and it belongs in the curve</td>
+</tr>
+<tr>
+<td><strong>gap</strong></td>
+<td>things happened and none of them scored. <strong>Not a zero</strong></td>
+</tr>
+</tbody>
+</table>
+<p>A fitness curve is an exponential average over a series with no holes, so rest days must be present as real zeros — treating "no row" as "no load" is the most common way a home-rolled curve goes wrong. But a gap is not a zero, and a curve drawn across one is wrong for six weeks afterwards. Gaps are counted, shown, and travel with every total on screen rather than being available somewhere else.</p>
+<p><strong>What counts as load:</strong> anything that could satisfy a planned session, plus anything of 10 km or more in one recorded session. So a 12 km walk counts and the walk to the shop does not; a training ride counts and the 3 km commute does not. Zwift counts — an optional session is still real load.</p>
+<p><strong>Power, for the rides that have no heart rate.</strong> About half the long rides in this history carry a meter and no heart-rate trace — a 120 km ride on 29 May, four hours, 188 W, scoring nothing. Those are now scored:</p>
+<pre><code>TSS = (average watts / FTP)² × hours × 100
+load = TSS × k
+</code></pre>
+<p>Three things about that are worth knowing.</p>
+<p><strong>It uses average power, not normalised power.</strong> NP needs a 30-second rolling mean, and traces are stored as 300 equal-<em>distance</em> bins — on a four-hour ride that is roughly 48 seconds per bin, longer than the window NP averages over. Any "NP" computed from it would be an average of averages wearing a technical name. Average power is on the activity itself, so this works on the whole history immediately without waiting for a backfill. The cost is stated: NP ≥ AP always, and the gap grows with variability, so a surging ride reads low. The trace is used to <em>check</em> that rather than assume it — above a coefficient of variation of 0.5 the figure is flagged as a floor.</p>
+<p><strong><code>k</code> is measured, not assumed.</strong> TSS and TRIMP are separately anchored scales, and adding them is the exact unit mismatch the single-currency decision exists to prevent. So every ride carrying <em>both</em> a heart rate and a meter has both numbers computed, and the median of their ratios is the conversion. Below five such rides there is no factor and power-only rides stay unscored. The factor, the number of rides behind it and how much they disagree are all on the diagnostics screen.</p>
+<p><strong>It is outdoor rides only, and that gate is load-bearing.</strong> Runs carry device watts too — running power from the watch. Divided by a <em>cycling</em> FTP that is an intensity factor near 1.0 for an easy run, and multiplying it by a factor measured on a bike produces a number several times the truth. Trainer rides are out for the same reason the calibration leaves them out: a turbo is a different power source. The FTP itself must be the measured one from Strava — an estimated FTP is derived from ride data, so scoring rides against it would be scoring them against themselves. Since the intensity factor is squared, a 10% error in FTP is a 20% error in the load.</p>
+<p><strong>Why RPE is not the third rung.</strong> The source spec makes RPE × minutes the fallback, and never addresses the problem with that: RPE 5 for an hour is 300, while an hour at ΔHR 0.7 is 108. Substituting one for the other is the same unit mismatch the single-currency decision exists to prevent, and it would put a step in the curve wherever a note happened to exist. So RPE is computed and carried alongside, never summed. Once enough sessions carry both an RPE and a heart-rate score, their ratio is measurable and the conversion can come from a number derived here rather than assumed.</p>
+<p><strong>Nothing is persisted.</strong> There is no <code>load.json</code>. Every input — activities, traces, constants — is already on disk and already complete, and the whole series rebuilds in milliseconds. A cache would add exactly one thing: the possibility of being stale without anyone noticing. Instead the inputs are fingerprinted, and the series rebuilds whenever the fingerprint moves — which includes a trace arriving, so a day silently upgrades from <em>avg HR</em> to <em>HR trace</em> as the backfill drains.</p>
+<p><strong>Settings → Training load → Load diagnostics</strong> is the raw layer, and it ships rather than being a debug screen to delete later. Day states, per-session rungs and flags, what could not be scored and why, and a <strong>self-test</strong> that runs the published Banister worked example — 60 minutes at HR 150 with a resting rate of 50 and a maximum of 190 scores 108.1 — along with the clamps and helpers around it. If any of those stop matching, every load figure in the app is wrong, and the screen says so.</p>
+<p>Worth watching in the first two weeks: the gap count, the trace-versus-average mix (which should fall towards all-trace as the backfill drains), and anything flagged <em>above HR max</em>.</p>
+<h3 id="the-fitness-curve">The fitness curve</h3>
+<p>Two exponential moving averages of the daily series and the difference between them:</p>
+<pre><code>CTL[d] = CTL[d−1] + (load[d] − CTL[d−1]) / 42     fitness
+ATL[d] = ATL[d−1] + (load[d] − ATL[d−1]) / 7      fatigue
+TSB[d] = CTL[d−1] − ATL[d−1]                      freshness
+</code></pre>
+<p>That is the entire model. Everything interesting about it is in what the series contains, which is why the load engine and its four day-states were built first.</p>
+<p><strong>TSB uses yesterday's values</strong>, and that is not a rounding detail. This morning's session is already in today's fatigue, so a same-day figure would tell you that you are tired because you trained — which you knew. Yesterday's difference is the state you <em>started</em> today in.</p>
+<p><strong>42 is a time constant, not a half-life.</strong> The half-life is 42 × ln2 ≈ <strong>29 days</strong>. The tooltip claiming your fitness halves in six weeks is wrong, and it is everywhere.</p>
+<p><strong>Gaps are imputed and counted.</strong> A gap day is the one case with no honest answer: zero is wrong because the training happened, and skipping it is wrong because an average needs a value. So it takes the mean of the trailing seven usable days, is marked as filled in, and the count travels with the curve. Above a fifth of the <em>last 42 days</em> filled in — the window the averages actually reflect, not the whole series — the curve stops claiming to be one. A partial day is never imputed: something scored and something did not, so it reads low and says so.</p>
+<p><strong>Warm-up is measured from the first day with training in it</strong>, not from the start of the series. The series runs from 1 January whether or not anything was recorded, so counting days would measure the calendar — and on a fresh install a curve made entirely of rest days would report itself as forty-two days of evidence.</p>
+<p><strong>The freshness word is descriptive, never advice</strong> — Deep, Loaded, Steady, Fresh. The literature is explicit that race-day TSB targets are folklore, so the app says what the number is and stops.</p>
+<p><strong>The ramp rate</strong> — CTL now minus CTL seven days ago — is the figure the monthly review will act on.</p>
+<h3 id="two-things-the-constants-screen-will-tell-you-and-both-matter">Two things the constants screen will tell you, and both matter</h3>
+<p><strong>Max heart rate can contradict your own zones.</strong> If the highest rate ever recorded sits at or below the floor of your Strava Z5, it cannot be a maximum: you have said you train above it. The app flags this rather than correcting it, because an estimate from zone boundaries would be another guess wearing the same units. It matters more than anything else here — an easy run at HR 130 with a resting rate of 50 scores <strong>1.88</strong> TRIMP per minute against a maximum of 160 and <strong>1.28</strong> against 180. A 20 bpm error moves every figure by 47%, and not uniformly.</p>
+<p><strong>Power is now fetched, and not yet used.</strong> Several long rides in this history carry a power meter and no heart rate at all, which makes them unscorable — and the bike is 61.5 hours of this plan. Watts are collected from now on so that those rides can eventually count; converting them into the heart-rate currency needs a factor measured from rides that have <em>both</em>, and those have to be collected first. It is fetched now rather than later because a full trace backfill is already running, and asking afterwards would mean paying for all 250 traces twice.</p>
+<p><strong>The version number</strong> changes when max heart rate changes, and only then. That single change invalidates every load ever computed, which is what one counter is the right shape for. Resting heart rate is not global — the current month's percentile drifts as readings arrive — so its staleness will be tracked by storing the figure used on each load row rather than by bumping a shared counter that would mark January stale every morning.</p>
+<hr />
+<h2 id="5-how-completion-is-decided--the-matcher">5. How completion is decided — the matcher</h2>
+<p>For any given day the matcher takes the planned sessions and the Strava activities and pairs them up.</p>
+<p><strong>Step 1 — manual overrides win outright.</strong> Anything you set by hand is honoured, including "explicitly nothing".</p>
+<p><strong>Step 2 — rest days complete themselves.</strong> A rest day is done by doing nothing; there is never an activity to find.</p>
+<p><strong>Step 3 — automatic matching by discipline, best fit first.</strong> Sessions with a stated distance are resolved before vague ones so they claim the right activity. Where several candidates exist, the one closest to the planned distance wins.</p>
+<p>Anything left over becomes "Extra movement".</p>
+<h3 id="the-eligibility-filter">The eligibility filter</h3>
+<p>Before matching, activities are filtered so the daily commute is never mistaken for a training ride:</p>
+<table>
+<thead>
+<tr>
+<th>Discipline</th>
+<th>Minimum to be matchable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ride</td>
+<td>10 km</td>
+</tr>
+<tr>
+<td>Run</td>
+<td>1.5 km</td>
+</tr>
+<tr>
+<td>Swim</td>
+<td>400 m</td>
+</tr>
+<tr>
+<td>Strength</td>
+<td>5 minutes</td>
+</tr>
+</tbody>
+</table>
+<p>These come from real history: your commute is consistently 3.2–4.2 km and every genuine training ride is over 20 km, so 10 km separates them with a wide margin.</p>
+<p><strong>Failing this filter does not discard anything.</strong> It only means the activity cannot satisfy a planned session. It still appears under Extra movement and still counts toward total volume.</p>
+<h3 id="fixing-a-match">Fixing a match</h3>
+<p>Long-press a session card → <strong>"Fix match…"</strong> → choose the correct activity, or "none". Overrides are stored locally and permanently, and survive re-syncs. A hand-matched session shows a small hand icon.</p>
+<h3 id="duplicate-uploads">Duplicate uploads</h3>
+<p>Two activities of the same sport starting within 10 minutes of each other with similar distance are treated as one upload. This is not theoretical — 21 April 2026 has the same ride recorded twice by two devices, 61.7 km and 60.4 km.</p>
+<hr />
+<h2 id="6-the-activity-sheet">6. The activity sheet</h2><figure class="shot"><img src="shot-activity.png" alt="The activity sheet — route, profile panels and splits for one run."><figcaption>The activity sheet — route, profile panels and splits for one run.</figcaption></figure>
+<p>Opens from Today, Week or Plan wherever something is recorded, and from any extra-movement row. Three layouts, because three disciplines ask different questions.</p>
+<p><strong>Header</strong> — name, type, date and start time.</p>
+<p><strong>Hero figures</strong>, chosen per discipline:</p>
+<ul>
+<li><strong>Run</strong> — distance, moving time, pace</li>
+<li><strong>Ride</strong> — distance, moving time, speed in km/h</li>
+<li><strong>Swim</strong> — distance in metres, moving time, pace per 100 m</li>
+<li><strong>Strength / other</strong> — duration, average heart rate, energy</li>
+</ul>
+<p><strong>Verdict card (runs only, and only when the plan states a measurable target).</strong> Reads the plan's own wording and judges the right part of the run:</p>
+<table>
+<thead>
+<tr>
+<th>Plan wording</th>
+<th>What gets measured</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>8 km @5:45–6:00</code></td>
+<td>the whole run</td>
+</tr>
+<tr>
+<td><code>18 km, last 5 km @5:38–5:43</code></td>
+<td>the closing 5 km</td>
+</tr>
+<tr>
+<td><code>2k WU + 2×4km @5:38–5:43</code></td>
+<td>the best continuous 4 km</td>
+</tr>
+<tr>
+<td><code>26 km, middle 10 km @…</code></td>
+<td>the best continuous 10 km</td>
+</tr>
+<tr>
+<td><code>2k WU + 4×8min @4:55–5:10</code></td>
+<td>the reps themselves — see below</td>
+</tr>
+</tbody>
+</table>
+<p>Timed intervals are measured over the reps, never over the run. Judging the whole run against a threshold target would fail a session executed perfectly, and kilometre splits cannot separate an 8-minute rep from the warm-up around it. So the verdict is computed on the work alone — <em>"4 reps · 32:04 of work at 5:02 /km · target 4:55–5:10 · three of four inside the band"</em> — and the warm-up, the floats and the cool-down are excluded from it.</p>
+<p><strong>No verdict is claimed unless the rep count matches the plan.</strong> Three reps where the plan asked for four means either the session changed or the split is wrong, and nothing in the data says which. The reps are shown; the judgement is withheld and the reason is printed.</p>
+<p><strong>Planned session</strong> — the plan's wording, verbatim.</p>
+<p><strong>Route</strong> — the GPS trace. Online it is a real map; offline it falls back to the same coordinates drawn as a bare line on the card, because MapKit with no network is a grey grid that reads as broken. Start and finish are labelled.</p>
+<p><strong>Profile</strong> — heart rate, pace, elevation and grade against distance. Chips toggle each on and off; several can be shown at once as stacked panels sharing one distance axis. Drag any panel and a cursor line appears on all of them, each panel's header shows its value at that point, and <strong>a red dot tracks along the route on the map above</strong>.</p>
+<p>Elevation and grade carry a caption when the numbers say "flat" — e.g. <em>"Elevation spans just 3 m over 5.5 km — GPS jitter, not terrain."</em></p>
+<p><strong>Kilometre splits</strong> — drawn as deviation from a baseline rather than bars from zero, because every kilometre of a marathon block is roughly the same length and zero-origin bars would say nothing. The baseline is the plan's target where one exists, otherwise that session's own median. Cool means faster, warm means slower, and both are labelled.</p>
+<p><strong>Three ways to read a run.</strong> The splits card carries a <code>Km · Laps · Reps</code> control, and only offers the modes that have something behind them:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Where it comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Km</strong></td>
+<td>Strava's <code>splits_metric</code> — moving time per kilometre. Always present</td>
+</tr>
+<tr>
+<td><strong>Laps</strong></td>
+<td>the marks the watch recorded. Nothing is inferred. Uniform 1 km auto-laps are ignored: ten of those on an easy run are not ten reps</td>
+</tr>
+<tr>
+<td><strong>Reps</strong></td>
+<td>segmented out of the pace trace, for a session the plan writes as intervals</td>
+</tr>
+</tbody>
+</table>
+<p>A session prescribed in minutes opens on its reps; everything else opens on kilometres. Tapping the control overrides that for as long as the sheet is open.</p>
+<p><strong>How reps are found, and when the app refuses to find them.</strong> The run is walked <strong>in order</strong> and cut where the pace changes — not searched for its fastest four eight-minute windows, which is the tempting version and returns a flattering answer for any run, including one where the reps were never done. A rep run slowly stays in the list, slow.</p>
+<p>The threshold comes from the plan where the plan states it (<code>3×6min @4:55–5:10 (2min float @6:00–6:15)</code> gives both bands, and the cut goes between them) and from the run's own slow quartile where it does not — only one of this block's timed sessions states a float pace, so the second case is the usual one. The threshold actually used is printed under the table as a number, every time, along with where it came from.</p>
+<p>It gives up, and says so, in four situations: the trace is too coarse to hold a rep (fewer than six samples in one — the two <code>3×1min</code> primers in weeks 20 and 34); the cut does not separate anything, so more than 70% of the run reads as work; nothing at all separates out; or it finds more than twice the reps asked for. Tested against simulated executions of all five 5–15 minute sessions in this block, at eight different noise levels: rep count exact every time, durations within three seconds, pace within two seconds per kilometre.</p>
+<p><strong>The last few metres are not a kilometre.</strong> A run of 5,020 m leaves a 20 m fragment at the end, and there is no pace in 20 m of GPS — the sample is shorter than the error around it, so a second either way swings the derived figure by minutes. Anything under <strong>100 m is dropped from the panel</strong>. It used to be shown, and it printed raw seconds in a column of paces (<em>"0:04"</em>): the table scales its bars to the largest deviation on show, so one impossible value flattened every real kilometre into a stub and the panel stopped meaning anything.</p>
+<p>A genuine part-kilometre — the 532 m at the end of a 5.5 km run — is still shown, labelled with its distance and dimmed, but it no longer sets that scale either. A 300 m sprint finish is a real number and belongs on screen; letting it size the gutter would cause the same failure one order of magnitude down. Those bars clip at the edge instead. The header's pace still counts every metre run, fragment included, because that figure is total time over total distance.</p>
+<p><strong>Heart rate</strong> — average and maximum with the zone chip.</p>
+<p><strong>Intervals</strong> — swim laps, with pace per 100 m.</p>
+<p><strong>Best efforts</strong> — Strava's own, for runs.</p>
+<p><strong>Footer</strong> — elevation, energy, power, cadence, shoe, device, elapsed time, and any description.</p>
+<h3 id="what-whole-run-is-measured-against">What "whole run" is measured against</h3>
+<p>For a target the plan states over the whole run, the verdict uses the <strong>average moving pace</strong> — total moving time over total distance, the same arithmetic that produces the pace in the header. The two can never disagree.</p>
+<p>It briefly did not. The verdict used the <em>median kilometre split</em>, which on a 5 km run is simply the third kilometre with the other four discarded, and produced a card reading 6:03 /km at the top with "5:57 — faster than asked" underneath. Both numbers were correct; they were answers to different questions, and neither said which.</p>
+<p>The sentence under the verdict is also measured against the <strong>bound you crossed</strong>, not the middle of the range. A run 3 s/km outside a 6:00 bound was being described as "10 s/km faster than the middle of the range" — a larger, different miss than the one being flagged, on the same card.</p>
+<p>Targets over part of a run — <em>last 5 km</em>, <em>best 4 km</em> — are averages over exactly those kilometres, and the card names which in the top-right.</p>
+<h3 id="why-splits-come-from-strava-and-the-profile-comes-from-streams">Why splits come from Strava and the profile comes from streams</h3>
+<p>Splits use Strava's <code>splits_metric</code>, which reports <strong>moving time</strong> per kilometre. Deriving them from the raw stream instead folds stopped time into the average — measured that way, a 5:58/km run reads as 6:58/km.</p>
+<p>The profile chart is different: it integrates nothing. Every sample is an instantaneous reading at a known distance, so a stop shows as a genuine dip rather than contaminating its neighbours. Same data, different job, opposite answer.</p>
+<hr />
+<h2 id="7-structured-workouts-and-the-apple-watch">7. Structured workouts and the Apple Watch</h2>
+<p>The plan writes sessions as prose. Sub4 reads that prose into a structure and can send it to the Watch, where Apple's own Workout app runs it with pace alerts.</p>
+<h3 id="the-parser">The parser</h3><figure class="shot"><img src="shot-workout.png" alt="A parsed interval session. Blocks are unrolled so there is nothing to interpret."><figcaption>A parsed interval session. Blocks are unrolled so there is nothing to interpret.</figcaption></figure>
+<p>Every run session is read into warm-up, interval blocks, steady steps and cool-down, each with a goal (distance, time or open) and an optional pace band.</p>
+<p><strong>92 of 103 run sessions parse. 11 refuse</strong> — the "(pointer) — by feel" runs and the field test, which state no structure on purpose.</p>
+<p>Worked example:</p>
+<pre><code>Plan:   MP intervals — 2k WU + 2×4km @5:38–5:43 (1k float) + CD
+
+Parsed: Warmup       2 km        no target
+        Rep 1 of 2   4 km        5:38–5:43 /km
+        Float        1 km        no target
+        Rep 2 of 2   4 km        5:38–5:43 /km
+        Cooldown     open        no target
+</code></pre>
+<p><strong>The float goes between reps, not after the last one.</strong> Two reps take one float — 5 steps and 11 km, not 6 and 12.</p>
+<p><strong>The float's own pace is now carried through.</strong> Where the plan writes <code>(2min float @6:00–6:15)</code>, the recovery step used to reach the watch with no target at all: the parser searched for the pace <em>after</em> the closing bracket, which is where the next step begins. Fixed in patch 23 — the float on every sent workout now carries the pace the plan wrote for it.</p>
+<p>Assumptions the parser makes are always shown on screen:</p>
+<ul>
+<li>Range distances (<code>6–8 km</code>) use the <strong>lower bound</strong>. A workout that ends early is recoverable; one demanding more than the plan asked is not.</li>
+<li>Blocks stated inside a total (<code>24 km, 2×6km</code>) are part of the 24, not extra. The lead-in and cool-down split the remainder, and one side absorbs any odd 100 metres so the parts always sum to the stated total.</li>
+<li>Strides get an assumed 60-second jog.</li>
+</ul>
+<h3 id="checking-it">Checking it</h3><figure class="shot"><img src="shot-audit.png" alt="The whole-block audit, page 1 — 103 sessions grouped into 54 distinct shapes."><figcaption>The whole-block audit, page 1 — 103 sessions grouped into 54 distinct shapes.</figcaption></figure><figure class="shot"><img src="shot-audit2.png" alt="Page 2 — the tail of the list, down to the shapes that occur once."><figcaption>Page 2 — the tail of the list, down to the shapes that occur once.</figcaption></figure>
+<p><strong>Any run session → "Structured workout"</strong> shows the plan's original wording, the parse step by step, and every assumption.</p>
+<p><strong>Settings → Structured workouts → Workout parsing</strong> lists all 103 sessions grouped by identical parse (54 distinct shapes), so the whole block can be audited in one scroll rather than one session at a time.</p>
+<p>Do this before sending anything. A mis-parsed workout is worse than no workout, because standing outside at seven in the morning you will follow whatever the Watch says.</p>
+<h3 id="sending">Sending</h3><figure class="shot"><img src="shot-watch.png" alt="The week on the Watch, in Apple's own Workout app."><figcaption>The week on the Watch, in Apple's own Workout app.</figcaption></figure>
+<p><strong>"Send this week to the Watch"</strong> on any structured session. It requests permission, clears anything previously scheduled, and pushes every parseable run in the next 7 days — Apple's ceiling is 15 workouts over that window.</p>
+<p>They appear in the Watch's own <strong>Workout</strong> app under <strong>Sub4</strong>, named by day and distance (<code>Tue · Easy 5 km</code>). No Watch app needs to be installed: WorkoutKit pushes from the phone into the system Workout app.</p>
+<p>The app reads back what the Watch actually holds rather than trusting its own send loop, so a rejected workout is reported rather than silently missing.</p>
+<h3 id="what-cannot-be-sent">What cannot be sent</h3>
+<ul>
+<li><strong>Swimming</strong> — Apple does not support custom swim workouts. All 26 swim sessions stay manual.</li>
+<li><strong>Strength</strong> — time or open goals only, no meaningful targets.</li>
+<li>The 11 by-feel runs, by design.</li>
+</ul>
+<hr />
+<h2 id="8-background-refresh">8. Background refresh</h2>
+<p>Sub4 pulls new activities while closed, so it is usually current when you open it.</p>
+<p><strong>Settings → Sync &amp; data</strong> shows four things:</p>
+<ul>
+<li><strong>Next window</strong> — the earliest iOS will consider a wake-up. "none pending" in orange means nothing is queued and the counters will never move.</li>
+<li><strong>Woken by iOS</strong> — real wake-ups. This is the only number that proves scheduling works.</li>
+<li><strong>Last run</strong> and <strong>Result</strong></li>
+<li><strong>"Run the task now"</strong> — runs the identical work by hand. It deliberately does <strong>not</strong> increment the counter, because it proves the work is sound and nothing about whether iOS ever calls you.</li>
+</ul>
+<h3 id="honest-expectations">Honest expectations</h3>
+<p><code>BGAppRefreshTask</code> is <strong>opportunistic</strong>. "Next window" is a floor, not an appointment — iOS decides when, learning from when you open the app. In practice a handful of times a day. It will <strong>not</strong> pick up a run minutes after you finish it.</p>
+<p>Nothing fires while the app is force-quit from the app switcher, or in Low Power Mode. So don't swipe Sub4 away out of tidiness.</p>
+<p>A background run gets roughly 30 seconds, which is why it fetches the activity list plus at most three activity details, against 30 in the foreground. Overrunning does not just fail — repeated overruns make iOS schedule the app less often.</p>
+<hr />
+<h2 id="9-session-notes">9. Session notes</h2>
+<h3 id="why-they-exist">Why they exist</h3>
+<p>This plan was written by an AI from a standing start. Nothing in it was calibrated against how the sessions actually feel, and there is no coach watching to notice that week 9 is too much or that the easy runs have become pointless. The plan is a hypothesis.</p>
+<p>Notes are the evidence for testing it. The intent is a review roughly once a month: <strong>is the block landing where it should, or does it need to get easier or harder?</strong> That question is unanswerable from Strava data alone. Strava knows you ran 5 km at 6:04/km. It does not know that it cost you everything to do it.</p>
+<h3 id="what-a-note-holds">What a note holds</h3>
+<p>Three fields, all optional. A note can be written with two taps and no typing.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>What it is</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Effort</strong></td>
+<td>RPE 1–10, the Borg CR10 scale</td>
+<td>The number the review actually trends. Anchors are printed under the row — an uncalibrated scale produces numbers that mean nothing later</td>
+</tr>
+<tr>
+<td><strong>Against the target</strong></td>
+<td>Easier / As expected / Harder</td>
+<td>Not how hard it was — whether it was harder or <em>than what the plan asked</em>. This is the field that says whether the plan is wrong</td>
+</tr>
+<tr>
+<td><strong>What happened</strong></td>
+<td>Free text</td>
+<td>The outlier explainer: legs, weather, sleep, shoes</td>
+</tr>
+</tbody>
+</table>
+<p>Effort and "against the target" answer different questions, which is why both are there. RPE 9 on a prescribed threshold set is the plan working. RPE 9 on an easy 5 km is the plan failing. Only the second field distinguishes them without you having to reconstruct the prescription from memory a month later.</p>
+<p>Free text alone would not do. Thirty entries of "felt rough" is a diary, not data — nothing in it can be plotted against planned load, and the monthly review would mean re-reading everything and forming an impression. The two structured fields are what make the question answerable.</p>
+<h3 id="writing-one">Writing one</h3><figure class="shot"><img src="shot-note.png" alt="The note editor — RPE, how it felt, and the free text."><figcaption>The note editor — RPE, how it felt, and the free text.</figcaption></figure>
+<p>Every session row in the app carries a small pencil button on the right. Tap it to write a note; once one exists the button turns into a filled quote mark and opens what you wrote. That is the same control on <strong>Today</strong>, <strong>Week</strong> and <strong>Plan</strong>, and inside the session detail sheet — there is no screen where notes are unavailable.</p>
+<p>Notes are also <strong>readable without opening anything</strong>: Today prints the note on the session card, Week and Plan print a one-line gist under the session. The point of writing them is that they get re-read a month later, and making that cost two taps per session is how a month of notes goes unread.</p>
+<p>The prescription is shown at the top of the editor while you write, because both structured fields are judgements <em>relative to it</em>.</p>
+<p>Rest days can carry notes too. "Rested, calf still sore" is exactly the kind of entry the review needs.</p>
+<h3 id="deleting">Deleting</h3>
+<p>Clear all three fields and save — that removes the note. Or use <strong>Delete note</strong> at the foot of the editor, which asks first.</p>
+<h3 id="the-monthly-review">The monthly review</h3><figure class="shot"><img src="shot-review.png" alt="The monthly review — coverage first, then the flags."><figcaption>The monthly review — coverage first, then the flags.</figcaption></figure><figure class="shot"><img src="shot-review2.png" alt="The window's own numbers, week by week."><figcaption>The window's own numbers, week by week.</figcaption></figure>
+<p><strong>Progress → Monthly review.</strong> Everything in it is computed by the app — no model, no inference. Adherence, mean RPE and pace deviation are arithmetic; planned running volume is derived from the session text and is marked ≈ in the 15 weeks where part of it was prescribed in minutes rather than kilometres. A wrong number there would look exactly like a right one.</p>
+<p>It opens with <strong>coverage</strong>, deliberately, before any conclusion: how many sessions in the window were recorded, and how many carry a note. A review reading "adherence 92%" invites action; "31% of sessions have a note" tells you that 92% is describing a third of the block. Trust first, then findings, then detail.</p>
+<p>Then <strong>flags</strong> — fixed rules over the computed facts, at three levels:</p>
+<table>
+<thead>
+<tr>
+<th>Level</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>blocking</strong></td>
+<td>The data cannot support a conclusion. Too few sessions, too few notes, or adherence below the floor — a plan that is not being followed cannot be judged too hard or too easy</td>
+</tr>
+<tr>
+<td><strong>warning</strong></td>
+<td>A real calibration signal: easy runs averaging above the RPE ceiling, a session type mostly marked harder than asked, running volume short of plan</td>
+</tr>
+<tr>
+<td><strong>note</strong></td>
+<td>Worth knowing, not acting on. Includes "nothing flagged", which is a result rather than an absence of one</td>
+</tr>
+</tbody>
+</table>
+<p>Then adherence by discipline, running volume per week against the session-derived plan, effort grouped by session type, and pace against the plan's own bands for the sessions where it states one.</p>
+<p><strong>The thresholds are not part of the plan.</strong> Easy-run RPE ceiling 5.5, adherence floor 70%, volume shortfall 15%, "harder than asked" share 40%, note-coverage floor 50%, minimum 8 sessions — plus the two that fire the mirror case, an "easier than asked" share of 50% and a too-easy RPE ceiling of 3.5. These are training-literature conventions and they are wrong for somebody. All eight are named constants in <code>Review.Thresholds</code>; the first six are printed at the foot of the exported report next to the flags they fired.</p>
+<p><strong>Window.</strong> The last 4, 8 or 12 plan weeks that have <em>finished</em>. Finished, not elapsed — a week still running would count its unstarted sessions as missed and show a collapse in adherence every time you opened it mid-week.</p>
+<p>Sample sizes are worth knowing before you read too much into a month: a 4-week window holds a median of 12 run sessions but only <strong>5 easy runs</strong>, and easy runs are the most diagnostic group. Over 8 weeks that becomes 12. If a finding matters, check it at 8 weeks before acting on it.</p>
+<h3 id="asking-for-a-verdict">Asking for a verdict</h3><figure class="shot"><img src="shot-proposal.png" alt="A returned proposal: the verdict, each change with its evidence, and what the guardrails discarded."><figcaption>A returned proposal: the verdict, each change with its evidence, and what the guardrails discarded.</figcaption></figure>
+<p><strong>Progress → Monthly review → Ask for a verdict.</strong> Optional, off until you add a key, and it does <strong>not</strong> change anything.</p>
+<p>What gets sent is the evidence pack — the computed figures — never your raw activity data. The model is asked to reason about numbers that have already been worked out, not to do arithmetic. A wrong figure in Review.swift would be visible; a wrong figure inside a paragraph of a model's reasoning would not.</p>
+<p>The reply is a structured document, not prose: a verdict, a confidence, reasoning, and any proposed changes with the evidence each one rests on.</p>
+<table>
+<thead>
+<tr>
+<th>Verdict</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>No change</strong></td>
+<td>The block is landing correctly. This is the expected answer most months</td>
+</tr>
+<tr>
+<td><strong>Not enough evidence</strong></td>
+<td>Cannot tell. Deliberately distinct from <em>no change</em> — conflating them would let a logging problem read as a clean result</td>
+</tr>
+<tr>
+<td><strong>Easier / Harder / Mixed</strong></td>
+<td>An adjustment is indicated</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The guardrails are code, not requests in the prompt.</strong> A model asked monthly whether a plan needs changing will find something to say every month, and eight reasonable-looking nudges is a periodised block pulled apart one step at a time. So, after the reply is decoded:</p>
+<ul>
+<li>A change may only rewrite one session's prescription text, or mark it skipped. It cannot add, move or delete sessions</li>
+<li><strong>Eight weeks are locked</strong>: the last three — the taper and race week — and the five planned down weeks 21, 22, 23, 27 and 31, which §11 of the plan names as load-bearing. That is 57 of the 260 sessions. A down week's purpose is the absence of load, so adding any is the most damaging edit available. Each rejection says which of the two rules it hit</li>
+<li>A change with no cited evidence is discarded. "Athletes generally benefit from…" is a statement about athletes, not about this block</li>
+<li>A change naming a session that does not exist is discarded — that is a model inventing an id</li>
+<li>A change that rewrites a session to nothing is discarded — an empty replacement is not the same as marking it skipped</li>
+<li>Only one change per session survives</li>
+</ul>
+<p>Anything discarded is <strong>shown</strong>, with the reason. A filter you cannot see is indistinguishable from a reviewer that proposed nothing.</p>
+<p>The button is disabled while any <strong>blocking</strong> flag is up. Spending a call on a window the app has already judged unable to support a conclusion produces a confident answer about nothing, and that answer then sits in the history looking like evidence.</p>
+<p>Every run is kept — verdict, reasoning, and the evidence pack it was given — under <em>Previous reviews</em>. One verdict is an opinion; six in sequence tell you whether this is working. If every month says something different, that is a finding about the reviewer, and the answer is to stop running it.</p>
+<p><strong>Nothing is applied.</strong> The plan ships read-only inside the app and there is no override layer. A proposal is something you read and act on yourself.</p>
+<p><strong>The key:</strong> Settings → Claude API key, stored in the Keychain like the Strava secret. Get one at console.anthropic.com — this is the Claude API, billed separately from a Claude subscription, at roughly <strong>$0.07 per review on <code>claude-opus-5</code></strong>, about $0.60 for the whole block.</p>
+<h3 id="the-export--this-is-the-point">The export — this is the point</h3>
+<p>Two exports, for two purposes.</p>
+<p><strong>The review itself</strong> — Progress → Monthly review → Export. Markdown: every computed figure, the raw notes, and the thresholds the flags fired on. Readable on its own, and deliberately shaped as an evidence pack: it is the first half of what <em>Ask for a verdict</em> actually sends. The prompt adds where the window sits in the block, the weeks still to come, the rewritable sessions with their uids, and the locked weeks. The model reasons about computed facts, never about raw data it has to do arithmetic on.</p>
+<p><strong>The notes</strong> — Settings → Session notes → Export notes as CSV, for when you want to sort and chart them yourself. Each row joins a note to the session it was written about:</p>
+<p><code>date, week, day, discipline, intensity, title, planned, rpe, feel, note</code></p>
+<p>The <code>planned</code> column is what makes the file readable. "RPE 8, harder" says nothing on its own; "RPE 8, harder, <em>Easy 5 km @6:00–6:15</em>" says the easy runs are not easy.</p>
+<p>Notes for sessions no longer in the plan (which happens only if the plan is rebuilt with different identifiers) are counted as <strong>orphaned</strong> in Settings and still included in the export, with the plan columns blank.</p>
+<h3 id="back-these-up">Back these up</h3>
+<p>Notes are the only original data in this app. Everything else — activities, splits, streams, zones, shoes — is a copy of something Strava will send again on request. Notes are not. If the app is deleted, they are gone. Export occasionally and keep the file somewhere.</p>
+<hr />
+<h2 id="10-fuelling-race-day-and-the-warm-up">10. Fuelling, race day and the warm-up</h2>
+<p>The source document carries two whole sections on fuelling that reached nothing for months. 180 of the 260 sessions have their own fuelling line in the HTML, and neither the extractor nor the app ever looked at them. All of it is now in.</p>
+<h3 id="the-line-on-every-session">The line on every session</h3>
+<p>Every session card on <strong>Today</strong>, <strong>Week</strong> and <strong>Plan</strong>, and the session sheet, shows the plan's own fuel line — <em>"Water only"</em>, <em>"~65 g/hr · Leppin + gels — see ladder"</em>, <em>"~80 g/hr · race fuel"</em>. It sits between the prescription and what was recorded, because it is read before the session, not after.</p>
+<p>"Water only" is drawn quieter than the rest. It is 78 of the 180 lines and it says there is nothing to carry; rendering it as loudly as a 65 g/hr long run would train you to stop reading the strip.</p>
+<p>Lines that say <em>"see ladder"</em> are tappable and open the reference <strong>scrolled to the ladder</strong>. The one session reading <em>"Full race-day schema"</em> opens the race-day screen directly — as its own destination, not stacked on top of the fuelling reference. The race-day screen links onward to the warm-up and back to the fuelling reference, so neither is a dead end.</p>
+<p>The 80 sessions with no line are the strength and rest days — travel and walks included — plus the eight logged July prologue sessions, which predate the plan. The plan gives them none, and the app invents nothing.</p>
+<h3 id="the-reference--plan--fuelling--race-day">The reference — Plan → Fuelling &amp; race day</h3><figure class="shot"><img src="shot-fuel.png" alt="Fuelling — products, per-session targets and the long-run ladder."><figcaption>Fuelling — products, per-session targets and the long-run ladder.</figcaption></figure><figure class="shot"><img src="shot-raceday.png" alt="Race day — the ten-step timeline from waking to the finish."><figcaption>Race day — the ten-step timeline from waking to the finish.</figcaption></figure>
+<ul>
+<li><strong>Your products</strong> — the three, with carbs, caffeine and sodium per unit</li>
+<li><strong>What to take per session</strong> — a g/hr figure for each session type, from water-only up to ~80 g/hr</li>
+<li><strong>Long-run fuelling ladder</strong> — five steps from 12–14 km to 30–32 km</li>
+<li><strong>The timing rule</strong> — start within the first 20–30 min, then every 20–30 min, always with water</li>
+<li><strong>The caffeine caution</strong> — shown in the warning colour, never collapsed</li>
+</ul>
+<h3 id="the-race-day-warm-up">The race-day warm-up</h3><figure class="shot"><img src="shot-warmup.png" alt="The warm-up, counting down to the gun."><figcaption>The warm-up, counting down to the gun.</figcaption></figure>
+<p><strong>Plan → Fuelling &amp; race day → Race day → The warm-up</strong>, and from the three long runs that rehearse it.</p>
+<p>The finding behind it is that <strong>you need very little</strong>. The plan's opening pace of 5:43–5:45 sits inside your easy band of 5:45–6:00, and "first 5 km controlled, settle to 5:39–5:41" is already 35 minutes of progressive effort. Anything more spends glycogen needed at 32 km — which the plan itself names as where the race is decided. Elites warm up more only because their opening pace is near threshold.</p>
+<p>So the protocol solves logistics rather than physiology: a countdown from −3:00 to the gun, a six-minute standing mobility circuit, a <strong>conditional</strong> jog that gets skipped on a mild morning or a long corral wait, continuous small movement from −10, and optional short accelerations. The conditional steps are marked <strong>OPTIONAL</strong> rather than hidden — deciding whether to do them is the protocol.</p>
+<p>Four condition cards cover cold, mild, warm and a long corral wait. The circuit note carries the stretching rule: holds under 60 s per muscle cost a trivial 1–2% of force, holds over 60 s cost 4–7.5%, so nothing is held past 30 s.</p>
+<p><strong>Four sessions link to it</strong>, and the app reads that list from the sessions rather than restating it, so it cannot drift from the plan:</p>
+<table>
+<thead>
+<tr>
+<th>Session</th>
+<th>Marker</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Peak long run (21 Nov), race sim (6 Mar), last long run (13 Mar)</td>
+<td><strong>REHEARSE</strong>, in the rehearsal blue</td>
+</tr>
+<tr>
+<td>The marathon itself (21 Mar)</td>
+<td><strong>WARM-UP</strong>, in the accent colour</td>
+</tr>
+</tbody>
+</table>
+<p>Race day was missed in the first version — the one morning the protocol is actually run was the only session in the plan with no link to it. The label changes with the session because calling race day a rehearsal would be exactly the wrong word on the morning it matters, and the extractor now fails the build if race day carries no marker.</p>
+<p>This is §10b of the source document — written into the plan HTML and extracted like everything else, rather than added directly to the app. The app's claim is that it shows you the plan; content arriving by another route would quietly weaken that.</p>
+<h3 id="race-day">Race day</h3>
+<p>Its own screen: carb-load from 2–3 days out, the day before, breakfast 3 h out, the gel at −15 min, then the ten-step during-race timeline with a running carb total, plus hydration and salts, the pacing plan, and the on-the-day caution.</p>
+<h3 id="nothing-here-is-computed">Nothing here is computed</h3>
+<p>Every figure is the plan's own text, carried through unchanged. It would be easy to parse "~65 g/hr" into a number — and pointless, since the app has no use for a fuelling figure it can calculate with, and a parser is a place for the plan's meaning to be quietly altered. The only interpretation is three substring checks: does the line point at the ladder, does it point at the race-day schema, and does it say "water only".</p>
+<hr />
+<h2 id="11-where-the-data-lives">11. Where the data lives</h2>
+<p>No database. Plain JSON files, plus UserDefaults for small keys and the Keychain for secrets.</p>
+<table>
+<thead>
+<tr>
+<th>What</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>The plan — 34 weeks, 260 sessions, exercise library</td>
+<td><code>plan.json</code> <strong>inside the app bundle</strong>, read-only</td>
+</tr>
+<tr>
+<td>Strava activities</td>
+<td><code>activities.json</code></td>
+</tr>
+<tr>
+<td>Splits, route, laps, best efforts, calories</td>
+<td><code>details.json</code></td>
+</tr>
+<tr>
+<td>Heart rate / speed / altitude / grade / GPS profiles</td>
+<td><code>streams.json</code></td>
+</tr>
+<tr>
+<td>Heart-rate zones and shoes</td>
+<td><code>athlete.json</code></td>
+</tr>
+<tr>
+<td>Max and resting heart rate, per month</td>
+<td><code>constants.json</code></td>
+</tr>
+<tr>
+<td>Training load, per day and per session</td>
+<td>nowhere — rebuilt from the above whenever they change</td>
+</tr>
+<tr>
+<td><strong>Session notes — the only original data here</strong></td>
+<td><code>notes.json</code></td>
+</tr>
+<tr>
+<td>Monthly review</td>
+<td>computed on demand, never stored</td>
+</tr>
+<tr>
+<td><strong>Review proposals and the evidence each was given</strong></td>
+<td><code>proposals.json</code> — original data</td>
+</tr>
+<tr>
+<td>Sync cursor, match overrides, skip lists, background counters</td>
+<td>UserDefaults</td>
+</tr>
+<tr>
+<td>Strava client ID + secret, access + refresh tokens</td>
+<td><strong>Keychain</strong></td>
+</tr>
+<tr>
+<td>Claude API key</td>
+<td><strong>Keychain</strong></td>
+</tr>
+<tr>
+<td>Step counts</td>
+<td>nowhere — queried live from HealthKit</td>
+</tr>
+</tbody>
+</table>
+<p>All of it lives inside the app's container and is <strong>deleted with the app</strong>. Device backups include it; deleting and reinstalling does not. Everything except <code>notes.json</code> can be rebuilt from Strava — that one cannot, so export it now and then (<a href="#9-session-notes">§9</a>).</p>
+<p>Size: about 1.3 MB now, roughly 11 MB by race day. Every save rewrites the whole file and every cold launch parses it, which will add 100–200 ms to launch by March. The fix when it matters is to split streams into one file per activity and load lazily — not a database.</p>
+<h3 id="strava-api-budget">Strava API budget</h3>
+<p>Two requests per activity: <code>/activities/{id}</code> for splits and route, <code>/activities/{id}/streams</code> for the profile. Limits are 100 requests per 15 minutes and 1,000 per day.</p>
+<p>The queue fetches at most 30 activities per drain (60 requests) with 250 ms between, resuming across launches. It stops on a 429 and puts the id back. A full historical backfill is about 120 requests — two drains.</p>
+<hr />
+<h2 id="12-first-time-setup">12. First-time setup</h2>
+<ol>
+<li>
+<p><strong>Strava API keys.</strong> At <a href="https://www.strava.com/settings/api">strava.com/settings/api</a>, create an application. Set the Authorization Callback Domain to <code>localhost</code>. Copy the Client ID and Client Secret into Settings → Strava API keys. They go into the Keychain, never into the source.</p>
+</li>
+<li>
+<p><strong>Connect Strava.</strong> Settings → Connect Strava. Approve the scopes <code>activity:read_all</code> and <code>profile:read_all</code> — the second one is what supplies heart-rate zones and shoe mileage.</p>
+</li>
+<li>
+<p><strong>Allow Health access</strong> when prompted, for step counts.</p>
+</li>
+<li>
+<p><strong>Wait for the backfill.</strong> Pull to refresh on Today, wait a couple of minutes, pull again. Two drains cover the whole history.</p>
+</li>
+<li>
+<p><strong>Send workouts to the Watch</strong> (optional). Open any run session → Structured workout → Send this week to the Watch. Approve the permission request.</p>
+</li>
+</ol>
+<h3 id="xcode-notes">Xcode notes</h3>
+<ul>
+<li>Install patches with <code>unzip -j -o &lt;zip&gt; '*.swift' -d &lt;source folder&gt;</code> — <strong>never</strong> Xcode's "Add Files", which creates duplicate references and "invalid redeclaration" errors.</li>
+<li>Two Info.plist requirements: <code>NSHealthShareUsageDescription</code> (without it, HealthKit raises an Objective-C exception that Swift cannot catch), and <code>BGTaskSchedulerPermittedIdentifiers</code> containing <code>be.sub4.refresh</code>.</li>
+<li>Two capabilities: HealthKit, and Background Modes → Background fetch.</li>
+<li>One URL type: scheme <code>sub4</code>, for the Strava OAuth callback.</li>
+<li>On a free Apple ID the provisioning profile expires after <strong>7 days</strong> and the app stops launching until rebuilt.</li>
+</ul>
+<hr />
+<h2 id="13-troubleshooting">13. Troubleshooting</h2>
+<p><strong>A session shows as not recorded but the activity is in Strava.</strong>
+Pull to refresh. If it is still unmatched, the eligibility filter or the discipline mapping is the cause — long-press → Fix match… to correct it.</p>
+<p><strong>A run matched but there is no verdict card.</strong>
+The verdict needs kilometre splits, which arrive through the detail queue. Opening the sheet jumps the queue; give it a moment and reopen. If the session's target is stated in minutes, there is no verdict by design.</p>
+<p><strong>The map is grey, or the route is a bare line.</strong>
+No network. The bare line is the deliberate offline fallback. Also check Xcode → Devices → Device Conditions is not running a network-link condition — a started "100% packet loss" profile looks exactly like Strava being broken.</p>
+<p><strong>Steps are always zero.</strong>
+Check Settings → Apple Health → "Privacy string" says <em>present</em>. If it says MISSING, <code>NSHealthShareUsageDescription</code> is absent from Info.plist. iOS never reveals whether read access was granted, so also check Settings → Privacy &amp; Security → Health → Sub4.</p>
+<p><strong>"Woken by iOS" stays at 0.</strong>
+Look at "Next window" first. If it says "none pending", nothing is queued — background the app once to submit a request. If a real time is shown and the counter is still 0 after two days of normal use, scheduling is not working. Also confirm Background App Refresh is on globally and for Sub4, and that you are not force-quitting the app.</p>
+<p><strong>A Strava banner reads just "cancelled".</strong>
+Fixed in the 28 July build. It was never a Strava failure: every network call runs inside a <code>.task {}</code> or <code>.refreshable {}</code>, iOS cancels those whenever the view goes away — a tab switch is enough — and <code>URLError.cancelled</code> has the bare word "cancelled" as its description. The catch block wrote it straight into the banner. Cancellation is now recognised as "called off", not "failed", and leaves no trace. The request simply runs again on the next trigger.</p>
+<p><strong>Did that patch actually install?</strong>
+Settings → Version → <em>Source patch</em>. Every code patch bumps that number. If it still shows the old one after an unzip and a rebuild, the files did not reach the project folder — check for numbered duplicates in Downloads (<code>…-2.zip</code>), which is the usual cause.</p>
+<p><strong>A screen opens and a second one slides up over it.</strong>
+Fixed in patch 18. The marathon's fuel line opened the fuelling reference, which then presented race day on top of itself from <code>onAppear</code> — two sheets deep, with Done peeling back to a screen you never asked for. Wanting to <em>land</em> somewhere is a routing decision, so the caller now picks the destination and no screen presents another on its own behalf.</p>
+<p><strong>A button opens nothing — a sheet that should appear doesn't.</strong>
+Fixed in the 28 July build. SwiftUI presents one sheet per view, and Today had six <code>.sheet</code> modifiers stacked on one view: only the outermost reliably worked, and which one that was depended on the order they happened to be written in. Notes could be written from Week (where the note sheet was outermost) and not from Today (where it was buried in the middle). Every screen now drives its sheets from a single modifier and an explicit <code>Route</code> enum, so the set of things a screen can present is visible in one place.</p>
+<p><strong>401 from Strava / Connect does nothing.</strong>
+The refresh token has been revoked. Settings → Disconnect, then Connect again.</p>
+<p><strong>Zones or shoes are empty.</strong>
+They need the <code>profile:read_all</code> scope. If you connected before it was requested, disconnect and reconnect once.</p>
+<p><strong>"Developer App Certificate is not trusted" after deleting the app.</strong>
+Settings → General → VPN &amp; Device Management → Developer App → trust the certificate, then run again from Xcode.</p>
+<p><strong>Console noise from MapKit</strong> — <code>PerfPowerTelemetry</code>, <code>GeoGL zone allocator</code>, <code>default.csv</code>, <code>CAMetalLayer setDrawableSize 0</code> — is all Apple's, none of it is Sub4. The app logs nothing; it speaks through the interface.</p>
+<hr />
+<h2 id="14-what-it-deliberately-does-not-do">14. What it deliberately does not do</h2>
+<ul>
+<li><strong>No manual logging.</strong> Everything comes from Strava.</li>
+<li><strong>No plan editing.</strong> <code>plan.json</code> is read-only and ships in the bundle. Changing the plan means regenerating the file and reinstalling. This is the largest structural gap in the app.</li>
+<li><strong>No multi-device sync.</strong> Install it on a second device and it starts empty and builds its own copy.</li>
+<li><strong>No swim workouts on the Watch.</strong> Apple does not support them.</li>
+<li><strong>No verdicts on sessions the plan describes by feel.</strong></li>
+<li><strong>No pace judgement on rides or swims.</strong> The plan gives them no numeric targets, so inventing one would be dishonest.</li>
+<li><strong>No power or cadence on rides.</strong> Strava returns neither — there are no sensors on the bike.</li>
+</ul>
+<hr />
+<h2 id="15-reference-numbers-thresholds-files">15. Reference: numbers, thresholds, files</h2>
+<h3 id="the-plan">The plan</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Weeks</td>
+<td>34 (Mon 27 Jul 2026 – Sun 21 Mar 2027)</td>
+</tr>
+<tr>
+<td>Race</td>
+<td>Sunday 21 March 2027</td>
+</tr>
+<tr>
+<td>Target</td>
+<td>4:00:00 — 5:41 /km (341 s/km)</td>
+</tr>
+<tr>
+<td>Sessions</td>
+<td>260 — 105 run, 56 strength, 53 bike, 26 swim, 20 rest. The 34 plan weeks hold 252 of them; the other 8 are the logged July prologue</td>
+</tr>
+<tr>
+<td>Exercise library</td>
+<td>20 movements with video links</td>
+</tr>
+<tr>
+<td>Running volume</td>
+<td>≈1,223 km (15 of the 34 weeks contain an estimate)</td>
+</tr>
+<tr>
+<td>Planned distance, all sports</td>
+<td>≈1,261 km — running plus 38.0 km of swimming; no time is converted to distance</td>
+</tr>
+<tr>
+<td>Required bike</td>
+<td>61.5 h across 27 sessions (a further 25.75 h optional)</td>
+</tr>
+<tr>
+<td>Swimming</td>
+<td>38.0 km</td>
+</tr>
+<tr>
+<td>Required strength</td>
+<td>52 sessions</td>
+</tr>
+<tr>
+<td>Peak long run</td>
+<td>34 km, excluding race day</td>
+</tr>
+</tbody>
+</table>
+<h3 id="thresholds">Thresholds</h3>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Value</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Minimum ride to be a session</td>
+<td>10 km</td>
+<td>commutes are 3.2–4.2 km, training rides over 20 km</td>
+</tr>
+<tr>
+<td>Minimum run</td>
+<td>1.5 km</td>
+<td>every recorded run was real training</td>
+</tr>
+<tr>
+<td>Minimum swim</td>
+<td>400 m</td>
+<td></td>
+</tr>
+<tr>
+<td>Minimum strength</td>
+<td>5 min</td>
+<td></td>
+</tr>
+<tr>
+<td>Ingest from</td>
+<td>1 January 2026</td>
+<td>moved back from 15 June so the training-load engine has 42+ days of seeded history before the block; about 250 activities</td>
+</tr>
+<tr>
+<td>Plan starts</td>
+<td>27 July 2026</td>
+<td></td>
+</tr>
+<tr>
+<td>Duplicate window</td>
+<td>10 min, ±15 % distance</td>
+<td>two devices, one ride</td>
+</tr>
+<tr>
+<td>Shoe warning</td>
+<td>600 km</td>
+<td>most road shoes are done between 600 and 800</td>
+</tr>
+<tr>
+<td>Background task ID</td>
+<td><code>be.sub4.refresh</code></td>
+<td>must match Info.plist exactly</td>
+</tr>
+</tbody>
+</table>
+<h3 id="versioning">Versioning</h3>
+<p>Three numbers, at the foot of Settings, because "which build is this?" is three questions and one number cannot answer all of them.</p>
+<table>
+<thead>
+<tr>
+<th>Shown as</th>
+<th>Where it comes from</th>
+<th>What it tells you</th>
+<th>How it fails</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>App</strong></td>
+<td><code>CFBundleShortVersionString</code> and <code>CFBundleVersion</code> — Xcode's General tab, Version and Build</td>
+<td>What the app <em>is</em>, semantically</td>
+<td>Only changes when someone remembers to change it</td>
+</tr>
+<tr>
+<td><strong>Source patch</strong></td>
+<td><code>AppVersion.patch</code>, a constant bumped by every code patch</td>
+<td>Which source is actually compiled in</td>
+<td>Only correct if that patch installed — which is exactly the point: if it reads lower than the patch you just applied, <strong>the files did not land</strong></td>
+</tr>
+<tr>
+<td><strong>Built</strong></td>
+<td>The app binary's modification date</td>
+<td>When this was compiled</td>
+<td>It is the file's mtime, not a recorded build timestamp. Accurate for a locally built app; a Run Script build phase writing into Info.plist would be a guarantee</td>
+</tr>
+</tbody>
+</table>
+<p>No two of them can be wrong in the same way, so at least one is always trustworthy.</p>
+<p>The version is stamped into everything the app emits: the monthly review's Markdown carries it under the title, and the notes CSV carries the patch number in its filename (<code>sub4-notes-2026-08-31-p11.csv</code>). An exported analysis you cannot trace to a build is unfalsifiable a month later — thresholds and estimators change.</p>
+<p>The manual carries its own build number, stamped by <code>build_manual.py</code>. The app appends its version to that same line when the manual loads, so one line shows both and a mismatch is visible: manual build and source patch are kept in step, so if they disagree, one of the two files in the last patch did not install.</p>
+<p><strong>To set the App version:</strong> Xcode → select the Sub4 target → General → Identity. <em>Version</em> is the semantic one (1.0, 1.1), <em>Build</em> is an integer you increment. Neither is required for the app to run — both simply read "—" in Settings until set.</p>
+<h3 id="source-files">Source files</h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Sub4App.swift</code></td>
+<td>App entry, background-task registration</td>
+</tr>
+<tr>
+<td><code>ContentView.swift</code></td>
+<td>Tab shell, settings-gear modifier</td>
+</tr>
+<tr>
+<td><code>Models.swift</code></td>
+<td><code>plan.json</code> mirror, date helpers</td>
+</tr>
+<tr>
+<td><code>PlanStore.swift</code></td>
+<td>Plan loading, week lookup, planned volume per discipline</td>
+</tr>
+<tr>
+<td><code>Activity.swift</code></td>
+<td>Strava activity model, eligibility rules</td>
+</tr>
+<tr>
+<td><code>ActivityStore.swift</code></td>
+<td>Incremental sync, dedup, cache</td>
+</tr>
+<tr>
+<td><code>StravaAuth.swift</code></td>
+<td>OAuth, token refresh, Keychain</td>
+</tr>
+<tr>
+<td><code>Matcher.swift</code></td>
+<td>Session ↔ activity matching, overrides</td>
+</tr>
+<tr>
+<td><code>ActivityDetail.swift</code></td>
+<td>Splits, best efforts, laps, polyline decoding</td>
+</tr>
+<tr>
+<td><code>ActivityStreams.swift</code></td>
+<td>HR/speed/altitude/grade/GPS profiles, resampling</td>
+</tr>
+<tr>
+<td><code>DetailStore.swift</code></td>
+<td>The throttled fetch queue</td>
+</tr>
+<tr>
+<td><code>AthleteStore.swift</code></td>
+<td>Heart-rate zones, gear</td>
+</tr>
+<tr>
+<td><code>HealthStore.swift</code></td>
+<td>Step counts from HealthKit</td>
+</tr>
+<tr>
+<td><code>BackgroundRefresh.swift</code></td>
+<td><code>BGAppRefreshTask</code> scheduling and diagnostics</td>
+</tr>
+<tr>
+<td><code>PlanWorkout.swift</code></td>
+<td>Prose → structured workout parser</td>
+</tr>
+<tr>
+<td><code>WatchWorkout.swift</code></td>
+<td>WorkoutKit bridge and scheduler</td>
+</tr>
+<tr>
+<td><code>TodayView</code> <code>WeekView</code> <code>PlanView</code> <code>ProgressTabView</code></td>
+<td>The four tabs</td>
+</tr>
+<tr>
+<td><code>CommuteView.swift</code></td>
+<td>Commute card and detail</td>
+</tr>
+<tr>
+<td><code>SessionDetailView.swift</code></td>
+<td>Planned-session detail, match picker</td>
+</tr>
+<tr>
+<td><code>ActivityDetailView.swift</code></td>
+<td>The activity sheet</td>
+</tr>
+<tr>
+<td><code>StreamChartView.swift</code></td>
+<td>The stacked profile panels</td>
+</tr>
+<tr>
+<td><code>RouteMapView.swift</code></td>
+<td>Map, offline trace, scrub cursor</td>
+</tr>
+<tr>
+<td><code>WorkoutPreviewView.swift</code></td>
+<td>Parse preview and whole-block audit</td>
+</tr>
+<tr>
+<td><code>SettingsView.swift</code></td>
+<td>Settings</td>
+</tr>
+<tr>
+<td><code>PlanVolumeChart.swift</code></td>
+<td>The block-shape volume chart on Plan</td>
+</tr>
+<tr>
+<td><code>IntervalSplits.swift</code></td>
+<td>Reps from laps or from the pace trace, and the rules for refusing</td>
+</tr>
+<tr>
+<td><code>WeekKind.swift</code></td>
+<td>The plan's own week weighting — hard, recovery, ordinary</td>
+</tr>
+<tr>
+<td><code>FuelLine.swift</code></td>
+<td>The fuelling and warm-up lines on a session card</td>
+</tr>
+<tr>
+<td><code>Fuel.swift</code> <code>FuelView.swift</code></td>
+<td>Fuelling model (§09/§10) and the reference screen</td>
+</tr>
+<tr>
+<td><code>Warmup.swift</code> <code>WarmupView.swift</code></td>
+<td>Race-day warm-up (§10b) and its screen</td>
+</tr>
+<tr>
+<td><code>NotesStore.swift</code></td>
+<td>Session notes, <code>notes.json</code>, CSV export</td>
+</tr>
+<tr>
+<td><code>NoteEditorView.swift</code></td>
+<td>The note editor and the note button</td>
+</tr>
+<tr>
+<td><code>Review.swift</code></td>
+<td>Thresholds, flags, the Markdown evidence pack</td>
+</tr>
+<tr>
+<td><code>ReviewView.swift</code></td>
+<td>The monthly review screen and "Ask for a verdict"</td>
+</tr>
+<tr>
+<td><code>ReviewProposal.swift</code></td>
+<td>The decoded verdict, the guardrails, the schema and prompt</td>
+</tr>
+<tr>
+<td><code>ClaudeClient.swift</code></td>
+<td>The Claude API call</td>
+</tr>
+<tr>
+<td><code>ProposalStore.swift</code></td>
+<td><code>proposals.json</code>, review history, the runner</td>
+</tr>
+<tr>
+<td><code>ProposalView.swift</code></td>
+<td>The proposal screen, including what was discarded</td>
+</tr>
+<tr>
+<td><code>ManualView.swift</code></td>
+<td>This document, inside the app</td>
+</tr>
+<tr>
+<td><code>ShareSheet.swift</code></td>
+<td>The export sheet</td>
+</tr>
+<tr>
+<td><code>AppVersion.swift</code></td>
+<td>Marketing version, build, patch number, build date</td>
+</tr>
+<tr>
+<td><code>AthleteConstants.swift</code></td>
+<td>Max and resting heart rate, their versions and their plausibility bounds</td>
+</tr>
+<tr>
+<td><code>TrainingLoad.swift</code></td>
+<td>Banister TRIMP, the rung ladder, the quality gates and the self-test</td>
+</tr>
+<tr>
+<td><code>LoadStore.swift</code></td>
+<td>The daily series, its four states and its input fingerprint</td>
+</tr>
+<tr>
+<td><code>PMC.swift</code></td>
+<td>CTL, ATL, TSB, ramp rate, and when the curve refuses to be one</td>
+</tr>
+<tr>
+<td><code>PowerLoad.swift</code></td>
+<td>TSS from average power, and the measured conversion into the load currency</td>
+</tr>
+<tr>
+<td><code>PMCCard.swift</code></td>
+<td>The fitness curve on Progress, and when it refuses to draw one</td>
+</tr>
+<tr>
+<td><code>ChartScale.swift</code></td>
+<td>Where the top of a chart goes</td>
+</tr>
+<tr>
+<td><code>ExpandableCard.swift</code></td>
+<td>Tap a chart, turn the phone</td>
+</tr>
+<tr>
+<td><code>LoadDiagnosticView.swift</code></td>
+<td>The raw layer — every day, every session, every flag</td>
+</tr>
+<tr>
+<td><code>Theme.swift</code></td>
+<td>Colours, card chrome</td>
+</tr>
+</tbody>
+</table>
+<h3 id="chart-conventions">Chart conventions</h3>
+<p>One y-axis per chart, never two. Actual data in the accent hue, the plan as a recessive grey reference. Labels only where they carry information. Colour never carries identity alone — every zone colour has its "Z2" label beside it, and every multi-series chart has a legend. Categorical colours are fixed per series and validated for colour-vision deficiency against the app's own dark surface. Charts hide themselves until there is enough data to read.</p>
+<p class="build">Manual build 38 · 29 Jul 2026</p>
+<div id="lightbox"><img alt=""><div class="hint">Tap anywhere to close</div></div>
+<a href="#" id="top-btn">↑ Top</a>
+<script>
+// Missing screenshots hide their whole figure — a broken-image icon in a
+// manual reads as a bug in the app.
+document.querySelectorAll('figure img').forEach(function (img) {
+  img.addEventListener('error', function () {
+    var f = img.closest('figure');
+    if (f) f.style.display = 'none';
+  });
+});
+
+// Tap a figure to read it full size. Half-width is the right size to glance at
+// while reading; it is not the right size to read an app screenshot in.
+var box = document.getElementById('lightbox');
+var boxImg = box.querySelector('img');
+document.querySelectorAll('figure img').forEach(function (img) {
+  img.addEventListener('click', function () {
+    boxImg.src = img.src;
+    boxImg.alt = img.alt;
+    box.classList.add('on');
+    document.body.style.overflow = 'hidden';
+  });
+});
+function closeBox() {
+  box.classList.remove('on');
+  boxImg.removeAttribute('src');   // free the decoded bitmap
+  document.body.style.overflow = '';
+}
+box.addEventListener('click', closeBox);
+
+// Back to top appears once you're past the contents.
+var btn = document.getElementById('top-btn');
+function sync() { btn.classList.toggle('on', window.scrollY > 500); }
+window.addEventListener('scroll', sync, { passive: true });
+sync();
+btn.addEventListener('click', function (e) {
+  e.preventDefault();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+</script>
+</body></html>

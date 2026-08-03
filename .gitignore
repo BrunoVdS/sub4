@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------------------
+# Sub4 — repository hygiene
+#
+# The rule this file exists to enforce: the repository holds SOURCE, and
+# nothing a build or a developer's local session produces. Before this file
+# existed the repo tracked one developer's scheme-management plist while
+# 31,488 lines of application source sat untracked — exactly backwards.
+# ---------------------------------------------------------------------------
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Xcode — per-user state. Window positions, breakpoints, which scheme was last
+# selected. Never shared; regenerated on demand.
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.perspectivev3
+*.mode1v3
+*.mode2v3
+*.pbxuser
+
+# Build products and derived data
+build/
+DerivedData/
+*.o
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.xcarchive
+*.moved-aside
+
+# Swift Package Manager
+# Package.resolved is deliberately NOT ignored: it pins exact dependency
+# versions, which is what makes a clean clone reproducible. When GRDB is added
+# it must be committed.
+.build/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Secrets — belt and braces. Credentials belong in Keychain and must never
+# reach a file in this tree.
+*.p12
+*.mobileprovision
+secrets.plist
