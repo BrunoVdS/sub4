@@ -199,7 +199,12 @@ enum DataLifecycleCoordinator {
             }
         }
 
-        return LifecycleReceipt(operation: .deleteEverything, lines: lines)
+        let receipt = LifecycleReceipt(operation: .deleteEverything, lines: lines)
+        // Recorded here rather than by the caller, so a receipt exists even if
+        // the view that asked for the delete is torn down by the delete — which
+        // is exactly what happened in 185. See LifecycleLog.
+        LifecycleLog.shared.record(receipt)
+        return receipt
     }
 
     /// Every store that holds its contents in memory, emptied.

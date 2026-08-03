@@ -5,6 +5,21 @@
 //  Export and delete, in front of the person they belong to — patch 183,
 //  plan steps 2.1.3 and 2.1.4.
 //
+//  ONE PRESENTATION MODIFIER PER VIEW — patch 185, and it is a scar.
+//  ------------------------------------------------------------------
+//  183 put a `.confirmationDialog` and a `.sheet` on this Section. 184 added a
+//  second `.sheet` for the share item beside them, and the confirmation stopped
+//  appearing: SwiftUI presents one thing at a time from a given node, and the
+//  dialog silently lost. The delete then ran on the FIRST tap, with no prompt,
+//  and removed 660 activities.
+//
+//  Nothing failed, nothing logged, and the tests could not have caught it —
+//  presentation is not reachable from a unit test. The only defence is
+//  structural: the destructive confirmation hangs off the destructive button
+//  and nothing else, and every sheet in this file goes through a single
+//  enum-driven `.sheet(item:)`. Adding a third presentation here means changing
+//  that enum, which is a visible decision rather than an accident.
+//
 //  THE CONFIRMATION STATES WHAT SURVIVES
 //  -------------------------------------
 //  A destructive confirmation usually asks "are you sure?" and lists nothing.
@@ -19,13 +34,25 @@ import SwiftUI
 
 struct DataControlsView: View {
 
+    /// Everything this view can put on screen, as one value.
+    ///
+    /// Two `@State` booleans and an optional, each with their own modifier, is
+    /// what broke in 184. One optional and one modifier cannot race.
+    private enum Presented: Identifiable {
+        case share(URL)
+
+        var id: String {
+            switch self {
+            case .share(let u): u.absoluteString
+            }
+        }
+    }
+
     @State private var confirming = false
-    @State private var receipt: LifecycleReceipt?
-    @State private var shareItem: ShareItem?
+    @State private var presented: Presented?
     @State private var lastExport: (size: Int64, at: Date)?
     @State private var exportError: String?
     @State private var building = false
-    @State private var showingReceipt = false
 
     /// Off by default. Sensor traces are the bulk of an export — roughly 200 KB
     /// per session once an activity has been opened, against a few kilobytes
@@ -38,7 +65,10 @@ struct DataControlsView: View {
             exportRow
             deleteRow
 
-            if let r = receipt {
+            // From the log, not from @State. The delete tears this view's
+            // state down as a side effect of removing the @AppStorage keys —
+            // see LifecycleLog.
+            if let r = LifecycleLog.shared.last {
                 receiptSummary(r)
             }
         } header: {
@@ -49,21 +79,13 @@ struct DataControlsView: View {
                  + "Apple Health or by Strava's own servers.")
                 .font(.caption2)
         }
-        .confirmationDialog("Delete everything Sub4 stored?",
-                            isPresented: $confirming, titleVisibility: .visible) {
-            Button("Delete local data", role: .destructive) {
-                let r = DataLifecycleCoordinator.deleteEverything()
-                receipt = r
-                showingReceipt = true
+        // THE ONLY presentation modifier on this Section. The confirmation
+        // lives on the delete button itself — see the header.
+        .sheet(item: $presented) { what in
+            switch what {
+            case .share(let url): ShareSheet(items: [url])
             }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text(survivesMessage)
         }
-        .sheet(isPresented: $showingReceipt) {
-            if let r = receipt { ReceiptSheet(receipt: r) }
-        }
-        .sheet(item: $shareItem) { ShareSheet(items: [$0.url]) }
     }
 
     // MARK: Rows
@@ -123,7 +145,7 @@ struct DataControlsView: View {
                     includingSensorTraces: includeTraces)
                 let size = DataLifecycleCoordinator.byteSize(of: url)
                 lastExport = (size, Date())
-                shareItem = ShareItem(url: url)
+                presented = .share(url)
             } catch {
                 exportError = error.localizedDescription
             }
@@ -142,10 +164,42 @@ struct DataControlsView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Attached HERE, to the button that triggers it, and not to the
+        // Section. On the Section it competed with two sheets and lost.
+        //
+        // `.alert` rather than `.confirmationDialog` — patch 186. iOS rendered
+        // the dialog as an anchored popover, and in that presentation the
+        // `.cancel` role button is DROPPED: the only button on screen was the
+        // destructive one, and the way out was tapping the dimmed area, which
+        // nothing tells you. An alert shows both buttons in every size class.
+        .alert("Delete everything Sub4 stored?", isPresented: $confirming) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) { performDelete() }
+        } message: {
+            Text(survivesMessage)
+        }
+    }
+
+    /// Separated from the dialog so there is exactly one call site for the
+    /// destructive operation in this file, and it is greppable.
+    private func performDelete() {
+        let r = DataLifecycleCoordinator.deleteEverything()
+        // NEXT RUN LOOP, deliberately. Removing the display preferences
+        // invalidates every `@AppStorage` binding in Settings at once, and a
+        // sheet presented in the same turn is dismissed by the rebuild that
+        // follows. Letting the rebuild happen first, then presenting, is the
+        // difference between a receipt you can read and one that flashes.
+        //
+        // And if it is torn down anyway, nothing is lost: the summary row above
+        // reads from `LifecycleLog`, so the receipt is one tap away for as long
+        // as the app is running.
+        // Nothing to present here. `deleteEverything` records into
+        // `LifecycleLog`, and the root presents it — see ContentView.
+        _ = r
     }
 
     private func receiptSummary(_ r: LifecycleReceipt) -> some View {
-        Button { showingReceipt = true } label: {
+        Button { LifecycleLog.shared.showLast() } label: {
             VStack(alignment: .leading, spacing: 3) {
                 Text(r.operation.rawValue).font(.caption.weight(.semibold))
                     .foregroundStyle(Color.ink)

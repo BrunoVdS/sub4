@@ -95,6 +95,19 @@ struct ContentView: View {
                 .tag(Tab.settings)
         }
         .tint(.accent4)
+        // THE RECEIPT IS PRESENTED HERE, at the root, and not by the pane that
+        // asked for the delete — patch 186.
+        //
+        // Deleting local data removes `appearance.selected`, `volume.unit` and
+        // two more display keys, invalidating every `@AppStorage` binding in
+        // Settings. The Form rebuilds — repeatedly, not once — and a sheet
+        // attached anywhere inside it is dismissed mid-animation. Two attempts
+        // to hold it there failed; the third stopped trying. Nothing in that
+        // rebuild reaches the TabView, so the sheet stays up.
+        .sheet(item: Binding(get: { LifecycleLog.shared.pending },
+                             set: { LifecycleLog.shared.pending = $0 })) { p in
+            ReceiptSheet(receipt: p.receipt)
+        }
         // WAS `.preferredColorScheme(.dark)` — the app was hard-locked to dark
         // at the root, which is why every colour in Theme.swift could be a
         // single constant. Removing the lock is the whole patch; the palette
