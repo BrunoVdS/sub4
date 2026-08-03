@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    PrivacyInfo.xcprivacy — Sub4
+    Patch 191, plan step 2.1.8.
+
+    WHY THE COLLECTED-DATA LIST IS EMPTY, WHICH IS THE ONLY SURPRISING PART
+
+    Apple's definition of "collect" is transmission off the device. Sub4 has
+    three paths that could transmit something about the athlete — the AI review
+    to Anthropic, the start coordinate to a weather provider, and the Strava
+    calls themselves — and every one of them is behind a ReleaseGate.
+
+    `ReleaseGate.permitted` is compiled `#if DEBUG` and is consulted FIRST in
+    `ReleaseGates.isOpen`. In a Release build it is false for every gate, so
+    `isOpen` returns false unconditionally, `require` throws, and no stored
+    value — including one restored from an internal build's backup — can open
+    one. A shipping build of Sub4 transmits nothing.
+
+    So this list is empty because that is true, not because nothing was found
+    to write in it. THE DAY A GATE SHIPS OPEN, THIS FILE IS WRONG, and
+    `PrivacyManifestTests.aShippedOpenGateRequiresDeclaredCollection` fails the
+    build to say so. The declarations that would be needed then are written out
+    in a comment at the bottom rather than left to be rediscovered.
+
+    ON THE API REASONS
+
+    Two categories are actually touched. Both are declared with the narrowest
+    reason that is true, not the broadest that would be accepted.
+-->
+<plist version="1.0">
+<dict>
+
+    <!-- No tracking, and no domains to list. Sub4 has no analytics SDK, no
+         advertising identifier, and does not combine anything with data from
+         other companies' apps or websites. -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <!-- Empty, and true. See the note at the top of this file. -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+
+        <!-- UserDefaults. Twenty-four keys, all of them the app's own: sync
+             bookkeeping, schema versions, the release-gate switches, and the
+             display settings. Nothing is read from or written to a shared
+             suite, an app group, or another app's defaults. -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+
+        <!-- File timestamps. ONE use: `AppVersion.built` reads the modification
+             date of the app's own executable so Settings can show when this
+             build was made. It is displayed to the person holding the phone and
+             is never sent anywhere, which is what DDA9.1 describes.
+
+             It is worth knowing this is the whole of it. If the reason ever
+             stops being true — because the timestamp starts feeding something
+             other than a label on screen — this entry has to change with it. -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>DDA9.1</string>
+            </array>
+        </dict>
+
+    </array>
+
+</dict>
+</plist>
+
+<!--
+    WHAT THIS FILE MUST SAY ONCE A TRANSFER SHIPS OPEN
+
+    Written down now, while the reasoning is fresh, so that whoever opens a gate
+    is not left deriving it. Each entry is `NSPrivacyCollectedDataType` plus
+    Linked / Tracking / Purposes.
+
+    Opening `aiReview` — the monthly review to Anthropic:
+        NSPrivacyCollectedDataTypeFitness           — training load, weekly
+                                                      volume, measured paces
+        NSPrivacyCollectedDataTypeOtherUserContent  — the session notes the
+                                                      athlete typed
+        Linked: false. Tracking: false.
+        Purpose: NSPrivacyCollectedDataTypePurposeAppFunctionality
+
+    Opening `coordinateWeather` — the start coordinate to Apple Weather or
+    Open-Meteo, to about a metre:
+        NSPrivacyCollectedDataTypePreciseLocation
+        Linked: false. Tracking: false.
+        Purpose: NSPrivacyCollectedDataTypePurposeAppFunctionality
+
+    Opening the Strava gates does NOT by itself add a collected data type: those
+    calls fetch the athlete's own data from a service they authorised, and
+    receiving is not collecting. What it does add is a third party with a
+    privacy policy of its own, and ADR-0002 is where that lives.
+-->
