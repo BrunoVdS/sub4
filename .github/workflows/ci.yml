@@ -1,0 +1,143 @@
+name: Build and test
+
+# Plan step 1.2.6–1.2.8. Debug and Release from a clean checkout, unit tests on
+# every push, and a coverage report as information rather than as a threshold.
+#
+# EXPLICIT SCHEME AND DESTINATION, per step 1.2.7. `xcodebuild` will happily
+# pick a scheme and a simulator for you, and which one depends on what is
+# installed on the machine — the entire class of failure CI exists to rule out.
+# Both are named, and the runner image is pinned rather than left as
+# `macos-latest`, so an Xcode bump arrives as a deliberate edit to this file
+# rather than as a red build on a Monday morning.
+#
+# THE FIRST STEP IS DIAGNOSTIC ON PURPOSE. What Xcode versions and simulators a
+# GitHub runner carries changes without notice, and a workflow that assumes and
+# then dies takes a whole run to tell you almost nothing. `Inventory` prints
+# what is actually installed before anything depends on it, so the first failure
+# — if there is one — comes with the answer attached.
+#
+# NO OUTPUT PRETTIFIER. `xcbeautify` is lovely and is not guaranteed to be on
+# the image; piping into a binary that may not exist turns a green build into a
+# broken pipe. Raw `xcodebuild` output is verbose and always works. Add the
+# prettifier once this is reliably green, not before.
+#
+# COST, STATED. macOS runners bill at 10× against the free monthly minutes, so
+# roughly 200 macOS minutes a month on the free tier, and this workflow uses two
+# jobs. `paths-ignore` keeps documentation edits from spending any of it.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # A second push supersedes the first — no point testing a commit that is
+  # already behind.
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SCHEME: Sub4
+  PROJECT: Sub4.xcodeproj
+
+jobs:
+  test:
+    name: Debug build and unit tests
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Runs before anything can depend on it, and never fails the job — its
+      # only purpose is to put the truth in the log.
+      - name: Inventory
+        run: |
+          echo "=== Xcode versions installed ==="
+          ls /Applications | grep -i '^Xcode' || echo "(none matched)"
+          echo "=== selected ==="
+          xcodebuild -version
+          swift --version
+          echo "=== available iPhone simulators ==="
+          xcrun simctl list devices available | grep -i iphone || echo "(none)"
+
+      # Selects Xcode 26 if the image has it and otherwise carries on with
+      # whatever is default, so a missing version shows up as a compile error
+      # against a known compiler rather than as an opaque step failure.
+      - name: Select Xcode
+        run: |
+          if [ -d /Applications/Xcode_26.app ]; then
+            sudo xcode-select -switch /Applications/Xcode_26.app
+            echo "selected Xcode_26"
+          else
+            echo "::warning::Xcode_26.app not present; using the image default."
+          fi
+          xcodebuild -version
+
+      # A clean clone must build without relying on anything untracked. That is
+      # the acceptance criterion for plan step 1.1, and this is what enforces it
+      # from here on rather than a one-off manual check.
+      #
+      # `name=` without an OS pins the device family and lets xcodebuild choose
+      # the runtime, which survives an image updating its simulator OS.
+      - name: Build and test
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -enableCodeCoverage YES \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+
+      # Information, not a gate — step 1.2.8. A global percentage threshold on a
+      # codebase that is mostly view code would fail every honest commit and
+      # teach everyone to ignore it. What matters is that each fixed defect
+      # gains a test, which is a review question rather than a number.
+      - name: Coverage summary
+        if: always()
+        run: xcrun xccov view --report --only-targets TestResults.xcresult || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults
+          path: TestResults.xcresult
+          retention-days: 14
+
+  release:
+    name: Release build
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    # Release is built as well as Debug because they are different
+    # compilations: optimisation changes what the type-checker will accept in
+    # reasonable time, and `#if DEBUG` changes what code exists at all — in this
+    # project that flag decides whether the release gates can be opened. A
+    # Debug-only CI would never compile the branch that actually ships.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          if [ -d /Applications/Xcode_26.app ]; then
+            sudo xcode-select -switch /Applications/Xcode_26.app
+          fi
+          xcodebuild -version
+
+      - name: Build Release
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO
