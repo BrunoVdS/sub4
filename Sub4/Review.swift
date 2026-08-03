@@ -471,15 +471,111 @@ enum ReviewBuilder {
 
 extension Review {
 
-    func markdown() -> String {
+    /// The whole review, as sections that know where they came from.
+    ///
+    /// Every string this app might transmit is built here. `markdown()` renders
+    /// all of it for the athlete's own export; `ReviewPayload.render()` renders
+    /// only what may leave the phone. Two callers, one source of text.
+    func payload() -> ReviewPayload {
+        typealias P = ReviewPayload
+        var s: [PayloadSection] = []
+
+        s.append(PayloadSection(
+            id: "header", title: "Which window, which build",
+            what: "The dates this review covers and the app version that computed it.",
+            lineage: [.bundled, .device],
+            inclusion: P.inclusion(for: [.bundled, .device]),
+            body: headerSection()))
+
+        // Matched-to-Strava counts. The share is the whole point of the
+        // section and it is a Strava-derived figure.
+        s.append(PayloadSection(
+            id: "coverage", title: "Coverage",
+            what: "How many planned sessions have a recording and a note behind them.",
+            lineage: [.strava, .bundled],
+            inclusion: P.inclusion(for: [.strava, .bundled]),
+            body: coverageSection()))
+
+        // Flags fire on adherence, volume and pace as well as on notes, so the
+        // lineage of the flag list is the union of everything it reads.
+        s.append(PayloadSection(
+            id: "flags", title: "Flags",
+            what: "What the app thinks went wrong or right in this window.",
+            lineage: [.strava, .authored, .bundled],
+            inclusion: P.inclusion(for: [.strava, .authored, .bundled]),
+            body: flagsSection()))
+
+        s.append(PayloadSection(
+            id: "adherence", title: "Adherence",
+            what: "Sessions completed against sessions planned, by discipline.",
+            lineage: [.strava, .bundled],
+            inclusion: P.inclusion(for: [.strava, .bundled]),
+            body: adherenceSection()))
+
+        s.append(PayloadSection(
+            id: "volume", title: "Running volume by week",
+            what: "Kilometres planned and kilometres run, week by week.",
+            lineage: [.strava, .bundled],
+            inclusion: P.inclusion(for: [.strava, .bundled]),
+            body: volumeSection()))
+
+        // RPE and feel come from what the athlete typed; the session counts
+        // come from the bundled plan. No Strava figure reaches this table.
+        s.append(PayloadSection(
+            id: "effort", title: "Effort by session type",
+            what: "Your own RPE and how each session felt against what was asked.",
+            lineage: [.authored, .bundled],
+            inclusion: P.inclusion(for: [.authored, .bundled]),
+            body: effortSection()))
+
+        s.append(PayloadSection(
+            id: "paces", title: "Pace against the plan",
+            what: "Measured pace against the band the plan asked for.",
+            lineage: [.strava, .bundled],
+            inclusion: P.inclusion(for: [.strava, .bundled]),
+            body: pacesSection()))
+
+        // OPT-IN — PRIV-03. These were in the payload by default, which is
+        // consent by omission. They are the most personal thing in the review
+        // and the only section whose absence does not break the analysis.
+        s.append(PayloadSection(
+            id: "notes", title: "Your session notes",
+            what: "The words you wrote after a session, verbatim.",
+            lineage: [.authored],
+            inclusion: P.inclusion(for: [.authored], optIn: true),
+            body: notesSection()))
+
+        s.append(PayloadSection(
+            id: "thresholds", title: "Thresholds",
+            what: "The fixed numbers the flags above fired on. No personal data.",
+            lineage: [.bundled],
+            inclusion: P.inclusion(for: [.bundled]),
+            body: thresholdsSection()))
+
+        return ReviewPayload(sections: s)
+    }
+
+    /// The athlete's own copy — everything, no restriction. Byte-identical to
+    /// what this function returned before patch 192 split it into sections.
+    func markdown() -> String { payload().renderForTheAthlete() }
+
+    // MARK: The sections
+    //
+    // Split out of one `markdown()` in patch 192 so each can carry its lineage.
+    // The text is unchanged; only the seams are new.
+
+    fileprivate func headerSection() -> String {
         var m = "# Sub4 — monthly review\n\n"
         m += "**\(window.label)** · \(window.startDay) → \(window.endDay)\n\n"
         // Which build produced these numbers. An exported analysis that cannot
         // be traced back to a version is unfalsifiable a month later — if a
         // threshold or an estimator changed in between, you want to know.
         m += "_\(AppVersion.stamp)_\n\n"
+        return m
+    }
 
-        m += "## Coverage — read this first\n\n"
+    fileprivate func coverageSection() -> String {
+        var m = "## Coverage — read this first\n\n"
         m += "| | |\n|---|---|\n"
         m += "| Non-rest sessions | \(coverage.sessions) |\n"
         m += "| Matched to a Strava activity | \(coverage.matched)"
@@ -489,22 +585,31 @@ extension Review {
         m += "Everything below is computed from these sessions only. "
         m += "Effort figures describe noted sessions, which may not be a fair "
         m += "sample of all of them.\n\n"
+        return m
+    }
 
-        m += "## Flags\n\n"
+    fileprivate func flagsSection() -> String {
+        var m = "## Flags\n\n"
         for f in flags {
             m += "- **[\(f.level.rawValue)] \(f.title)** — \(f.detail)\n"
         }
         m += "\n"
+        return m
+    }
 
-        m += "## Adherence\n\n"
+    fileprivate func adherenceSection() -> String {
+        var m = "## Adherence\n\n"
         m += "Overall **\(sessionsDone)/\(sessionsTotal)** (\(pct(adherence)))\n\n"
         m += "| Discipline | Planned | Done | Share |\n|---|---|---|---|\n"
         for d in disciplines {
             m += "| \(d.discipline.label) | \(d.planned) | \(d.done) | \(pct(d.share)) |\n"
         }
         m += "\n"
+        return m
+    }
 
-        m += "## Running volume by week\n\n"
+    fileprivate func volumeSection() -> String {
+        var m = "## Running volume by week\n\n"
         m += "Planned figures are derived from the sessions themselves, not the "
         m += "plan's weekly headline — that headline is total multisport volume "
         m += "including the bike commute.\n\n"
@@ -516,8 +621,11 @@ extension Review {
         }
         m += String(format: "| **Total** | **%.0f** | **%.1f** | **%d/%d** |\n\n",
                     plannedKm, doneKm, sessionsDone, sessionsTotal)
+        return m
+    }
 
-        m += "## Effort by session type\n\n"
+    fileprivate func effortSection() -> String {
+        var m = "## Effort by session type\n\n"
         m += "RPE is Borg CR10, self-reported. Feel is relative to what the plan "
         m += "asked for, not absolute difficulty.\n\n"
         m += "| Type | Sessions | Noted | Mean RPE | Easier | As asked | Harder |\n"
@@ -528,34 +636,42 @@ extension Review {
             m += "| \(e.easier) | \(e.expected) | \(e.harder) |\n"
         }
         m += "\n"
+        return m
+    }
 
-        if !paces.isEmpty {
-            m += "## Pace against the plan's stated bands\n\n"
-            m += "Only sessions where the plan gives a number and kilometre "
-            m += "splits can check it. Deviation is from the nearest edge of the "
-            m += "band; inside the band is 0.\n\n"
-            m += "| Date | Session | Scope | Target | Measured | Deviation |\n"
-            m += "|---|---|---|---|---|---|\n"
-            for p in paces {
-                m += "| \(p.date) | \(p.title) | \(p.scope) | \(p.target) "
-                m += "| \(Self.pace(p.measured)) | \(p.deviation >= 0 ? "+" : "")"
-                m += "\(p.deviation) s/km |\n"
-            }
+    /// Empty when there is nothing to say, exactly as the guard did before.
+    fileprivate func pacesSection() -> String {
+        guard !paces.isEmpty else { return "" }
+        var m = "## Pace against the plan's stated bands\n\n"
+        m += "Only sessions where the plan gives a number and kilometre "
+        m += "splits can check it. Deviation is from the nearest edge of the "
+        m += "band; inside the band is 0.\n\n"
+        m += "| Date | Session | Scope | Target | Measured | Deviation |\n"
+        m += "|---|---|---|---|---|---|\n"
+        for p in paces {
+            m += "| \(p.date) | \(p.title) | \(p.scope) | \(p.target) "
+            m += "| \(Self.pace(p.measured)) | \(p.deviation >= 0 ? "+" : "")"
+            m += "\(p.deviation) s/km |\n"
+        }
+        m += "\n"
+        return m
+    }
+
+    fileprivate func notesSection() -> String {
+        guard !notes.isEmpty else { return "" }
+        var m = "## The notes\n\n"
+        for n in notes {
+            let rpe = n.note.rpe.map { "RPE \($0)" } ?? "no RPE"
+            let feel = n.note.feel?.longLabel ?? "no comparison"
+            m += "**\(n.day) · \(n.title)** — \(rpe), \(feel)\n"
+            if !n.note.text.isEmpty { m += "\n> \(n.note.text)\n" }
             m += "\n"
         }
+        return m
+    }
 
-        if !notes.isEmpty {
-            m += "## The notes\n\n"
-            for n in notes {
-                let rpe = n.note.rpe.map { "RPE \($0)" } ?? "no RPE"
-                let feel = n.note.feel?.longLabel ?? "no comparison"
-                m += "**\(n.day) · \(n.title)** — \(rpe), \(feel)\n"
-                if !n.note.text.isEmpty { m += "\n> \(n.note.text)\n" }
-                m += "\n"
-            }
-        }
-
-        m += "## Thresholds these flags fired on\n\n"
+    fileprivate func thresholdsSection() -> String {
+        var m = "## Thresholds these flags fired on\n\n"
         m += "These are conventions, not part of the plan, and they are wrong "
         m += "for somebody. They live in `Review.Thresholds`.\n\n"
         m += "| Threshold | Value |\n|---|---|\n"
@@ -566,7 +682,6 @@ extension Review {
         m += "| \"Harder than asked\" share | \(pct(Thresholds.harderShare)) |\n"
         m += "| Note-coverage floor | \(pct(Thresholds.noteCoverageFloor)) |\n"
         m += "| Minimum sessions | \(Thresholds.minSessions) |\n"
-
         return m
     }
 

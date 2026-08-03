@@ -46,6 +46,17 @@ struct ReviewView: View {
     @State private var runError: String?
     @State private var opened: ProposalStore.Record?
 
+    /// The review and payload waiting on the preflight screen.
+    ///
+    /// A value rather than a Bool, so the screen cannot be shown without the
+    /// exact payload that would be sent — the two are the same object.
+    struct Preflight: Identifiable {
+        let id = UUID()
+        let review: Review
+        let payload: ReviewPayload
+    }
+    @State private var preflight: Preflight?
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -90,6 +101,17 @@ struct ReviewView: View {
             }
             .sheet(item: $share) { ShareSheet(items: [$0.url]) }
             .sheet(item: $opened) { ProposalView(record: $0) }
+            // A THIRD sheet on this view. Patch 185's lesson was about a
+            // `.confirmationDialog` competing with sheets on a Section, not
+            // about sheets on a container — and the two above have worked here
+            // for many patches. If this one misbehaves, the fix is to collapse
+            // all three into one enum-driven `.sheet(item:)`, as
+            // DataControlsView did, rather than to reorder them.
+            .sheet(item: $preflight) { p in
+                ReviewPreflightView(payload: p.payload) { configured in
+                    Task { await send(review: p.review, payload: configured) }
+                }
+            }
             .alert("Could not write the file", isPresented: $shareFailed) {
                 Button("OK", role: .cancel) {}
             }
@@ -413,7 +435,7 @@ struct ReviewView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Button {
-                Task { await ask() }
+                ask()
             } label: {
                 Text(already.isEmpty ? "Run the review" : "Run again")
                     .font(.subheadline.weight(.semibold))
@@ -454,11 +476,25 @@ struct ReviewView: View {
              + "verdict is something you read."
     }
 
-    private func ask() async {
+    /// Builds the payload and opens the preflight. Sends nothing, and is no
+    /// longer `async` — patch 192. Nothing here suspends, and an async function
+    /// that never awaits invites a spinner that flashes for one frame.
+    private func ask() {
+        do {
+            let (review, payload) = try ReviewRunner.prepare(weeksBack: weeksBack)
+            preflight = Preflight(review: review, payload: payload)
+        } catch {
+            runError = error.localizedDescription
+        }
+    }
+
+    /// The only path that transmits. Reached from the preflight screen's Send
+    /// button and from nowhere else, with the payload the athlete just read.
+    private func send(review: Review, payload: ReviewPayload) async {
         running = true
         defer { running = false }
         do {
-            opened = try await ReviewRunner.run(weeksBack: weeksBack)
+            opened = try await ReviewRunner.run(review: review, payload: payload)
         } catch {
             guard !error.isCancellation else { return }
             runError = error.localizedDescription

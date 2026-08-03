@@ -214,12 +214,39 @@ enum ReviewRunner {
 
     /// Builds the pack, sends it, stores the answer. Throws rather than
     /// swallowing: the caller has a screen to put the error on.
+    /// Builds the review and the payload, and sends NOTHING.
+    ///
+    /// Split from `run` in patch 192 so a preflight screen can sit between
+    /// them. The payload this returns is the value the athlete is shown and the
+    /// value that is then handed back to `run` — so what they read and what the
+    /// provider receives cannot differ. A single `run(weeksBack:)` that did
+    /// both would make that guarantee impossible to state.
     @MainActor
-    static func run(weeksBack: Int = 4) async throws -> ProposalStore.Record {
+    static func prepare(weeksBack: Int = 4) throws -> (Review, ReviewPayload) {
         guard let review = ReviewBuilder.build(weeksBack: weeksBack) else {
             throw ClaudeError.badShape("no finished plan weeks to review yet")
         }
-        let evidence = ReviewRequest.prompt(review: review, plan: PlanStore.shared)
+        return (review, review.payload())
+    }
+
+    /// Sends the payload exactly as configured and stores the answer. Throws
+    /// rather than swallowing: the caller has a screen to put the error on.
+    @MainActor
+    static func run(review: Review,
+                    payload: ReviewPayload) async throws -> ProposalStore.Record {
+        // The refusal, restated at the boundary. `prompt` returns nil for an
+        // unusable payload; turning that into a thrown error here means a
+        // caller cannot accidentally send an empty string.
+        guard let evidence = ReviewRequest.prompt(payload: payload,
+                                                  review: review,
+                                                  plan: PlanStore.shared) else {
+            throw ClaudeError.badShape(
+                "this review cannot be sent — "
+                + payload.blocked.map(\.title).joined(separator: ", ")
+                + " are computed from Strava activities and may not go to an AI "
+                + "provider (ADR-0002). The review is rebuilt on Apple Health "
+                + "figures at Phase 4A.")
+        }
         var proposal = try await ClaudeClient.structured(
             prompt: evidence,
             system: ReviewRequest.system,

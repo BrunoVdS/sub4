@@ -293,8 +293,22 @@ enum ReviewRequest {
 
     /// The user turn: the computed evidence pack, plus the surrounding plan
     /// context a sensible judgement needs.
-    static func prompt(review: Review, plan: PlanStore) -> String {
-        var p = review.markdown()
+    /// Builds the request from a PAYLOAD, not from `markdown()` — patch 192,
+    /// plan step 2.3.
+    ///
+    /// The difference is the whole point. `markdown()` is the athlete's own copy
+    /// and contains everything; this contains only what may leave the phone.
+    /// Passing `payload` in rather than deriving it here means the preflight
+    /// screen and the request are built from one value — the reader cannot be
+    /// shown one thing and the provider sent another.
+    ///
+    /// It REFUSES rather than truncating. A payload with blocked sections would
+    /// produce a prompt asking a model to judge a training block from the effort
+    /// table alone; it would answer, confidently, on a quarter of the evidence.
+    /// Nil is the honest return.
+    static func prompt(payload: ReviewPayload, review: Review, plan: PlanStore) -> String? {
+        guard payload.isUsable else { return nil }
+        var p = payload.render()
 
         p += "\n\n---\n\n## Where this sits in the block\n\n"
         if let w = plan.planWeeks.first(where: { $0.uid == review.window.weeks.last?.uid }),
