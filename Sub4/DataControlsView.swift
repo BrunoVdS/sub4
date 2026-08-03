@@ -279,9 +279,21 @@ struct ReceiptSheet: View {
                     Section {
                         ForEach(receipt.retained) { line in row(line) }
                     } header: {
-                        Text("Still exists — not this app's to delete")
+                        // WORDED BY OPERATION — patch 189. The summary line was
+                        // fixed for disconnects in 187 and this header was not,
+                        // so a disconnect receipt filed your own session notes
+                        // under "not this app's to delete". Wrong twice: they
+                        // are not held by anyone else, and the app could delete
+                        // them perfectly well — it chose not to, which is the
+                        // entire difference between a disconnect and a delete.
+                        Text(receipt.operation == .disconnectStrava
+                             ? "Kept — still here after disconnecting"
+                             : "Still exists — not this app's to delete")
                     } footer: {
-                        Text("These are held by the system or shipped inside the "
+                        Text(receipt.operation == .disconnectStrava
+                             ? "These did not come from Strava, or are yours regardless "
+                             + "of where they came from. Delete local data removes them."
+                             : "These are held by the system or shipped inside the "
                              + "app. Remove them where they live, or by deleting Sub4.")
                             .font(.caption2)
                     }
