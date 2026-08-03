@@ -477,7 +477,7 @@ enum DataLifecycle {
                       .preferences(["strava.cursor", "strava.lastSync",
                                     "strava.cutoffUsed", "strava.rejectedByRule",
                                     "strava.geoBackfill", "strava.powerBackfill",
-                                    "strava.speedBackfill"])],
+                                    "strava.speedBackfill", "strava.zoneBackfill"])],
             retention: .indefinite,
             sharedWith: [],
             isExportable: true,

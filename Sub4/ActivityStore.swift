@@ -72,6 +72,9 @@ final class ActivityStore {
     private static let powerBackfillKey = "strava.powerBackfill"
     private static let speedBackfillKey = "strava.speedBackfill"
     private static let geoBackfillKey = "strava.geoBackfill"
+    /// Patch 196. Its own key rather than a reused one — the note on the geo
+    /// backfill below said that was the rule from now on.
+    static let zoneBackfillKey = "strava.zoneBackfill"
     private static let rejectedKey = "strava.rejectedByRule"
 
     private init() {
@@ -134,6 +137,26 @@ final class ActivityStore {
             cursor = Self.cutoffEpoch
             UserDefaults.standard.set(cursor, forKey: cursorKey)
             UserDefaults.standard.set(1, forKey: Self.geoBackfillKey)
+        }
+
+        // Patch 196 added `timeZoneIdentifier` and `startOffsetSeconds`, and
+        // this rewind is the one with an expiry date on it.
+        //
+        // The other three above could be run at any time — the fields they fill
+        // will still be there next year. These two will not. ADR-0002 retires
+        // Strava at Phase 4A, Apple Health carries neither field, and no other
+        // source in this app knows what clock a past activity was recorded on.
+        // Every activity that is not backfilled before the Strava connection
+        // ends has lost its zone permanently: not degraded, not recoverable
+        // from a coordinate, gone.
+        //
+        // That is why this ships now rather than with Phase 3's import, and why
+        // it deserves its own key — a rewind that has already been consumed by
+        // another field's flag would fail silently and look done.
+        if UserDefaults.standard.integer(forKey: Self.zoneBackfillKey) < 1 {
+            cursor = Self.cutoffEpoch
+            UserDefaults.standard.set(cursor, forKey: cursorKey)
+            UserDefaults.standard.set(1, forKey: Self.zoneBackfillKey)
         }
 
         loadRejections()

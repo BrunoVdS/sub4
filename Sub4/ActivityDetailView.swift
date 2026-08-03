@@ -272,9 +272,14 @@ struct ActivityDetailView: View {
         .task(id: splitCtxKey) { splitCtx = buildSplitContext }
     }
 
-    var startTime: String {
-        String(activity.startLocal.dropFirst(11).prefix(5))    // "09:24"
-    }
+    /// "09:24", or "09:24 JST" for a session recorded on another clock.
+    ///
+    /// Moved onto `Activity` in patch 196 rather than reimplemented here. When
+    /// the suffix appears is not obvious — it compares the activity's offset
+    /// against the DEVICE's offset AT THAT INSTANT, so daylight saving does not
+    /// turn every summer run foreign once the clocks go back — and a rule with
+    /// that much reasoning behind it should exist in one place.
+    var startTime: String { activity.startTimeLabel }
 
     // MARK: The run — four cards merged into one
     //

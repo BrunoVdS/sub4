@@ -67,6 +67,42 @@ struct Activity: Codable, Identifiable, Hashable {
     var startLat: Double?
     var startLon: Double?
 
+    // MARK: Which clock `startLocal` was read from — patch 196, ADR-0003 §4.3
+    //
+    // STILL THE LAST STORED PROPERTIES IN THIS STRUCT, for the same reason as
+    // the block above. Everything below this point is computed.
+    //
+    // WHY THIS IS URGENT RATHER THAN TIDY
+    // -----------------------------------
+    // `startLocal` is a wall clock with the offset applied and then discarded,
+    // so this app has always known that a run started at 07:00 and never where.
+    // At home that costs nothing. After a trip it is the difference between a
+    // morning run and a run at some unknown hour, and the loss is silent — a
+    // 07:00 Tokyo run and a 07:00 Antwerp run render identically.
+    //
+    // Strava sends both fields on every activity and always has. ADR-0002
+    // retires Strava at Phase 4A and Apple Health carries neither, so this is
+    // knowledge that exists today, costs nothing to capture today, and is gone
+    // permanently the day the Strava connection ends. That is the whole reason
+    // this is not waiting for Phase 3.
+    //
+    // Both nullable, and NULL means UNKNOWN — never Greenwich (ADR-0003 §6).
+    // An offset of zero is a real place.
+
+    /// The IANA identifier, validated — `"Asia/Tokyo"`, never Strava's
+    /// `"(GMT+09:00) Asia/Tokyo"` display form. Nil when Strava sent nothing,
+    /// or sent something this device's zone database does not recognise.
+    var timeZoneIdentifier: String?
+
+    /// Seconds east of UTC at the moment the activity started.
+    ///
+    /// THE AUTHORITY, per ADR-0003 §4.3: unambiguous, needs no zone database,
+    /// and already resolved for daylight saving at that instant, where the
+    /// identifier still has to be looked up and evaluated. The identifier is
+    /// kept beside it for the abbreviation and for anything that later needs
+    /// real zone rules.
+    var startOffsetSeconds: Int?
+
     /// The start instant, or nil for rows that predate the field.
     var startDateUTC: Date? {
         guard let startUTC else { return nil }
@@ -157,6 +193,116 @@ struct Activity: Codable, Identifiable, Hashable {
     var paceLabel: String? {
         guard let p = paceSecPerKm else { return nil }
         return String(format: "%d:%02d /km", p / 60, p % 60)
+    }
+
+    // MARK: Saying which clock — ADR-0003 §4.3
+
+    /// `"09:24"`, or `"09:24 JST"` when the activity happened on a different
+    /// clock from the one the reader is standing on.
+    ///
+    /// This is the display rule, and the whole of it. A zone marker on all 660
+    /// activities would be noise; a zone marker on none of them loses the only
+    /// interesting cases.
+    var startTimeLabel: String { timeLabel(forReaderIn: .current) }
+
+    /// The same thing with the reader's zone passed in.
+    ///
+    /// SPLIT FROM THE PROPERTY SO IT CAN BE TESTED. `TimeZone.current` is the
+    /// simulator's zone and cannot be changed from inside a test, so a rule
+    /// written against it directly can only be asserted in the one zone CI
+    /// happens to run in — which for a feature whose entire subject is other
+    /// zones is no assertion at all.
+    func timeLabel(forReaderIn zone: TimeZone) -> String {
+        let time = String(startLocal.dropFirst(11).prefix(5))
+        guard let suffix = zoneSuffix(forReaderIn: zone) else { return time }
+        return "\(time) \(suffix)"
+    }
+
+    /// The abbreviation to append, or nil when there is nothing to say.
+    ///
+    /// THE COMPARISON IS AGAINST THE DEVICE'S OFFSET *AT THAT INSTANT*, and
+    /// getting this wrong is the obvious bug in this feature.
+    ///
+    /// The naive version compares the stored offset against
+    /// `TimeZone.current.secondsFromGMT()` — the device's offset NOW. Brussels
+    /// is +2 in July and +1 in December, so read that way, every summer run
+    /// sprouts a zone suffix once the clocks go back, and every winter run
+    /// sprouts one all summer. Roughly half the history would be labelled as
+    /// foreign, and the labels would change twice a year on their own.
+    ///
+    /// The question being asked is "did the clock this was recorded on differ
+    /// from the clock the reader keeps", and that has to be evaluated at the
+    /// moment of the activity — where DST is already resolved on both sides.
+    ///
+    /// COMPARED BY OFFSET, NOT BY IDENTIFIER, for the same reason: a run in
+    /// Paris and a run in Brussels are on the same clock, and saying "CET" on
+    /// one of them would be true and useless.
+    var zoneSuffix: String? { zoneSuffix(forReaderIn: .current) }
+
+    func zoneSuffix(forReaderIn zone: TimeZone) -> String? {
+        // Requires the instant. In practice every row carrying a zone also
+        // carries `startUTC` — the backfill that fetches one fetches both — so
+        // this guard is a correctness statement rather than a live path.
+        guard let instant = startDateUTC,
+              let activityOffset = offsetSeconds(at: instant) else { return nil }
+        guard activityOffset != zone.secondsFromGMT(for: instant) else { return nil }
+        return zoneAbbreviation(at: instant, offset: activityOffset)
+    }
+
+    /// The offset actually in force, preferring the stored one.
+    func offsetSeconds(at instant: Date) -> Int? {
+        if let startOffsetSeconds { return startOffsetSeconds }
+        guard let id = timeZoneIdentifier, let tz = TimeZone(identifier: id) else { return nil }
+        return tz.secondsFromGMT(for: instant)
+    }
+
+    /// `"JST"` where the system knows a real abbreviation, `"GMT+9"` where it
+    /// does not.
+    ///
+    /// Apple returns a genuine short name for some zones and a `GMT±n` string
+    /// for others, and which is which is an ICU detail this app does not
+    /// control. Rather than promise `JST` and print `GMT+9` in half the cases,
+    /// the fallback is computed from the offset — so the label is always
+    /// correct and sometimes prettier.
+    func zoneAbbreviation(at instant: Date, offset: Int) -> String {
+        if let id = timeZoneIdentifier, let tz = TimeZone(identifier: id) {
+            let style: NSTimeZone.NameStyle = tz.isDaylightSavingTime(for: instant)
+                ? .shortDaylightSaving : .shortStandard
+            if let name = tz.localizedName(for: style, locale: Locale(identifier: "en_US_POSIX")),
+               !name.isEmpty, !name.hasPrefix("GMT"), !name.hasPrefix("UTC") {
+                return name
+            }
+        }
+        return Self.gmtLabel(offset)
+    }
+
+    /// `"GMT+9"`, `"GMT-4"`, `"GMT+5:45"` — Kathmandu is why the minutes case
+    /// is here rather than assumed away.
+    static func gmtLabel(_ seconds: Int) -> String {
+        let sign = seconds < 0 ? "-" : "+"
+        let minutes = abs(seconds) / 60
+        let h = minutes / 60, m = minutes % 60
+        return m == 0 ? "GMT\(sign)\(h)" : String(format: "GMT%@%d:%02d", sign, h, m)
+    }
+
+    /// Strava sends `"(GMT+09:00) Asia/Tokyo"`. Only the identifier is worth
+    /// keeping — the parenthesised part is a rendering of `utc_offset`, which
+    /// is already stored properly, and it is a display string rather than data.
+    ///
+    /// VALIDATED BEFORE IT IS STORED. An identifier this device cannot resolve
+    /// is worth nothing to the abbreviation lookup and would sit in the column
+    /// looking like information, so it is discarded and the column reads NULL —
+    /// which is the honest answer under §6. The offset survives either way, and
+    /// the offset is the authority.
+    static func zoneIdentifier(from raw: String?) -> String? {
+        guard let raw, !raw.isEmpty else { return nil }
+        var candidate = raw
+        if let close = raw.range(of: ") ") {
+            candidate = String(raw[close.upperBound...])
+        }
+        let trimmed = candidate.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, TimeZone(identifier: trimmed) != nil else { return nil }
+        return trimmed
     }
 
     /// Minutes past midnight — used to spot duplicate uploads.
@@ -341,6 +487,15 @@ struct StravaActivityDTO: Decodable {
     /// position — which is why this is read by index rather than destructured.
     let start_latlng: [Double]?
 
+    /// `"(GMT+09:00) Asia/Tokyo"` — a display string with the identifier on the
+    /// end. Occasionally a bare identifier. Parsed by `Activity.zoneIdentifier`.
+    let timezone: String?
+
+    /// Seconds east of UTC. A DOUBLE in Strava's JSON — `32400.0`, not
+    /// `32400` — and decoding it as `Int` fails the whole activity, taking
+    /// every other field with it. Decoded as sent, narrowed on the way in.
+    let utc_offset: Double?
+
     func toActivity() -> Activity {
         Activity(
             id: String(id),
@@ -367,7 +522,12 @@ struct StravaActivityDTO: Decodable {
             averageWatts: average_watts,
             startUTC: start_date,
             startLat: (start_latlng?.count ?? 0) >= 2 ? start_latlng?[0] : nil,
-            startLon: (start_latlng?.count ?? 0) >= 2 ? start_latlng?[1] : nil
+            startLon: (start_latlng?.count ?? 0) >= 2 ? start_latlng?[1] : nil,
+            // LAST, after `startLon`, matching the declaration order in
+            // `Activity`. See the note above — this initialiser is the one that
+            // times out rather than complaining when the order is wrong.
+            timeZoneIdentifier: Activity.zoneIdentifier(from: timezone),
+            startOffsetSeconds: utc_offset.map { Int($0) }
         )
     }
 }
