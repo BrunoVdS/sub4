@@ -131,8 +131,17 @@ enum ReleaseGate: String, CaseIterable, Identifiable {
             + "provider, which §5.3 and §5.10 of that policy prohibit. It stays "
             + "off until the review is rebuilt on Health-derived figures."
         case .coordinateWeather:
-            "The coordinate it sends comes from Strava, and there is no consent "
-            + "screen for it yet. Both are fixed in Phase 2."
+            // HALF OF THIS SENTENCE STOPPED BEING TRUE IN 193, and it took a
+            // screenshot to notice. The consent screen now exists; the reader
+            // sees it before this gate can open. What remains true is the
+            // provenance: the coordinate is the start of a STRAVA activity, so
+            // sending it is sending a Strava-derived value to a third party
+            // until 4A rebuilds the source. A disclosure that keeps citing a
+            // fixed problem trains people to disbelieve the ones still standing.
+            "The coordinate is the start of a Strava activity, so switching this "
+            + "on sends a Strava-derived value to a weather provider. Sub4 asks "
+            + "before the first one leaves. Resolved at 4A, when activities come "
+            + "from Apple Health instead."
         }
     }
 
