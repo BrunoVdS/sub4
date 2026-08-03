@@ -21,9 +21,17 @@ struct DataControlsView: View {
 
     @State private var confirming = false
     @State private var receipt: LifecycleReceipt?
-    @State private var exportURL: URL?
+    @State private var shareItem: ShareItem?
+    @State private var lastExport: (size: Int64, at: Date)?
     @State private var exportError: String?
+    @State private var building = false
     @State private var showingReceipt = false
+
+    /// Off by default. Sensor traces are the bulk of an export — roughly 200 KB
+    /// per session once an activity has been opened, against a few kilobytes
+    /// for its summary — and the least readable part of it. Opting in is a
+    /// deliberate choice to wait for a large file.
+    @State private var includeTraces = false
 
     var body: some View {
         Section {
@@ -55,39 +63,70 @@ struct DataControlsView: View {
         .sheet(isPresented: $showingReceipt) {
             if let r = receipt { ReceiptSheet(receipt: r) }
         }
+        .sheet(item: $shareItem) { ShareSheet(items: [$0.url]) }
     }
 
     // MARK: Rows
 
     @ViewBuilder
     private var exportRow: some View {
-        if let url = exportURL {
-            ShareLink(item: url) {
-                Label("Share your export", systemImage: "square.and.arrow.up")
-                    .font(.subheadline)
+        Toggle(isOn: $includeTraces) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Include sensor traces").font(.subheadline)
+                Text("Heart rate, pace and elevation, sample by sample. Much "
+                     + "larger and much slower to build.")
+                    .font(.caption2).foregroundStyle(Color.dim)
             }
         }
+
         Button {
-            do {
-                exportURL = try DataLifecycleCoordinator.export()
-                exportError = nil
-            } catch {
-                exportError = error.localizedDescription
-                exportURL = nil
-            }
+            build()
         } label: {
             HStack {
-                Label(exportURL == nil ? "Export my data" : "Build a fresh export",
-                      systemImage: "arrow.down.doc")
+                Label("Export my data", systemImage: "arrow.down.doc")
                     .font(.subheadline)
                 Spacer()
+                if building { ProgressView() }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(building)
+
+        if let e = lastExport {
+            // FEEDBACK, added in 184. The first version changed nothing visible
+            // when the export succeeded a second time — same screen, same
+            // labels — which is indistinguishable from a button that does not
+            // work, and was reported as exactly that.
+            Text("\(ByteCountFormatter.string(fromByteCount: e.size, countStyle: .file)) · built \(e.at.formatted(date: .omitted, time: .shortened))")
+                .font(.caption2).foregroundStyle(Color.dim)
+        }
 
         if let e = exportError {
             Text(e).font(.caption2).foregroundStyle(Color.accent4)
+        }
+    }
+
+    /// Builds, then presents the share sheet itself — one tap rather than two.
+    ///
+    /// `ShareSheet` rather than SwiftUI's `ShareLink`, and that is a correction:
+    /// the ShareLink shipped in 183 rendered and did nothing at all when tapped.
+    /// This wrapper is a `UIActivityViewController`, is what the notes CSV
+    /// export has used since patch 84, and is known to work.
+    private func build() {
+        building = true
+        exportError = nil
+        Task {
+            defer { building = false }
+            do {
+                let url = try await DataLifecycleCoordinator.export(
+                    includingSensorTraces: includeTraces)
+                let size = DataLifecycleCoordinator.byteSize(of: url)
+                lastExport = (size, Date())
+                shareItem = ShareItem(url: url)
+            } catch {
+                exportError = error.localizedDescription
+            }
         }
     }
 

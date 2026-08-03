@@ -264,17 +264,39 @@ enum DataLifecycleCoordinator {
 
     // MARK: Export
 
-    /// Everything the inventory marks exportable, as one file.
+    /// What an export will contain, resolved on the main actor.
     ///
-    /// Written to the temporary directory rather than Application Support: an
-    /// export is a copy made to be handed somewhere else, and leaving a second
-    /// full copy of the history inside the app — unprotected, since no file
-    /// protection class is applied anywhere yet (DATA-05) — would be a worse
-    /// outcome than not offering an export at all.
-    static func export(using fm: FileManager = .default) throws -> URL {
-        var bundle: [String: Any] = [:]
+    /// Split from the writing deliberately. Reading the inventory touches
+    /// main-actor state; writing the file is pure I/O over a few hundred
+    /// megabytes and has no business blocking the UI. Only stdlib `Sendable`
+    /// values cross the boundary — dictionaries of `String: URL`, and two
+    /// blobs of already-serialised JSON.
+    struct ExportPlan {
+        let singles: [String: URL]
+        let directories: [String: URL]
+        let preferences: Data?
+        let manifest: Data
+        let destination: URL
+    }
+
+    /// Sensor traces are the bulk of an export and the least useful part of it
+    /// to a human being.
+    ///
+    /// MEASURED, not guessed: on a device with 660 activities, `streams/` runs
+    /// to roughly 200 KB per session once every activity has been opened —
+    /// about 130 MB, against 20 MB for everything else combined. Pretty-printed
+    /// JSON then roughly doubles it. An export that large cannot be mailed,
+    /// takes a visible age to build, and is a wall of numbers nobody reads.
+    ///
+    /// So it is opt-in, and the manifest says plainly when it was left out —
+    /// an export that silently omits the largest thing it holds would be the
+    /// same dishonesty as a delete that silently skips a file.
+    static func plan(includingSensorTraces traces: Bool,
+                     using fm: FileManager = .default) throws -> ExportPlan {
+        var singles: [String: URL] = [:]
+        var directories: [String: URL] = [:]
         var included: [String] = []
-        var skipped: [String] = []
+        var excluded: [String] = []
 
         for item in DataLifecycle.appSupportItems {
             let owners = DataLifecycle.categories(holding: item)
@@ -287,21 +309,18 @@ enum DataLifecycleCoordinator {
                 DataLifecycle.entry(c)?.isExportable == true
             }
             guard exportable else {
-                skipped.append(item.displayName)
+                excluded.append("\(item.displayName) — belongs to a category that is never exported")
                 continue
             }
-            guard let url = item.url, fm.fileExists(atPath: url.path) else { continue }
-
-            if item.isDirectory {
-                var files: [String: Any] = [:]
-                let names = (try? fm.contentsOfDirectory(atPath: url.path)) ?? []
-                for name in names where name.hasSuffix(".json") {
-                    if let j = json(at: url.appendingPathComponent(name)) { files[name] = j }
-                }
-                bundle[item.pathComponent] = files
-            } else if let j = json(at: url) {
-                bundle[item.pathComponent] = j
+            if item.pathComponent == "streams" && !traces {
+                excluded.append("\(item.displayName) — sensor traces were not requested")
+                continue
             }
+            guard let url = item.url, fm.fileExists(atPath: url.path) else {
+                continue    // nothing stored; not an omission worth reporting
+            }
+            if item.isDirectory { directories[item.pathComponent] = url }
+            else { singles[item.pathComponent] = url }
             included.append(item.pathComponent)
         }
 
@@ -318,20 +337,23 @@ enum DataLifecycleCoordinator {
                 }
             }
         }
-        if !prefs.isEmpty { bundle["preferences"] = prefs }
+        let prefsData = prefs.isEmpty
+            ? nil
+            : try JSONSerialization.data(withJSONObject: prefs, options: [.prettyPrinted, .sortedKeys])
 
         // The manifest is not decoration. An export with no account of what was
         // left out looks complete, and a person checking whether their data was
         // handed over has no way to tell the difference between "not held" and
         // "held and omitted".
-        bundle["manifest"] = [
-            "app":         AppVersion.short,
-            "exportedAt":  ISO8601DateFormatter().string(from: Date()),
-            "included":    included.sorted(),
-            "excluded":    skipped.sorted(),
-            "notIncluded": DataLifecycle.entries.filter { !$0.isExportable }
-                                                .map { "\($0.title) — \($0.deletionRule)" },
-            "heldElsewhere": DataLifecycle.entries.flatMap { e in
+        let manifest: [String: Any] = [
+            "app":            AppVersion.short,
+            "exportedAt":     ISO8601DateFormatter().string(from: Date()),
+            "sensorTraces":   traces ? "included" : "not included — build the export again with traces switched on",
+            "included":       included.sorted(),
+            "excluded":       excluded.sorted(),
+            "notIncluded":    DataLifecycle.entries.filter { !$0.isExportable }
+                                                   .map { "\($0.title) — \($0.deletionRule)" },
+            "heldElsewhere":  DataLifecycle.entries.flatMap { e in
                 e.storage.compactMap { s -> String? in
                     if case .systemOwned(let who) = s { return "\(e.title) — held by \(who)" }
                     return nil
@@ -339,24 +361,99 @@ enum DataLifecycleCoordinator {
             }
         ]
 
-        let data = try JSONSerialization.data(withJSONObject: bundle,
-                                              options: [.prettyPrinted, .sortedKeys])
         let stamp = ISO8601DateFormatter()
         stamp.formatOptions = [.withFullDate]
-        let url = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("Sub4-export-\(stamp.string(from: Date())).json")
-        try data.write(to: url, options: .atomic)
-        return url
+        let name = traces
+            ? "Sub4-export-full-\(stamp.string(from: Date())).json"
+            : "Sub4-export-\(stamp.string(from: Date())).json"
+
+        return ExportPlan(
+            singles: singles,
+            directories: directories,
+            preferences: prefsData,
+            manifest: try JSONSerialization.data(withJSONObject: manifest,
+                                                 options: [.prettyPrinted, .sortedKeys]),
+            destination: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name))
     }
 
-    /// Reads a stored file back as JSON. A store that fails to parse is carried
-    /// into the export as raw text rather than dropped — it is still the user's
-    /// data, and an export that silently omits a corrupted file is the same
-    /// class of quiet loss as DATA-01.
-    private static func json(at url: URL) -> Any? {
-        guard let d = try? Data(contentsOf: url) else { return nil }
-        if let obj = try? JSONSerialization.jsonObject(with: d) { return obj }
-        return ["unparsed": String(data: d, encoding: .utf8) ?? "\(d.count) bytes"]
+    /// Writes the plan out, one store at a time.
+    ///
+    /// STREAMED, not assembled. The first version built the whole export as a
+    /// single dictionary and handed it to `JSONSerialization` — which means
+    /// every byte of every sensor trace is resident in memory at once, twice
+    /// over once serialised. That is fine at the two megabytes a simulator
+    /// holds and is a way to be killed by the watchdog on a real device with a
+    /// year of training in it.
+    ///
+    /// `nonisolated` so it can run off the main actor. It takes no model
+    /// objects, only file URLs and two blobs of prepared JSON.
+    nonisolated static func write(_ plan: ExportPlan,
+                                  using fm: FileManager = .default) throws -> URL {
+        fm.createFile(atPath: plan.destination.path, contents: nil)
+        let h = try FileHandle(forWritingTo: plan.destination)
+        defer { try? h.close() }
+
+        func put(_ s: String) throws { try h.write(contentsOf: Data(s.utf8)) }
+        func put(_ d: Data) throws { try h.write(contentsOf: d) }
+
+        try put("{\n")
+        try put("\"manifest\": ")
+        try put(plan.manifest)
+
+        for (key, url) in plan.singles.sorted(by: { $0.key < $1.key }) {
+            try put(",\n\(quoted(key)): ")
+            try put(bodyOfFile(at: url))
+        }
+
+        for (key, dir) in plan.directories.sorted(by: { $0.key < $1.key }) {
+            try put(",\n\(quoted(key)): {\n")
+            let names = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? [])
+                .filter { $0.hasSuffix(".json") }.sorted()
+            for (i, name) in names.enumerated() {
+                if i > 0 { try put(",\n") }
+                try put("\(quoted(name)): ")
+                try put(bodyOfFile(at: dir.appendingPathComponent(name)))
+            }
+            try put("\n}")
+        }
+
+        if let p = plan.preferences {
+            try put(",\n\"preferences\": ")
+            try put(p)
+        }
+        try put("\n}\n")
+        return plan.destination
+    }
+
+    /// Plan on the main actor, write off it.
+    static func export(includingSensorTraces traces: Bool = false) async throws -> URL {
+        let p = try plan(includingSensorTraces: traces)
+        return try await Task.detached(priority: .userInitiated) {
+            try write(p)
+        }.value
+    }
+
+    /// A stored file's contents, ready to drop into the stream.
+    ///
+    /// A file that will not parse is carried through as an object holding its
+    /// raw text rather than dropped. It is still the user's data, and an export
+    /// that silently omits a corrupted store is the same class of quiet loss as
+    /// DATA-01. Emitting it raw would also break the surrounding JSON, which is
+    /// the other reason it is wrapped rather than passed through.
+    nonisolated private static func bodyOfFile(at url: URL) -> Data {
+        guard let d = try? Data(contentsOf: url) else {
+            return Data("{\"unreadable\": true}".utf8)
+        }
+        if (try? JSONSerialization.jsonObject(with: d)) != nil { return d }
+        let text = String(data: d, encoding: .utf8) ?? "\(d.count) bytes, not text"
+        let wrapped = (try? JSONSerialization.data(withJSONObject: ["unparsed": text]))
+        return wrapped ?? Data("{\"unparsed\": true}".utf8)
+    }
+
+    nonisolated private static func quoted(_ s: String) -> String {
+        let escaped = s.replacingOccurrences(of: "\\", with: "\\\\")
+                       .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
     }
 
     /// UserDefaults values are plist types, and not all of them survive

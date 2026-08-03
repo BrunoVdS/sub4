@@ -23,7 +23,19 @@ import Testing
 import Foundation
 @testable import Sub4
 
-@Suite
+/// SERIALIZED, and not for a shared-mutable-state reason — for a shared FILE.
+///
+/// An export is named for the day it was built, deliberately: two exports on
+/// one day overwrite each other rather than leaving a trail of near-identical
+/// files in `tmp`. Three tests here build a summary export, and Swift Testing
+/// runs them concurrently, so all three wrote the same path and each one's
+/// cleanup deleted the file the others were still reading. The first to finish
+/// passed and the rest failed with ENOENT — which reads like a broken export
+/// and is nothing of the kind.
+///
+/// The alternative was a `destination:` parameter on `plan` existing only so
+/// tests could avoid colliding. Serialising is the smaller lie.
+@Suite(.serialized)
 @MainActor
 struct DataLifecycleCoordinatorTests {
 
@@ -153,8 +165,8 @@ struct DataLifecycleCoordinatorTests {
     /// with a manifest, not an empty one. A person who exports before syncing
     /// anything should get an answer, and the answer is "nothing yet".
     @Test("An export is written and parses, even with nothing stored")
-    func exportProducesValidJSON() throws {
-        let url = try DataLifecycleCoordinator.export()
+    func exportProducesValidJSON() async throws {
+        let url = try await DataLifecycleCoordinator.export()
         defer { try? FileManager.default.removeItem(at: url) }
 
         let data = try Data(contentsOf: url)
@@ -168,13 +180,55 @@ struct DataLifecycleCoordinatorTests {
         // complete when it is not — see the note in the coordinator.
         #expect(manifest["notIncluded"] != nil)
         #expect(manifest["heldElsewhere"] != nil)
+        #expect(manifest["sensorTraces"] != nil)
+    }
+
+    /// THE 184 REGRESSION, and the reason the whole export was rewritten to
+    /// stream: the first version assembled every store into one dictionary and
+    /// serialised it in one go, with every sensor sample resident in memory. It
+    /// is written a store at a time now, so this checks the hand-built JSON is
+    /// actually well formed — a stray comma would produce a file that looks
+    /// right and parses nowhere.
+    @Test("A streamed export is valid JSON with traces included")
+    func exportWithTracesIsValidJSON() async throws {
+        let url = try await DataLifecycleCoordinator.export(includingSensorTraces: true)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let data = try Data(contentsOf: url)
+        let obj = try JSONSerialization.jsonObject(with: data)
+        #expect(obj is [String: Any])
+    }
+
+    /// Sensor traces are opt-out by default, and the manifest has to SAY so.
+    /// An export that quietly omits the largest thing it holds is the same
+    /// dishonesty as a delete that silently skips a file.
+    @Test("Leaving traces out is disclosed in the manifest")
+    func omittedTracesAreDisclosed() async throws {
+        let url = try await DataLifecycleCoordinator.export(includingSensorTraces: false)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let data = try Data(contentsOf: url)
+        let dict = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let manifest = try #require(dict["manifest"] as? [String: Any])
+        let note = try #require(manifest["sensorTraces"] as? String)
+        #expect(note.localizedCaseInsensitiveContains("not included"))
+        #expect(dict["streams"] == nil, "traces were excluded but streams were written anyway")
+    }
+
+    /// The plan is what the UI shows and what the writer consumes; the two must
+    /// agree about the filename before a single byte is written.
+    @Test("A full export is named differently from a summary export")
+    func fullExportIsNamedDifferently() throws {
+        let summary = try DataLifecycleCoordinator.plan(includingSensorTraces: false)
+        let full = try DataLifecycleCoordinator.plan(includingSensorTraces: true)
+        #expect(summary.destination != full.destination,
+                "both exports would overwrite the same file")
+        #expect(full.destination.lastPathComponent.contains("full"))
     }
 
     /// Naming a file after the day it was made is the difference between an
     /// export a person can find later and one more `export.json` in Files.
     @Test("The export is named with a date")
-    func exportIsNamedWithADate() throws {
-        let url = try DataLifecycleCoordinator.export()
+    func exportIsNamedWithADate() async throws {
+        let url = try await DataLifecycleCoordinator.export()
         defer { try? FileManager.default.removeItem(at: url) }
         let name = url.lastPathComponent
         #expect(name.hasPrefix("Sub4-export-"))
