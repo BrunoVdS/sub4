@@ -200,9 +200,24 @@ struct DataLifecycleTests {
     /// the subject is still disclosed, not how the sentence was worded.
     @Test("The known unfixed problems are still disclosed")
     func knownProblemsAreDisclosed() throws {
+        // THE CYCLING ASSERTION WAS REMOVED IN PATCH 181, DELIBERATELY.
+        //
+        // This is the workflow the test was written for. It asserted that the
+        // inventory still disclosed cycling distance being read without being
+        // requested; patch 181 added the type to the authorisation request, so
+        // the disclosure was deleted and this line went with it. Removing it
+        // required reading why it was here, which is the whole point of pinning
+        // a known problem rather than leaving it to be noticed.
+        //
+        // The same happened to "a failed query can replace a good cache" —
+        // `collect` now returns an outcome rather than an empty dictionary, so
+        // there is nothing left to disclose.
+        //
+        // What survives is the purpose string, which cannot be fixed from Swift.
         let health = try #require(DataLifecycle.entry(.healthMetrics))
-        #expect(health.gaps.contains { $0.localizedCaseInsensitiveContains("cycling") },
-                "cycling distance is read without being requested (HK-02)")
+        #expect(health.gaps.contains { $0.localizedCaseInsensitiveContains("purpose")
+                                    || $0.localizedCaseInsensitiveContains("prompt") },
+                "the Health purpose string still names step count alone (PRIV-02)")
 
         let profile = try #require(DataLifecycle.entry(.athleteProfile))
         #expect(profile.gaps.contains { $0.localizedCaseInsensitiveContains("athlete.json") },

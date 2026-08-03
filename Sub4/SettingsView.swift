@@ -1006,7 +1006,7 @@ struct SettingsView: View {
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(health.hasUsageDescription ? Color.secondary : Color.red)
             }
-            LabeledContent("Access", value: health.isAuthorized ? "granted" : "not granted")
+            LabeledContent("Access", value: health.hasRequestedAuthorization ? "granted" : "not granted")
             LabeledContent("Days with steps", value: "\(health.stepsByDay.count)")
 
             Button("Allow step access") {
@@ -1015,14 +1015,14 @@ struct SettingsView: View {
             .disabled(!health.hasUsageDescription)
 
             Button("Refresh") { Task { await health.refresh() } }
-                .disabled(!health.isAuthorized)
+                .disabled(!health.hasRequestedAuthorization)
 
             // A diagnostic, not a feature. Strava is still the sole source of
             // truth for every figure in the app; this only reports where the
             // two disagree, so the scope of any move onto Health is decided by
             // this athlete's data rather than by what the APIs could do.
             Button("Compare with Strava") { showHealthReconcile = true }
-                .disabled(!health.isAuthorized)
+                .disabled(!health.hasRequestedAuthorization)
         }
     }
 

@@ -80,13 +80,13 @@ struct HealthReconcileView: View {
     private var statusSection: some View {
         Section {
             LabeledContent("Health access",
-                           value: health.isAuthorized ? "granted" : "not granted")
+                           value: health.hasRequestedAuthorization ? "granted" : "not granted")
             LabeledContent("Window", value: "\(cutoff) → today")
             if loading {
                 HStack { ProgressView(); Text("Reading Health…").foregroundStyle(.secondary) }
             } else {
                 Button("Run again") { Task { await run(force: true) } }
-                    .disabled(!health.isAuthorized)
+                    .disabled(!health.hasRequestedAuthorization)
             }
             if let e = health.lastError {
                 Text(e).font(.caption).foregroundStyle(.red)
@@ -305,7 +305,7 @@ struct HealthReconcileView: View {
 
     private func run(force: Bool = false) async {
         guard !loading, force || !ran else { return }
-        guard health.isAuthorized else { ran = true; return }
+        guard health.hasRequestedAuthorization else { ran = true; return }
         loading = true
         defer { loading = false; ran = true }
 

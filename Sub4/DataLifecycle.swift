@@ -235,11 +235,19 @@ enum DataLifecycle {
             aiShareable: false,
             deletionRule: "Sub4 stores none of it. Revoke access in the Health app; "
                         + "nothing is left behind here to delete.",
+            // Two of the three gaps recorded here in patch 180 were closed by
+            // 181: cycling distance is now in the authorisation request, and a
+            // failed query keeps the previous good series instead of replacing
+            // it with an empty one. They are deleted rather than marked done —
+            // this is an inventory of what is true now, and a list of fixed
+            // things would grow forever and be read by nobody.
+            //
+            // The one that remains cannot be fixed from Swift: the purpose
+            // string lives in the target's build settings, not in this project's
+            // source, so it needs an edit in Xcode.
             gaps: ["The permission prompt describes step count alone, while seven "
-                 + "types are read (PRIV-02, step 2.2.3).",
-                   "Cycling distance is read but never requested (HK-02, step 2.2.1).",
-                   "A failed query can replace a good cache with an empty one "
-                 + "(HK-02, step 2.2.7)."]),
+                 + "types are read (PRIV-02, step 2.2.3). The text is in the "
+                 + "target's build settings — INFOPLIST_KEY_NSHealthShareUsageDescription."]),
 
         DataCategoryEntry(
             category: .sessionNotes,

@@ -17,6 +17,10 @@
 import Foundation
 import Observation
 import HealthKit
+// For `UIApplication.openSettingsURLString` — the only way to send someone to
+// the page where Health permissions are actually changed. See
+// `systemSettingsURL`.
+import UIKit
 
 @Observable
 final class HealthStore {
@@ -63,8 +67,8 @@ final class HealthStore {
 
     /// Persisted: HealthKit won't tell us on relaunch whether we were granted,
     /// so we remember that we successfully completed the request once.
-    private(set) var isAuthorized: Bool {
-        didSet { UserDefaults.standard.set(isAuthorized, forKey: Self.grantedKey) }
+    private(set) var hasRequestedAuthorization: Bool {
+        didSet { UserDefaults.standard.set(hasRequestedAuthorization, forKey: Self.grantedKey) }
     }
     private static let grantedKey = "health.authorized"
 
@@ -89,6 +93,38 @@ final class HealthStore {
     /// calories and no HR at all, which turns a real training day into a gap.
     private var heartRateType: HKQuantityType { HKQuantityType(.heartRate) }
 
+    /// READ SINCE THE RIDE ENRICHMENT WAS WRITTEN, REQUESTED SINCE PATCH 181 —
+    /// this is `HK-02`.
+    ///
+    /// `HealthWorkouts` asks for `distanceCycling` when enriching a ride, and
+    /// this type appeared in no authorisation request. HealthKit does not report
+    /// a denied read: an unrequested type returns an empty result exactly as a
+    /// device with no cycling data would. So the failure was invisible — no
+    /// error, no prompt, no missing-permission warning — just rides that never
+    /// gained a distance and looked like rides nobody had recorded properly.
+    ///
+    /// Adding it to the request is the fix; bumping `authVersion` below is what
+    /// makes the fix reach an install that has already been granted once.
+    private var cyclingDistanceType: HKQuantityType { HKQuantityType(.distanceCycling) }
+
+    /// Every type this app reads, in one place, so the authorisation request
+    /// cannot drift from the queries again. Adding a read anywhere in the module
+    /// means adding it here, and `HealthTypeTests` asserts the count.
+    var typesRead: [HKObjectType] {
+        [stepType, walkRunType, restingType,
+         workoutType, swimDistanceType, heartRateType, cyclingDistanceType]
+    }
+
+    /// The same list in words, for the Settings row, the permission explanation
+    /// and the data-lifecycle inventory. The purpose string iOS shows at the
+    /// prompt must describe this set — it currently names step count alone,
+    /// which is the other half of `PRIV-02` and lives in the target's build
+    /// settings rather than in this file.
+    static let typesReadDescribed = [
+        "Steps", "Walking and running distance", "Resting heart rate",
+        "Workouts", "Swimming distance", "Heart rate", "Cycling distance"
+    ]
+
     /// The workout queries live in HealthWorkouts.swift and need the store and
     /// a way to report a failure. Internal, not public — same module.
     var healthStore: HKHealthStore { store }
@@ -99,8 +135,9 @@ final class HealthStore {
     /// must actually be re-requested, or the new type silently returns nothing
     /// and looks like a device that has no data.
     ///
-    /// 3 adds workouts and swim distance. 4 adds heart rate.
-    private static let authVersion = 4
+    /// 3 adds workouts and swim distance. 4 adds heart rate. 5 adds cycling
+    /// distance, which had been read without ever being asked for (HK-02).
+    private static let authVersion = 5
     private static let authVersionKey = "health.authVersion"
 
     /// True while resting heart rate is not arriving — never asked for, asked
@@ -108,7 +145,7 @@ final class HealthStore {
     /// the three apart. Steps keep working meanwhile; this only gates the
     /// prompt.
     var needsRestingHRGrant: Bool {
-        isAuthorized
+        hasRequestedAuthorization
             && UserDefaults.standard.integer(forKey: Self.authVersionKey) < Self.authVersion
     }
 
@@ -116,7 +153,7 @@ final class HealthStore {
     private let queryTimeout: Duration = .seconds(8)
 
     private init() {
-        isAuthorized = UserDefaults.standard.bool(forKey: Self.grantedKey)
+        hasRequestedAuthorization = UserDefaults.standard.bool(forKey: Self.grantedKey)
     }
 
     // MARK: Authorisation
@@ -149,11 +186,11 @@ final class HealthStore {
             return
         }
         do {
-            try await store.requestAuthorization(
-                toShare: [],
-                read: [stepType, walkRunType, restingType,
-                       workoutType, swimDistanceType, heartRateType])
-            isAuthorized = true
+            // `typesRead`, not a second list written out here. The two versions
+            // of this set diverged once already and cost a silently empty read
+            // for every ride — see `cyclingDistanceType`.
+            try await store.requestAuthorization(toShare: [], read: Set(typesRead))
+            hasRequestedAuthorization = true
             lastError = nil
             await refresh()
             // HealthKit never reports a DENIED read — the request succeeds
@@ -165,7 +202,7 @@ final class HealthStore {
                 UserDefaults.standard.set(Self.authVersion, forKey: Self.authVersionKey)
             }
         } catch {
-            isAuthorized = false
+            hasRequestedAuthorization = false
             lastError = error.localizedDescription
         }
     }
@@ -174,7 +211,7 @@ final class HealthStore {
     /// the guard that stops a missing entitlement hanging the startup task.
     @MainActor
     func refreshIfPossible() async {
-        guard isAvailable, isAuthorized, hasUsageDescription else { return }
+        guard isAvailable, hasRequestedAuthorization, hasUsageDescription else { return }
         await refresh()
     }
 
@@ -187,7 +224,7 @@ final class HealthStore {
     func refresh(daysBack: Int = 120,
                  restingDaysBack: Int = 420,
                  daysForward: Int = 1) async {
-        guard isAvailable, isAuthorized, hasUsageDescription else { return }
+        guard isAvailable, hasRequestedAuthorization, hasUsageDescription else { return }
 
         let cal = Calendar.current
         let end = cal.date(byAdding: .day, value: daysForward,
@@ -208,13 +245,100 @@ final class HealthStore {
                                   from: restStart, to: end, statistic: .average)
         let (s, d, r) = await (steps, dist, rest)
 
-        stepsByDay = s.mapValues { Int($0.rounded()) }
-        walkRunKmByDay = d
-        restingHRByDay = r
+        // LAST KNOWN GOOD SURVIVES A FAILURE — patch 181, `HK-02`.
+        //
+        // Each series is only replaced when its own query actually succeeded.
+        // One failing read no longer takes the other two down with it, and a
+        // transient failure no longer erases a hundred and twenty days of steps
+        // and replaces them with a zero that looks like a measurement.
+        if let v = s.values {
+            stepsByDay = v.mapValues { Int($0.rounded()) }
+        }
+        if let v = d.values { walkRunKmByDay = v }
+        if let v = r.values { restingHRByDay = v }
 
+        stepsStatus = status(for: s, count: stepsByDay.count)
+        walkRunStatus = status(for: d, count: walkRunKmByDay.count)
+        restingHRStatus = status(for: r, count: restingHRByDay.count)
+        lastRefreshAttempt = Date()
+
+        // Fed the CURRENT series rather than whatever this pass returned — on a
+        // failed read that is the previous good data, which is the point.
         ConstantsStore.shared.refreshFromSources(
             activities: ActivityStore.shared.activities,
             restingByDay: restingHRByDay)
+    }
+
+    // MARK: What each series actually knows
+    //
+    // Plan step 2.2.6. HealthKit refuses to say whether a read was denied — the
+    // request succeeds either way — so "granted" is a claim this app cannot
+    // make and used to make anyway. These five states are what it CAN
+    // distinguish, and each one implies something different about whether to
+    // retry, re-prompt, or leave the reader alone.
+
+    enum SeriesStatus: Equatable {
+        /// Never asked, or asked and nothing has come back yet.
+        case notRequested
+        /// The query ran and the window genuinely held nothing. On a new phone
+        /// this is the honest answer and not a fault.
+        case noData
+        /// Readings arrived. The count is what makes this legible in Settings —
+        /// "120 days" reads very differently from "1 day".
+        case ok(count: Int)
+        /// The query returned an error. Whatever was held before is still held.
+        case failed(String)
+        /// The query exceeded its bound. Distinct from `failed` because it is
+        /// the state a missing capability or entitlement produces.
+        case timedOut
+
+        var label: String {
+            switch self {
+            case .notRequested:    "not requested"
+            case .noData:          "no data in range"
+            case .ok(let n):       "\(n) day\(n == 1 ? "" : "s")"
+            case .failed:          "query failed"
+            case .timedOut:        "timed out"
+            }
+        }
+
+        /// True where the reader should be shown something is wrong. `noData` is
+        /// deliberately not a problem: a device with no swims is not broken.
+        var isProblem: Bool {
+            switch self {
+            case .failed, .timedOut: true
+            case .notRequested, .noData, .ok: false
+            }
+        }
+    }
+
+    private(set) var stepsStatus: SeriesStatus = .notRequested
+    private(set) var walkRunStatus: SeriesStatus = .notRequested
+    private(set) var restingHRStatus: SeriesStatus = .notRequested
+    private(set) var lastRefreshAttempt: Date?
+
+    private func status(for outcome: QueryOutcome, count: Int) -> SeriesStatus {
+        switch outcome {
+        case .ok(let v):     v.isEmpty ? .noData : .ok(count: count)
+        case .failed(let m): .failed(m)
+        case .timedOut:      .timedOut
+        }
+    }
+
+    /// Everything that went wrong on the last pass, for one Settings line.
+    var failingSeries: [String] {
+        var out: [String] = []
+        if stepsStatus.isProblem { out.append("steps") }
+        if walkRunStatus.isProblem { out.append("distance") }
+        if restingHRStatus.isProblem { out.append("resting heart rate") }
+        return out
+    }
+
+    /// Deep link to this app's page in Settings, where Health permissions are
+    /// actually changed — plan step 2.2.9. The app cannot alter them itself and
+    /// should not pretend to; it can only point.
+    static var systemSettingsURL: URL? {
+        URL(string: UIApplication.openSettingsURLString)
     }
 
     // MARK: The button
@@ -251,7 +375,7 @@ final class HealthStore {
                 : "Not run — Health is not available on this device."
             return
         }
-        guard isAuthorized else {
+        guard hasRequestedAuthorization else {
             // No grant means no query. Fall back to the Strava-only path so the
             // constants are still rebuilt, and say which one ran.
             ConstantsStore.shared.refreshFromSources(
@@ -294,37 +418,60 @@ final class HealthStore {
 
     enum Statistic { case sum, average }
 
-    /// Bounded query. Returns [:] on error OR timeout — never hangs.
+    /// WHY THIS IS NOT `[String: Double]` ANY MORE — patch 181, `HK-02`.
+    ///
+    /// `collect` used to return `[:]` for three different things: the query
+    /// succeeded and the window held nothing, the query failed, and the query
+    /// timed out. `refresh` then assigned that dictionary over the live one,
+    /// so a single failed read replaced a hundred and twenty days of steps with
+    /// nothing — and the screen showed zero, which is a measurement, rather
+    /// than a gap, which is the truth.
+    ///
+    /// This is the same distinction the load engine makes everywhere else
+    /// between a real zero and an absence, applied to the one place that was
+    /// still collapsing them.
+    enum QueryOutcome {
+        case ok([String: Double])
+        case failed(String)
+        case timedOut
+
+        var values: [String: Double]? {
+            if case .ok(let v) = self { return v }
+            return nil
+        }
+    }
+
+    /// Bounded query. Never hangs, and never reports an absence as a zero.
     private func collect(_ type: HKQuantityType,
                          unit: HKUnit,
                          from start: Date,
                          to end: Date,
-                         statistic: Statistic = .sum) async -> [String: Double] {
+                         statistic: Statistic = .sum) async -> QueryOutcome {
 
-        await withTaskGroup(of: [String: Double]?.self) { group in
+        await withTaskGroup(of: QueryOutcome?.self) { group in
 
             group.addTask { [weak self] in
-                guard let self else { return [:] }
+                guard let self else { return .failed("The store went away.") }
                 return await self.runQuery(type, unit: unit, from: start, to: end,
                                            statistic: statistic)
             }
 
             group.addTask { [queryTimeout] in
                 try? await Task.sleep(for: queryTimeout)
-                return nil                      // nil == timed out
+                return nil                      // nil == the timeout won the race
             }
 
-            let first = await group.next() ?? [:]
+            let first = await group.next() ?? nil
             group.cancelAll()
 
-            if first == nil {
+            guard let outcome = first else {
                 await MainActor.run {
                     self.lastError = "Health query timed out — check the HealthKit "
                                    + "capability and privacy string."
                 }
-                return [:]
+                return .timedOut
             }
-            return first ?? [:]
+            return outcome
         }
     }
 
@@ -332,11 +479,11 @@ final class HealthStore {
                           unit: HKUnit,
                           from start: Date,
                           to end: Date,
-                          statistic: Statistic) async -> [String: Double] {
+                          statistic: Statistic) async -> QueryOutcome {
 
         await withCheckedContinuation { cont in
             var resumed = false
-            let finish: ([String: Double]) -> Void = { result in
+            let finish: (QueryOutcome) -> Void = { result in
                 guard !resumed else { return }   // belt and braces
                 resumed = true
                 cont.resume(returning: result)
@@ -361,8 +508,11 @@ final class HealthStore {
 
             query.initialResultsHandler = { _, results, error in
                 if let error {
-                    Task { @MainActor in self.lastError = error.localizedDescription }
-                    finish([:])
+                    let message = error.localizedDescription
+                    Task { @MainActor in self.lastError = message }
+                    // `.failed`, NOT an empty dictionary. The caller keeps what
+                    // it already had rather than adopting nothing as a reading.
+                    finish(.failed(message))
                     return
                 }
                 var out: [String: Double] = [:]
@@ -372,7 +522,10 @@ final class HealthStore {
                         out[DayKey.key(s.startDate)] = q.doubleValue(for: unit)
                     }
                 }
-                finish(out)
+                // An empty `out` here IS a real answer: the query ran and the
+                // window held nothing. That is a different fact from the branch
+                // above and the type now says so.
+                finish(.ok(out))
             }
 
             store.execute(query)

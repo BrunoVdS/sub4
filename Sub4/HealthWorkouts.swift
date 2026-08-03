@@ -110,7 +110,7 @@ extension HealthStore {
     /// the caller cannot tell a denial from an empty store anyway.
     @MainActor
     func workouts(from start: Date, to end: Date) async -> [HealthWorkout] {
-        guard isAvailable, isAuthorized, hasUsageDescription else { return [] }
+        guard isAvailable, hasRequestedAuthorization, hasUsageDescription else { return [] }
 
         let raw = await withTaskGroup(of: [HealthWorkout]?.self) { group in
             group.addTask { [weak self] in
@@ -163,7 +163,7 @@ extension HealthStore {
     /// SwiftUI `.task` fires on every appearance of the view.
     @MainActor
     func loadWorkoutCacheIfStale(since cutoff: String, maxAge: TimeInterval = 3600) async {
-        guard isAvailable, isAuthorized, hasUsageDescription else { return }
+        guard isAvailable, hasRequestedAuthorization, hasUsageDescription else { return }
         if let at = workoutsLoadedAt, Date().timeIntervalSince(at) < maxAge { return }
         guard let start = DayKey.date(cutoff) else { return }
         let found = await workouts(from: start, to: Date())
