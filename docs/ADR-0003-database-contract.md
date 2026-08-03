@@ -204,6 +204,31 @@ no zone database), `timeZoneIdentifier` alongside it for the abbreviation and
 for anything that needs real zone rules later. Both nullable — activities
 imported from legacy JSON have neither, and NULL means unknown, per §6.
 
+**The identifier is not always a place — found in the real data, 3 Aug 2026.**
+
+Backfilling 661 activities returned `Africa/Blantyre` for 28 of them and
+`Africa/Algiers` for 27. Those are the alphabetically first IANA zones at +2 and
++1, neither observes daylight saving, and all 55 have no coordinate: 43 pool
+swims, six gym sessions, five workouts, one indoor ride. Strava substitutes a
+representative zone for the offset when it has no position to geolocate.
+
+Six no-GPS activities did come back `Europe/Brussels`, so the substitution is not
+purely mechanical and a real identifier cannot be distinguished from a
+substituted one at ingest. What can be checked is whether the activity has a
+coordinate, and that is the rule: **the identifier is used for the abbreviation
+only when the activity has a start position; otherwise the label is derived from
+the offset.** Conservative in the right direction — a genuine pool swim in
+Brussels loses `CEST` and gains `GMT+2`, which is less pretty and never wrong.
+
+This vindicates making the offset the authority rather than the identifier, a
+decision taken in this section before the case was known to exist. The offset
+Strava sends is correct in every one of the 55 — it is what the uploading device
+reported. Only the name attached to it is invented.
+
+It also vindicates comparing offsets rather than identifiers in the display rule
+(§4.3, above): identifier comparison would have labelled 55 sessions in Antwerp
+as having taken place in Malawi and Algeria, at home, permanently.
+
 ### 4.4 THIS HAS A DEADLINE, and it is before Phase 3 finishes
 
 Phase 3 is eight to twelve sessions. The Japan trip is in September. ADR-0002
