@@ -34,6 +34,16 @@ final class HealthStore {
     /// into a per-month figure — the denominator of every TRIMP the app will
     /// ever compute. Read-only, like everything else here.
     private(set) var restingHRByDay: [String: Double] = [:]
+
+    /// The clock each of the days above was counted on — patch 198.
+    ///
+    /// Exposed because the freeze on its own is silent. A Japanese day now
+    /// keeps its own step count, correctly, and looks exactly like a Belgian
+    /// one on screen. `marker(forDay:)` is what lets a view say which midnight
+    /// a total was counted from, so the number and its basis are both visible.
+    private(set) var dayZones = DayZones(changes: [],
+                                         trailingOffsetSeconds: TimeZone.current.secondsFromGMT())
+
     private(set) var isAvailable = HKHealthStore.isHealthDataAvailable()
     private(set) var lastError: String?
 
@@ -248,15 +258,29 @@ final class HealthStore {
         let restStart = cal.date(byAdding: .day, value: -restingDaysBack,
                                  to: cal.startOfDay(for: Date())) ?? Date()
 
-        async let steps = collect(stepType, unit: .count(), from: start, to: end)
+        // Built once, from the activities, and passed down — ADR-0003 §4.5.
+        //
+        // READ HERE RATHER THAN INSIDE THE QUERY. `ActivityStore` is
+        // main-actor state and the queries run on HealthKit's own queue; a
+        // value type crossing that boundary once is the whole reason `DayZones`
+        // is a struct of offsets rather than a reference to the store.
+        //
+        // On a device that has never left home this yields a single run and
+        // every query below is exactly the one query it was before.
+        let zones = DayZones.from(activities: ActivityStore.shared.activities)
+        dayZones = zones
+
+        async let steps = collect(stepType, unit: .count(), from: start, to: end,
+                                  zones: zones)
         async let dist  = collect(walkRunType, unit: .meterUnit(with: .kilo),
-                                  from: start, to: end)
+                                  from: start, to: end, zones: zones)
         // Resting HR is a DISCRETE measurement — one reading per day. Summing
         // it, as the other two are summed, would produce a number in the
         // hundreds and it would look almost plausible.
         async let rest  = collect(restingType,
                                   unit: HKUnit.count().unitDivided(by: .minute()),
-                                  from: restStart, to: end, statistic: .average)
+                                  from: restStart, to: end, statistic: .average,
+                                  zones: zones)
         let (s, d, r) = await (steps, dist, rest)
 
         // LAST KNOWN GOOD SURVIVES A FAILURE — patch 181, `HK-02`.
@@ -455,19 +479,69 @@ final class HealthStore {
         }
     }
 
-    /// Bounded query. Never hangs, and never reports an absence as a zero.
+    /// Bounded query, run once per stretch of days sharing one clock — patch
+    /// 198, ADR-0003 §4.5.
+    ///
+    /// WHY THIS IS NOT ONE QUERY ANY MORE.
+    ///
+    /// `HKStatisticsCollectionQuery` takes a single `anchorDate` and a single
+    /// interval, so every bucket it returns is cut on one clock. That is
+    /// exactly the behaviour being fixed: whichever clock the phone is on when
+    /// the query runs becomes the clock the whole history is counted on, and
+    /// a month of Japanese days silently re-cuts itself on landing.
+    ///
+    /// A window that spans a trip is therefore split into runs — home, away,
+    /// home — and each run is asked for separately with its own anchor and its
+    /// own labelling. `DayZones.runs` guarantees the runs partition the window
+    /// with no overlap, so nothing is counted twice at a boundary.
+    ///
+    /// The common case costs nothing: a device that has never left home yields
+    /// a single run, which is the same one query as before.
+    ///
+    /// FAILURE IS ALL-OR-NOTHING, ON PURPOSE. If any run fails or times out,
+    /// the whole collection reports that failure and the caller keeps its
+    /// previous good series — patch 181's rule. Merging the runs that did
+    /// succeed would produce a series with a silent hole in it, which is the
+    /// shape of answer this store already refuses to give.
     private func collect(_ type: HKQuantityType,
                          unit: HKUnit,
                          from start: Date,
                          to end: Date,
-                         statistic: Statistic = .sum) async -> QueryOutcome {
+                         statistic: Statistic = .sum,
+                         zones: DayZones) async -> QueryOutcome {
+
+        let runs = zones.runs(from: start, to: end)
+        guard runs.count > 1 else {
+            let zone = runs.first?.zone ?? TimeZone.current
+            return await bounded(type, unit: unit, from: start, to: end,
+                                 statistic: statistic, zone: zone)
+        }
+
+        var merged: [String: Double] = [:]
+        for run in runs {
+            let outcome = await bounded(type, unit: unit, from: run.start, to: run.end,
+                                        statistic: statistic, zone: run.zone)
+            switch outcome {
+            case .ok(let values): merged.merge(values) { _, new in new }
+            case .failed, .timedOut: return outcome
+            }
+        }
+        return .ok(merged)
+    }
+
+    private func bounded(_ type: HKQuantityType,
+                         unit: HKUnit,
+                         from start: Date,
+                         to end: Date,
+                         statistic: Statistic,
+                         zone: TimeZone) async -> QueryOutcome {
 
         await withTaskGroup(of: QueryOutcome?.self) { group in
 
             group.addTask { [weak self] in
                 guard let self else { return .failed("The store went away.") }
                 return await self.runQuery(type, unit: unit, from: start, to: end,
-                                           statistic: statistic)
+                                           statistic: statistic, zone: zone)
             }
 
             group.addTask { [queryTimeout] in
@@ -493,7 +567,8 @@ final class HealthStore {
                           unit: HKUnit,
                           from start: Date,
                           to end: Date,
-                          statistic: Statistic) async -> QueryOutcome {
+                          statistic: Statistic,
+                          zone: TimeZone) async -> QueryOutcome {
 
         await withCheckedContinuation { cont in
             var resumed = false
@@ -511,12 +586,24 @@ final class HealthStore {
             // would drag a main-actor conformance across with it.
             let wantsSum = statistic == .sum
 
+            // The clock this run is cut on. Built once here rather than per
+            // bucket — a `DateFormatter` per day over a 420-day resting-HR
+            // window is the classic way to make a background query expensive
+            // for no reason.
+            var calendar = Calendar(identifier: .iso8601)
+            calendar.timeZone = zone
+            let labeller = DayKey.formatter(in: zone)
+
             let query = HKStatisticsCollectionQuery(
                 quantityType: type,
                 quantitySamplePredicate: HKQuery.predicateForSamples(
                     withStart: start, end: end, options: .strictStartDate),
                 options: wantsSum ? .cumulativeSum : .discreteAverage,
-                anchorDate: Calendar.current.startOfDay(for: start),
+                // The whole fix, in one argument. This was
+                // `Calendar.current.startOfDay(for: start)` — the device's
+                // clock at the moment of the query — which is what made a
+                // Japanese day re-cut itself as a Belgian one on landing.
+                anchorDate: calendar.startOfDay(for: start),
                 intervalComponents: interval
             )
 
@@ -533,7 +620,10 @@ final class HealthStore {
                 results?.enumerateStatistics(from: start, to: end) { s, _ in
                     let q = wantsSum ? s.sumQuantity() : s.averageQuantity()
                     if let q {
-                        out[DayKey.key(s.startDate)] = q.doubleValue(for: unit)
+                        // `labeller`, not `DayKey.key` — the label has to name
+                        // the same clock the bucket was cut on, or the two
+                        // disagree at every boundary the query crosses.
+                        out[labeller.string(from: s.startDate)] = q.doubleValue(for: unit)
                     }
                 }
                 // An empty `out` here IS a real answer: the query ran and the

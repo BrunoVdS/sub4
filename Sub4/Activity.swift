@@ -500,7 +500,22 @@ enum MatchRules {
 // MARK: - Strava API shapes
 
 /// Strava's JSON uses snake_case and a few different field names.
-struct StravaActivityDTO: Decodable {
+///
+/// `nonisolated` — patch 199.
+///
+/// This target compiles with default MainActor isolation, so a plain `struct`
+/// gets it, and with it a main-actor-isolated conformance to `Decodable`.
+/// `JSONDecoder` is nonisolated and may call `init(from:)` on any thread, so
+/// Swift 6.2 warns that the conformance cannot be used there. Today it is a
+/// warning; the direction of travel makes it an error.
+///
+/// Marking it nonisolated is also right on the merits rather than a way to
+/// quiet a diagnostic. This is a transfer object with no identity, no state and
+/// no relationship to the UI. Isolating it to the main actor says the opposite
+/// of everything true about it, and it is the reason the decode of a
+/// seven-page, 660-activity backfill currently happens on the main actor —
+/// see the note on `activities(after:token:)`.
+nonisolated struct StravaActivityDTO: Decodable {
     let id: Int64
     let name: String
     let sport_type: String?

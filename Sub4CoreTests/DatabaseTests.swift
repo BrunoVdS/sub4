@@ -41,7 +41,6 @@ nonisolated enum Fixture {
             """, arguments: [id, "The athlete", "2026-08-03T00:00:00Z"])
     }
 
-    @discardableResult
     static func insertActivity(_ db: Database,
                                id: String = "ACT-1",
                                accountID: String = account,
@@ -56,7 +55,7 @@ nonisolated enum Fixture {
                                offsetSeconds: Int? = nil,
                                timeZoneIdentifier: String? = nil,
                                startLocal: String = "2026-08-03T07:00:00",
-                               dayKey: String = "2026-08-03") throws -> String {
+                               dayKey: String = "2026-08-03") throws {
         // ANNOTATED, not inferred. A twenty-element heterogeneous array literal
         // of existentials is the shape that produces "unable to type-check this
         // expression in reasonable time" — a diagnostic this project has
@@ -80,16 +79,14 @@ nonisolated enum Fixture {
                startLatitude, startLongitude, createdUTC, updatedUTC)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, arguments: args)
-        return id
     }
 
-    @discardableResult
     static func insertSourceRecord(_ db: Database,
                                    id: String = "SR-1",
                                    activityID: String = "ACT-1",
                                    accountID: String = account,
                                    sourceID: String = "strava",
-                                   externalID: String = "19580875358") throws -> String {
+                                   externalID: String = "19580875358") throws {
         let args: StatementArguments = [id, activityID, accountID, sourceID, externalID,
                                         "2026-08-03T09:00:00Z", "2026-08-03T09:00:00Z"]
         try db.execute(sql: """
@@ -97,15 +94,13 @@ nonisolated enum Fixture {
               (id, activityID, accountID, sourceID, externalID, firstSeenUTC, lastSeenUTC)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """, arguments: args)
-        return id
     }
 
-    @discardableResult
     static func insertAlias(_ db: Database,
                             id: String = "AL-1",
                             activityID: String = "ACT-1",
                             sourceID: String = "strava",
-                            externalID: String = "19580875358") throws -> String {
+                            externalID: String = "19580875358") throws {
         let args: StatementArguments = [id, activityID, sourceID, externalID,
                                         "2026-08-03T09:00:00Z"]
         try db.execute(sql: """
@@ -113,7 +108,6 @@ nonisolated enum Fixture {
               (id, activityID, sourceID, externalID, notedUTC, retiredUTC)
             VALUES (?, ?, ?, ?, ?, NULL)
             """, arguments: args)
-        return id
     }
 }
 

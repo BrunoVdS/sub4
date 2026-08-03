@@ -200,6 +200,52 @@ enum DayKey {
         formatter.date(from: key)
     }
 
+    // MARK: Days on a stated clock — patch 198, ADR-0003 §4.5
+    //
+    // WHY THESE TAKE A ZONE WHEN THE ONES ABOVE DO NOT.
+    //
+    // `formatter` sets no `timeZone`, so it uses the device's — AT THE MOMENT
+    // OF FORMATTING. For plan dates that is not merely acceptable, it is right:
+    // the plan says Saturday, and Saturday is Saturday wherever you are, which
+    // is what the note at the top of this section is about.
+    //
+    // It is wrong for a measurement. A day's step count is a sum between two
+    // midnights, and which midnights depends on where you were standing. Read
+    // in Japan those are JST midnights; read after landing they silently become
+    // CEST ones, and a month of history shifts by seven hours retroactively.
+    //
+    // So anything bucketing a MEASUREMENT names the clock it is bucketing on.
+    // Building a formatter per call is the slow way to do this, which is why
+    // both callers hold one per stretch of days rather than one per day.
+
+    nonisolated static func formatter(in zone: TimeZone) -> DateFormatter {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .iso8601)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = zone
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }
+
+    nonisolated static func key(_ date: Date, in zone: TimeZone) -> String {
+        formatter(in: zone).string(from: date)
+    }
+
+    /// The instant a day begins on a stated clock.
+    nonisolated static func startOfDay(_ key: String, in zone: TimeZone) -> Date? {
+        formatter(in: zone).date(from: key)
+    }
+
+    /// Midday on a stated clock.
+    ///
+    /// The instant to compare zones at. Midnight is the one moment of the day
+    /// that can fall on either side of a zone change, so a rule evaluated there
+    /// answers differently depending on which side the boundary landed — and
+    /// nothing about a day's identity should turn on that.
+    nonisolated static func noon(_ key: String, in zone: TimeZone) -> Date? {
+        startOfDay(key, in: zone)?.addingTimeInterval(12 * 3600)
+    }
+
     nonisolated static func pretty(_ date: Date) -> String {
         prettyFormatter.string(from: date)
     }

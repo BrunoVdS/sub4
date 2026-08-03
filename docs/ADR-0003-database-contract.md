@@ -264,14 +264,54 @@ Belgium, the same historical samples re-bucket by CEST — a nine-hour shift, so
 readings move across day boundaries **retroactively**. Values already displayed
 change after the fact, with nothing on screen to say why.
 
-This matters beyond tidiness: `restByMonth` feeds the resting-heart-rate term of
-the training-load denominator, so a shifted bucket changes historical TRIMP.
+**Correction, 3 Aug 2026.** This section originally said the drift "changes
+historical TRIMP", full stop. True, and overstated. `restByMonth` is a MONTHLY
+average, so a single day crossing a month boundary moves it by roughly a
+thirtieth of one reading — real, and nowhere near the impression that sentence
+gives. The damage worth naming is the daily figures: steps and walk/run distance
+for every day of the trip, which are what the reader actually looks at.
 
-**Not fixed here, and deliberately not bundled with §4.4.** It changes how a
-year of derived figures is computed and deserves its own patch, its own
-before-and-after comparison, and a decision about whether historical days are
-re-bucketed or frozen at the zone they were computed in. Recorded so it is a
-known finding rather than a surprise in Phase 3.5 when Health state is imported.
+**RESOLVED — patch 198. The decision is: freeze at the zone it happened in.**
+
+A day in Japan stays a Japanese day. 14 September keeps the step count it had
+while the athlete was standing in it. The alternative — re-bucket by wherever
+the phone is now — needs no extra state and costs history its meaning: every
+past figure becomes provisional, and a block reviewed in February reads
+different numbers from the ones it was lived with.
+
+**Where the zone comes from, and why there is no new store.** §4.4 put an offset
+on all 661 activities and those are persisted. An activity is direct evidence of
+where its athlete was that morning, recorded at the time. So a day's clock is
+the offset of the nearest activity on or before it, and a rest day inherits from
+the last session — you did not fly home to sleep.
+
+The accepted cost, stated rather than discovered later: a travel day with no
+recording falls to the previous clock. Land on the 7th, first run on the 8th,
+and the 7th reads as a home day. One day at each end of a trip, and the same
+answer on every launch — which is what freezing means. A separate log of the
+device's zone per day would fix that one day and introduce state that can
+contradict the activities.
+
+**Fixed offsets, not identifiers.** `TimeZone(secondsFromGMT:)` throughout. A
+named zone is re-evaluated against whatever tzdata the device carries, and zone
+rules are amended by governments several times a year. Freezing against a
+mutable rule set is not freezing.
+
+**One query became several.** `HKStatisticsCollectionQuery` takes a single
+`anchorDate`, so every bucket it returns is cut on one clock — which is the bug.
+A window spanning a trip is split into runs and each is asked for separately.
+The runs must partition the window: each run starts at midnight in its own zone,
+and Tokyo midnight on the 8th is seven hours before Brussels' own, so a run
+ending at its own midnight would overlap the next and double-count every sample
+between them. Each run therefore ends where the next begins. The travel day is
+short — it ends when you cross — which is also the truer description of it. A
+device that has never left home yields one run and pays nothing.
+
+**And it says so.** The freeze alone is silent: the number is right and nothing
+tells the reader which midnight it was counted from. `DayZones.marker(forDay:)`
+returns the zone when the day's clock differs from the reader's, under the same
+rule as §4.3 — compared at the day itself, and falling back to the offset form
+when the identifier is one of Strava's substituted ones.
 
 ---
 
