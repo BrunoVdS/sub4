@@ -1039,3 +1039,163 @@ gear from Strava's per-gear endpoint. Both are decisions about what the app
 tracks rather than about the cutover, and neither is needed now that nothing is
 being lost. If they are done, the references above resolve without any change to
 the import.
+
+### 12.7 Notes and proposals — the mapping, and a second schema gap
+
+Written before the importer, per §12. The activity mapping found five missing
+columns that way; this one finds four more, in a different table, for the same
+reason.
+
+#### 12.7.1 `notes.json` → `user_note` — clean
+
+`NotesStore.Note` is `sessionUid`, `rpe`, `feel`, `text`, `created`, `edited`.
+Every field has a column.
+
+| `Note` | `user_note` | note |
+|---|---|---|
+| — | `id` | minted opaque, §3.2 |
+| `sessionUid` | `planSessionUID` | NOT NULL. Provenance, not identity — §3.2 |
+| `rpe` | `rpe` | CHECK 1…10; a stored 0 would be refused |
+| `feel` | `feel` | CHECK against the frozen `domainFeels` |
+| `text` | `text` | |
+| `created` / `edited` | `createdUTC` / `editedUTC` | |
+
+**`planVersionID` and `activityID` are left NULL, deliberately.** No
+`plan_version` rows exist until the bundled plan is imported, and resolving a
+note to the activity that satisfied its session is a MATCHING decision. The
+importer is not the matcher — the same rule that stops it merging the 21 April
+duplicate ride. Both are filled in later by the code that owns those questions,
+and `ON DELETE SET NULL` on both means neither can orphan a note.
+
+This is the property §8 built `user_note` around: a note survives the plan
+version it was written against, because `planSessionUID` is not a foreign key.
+
+#### 12.7.2 `proposals.json` → `review` + `review_evidence` + `proposal` + `proposal_change`
+
+One `Record` becomes rows in four tables. Three of its fields have nowhere to go.
+
+| `ProposalStore.Record` | destination |
+|---|---|
+| `ranAt` | `review.ranUTC` |
+| `startDay` / `endDay` | `review.windowStartDayKey` / `windowEndDayKey` |
+| `model` | `review.model` |
+| `evidence` (one markdown blob) | one `review_evidence` row |
+| `proposal.verdict` / `summary` / `reasoning` | `proposal.verdict` / `summary` / `reasoning` |
+| **`appVersion`** | **no column** |
+| **`windowLabel`** | **no column** |
+
+And `ReviewProposal.Change` carries five fields into a table with two:
+
+| `Change` | `proposal_change` |
+|---|---|
+| `newDetail` | `what` — but empty on a skip, and `what` is NOT NULL |
+| `reason` | `why` |
+| **`sessionUid`** | **no column** — and it is what the change APPLIES TO |
+| **`skip`** | **no column** |
+| **`evidence`** | **no column** |
+
+**The diagnosis, stated plainly: `proposal` and `proposal_change` were designed
+from §8's prose rather than from the type they have to hold.** `review` and
+`review_evidence` came out closer because §8 described them in more detail. The
+same risk applies to every table 3.2b built ahead of its importer — `weather`
+and the plan tables are next, and both are to be checked against their types
+before any importer is written, not after.
+
+Two values the import would otherwise have to invent, and both are recorded here
+rather than chosen in code:
+
+- **`review.provider`** is NOT NULL and `Record` has no provider — only a model
+  name. The importer writes the provider the app actually used, and the model
+  name beside it. A provider guessed from a model string would be a fact
+  invented by an import.
+- **`review_evidence.wasSent`** is NOT NULL and `Record` does not record it. The
+  evidence blob in `Record` IS what was sent to the model — that is what the
+  field is — so it imports as `true`, and the reasoning is written down because
+  a future reader will otherwise wonder where the value came from.
+
+#### 12.7.3 What is proposed, and the one judgement call
+
+A fifth migration, `2026-08-06-proposal-inputs`:
+
+```
+review.appVersion          TEXT     nullable
+proposal_change.planSessionUID  TEXT NOT NULL   -- what the change applies to
+proposal_change.newDetail  TEXT     nullable    -- empty/absent on a skip
+proposal_change.isSkip     INTEGER  nullable    -- absent is not false, §6
+proposal_change.evidence   TEXT     nullable    -- the computed line it rests on
+```
+
+`what` and `why` stay as they are: `why` takes `Change.reason`, and `what`
+becomes a rendered human summary rather than the raw replacement text, which is
+what the column name asks for.
+
+**The judgement call: `windowLabel` is NOT carried.** It is a presentation
+string derived from `startDay` and `endDay`, and §12's rule is about not losing
+FACTS, not about preserving every formatting of them — the same reason `dayKey`
+is derived from `startLocal` rather than stored twice from the source. If it
+turns out to hold anything the two day keys cannot reproduce, this decision is
+wrong and the column is owed.
+
+### 12.8 Two things the first authored import taught, 4 August 2026
+
+#### 12.8.1 The kept JSON files are not a fallback against a reinstall
+
+§9.7 says the one-time cutover is survivable because "the JSON files stay on
+disk, untouched and unread". That is true of a bad migration and false of the
+event that actually happened.
+
+`notes.json` and `proposals.json` live in Application Support. **Deleting the
+app deletes them and the database together.** They do not fail independently —
+they share a fate, so the fallback protects against exactly one of the two ways
+this data can be lost, and not the more likely one.
+
+On 4 August the app was reinstalled during Phase 3 work. Activities came back
+within minutes because Strava still had them. Thirteen months of session notes
+and every past review did not, because nothing else ever had them. Four notes
+were re-entered by hand; their `createdUTC` now records when they were restored
+rather than when they were written, and that column should not be read as
+provenance for anything predating that date.
+
+**What follows from it:**
+
+- **Device backup (§9.4) is load-bearing, not incidental.** It is the only thing
+  standing between the athlete and the permanent loss of authored content. §9.4
+  argued for inclusion in backup on the grounds that the alternative "silently
+  loses thirteen months on a phone" — this is that argument arriving in
+  practice, one week after it was written.
+- **The authored stores are the asymmetric ones.** Activities, recordings and
+  weather are caches of something a server still holds. `user_note` and the
+  review tables are originals. Any future operation that removes local data —
+  a reinstall, a "Delete local data", a migration that erases on schema change —
+  costs nothing for the first group and everything for the second. That
+  asymmetry is why §12.7 imports them first and why
+  `eraseDatabaseOnSchemaChange` stays off.
+- **A pre-destructive export is worth building** before 3.4. `DataLifecycle`
+  already knows how to export every category; nothing currently offers it at
+  the moment it matters.
+
+#### 12.8.2 The proposals import cannot be verified until 24 August 2026
+
+`ReviewDue.state()` requires **four finished plan weeks** before a review can be
+run. The block began Monday 27 July 2026, so week 4 ends Sunday 23 August and
+the first review comes due **Monday 24 August**. Until then the review card is
+hidden on Progress and Today by design, `proposals.json` stays empty, and
+`review`, `review_evidence`, `proposal`, `proposal_change` and `proposal_watch`
+hold zero rows however many times the import is run.
+
+**So that half of §12.7 is written, tested and unproven**, and it is recorded
+here rather than allowed to read as done. Everything it touches is covered by
+`AuthoredImportTests` — every formerly-homeless field, the skip rendering, the
+CASCADE, the convergence on re-import — and this project's own record is that a
+green suite is not the same as a correct one. The chunked read in §9.3.5 had
+tests too, and measured nothing for two patches.
+
+**What to check on 24 August, when the first review has run:**
+
+- `review` gains one row; `review_evidence` one; `proposal` one.
+- `proposal_change` holds one row per change with a NON-NULL `planSessionUID`,
+  and a skipped session's `what` is not the empty string.
+- `proposal_watch` holds one row per `watchFor` item, in order.
+- `review.appVersion` records the build that produced it — the field that
+  existed in the JSON and had no column until patch 225.
+- A second import refreshes rather than stacking: the counts above stay put.

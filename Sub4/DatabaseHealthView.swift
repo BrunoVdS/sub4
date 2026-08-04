@@ -247,6 +247,14 @@ struct DatabaseHealthView: View {
                     .font(.caption)
                 LabeledContent("Gear", value: "\(r.gearInserted) new, \(r.gearAlreadyPresent) known")
                     .font(.caption)
+                // The two that cannot be re-fetched, so they get their own rows
+                // rather than being folded into a total.
+                LabeledContent("Notes",
+                               value: "\(r.notesImported) new, \(r.notesUpdated) refreshed")
+                    .font(.caption)
+                LabeledContent("Reviews",
+                               value: "\(r.reviewsImported) new, \(r.reviewsUpdated) refreshed")
+                    .font(.caption)
                 if r.gearUnresolved > 0 {
                     LabeledContent("Naming unknown gear", value: "\(r.gearUnresolved)")
                         .font(.caption)
@@ -295,7 +303,9 @@ struct DatabaseHealthView: View {
                 importReport = try Sub4Import.run(
                     into: db,
                     activities: ActivityStore.shared.activities,
-                    shoes: AthleteStore.shared.shoes)
+                    shoes: AthleteStore.shared.shoes,
+                    notes: Array(NotesStore.shared.notes.values),
+                    proposals: ProposalStore.shared.records)
                 await recheck(db)
             } catch {
                 importError = String(describing: error)

@@ -71,11 +71,35 @@ struct ActivityInputTests {
     func theMigrationIsDeclared() throws {
         #expect(Sub4Migrations.all.contains(Sub4Migrations.activityInputs))
         #expect(Sub4Migrations.all.contains(Sub4Migrations.gearReference))
-        #expect(Sub4Migrations.all.last == Sub4Migrations.gearReference,
-                "a migration added out of order will apply out of order")
         let db = try Sub4Database.inMemory()
         let applied = try db.integrityReport().appliedMigrations
         #expect(applied.contains(Sub4Migrations.activityInputs))
+        #expect(applied.contains(Sub4Migrations.gearReference))
+    }
+
+    /// THE ASSERTION THIS REPLACED WAS A CHORE, NOT A GUARD.
+    ///
+    /// Patch 222 wrote `all.last == gearReference`, which stopped being true
+    /// the moment another migration was written — patch 225 broke it by
+    /// existing, having changed nothing that assertion was about. A test that
+    /// must be edited whenever the thing it guards changes is not guarding
+    /// anything; it is a tax on every future migration, and the third or fourth
+    /// time it fires for no reason somebody deletes it.
+    ///
+    /// The real invariant is the one the date prefix exists to give:
+    /// identifiers sort into the order they run. That holds for every migration
+    /// ever added, and it fails on the mistake worth catching — a migration
+    /// named out of sequence. Migrations apply in REGISTRATION order, so a name
+    /// that disagrees with it misleads every reader of `grdb_migrations`
+    /// afterwards, and the disagreement is invisible until somebody needs it.
+    @Test("Migration identifiers sort into the order they run")
+    func migrationNamesSortIntoRunOrder() {
+        let declared = Sub4Migrations.all
+        let sorted = declared.sorted()
+        #expect(declared == sorted,
+                "a migration is named out of sequence — declared \(declared)")
+        #expect(Set(declared).count == declared.count,
+                "two migrations share an identifier")
     }
 
     /// Absent is not false — §6. `PowerLoad` has to tell "no power meter" apart

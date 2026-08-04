@@ -53,7 +53,8 @@ nonisolated enum Sub4Migrations {
     /// Every migration, in the order they must run. `IntegrityReport` compares
     /// against this, so a migration registered below and forgotten here reports
     /// as "not migrated" rather than passing quietly.
-    static let all: [String] = [initial, domain, activityInputs, gearReference]
+    static let all: [String] = [initial, domain, activityInputs, gearReference,
+                                proposalInputs]
 
     static var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()
@@ -62,6 +63,7 @@ nonisolated enum Sub4Migrations {
         registerDomain(&m)          // Sub4Migrations+Domain.swift
         registerActivityInputs(&m)  // Sub4Migrations+Inputs.swift
         registerGearReference(&m)   // Sub4Migrations+GearReference.swift
+        registerProposalInputs(&m)  // Sub4Migrations+ProposalInputs.swift
         return m
     }
 

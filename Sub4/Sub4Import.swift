@@ -74,6 +74,16 @@ nonisolated enum Sub4Import {
         /// rather than refused: a missing shoe is not a reason to lose a run.
         var gearUnresolved = 0
 
+        // Patch 225 — the authored stores. Counted separately because losing a
+        // note and losing an activity are not the same loss: one can be
+        // re-fetched from Strava and the other cannot.
+        var notesSeen = 0
+        var notesImported = 0
+        var notesUpdated = 0
+        var reviewsSeen = 0
+        var reviewsImported = 0
+        var reviewsUpdated = 0
+
         /// WHICH ids did not resolve, and how many activities named each —
         /// patch 221.
         ///
@@ -107,6 +117,8 @@ nonisolated enum Sub4Import {
             var l = [String(format: "Import: %.2f s", seconds),
                      "Activities seen: \(activitiesSeen)",
                      "  inserted: \(activitiesInserted), refreshed: \(activitiesUpdated)",
+                     "Notes seen: \(notesSeen) — imported \(notesImported), refreshed \(notesUpdated)",
+                     "Reviews seen: \(reviewsSeen) — imported \(reviewsImported), refreshed \(reviewsUpdated)",
                      "Gear inserted: \(gearInserted), already present: \(gearAlreadyPresent)",
                      "Activities naming unknown gear: \(gearUnresolved)"]
             for (external, count) in unresolvedGearRanked {
@@ -135,7 +147,9 @@ nonisolated enum Sub4Import {
 
     static func run(into db: Sub4Database,
                     activities: [Activity],
-                    shoes: [AthleteStore.Shoe]) throws -> Report {
+                    shoes: [AthleteStore.Shoe],
+                    notes: [NotesStore.Note] = [],
+                    proposals: [ProposalStore.Record] = []) throws -> Report {
 
         let clock = ContinuousClock()
         var report = Report()
@@ -155,6 +169,14 @@ nonisolated enum Sub4Import {
                     try importOne(d, a, gearByExternal: gearByExternal,
                                   now: now, into: &report)
                 }
+
+                // AFTER the activities, and it does not currently matter — a
+                // note references its plan session, not an activity, and
+                // `activityID` is left NULL for the matcher to fill. Ordered
+                // this way so that when the matcher does run, the rows it needs
+                // are already there.
+                try importNotes(d, notes: notes, now: now, into: &report)
+                try importProposals(d, records: proposals, now: now, into: &report)
             }
         }
         report.seconds = seconds(elapsed)
@@ -374,12 +396,6 @@ nonisolated enum Sub4Import {
     }
 
     // MARK: Small helpers
-
-    private static func iso8601(_ date: Date) -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f.string(from: date)
-    }
 
     private static func seconds(_ d: Duration) -> Double {
         Double(d.components.seconds) + Double(d.components.attoseconds) * 1e-18
