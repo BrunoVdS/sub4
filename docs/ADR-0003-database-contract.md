@@ -476,14 +476,27 @@ phone restores. "No sync" means no live reconciliation between two installs, not
 ### 9.2 The seed is `Sub4/plan.json` — the copy inside the target
 
 37 weeks, 260 sessions, 20 exercises, and the `fuel` and `warmup` blocks the app
-actually renders. 243,194 bytes, SHA-256 beginning `e93bf5ea`.
+actually renders. **279,078 bytes, SHA-256 `a4087101cad4f61e13755aa62dc1003ca09034b04072570dc198257a4809e502`.**
+
+**Amended 5 August 2026, patch 246.** This paragraph read "243,194 bytes,
+SHA-256 beginning `e93bf5ea`" until today. The seed changed in commit `13782b8`
+— patch 238 corrected 22 weeks whose stated volume implied 58-79 km/h on a
+bicycle, and patch 242 rebuilt the weekly totals from `PlanStore.plannedVolume`
+— and this record was not updated for three weeks. The figures above are now
+asserted by `PlanSeedTests`, so the next divergence fails a build instead of
+being found by an audit. See §12.13.2.
 
 **Consequences:**
 
 - The root copy `sub4/plan.json` (218,499 bytes, `7d83ee7d`, no `fuel`, no
-  `warmup`, `meta.source` differing by one character) is **deleted**, not kept
-  "just in case". Two files that look like the plan is how the wrong one gets
-  loaded eventually.
+  `warmup`, `meta.source` differing by one character) is **removed from the
+  source tree**, not kept "just in case". Two files that look like the plan is
+  how the wrong one gets loaded eventually. It was moved on 3 August 2026 to
+  `sub4-backups/stale-root-duplicates-2026-08-03/`, where it still is —
+  amended 5 August 2026, because this paragraph said "deleted" and a backup a
+  document calls a deletion is the kind of small untruth that makes a reader
+  distrust the parts that matter. `PlanSeedTests` records its digest so it is
+  recognised on sight if it ever reappears in the bundle.
 - `Sub4-complete/Sub4/plan.json` is byte-identical to the root copy and goes
   with it.
 - 3.4 imports by content hash, so the seed's identity is its SHA-256 rather than
@@ -1670,3 +1683,179 @@ no heart rate, and the estimated power is refused by `PowerLoad`.
 
 So `Refused: 1` on the import screen is the expected steady state. A second
 entry appearing there is news; this one is not.
+
+---
+
+## 12.13 D0 closed — freeze and capture, patch 246
+
+D0 is the first stage of the database rollout and the only one still open when
+the rest of the ladder had reached D5. This section closes it, and it opens with
+a correction.
+
+### 12.13.1 The handoff was wrong about what was outstanding
+
+`HANDOFF-2026-08-05.md` stated that D0 was "not done — the duplicate `plan.json`
+question was never resolved". Both halves are wrong.
+
+§9 of this document answers all six of 3.1's open questions and is dated 3
+August. §9.1 puts cloud synchronisation explicitly out of scope for v1 — item 6.
+§9.2 designates `Sub4/plan.json` as the only versioned seed — item 7. §10 ticks
+off 3.1's four acceptance criteria with the patches that satisfied each. D0's
+decisions were made, recorded, and then forgotten by the person who wrote them
+down.
+
+The lesson is not "read the ADR first", which is too easy to say and impossible
+to act on across an 86,000-byte document. It is that a rollout stage needs a
+status that lives somewhere a reader can see it without reconstructing it, and
+that reconstructing a stage's status from prose is how a session ends up
+proposing work that was finished a week earlier.
+
+What was genuinely open is smaller and more interesting than what was claimed.
+
+### 12.13.2 The frozen hash had drifted, and nothing noticed
+
+§9.2 records the seed as 243,194 bytes, SHA-256 beginning `e93bf5ea`, and states
+the reason for recording it: "so a future divergence is detectable rather than
+arguable."
+
+The seed on disk is **279,078 bytes, `a4087101cad4f61e…`**. It has been since
+commit `13782b8` — patches 237 through 242 — and the ADR went on stating the old
+figures for three weeks.
+
+The cause is not a mistake, it is two deliberate corrections: patch 238 fixed 22
+weeks whose stated volume implied 58–79 km/h on a bicycle, and patch 242 rebuilt
+the weekly totals from `PlanStore.plannedVolume` so the stated and derived
+figures are the same arithmetic. Both were right. Neither updated §9.2.
+
+**A recorded hash that nothing checks is a comment.** `PlanSeedTests` now asserts
+the bundle's bytes and digest against the recorded values, so the next
+divergence fails a build instead of surviving an audit. §9.2 is amended to the
+current figures, and the superseded `7d83ee7d` digest is recorded in the test as
+well — if the pre-August root copy ever finds its way back into the bundle it
+should be recognised, not investigated from scratch.
+
+This is the fifth instance of the same pattern in two weeks: **a control that
+reports work it did not do is worse than one that fails.** A hash written into
+prose is such a control.
+
+### 12.13.3 The seed had no provenance on any machine
+
+§12.11.5 states that "`extract_plan.py` regenerates `plan.json`, so the
+correction is overwritten the next time it runs."
+
+Neither `extract_plan.py` nor `marathon_plan_sub_4hr.html` existed anywhere
+under `~/Documents/Developer`. The claim was unfalsifiable on the athlete's own
+hardware: there was nothing to run, and nothing to inspect. The seed that the
+entire plan tab, the workout parser, the fuelling screen and the warm-up screen
+are built on had an origin nobody could reach.
+
+Both are now committed under `tools/` at the repository root — outside `Sub4/`,
+because the project uses file-system-synchronized groups and a `.py` or `.html`
+inside the target folder would be copied into the app bundle.
+
+**The athlete's decision, 5 August 2026: archive, do not maintain.** `plan.json`
+is authoritative and hand-corrected; the extractor is history. `tools/README.md`
+states in its second paragraph that running it reverts patches 238 and 242,
+because the alternative — correcting 22 weeks of totals inside the training
+document itself — is a separate job on a document that is read outside this app.
+
+The rejected alternatives are worth naming. Fixing the HTML would make the
+pipeline reproducible end to end and is the better long-term answer; it was not
+chosen today because it blocks D0 on a document edit. Not versioning the
+extractor at all would have left §12.11.5 asserting something no one could
+check.
+
+### 12.13.4 There were no fixtures — none, of any kind
+
+D0's exit gate names fixtures. D3's exit gate is entirely about them: "Every
+known empty/corrupt/partial/duplicate/interrupted fixture produces the expected
+result."
+
+There were zero fixture files in the repository. Every test in this project
+builds its data in Swift and hands it to the importer as values. That tests the
+importer and says nothing about the bytes on disk — and the bytes on disk are
+the whole subject of a migration.
+
+`LegacyFixtures.swift` captures ten legacy inputs — `notes.json`,
+`proposals.json`, `activities.json`, `athlete.json`, `weather.json`,
+`constants.json`, `details/<id>.json`, `streams/<id>.json`, and the two
+monolithic files the per-activity split replaced, `details.json` and
+`streams.json` — each as the smallest file its store's decoder accepts.
+
+**It captured seven on the first run, and the coverage test found the other
+three.** `theCorpusCoversTheInventory` walks `DataLifecycle.entries` and fails
+on any declared path without a fixture; the first time it ran it named
+`constants.json`, `details.json` and `streams.json`. That is worth recording for
+what it says about the method rather than about the miss: the corpus was
+assembled by reading the stores, and reading found seven of ten. The inventory
+knew about all ten because `DataLifecycle` is maintained as a product surface —
+the delete-my-data screen is built from it — and a test that asks the inventory
+rather than the author is the only reason the gap closed in one build instead of
+being discovered by patch 249.
+
+The two monoliths are the more serious omission of the three. `DetailStore.load()`
+still reads them, they exist on every device that upgraded through the split,
+and `AppSupportItem.legacyFile` exists in the inventory specifically because
+nothing has ever deleted them. A migration that skipped them would leave four
+app versions of detail history behind. Required fields only, deliberately: a fixture with every
+optional filled in cannot tell you whether the decoder still treats the
+optionals as optional, which is the shape most likely to break when a property
+loses its `?`.
+
+Ten damage classes are named and generated: `valid`, `absent`, `empty`,
+`whitespace`, `truncated`, `corrupt`, `notJSON`, `wrongDateEncoding`,
+`keyMismatch`, `duplicate`. `truncated` is a prefix of the whole file, so it is
+recognisably the right file and still undecodable; `corrupt` keeps its length,
+so a classifier cannot tell the two apart by size alone — which would make the
+test easier than the problem.
+
+They are Swift literals, not files. The synchronized groups would decide for
+themselves whether a `.json` in `Sub4CoreTests/` is a resource, and a fixture
+that silently fails to copy reads as a fixture that passes.
+
+**Two tests assert today's defect on purpose,** with the reason in the file
+header. Empty, truncated, corrupt, not-JSON and wrongly-dated all fail
+identically through the same `try?` into the same empty store; a key mismatch
+and a duplicate decode cleanly and are invisible. When patch 248 lands those
+tests fail, and the diff between what they say now and what they say then is the
+honest measure of what 248 bought. §12.12.4 already cost this project one
+repointed test written against a defect nobody remembered; this time the note is
+in the file.
+
+### 12.13.5 Two findings the corpus produced before the importer was written
+
+**`athlete.json` has no decodable type outside its own store.**
+`AthleteStore.Cache` is `private`, so `@testable import` does not reach it and
+neither will a file-level decoder. This is why `Sub4Import+Athlete` reads the
+live store rather than the file, and it is a concrete obstacle to migration
+contract item 3: patch 248 needs a non-private mirror of that shape before it
+can read `athlete.json` as bytes at all. Recorded as a test so it is discovered
+here rather than halfway through writing 248.
+
+**`activities.json` has no date strategy to get wrong.** Contract item 4 splits
+the stores by date encoding — ISO-8601 for notes and proposals, the default
+numeric encoding for the rest. `Activity` stores its instants as strings
+(`startLocal`, `startUTC`) and holds no `Date` at all, so it belongs to neither
+group. The corpus says so explicitly rather than filing it under "numeric" and
+leaving a future reader to discover the exception.
+
+Seventh mapping written before its importer; seventh to find something.
+
+### 12.13.6 What D0 does not cover, and where it goes
+
+The protected snapshot — contract item 3, "copy every legacy input unchanged
+into a dated protected snapshot, record path, byte count and SHA-256 before
+decoding" — is **not** part of D0 and remains the most important missing piece
+in the project. It is patch 246 in the D3 plan and is now patch 247. Two
+reinstalls destroyed `notes.json`, `weather.json`, the UserDefaults gates and
+HealthKit authorisation while this was outstanding.
+
+D0's exit gate reads "Clean baseline, manifest, fixtures, decisions approved".
+The baseline is clean — the working tree has no uncommitted changes and the
+stale duplicates were moved out of the source tree on 3 August into
+`sub4-backups/stale-root-duplicates-2026-08-03/`. §9.2 says that copy was
+"deleted"; it was moved, and the wording is amended, because a backup that the
+document calls a deletion is exactly the kind of small untruth that makes a
+later reader distrust the parts that matter. The manifest is
+`sub4-manifest-2026-08-03.txt` beside the pre-migration archive. The fixtures
+are this patch. The decisions are §9, §12.13.3 and this section.

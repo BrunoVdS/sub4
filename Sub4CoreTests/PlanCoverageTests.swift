@@ -42,8 +42,10 @@ import Foundation
 @MainActor
 struct PlanCoverageTests {
 
-    /// Recorded 3 August 2026 against the 243,194-byte seed: 37 weeks, 260
-    /// sessions. These are the numbers the audit screen reports today.
+    /// Recorded 3 August 2026, re-confirmed 5 August against the current
+    /// 279,078-byte seed (patch 246): 37 weeks, 260 sessions. These are the
+    /// numbers the audit screen reports today. `PlanSeedTests` freezes the
+    /// seed's bytes; this file freezes what the parser makes of them.
     ///
     /// Update them ONLY together with the change that moved them, in the same
     /// commit, with the reason in the message. A silent edit here to make a red
