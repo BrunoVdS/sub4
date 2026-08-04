@@ -969,3 +969,73 @@ run untrue, and refusing it would cost the whole activity — the insert fails,
 the row lands in `rejection`, and a real session disappears over a field nobody
 reads closely. An upper bound is worth having only where the suspect value IS
 the session being wrong.
+
+### 12.6 Gear that cannot be resolved — the first import's finding
+
+The first real import ran on 4 August 2026: **662 activities seen, 661
+imported, 1 refused** (the August 2025 artifact, at 694,865 s against the
+604,800 s bound — exactly the row §7's correction predicted, and the only one in
+thirteen months of data).
+
+**404 of the 661 named gear the app does not hold.** Patch 221 made the report
+name them rather than count them, which is what turned a guess into a finding:
+
+| id | activities | what it is |
+|---|---|---|
+| `b6932581` | 284 | a bike |
+| `b13458344` | 60 | a bike |
+| `g15316986` | **51** | a **shoe**, and not one of the six |
+| `b10348095` | 9 | a bike |
+
+Two distinct causes, and neither is a bug in the import:
+
+1. **`AthleteStore` decodes only the `shoes` array** from Strava's `/athlete`.
+   Bike gear has never existed in this app, so 353 activities name something the
+   app has no record of.
+2. **`/athlete` returns only ACTIVE gear.** A retired pair — `g15316986`, 51
+   runs — cannot be resolved from the profile at all, at any point in the
+   future, without Strava's per-gear endpoint.
+
+**The defect that mattered was in the database, not the profile.**
+`activities.json` holds `gearId` for all 404; the first version of the importer
+wrote NULL. A field present in the source and absent after the cutover is
+exactly what §12 exists to prevent, and it had been caught for five other fields
+one section earlier.
+
+#### Where the reference lives, and why not on `activity`
+
+The first fix (patch 222) added `activity.gearExternalID`, by analogy with
+`sportLabel` keeping the raw sport beside the mapped discipline.
+**`IdentityTests.noExternalIDOnTheActivity` refused it** — no column on
+`activity` may contain "external", because §3.1 says an external identifier
+lives in exactly one kind of place and the canonical activity is not it.
+
+The guard was right. "It is only a reference to another entity" is the same
+argument that would justify `stravaActivityID` on `activity`; §3.1 holds
+precisely because every exception to it sounds reasonable, and a guard with an
+allowlist is a guard that drifts.
+
+So the reference lives in **`activity_gear_reference (activityID, sourceID,
+externalID, notedUTC)`**, mirroring `activity_alias`. Unique on
+`(activityID, sourceID)`; no foreign key to `gear`, which is the whole point.
+
+It is written **whether or not the gear resolves** — this is the record of what
+the source said, and it stays true once the gear is known, the same way
+`activity_source_record` keeps Strava's activity id after the canonical id
+exists. `activity.gearID` answers "which gear row is this";
+`activity_gear_reference` answers "what did the source call it", and only the
+second survives a source that has forgotten.
+
+#### What was deliberately not done
+
+**No `gear` rows were invented** for the unknown ids. `gear.name` is NOT NULL,
+so a placeholder would have to be the id itself, and three bikes would then sit
+in the gear table looking like shoes — with wear bars, once anything reads gear
+from the database rather than from `AthleteStore`.
+
+**Bikes are not fetched, and retired shoes are not resolved.** Both are
+achievable: bikes from the same `/athlete` response the shoes come from, retired
+gear from Strava's per-gear endpoint. Both are decisions about what the app
+tracks rather than about the cutover, and neither is needed now that nothing is
+being lost. If they are done, the references above resolve without any change to
+the import.

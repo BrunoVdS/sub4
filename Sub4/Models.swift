@@ -65,7 +65,10 @@ struct Week: Codable, Identifiable, Hashable {
 /// two are held together by `SchemaAgreementTests` instead: add a case here and
 /// the test fails, which is the prompt to write the migration that adds it to
 /// the constraint.
-enum Discipline: String, Codable, Hashable, CaseIterable {
+/// `nonisolated` since patch 219 — a pure value type with no isolated state,
+/// now read by `Sub4Import` off the main actor. Main-actor callers are
+/// unaffected: nonisolated is strictly more permissive, not less.
+nonisolated enum Discipline: String, Codable, Hashable, CaseIterable {
     case run, bike, swim, strength, rest, other
 
     init(from decoder: Decoder) throws {

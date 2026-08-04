@@ -359,7 +359,13 @@ struct Activity: Codable, Identifiable, Hashable {
     // MARK: Discipline mapping
 
     /// Which plan discipline this activity could satisfy, or nil if it's noise.
-    var discipline: Discipline? {
+    ///
+    /// `nonisolated` since patch 219: `Sub4Import` reads it away from the main
+    /// actor, and this is a pure switch on a stored string. The same finding as
+    /// patch 207 — a computed member inherits the type's isolation even when it
+    /// touches nothing that needs it, while the stored properties beside it do
+    /// not, which is why `a.distance` compiled and `a.discipline` did not.
+    nonisolated var discipline: Discipline? {
         switch sportType {
         case "Run", "TrailRun", "VirtualRun":
             return .run

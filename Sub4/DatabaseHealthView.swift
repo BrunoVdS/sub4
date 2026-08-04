@@ -64,6 +64,12 @@ struct DatabaseHealthView: View {
     @State private var benchmark = DatabaseBenchmarkRunner()
     @State private var benchmarkSize = DatabaseBenchmarkRunner.sizes[0]
 
+    /// Patch 218 — 3.3.2. Manual for now: the import is a button, not a launch
+    /// step, until 3.3.3 makes the database authoritative.
+    @State private var importing = false
+    @State private var importReport: Sub4Import.Report?
+    @State private var importError: String?
+
     var body: some View {
         NavigationStack {
             List {
@@ -76,6 +82,7 @@ struct DatabaseHealthView: View {
                     verdictSection
                     fileSection(db)
                     contentsSection
+                    importSection(db)
                     benchmarkSection
                     diagnosticsSection(db)
                 }
@@ -198,6 +205,102 @@ struct DatabaseHealthView: View {
                  + "from, not data."
                  : "\(importedRows) imported rows, \(totalRows) in total.")
                 .font(.caption2)
+        }
+    }
+
+    /// THE CUTOVER, RUN BY HAND — patch 218, plan step 3.3.2.
+    ///
+    /// A button rather than a launch step, deliberately. Until 3.3.3 makes the
+    /// database authoritative, importing changes nothing the athlete sees, so
+    /// there is no reason for it to happen without being asked for — and every
+    /// reason to be able to run it, look at the counts, and run it again.
+    ///
+    /// It reads the STORES, not the JSON files. See `Sub4Import`'s header: the
+    /// two differ by a gate, and a cutover has to land on what the app shows.
+    @ViewBuilder
+    private func importSection(_ db: Sub4Database) -> some View {
+        Section {
+            if importing {
+                HStack { ProgressView(); Text("Importing…").font(.caption) }
+            } else {
+                Button("Import from the app's stores") { runImport(db) }
+            }
+
+            if let e = importError {
+                Text(e).font(.caption).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let r = importReport, r.activitiesSeen == 0 {
+                // Patch 220. All-zero counts read exactly like a broken button —
+                // which is how a first run against empty stores looked.
+                Text("The app's stores are empty, so there was nothing to copy. "
+                     + "Open Today and let the sync finish first.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let r = importReport {
+                LabeledContent("Activities seen", value: "\(r.activitiesSeen)")
+                    .font(.caption)
+                LabeledContent("Imported", value: "\(r.activitiesInserted)")
+                    .font(.caption)
+                LabeledContent("Refreshed", value: "\(r.activitiesUpdated)")
+                    .font(.caption)
+                LabeledContent("Gear", value: "\(r.gearInserted) new, \(r.gearAlreadyPresent) known")
+                    .font(.caption)
+                if r.gearUnresolved > 0 {
+                    LabeledContent("Naming unknown gear", value: "\(r.gearUnresolved)")
+                        .font(.caption)
+                    // WHICH ids, not just how many — patch 221. One untracked
+                    // bike and forty missing shoes are different problems and a
+                    // count cannot tell them apart.
+                    ForEach(r.unresolvedGearRanked.prefix(10), id: \.external) { item in
+                        LabeledContent(item.external) {
+                            Text("\(item.count)").monospacedDigit()
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(Color.dim)
+                    }
+                }
+                // REFUSALS ARE SHOWN, NOT COUNTED AND HIDDEN. A silent
+                // rejection is indistinguishable from a row that was never
+                // there — §12.2.
+                LabeledContent("Refused") {
+                    Text("\(r.refusals.count)")
+                        .foregroundStyle(r.isClean ? Color.dim : Color.red)
+                }
+                .font(.caption)
+                ForEach(r.refusals) { refusal in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(refusal.externalID).font(.caption2.monospaced())
+                        Text(refusal.reason).font(.caption2).foregroundStyle(.red)
+                    }
+                }
+            }
+        } header: {
+            Text("Import")
+        } footer: {
+            Text("Copies activities and gear from the app's current stores into "
+                 + "the database. Nothing else changes: the app still reads its "
+                 + "JSON files, and the JSON files are not touched. Running it "
+                 + "twice imports nothing twice.")
+                .font(.caption2)
+        }
+    }
+
+    private func runImport(_ db: Sub4Database) {
+        importing = true
+        importError = nil
+        Task {
+            do {
+                importReport = try Sub4Import.run(
+                    into: db,
+                    activities: ActivityStore.shared.activities,
+                    shoes: AthleteStore.shared.shoes)
+                await recheck(db)
+            } catch {
+                importError = String(describing: error)
+            }
+            importing = false
         }
     }
 

@@ -61,8 +61,8 @@ struct ActivityInputTests {
         let columns = try db.queue.read { d in
             try d.columns(in: "activity").map(\.name)
         }
-        for required in ["gearID", "averageWatts", "hasPowerMeter",
-                         "isIndoor", "maxSpeedMS"] {
+        for required in ["gearID", "averageWatts",
+                         "hasPowerMeter", "isIndoor", "maxSpeedMS"] {
             #expect(columns.contains(required), "activity has no column for \(required)")
         }
     }
@@ -70,7 +70,8 @@ struct ActivityInputTests {
     @Test("The new migration is declared as well as registered")
     func theMigrationIsDeclared() throws {
         #expect(Sub4Migrations.all.contains(Sub4Migrations.activityInputs))
-        #expect(Sub4Migrations.all.last == Sub4Migrations.activityInputs,
+        #expect(Sub4Migrations.all.contains(Sub4Migrations.gearReference))
+        #expect(Sub4Migrations.all.last == Sub4Migrations.gearReference,
                 "a migration added out of order will apply out of order")
         let db = try Sub4Database.inMemory()
         let applied = try db.integrityReport().appliedMigrations
