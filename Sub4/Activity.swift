@@ -143,7 +143,13 @@ struct Activity: Codable, Identifiable, Hashable {
     var hasRealPower: Bool { deviceWatts == true }
 
     /// "yyyy-MM-dd" — the join key against plan sessions.
-    var dayKey: String { String(startLocal.prefix(10)) }
+    ///
+    /// `nonisolated` — patch 207. `DayZones.from` reads this while building the
+    /// day-zone map off the main actor. This target compiles with default
+    /// MainActor isolation, and a struct's COMPUTED members inherit that while
+    /// its stored properties do not — which is why `startOffsetSeconds` beside
+    /// it needed nothing and this did.
+    nonisolated var dayKey: String { String(startLocal.prefix(10)) }
 
     var km: Double { distance / 1000.0 }
     var minutes: Int { movingTime / 60 }
@@ -285,7 +291,7 @@ struct Activity: Codable, Identifiable, Hashable {
     /// checked, and it is conservative in the right direction: a genuine pool
     /// swim in Brussels loses `CEST` and gains `GMT+2`, which is less pretty
     /// and never wrong.
-    var hasStartPosition: Bool { startLat != nil && startLon != nil }
+    nonisolated var hasStartPosition: Bool { startLat != nil && startLon != nil }
 
     /// `"JST"` where the system knows a real abbreviation and the identifier
     /// can be trusted, `"GMT+9"` where either is missing.
@@ -315,7 +321,7 @@ struct Activity: Codable, Identifiable, Hashable {
 
     /// `"GMT+9"`, `"GMT-4"`, `"GMT+5:45"` — Kathmandu is why the minutes case
     /// is here rather than assumed away.
-    static func gmtLabel(_ seconds: Int) -> String {
+    nonisolated static func gmtLabel(_ seconds: Int) -> String {
         let sign = seconds < 0 ? "-" : "+"
         let minutes = abs(seconds) / 60
         let h = minutes / 60, m = minutes % 60
@@ -331,7 +337,7 @@ struct Activity: Codable, Identifiable, Hashable {
     /// looking like information, so it is discarded and the column reads NULL —
     /// which is the honest answer under §6. The offset survives either way, and
     /// the offset is the authority.
-    static func zoneIdentifier(from raw: String?) -> String? {
+    nonisolated static func zoneIdentifier(from raw: String?) -> String? {
         guard let raw, !raw.isEmpty else { return nil }
         var candidate = raw
         if let close = raw.range(of: ") ") {

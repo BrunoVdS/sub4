@@ -51,21 +51,35 @@
 import Foundation
 import GRDB
 
+// `nonisolated` ON EVERY MEMBER, NOT ON THE TYPE — patch 207, and the reason is
+// a Swift rule I assumed the wrong way round in patch 195.
+//
+// `Sub4Migrations` is declared `nonisolated enum` in the other file, and that
+// works for the members declared THERE. It does not reach an extension: this
+// target compiles with default MainActor isolation, an extension is its own
+// declaration context, and every member below reverted to MainActor without a
+// word. `migrator` — which is nonisolated — then called `registerDomain`, which
+// was not, and the compiler warned thirteen times before anybody noticed.
+//
+// It is a warning today and an error in a later language mode. More to the
+// point, the migration closure GRDB takes is `@Sendable`: a MainActor-isolated
+// helper inside it is a real isolation violation, not a formality.
+
 extension Sub4Migrations {
 
-    static let domain = "2026-08-04-domain"
+    nonisolated static let domain = "2026-08-04-domain"
 
     /// Frozen at `2026-08-04-domain`, for the reason given beside
     /// `initialDisciplines`. Held to `Intensity` by test.
-    static let domainIntensities = ["easy", "long", "threshold", "marathon_pace"]
+    nonisolated static let domainIntensities = ["easy", "long", "threshold", "marathon_pace"]
 
     /// Frozen. Held to `NotesStore.Note.Feel` by test.
-    static let domainFeels = ["easier", "expected", "harder"]
+    nonisolated static let domainFeels = ["easier", "expected", "harder"]
 
     /// Frozen. Held to `WeatherSource` by test.
-    static let domainWeatherProviders = ["appleWeather", "openMeteo"]
+    nonisolated static let domainWeatherProviders = ["appleWeather", "openMeteo"]
 
-    static func registerDomain(_ m: inout DatabaseMigrator) {
+    nonisolated static func registerDomain(_ m: inout DatabaseMigrator) {
         m.registerMigration(domain) { db in
 
             // MARK: - Group 2 — the plan seed
@@ -629,7 +643,7 @@ extension Sub4Migrations {
     /// exception the first time it is mildly inconvenient is not a rule. The
     /// cost is eight duplicated lines; the cost of the exception is that the
     /// next person to want one has a precedent.
-    static func quoted(_ values: [String]) -> String {
+    nonisolated static func quoted(_ values: [String]) -> String {
         values
             .map { "'\($0.replacingOccurrences(of: "'", with: "''"))'" }
             .joined(separator: ", ")
