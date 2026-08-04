@@ -242,10 +242,6 @@ nonisolated enum Sub4Import {
 
         let canonical = existing ?? UUID().uuidString
         let gearID = a.gearId.flatMap { gearByExternal[$0] }
-        if let named = a.gearId, gearID == nil {
-            report.gearUnresolved += 1
-            report.unresolvedGear[named, default: 0] += 1
-        }
 
         do {
             // THE SAVEPOINT — §12.2. A CHECK violation rolls back this
@@ -335,6 +331,19 @@ nonisolated enum Sub4Import {
             }
             if existing != nil { report.activitiesUpdated += 1 }
             else { report.activitiesInserted += 1 }
+
+            // COUNTED HERE, NOT BEFORE THE WRITE — patch 224.
+            //
+            // The first version incremented these next to the lookup, which
+            // counted gear for an activity the CHECK constraints then refused:
+            // the phone reported "404 naming unknown gear" against 473 rows in
+            // `activity_gear_reference`, and reconciling that took longer than
+            // the bug was worth. These numbers are the cutover's audit trail —
+            // an off-by-one in them is a wasted hour six weeks from now.
+            if let named = a.gearId, gearID == nil {
+                report.gearUnresolved += 1
+                report.unresolvedGear[named, default: 0] += 1
+            }
         } catch {
             // The reason SQLite gave, not a paraphrase. "CHECK constraint
             // failed: distanceM" names the column; "could not import" does not.

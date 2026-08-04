@@ -317,6 +317,41 @@ struct ImportTests {
         #expect(raw == "g29433600")
     }
 
+    /// THE OFF-BY-ONE THE PHONE FOUND — patch 224.
+    ///
+    /// `gearUnresolved` used to be incremented beside the lookup, before the
+    /// insert was attempted. So an activity the CHECK constraints refused still
+    /// contributed to the count: the real import reported 404 naming unknown
+    /// gear while `activity_gear_reference` held 473 rows, and reconciling the
+    /// two took longer than the bug was worth.
+    ///
+    /// These counts are the cutover's audit trail. A number that does not
+    /// reconcile with the tables is worse than no number, because it is
+    /// believed.
+    @Test("A refused activity does not count towards the gear figures")
+    func aRefusedRowIsNotCountedAsNamingGear() throws {
+        let db = try Sub4Database.inMemory()
+        let report = try Sub4Import.run(into: db, activities: [
+            activity("good", gearId: "b6932581"),
+            // The August 2025 artifact, and it names gear too.
+            activity("artifact", elapsed: 694_865, gearId: "b6932581")
+        ], shoes: [])
+
+        #expect(report.refusals.count == 1)
+        #expect(report.activitiesInserted == 1)
+        #expect(report.gearUnresolved == 1,
+                "the refused activity was counted as naming gear")
+        #expect(report.unresolvedGear["b6932581"] == 1)
+
+        // And the count matches what is actually on disk, which is the whole
+        // point of moving it.
+        let references = try db.queue.read { d in
+            try Int.fetchOne(d, sql: "SELECT COUNT(*) FROM activity_gear_reference") ?? -1
+        }
+        #expect(references == report.gearUnresolved,
+                "\(report.gearUnresolved) counted, \(references) written")
+    }
+
     /// A shoe the profile does not hold must not cost the run. Counted, not
     /// refused.
     @Test("Unknown gear leaves the activity intact and is counted")

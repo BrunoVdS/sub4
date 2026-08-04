@@ -25,9 +25,41 @@ name: Build and test
 # existed, that `xcbeautify` was installed, that an `iPhone 16 Pro` simulator
 # was present — was wrong, and each one cost a run to disprove.
 #
-# COST, STATED. macOS runners bill at 10× against the free monthly minutes, so
-# roughly 200 macOS minutes a month on the free tier, and this workflow uses two
-# jobs. `paths-ignore` keeps documentation edits from spending any of it.
+# COST, AND WHY THIS FILE IS SHAPED THE WAY IT IS
+# -----------------------------------------------
+# macOS runners bill at 10× against the free monthly minutes: 2,000 included
+# minutes are 200 macOS minutes. The allowance was exhausted in early August
+# 2026, which is what prompted the following four changes.
+#
+#   1. ONE JOB, NOT TWO. Debug tests and the Release build were separate jobs.
+#      They ran in parallel, which looked faster and cost more: each job bills
+#      its own wall time and each paid separately for checkout, Xcode selection
+#      and GRDB resolution. Sequential is slower in wall-clock and roughly a
+#      minute cheaper per push. On a 200-minute budget, billed minutes are the
+#      number that matters.
+#
+#      The consequence, stated: a failing test now hides a Release-only
+#      compile error until the tests pass. That is the right trade while
+#      minutes are the constraint, and it is the first thing to revert when
+#      they are not.
+#
+#   2. TIMEOUT 40 → 20. A hung job at 40 minutes bills 400 — twice the monthly
+#      allowance, from one stuck run. Real runs finish in a few minutes; 20 is
+#      already generous and it caps the disaster.
+#
+#   3. `paths-ignore` ON PULL REQUESTS TOO. It was on `push` only, so a
+#      documentation-only PR spent minutes proving documentation compiles.
+#
+#   4. COVERAGE ON DEMAND. Instrumenting every run to produce a number this
+#      file itself calls "information, not a gate" is build time and artifact
+#      storage spent on something nobody reads most weeks. It now runs on
+#      `workflow_dispatch`, where somebody has actually asked for it.
+#
+# WHAT IS DELIBERATELY NOT DONE: the Swift package cache is not restored. It
+# would save perhaps forty seconds a run and it would also stop this workflow
+# from proving that a clean checkout can still resolve GRDB from the internet —
+# which is the one thing an exactly-pinned dependency needs checking, and the
+# acceptance criterion for plan step 1.1.
 
 on:
   push:
@@ -37,7 +69,15 @@ on:
       - 'docs/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   workflow_dispatch:
+    inputs:
+      coverage:
+        description: 'Instrument and report code coverage'
+        type: boolean
+        default: true
 
 concurrency:
   # A second push supersedes the first — no point testing a commit that is
@@ -50,10 +90,10 @@ env:
   PROJECT: Sub4.xcodeproj
 
 jobs:
-  test:
-    name: Debug build and unit tests
+  build:
+    name: Debug tests and Release build
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v6
@@ -122,57 +162,32 @@ jobs:
       # A clean clone must build without relying on anything untracked. That is
       # the acceptance criterion for plan step 1.1, and this enforces it from
       # here on rather than by a one-off manual check.
+      #
+      # Coverage is off unless asked for — see the cost note in the header.
       - name: Build and test
         run: |
           set -o pipefail
+          COVERAGE=NO
+          RESULTS=()
+          if [ "${{ github.event.inputs.coverage }}" = "true" ]; then
+            COVERAGE=YES
+            RESULTS=(-resultBundlePath TestResults.xcresult)
+          fi
           xcodebuild test \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
-            -enableCodeCoverage YES \
-            -resultBundlePath TestResults.xcresult \
+            -enableCodeCoverage "$COVERAGE" \
+            "${RESULTS[@]}" \
             CODE_SIGNING_ALLOWED=NO
 
-      # Information, not a gate — step 1.2.8. A global percentage threshold on a
-      # codebase that is mostly view code would fail every honest commit and
-      # teach everyone to ignore it. What matters is that each fixed defect
-      # gains a test, which is a review question rather than a number.
-      - name: Coverage summary
-        if: always()
-        run: xcrun xccov view --report --only-targets TestResults.xcresult || true
-
-      - name: Upload results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: TestResults
-          path: TestResults.xcresult
-          retention-days: 14
-
-  release:
-    name: Release build
-    runs-on: macos-26
-    timeout-minutes: 40
-
-    # Release is built as well as Debug because they are different
-    # compilations: optimisation changes what the type-checker will accept in
-    # reasonable time, and `#if DEBUG` changes what code exists at all — in this
-    # project that flag decides whether the release gates can be opened. A
-    # Debug-only CI would never compile the branch that actually ships.
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Select Xcode
-        run: |
-          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
-          if [ -z "$XC" ]; then
-            echo "::error::No Xcode 26 on this runner."
-            ls -d /Applications/Xcode*.app || true
-            exit 1
-          fi
-          sudo xcode-select -switch "$XC"
-          xcodebuild -version
-
+      # Release is built as well as Debug because they are different
+      # compilations: optimisation changes what the type-checker will accept in
+      # reasonable time, and `#if DEBUG` changes what code exists at all — in
+      # this project that flag decides whether the release gates can be opened.
+      # A Debug-only CI would never compile the branch that actually ships.
+      #
+      # Same job as the tests since August 2026 — see cost note 1.
       - name: Build Release
         run: |
           set -o pipefail
@@ -182,3 +197,19 @@ jobs:
             -configuration Release \
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO
+
+      # Information, not a gate — step 1.2.8. A global percentage threshold on a
+      # codebase that is mostly view code would fail every honest commit and
+      # teach everyone to ignore it. What matters is that each fixed defect
+      # gains a test, which is a review question rather than a number.
+      - name: Coverage summary
+        if: always() && github.event.inputs.coverage == 'true'
+        run: xcrun xccov view --report --only-targets TestResults.xcresult || true
+
+      - name: Upload results
+        if: always() && github.event.inputs.coverage == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: TestResults
+          path: TestResults.xcresult
+          retention-days: 14
