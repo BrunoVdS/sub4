@@ -885,20 +885,52 @@ struct SettingsView: View {
         } else {
             let pending = weather.pending(activities.activities)
             if pending > 0 {
-                Button("Fetch weather for \(pending) activities") {
-                    Task { await weather.backfill(activities.activities) }
+                // PATCH 227. The gate is tested HERE as well as inside
+                // `backfill`, which already refuses — because a control that
+                // refuses silently cannot be told apart from one that worked.
+                // With `coordinateWeather` shut, which is the state every
+                // reinstall leaves behind since the gate lives in UserDefaults,
+                // this row read "Fetch weather for 571 activities" and did
+                // nothing whatsoever when tapped. No progress, no error, no
+                // counter moving.
+                if ReleaseGates.isOpen(.coordinateWeather) {
+                    Button("Fetch weather for \(pending) activities") {
+                        Task { await weather.backfill(activities.activities) }
+                    }
+                    Text("Every outdoor activity that does not have conditions "
+                         + "yet, oldest first, about six a second. Nothing is "
+                         + "fetched automatically — opening an activity fetches "
+                         + "that one, and this button fetches the rest.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    LabeledContent("Weather not fetched", value: "\(pending)")
+                    Text("Weather for activities is switched off under Data & "
+                         + "privacy, so nothing is fetched — not by this screen, "
+                         + "and not by opening an activity either. Switch it on "
+                         + "there and this row becomes a button.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                Text("Every outdoor activity that does not have conditions yet, "
-                     + "oldest first, about six a second. Nothing is fetched "
-                     + "automatically — opening an activity fetches that one, "
-                     + "and this button fetches the rest.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
         }
 
         if weather.failedCount > 0 {
             LabeledContent("Weather failed this session",
                            value: "\(weather.failedCount)")
+
+            // The names, not just the count. Two failures out of 576 is noise
+            // if they are last spring's runs and a defect if they are this
+            // morning's, and a bare number cannot tell those apart — the same
+            // reason "Ignored recordings" above lists its reasons.
+            let failed = weather.failed(activities.activities)
+            ForEach(Array(failed.prefix(8)), id: \.id) { a in
+                Text("\(a.startLocal.prefix(10)) — \(a.name)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if failed.count > 8 {
+                Text("and \(failed.count - 8) more")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             Button("Retry weather") { weather.retryAll() }
             Text("Activities both providers refused. Apple Weather is tried "
                  + "first and needs an active paid membership; Open-Meteo needs "

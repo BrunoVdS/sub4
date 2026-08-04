@@ -442,10 +442,61 @@ final class WeatherStore {
         appleFailures = 0
     }
 
-    /// How many activities could carry weather but do not yet. The number the
-    /// backfill button is offering to work through.
+    /// THE ONE DEFINITION of "this activity could carry weather, does not, and
+    /// a fetch would actually be attempted". Oldest first.
+    ///
+    /// WHY THIS IS ONE FUNCTION AND NOT THREE FILTERS
+    /// ----------------------------------------------
+    /// It was three, and they disagreed. `pending` counted one set, `backfill`
+    /// queued a second, and `canFetch` decided a third — and only the third
+    /// excluded the activities that had already failed this session.
+    ///
+    /// On the phone, patch 226: two activities both providers had refused.
+    /// Settings offered "Fetch weather for 2 activities"; the backfill queued
+    /// both; `canFetch` declined both; the progress counter ran 0 of 2 → 2 of 2
+    /// over 320 ms of sleeping, and every number on the screen was identical
+    /// afterwards. A control that reports finished work it did not do is worse
+    /// than one that fails, because there is nothing left to notice.
+    ///
+    /// The failed ids come back into this set the moment `retryAll` clears
+    /// them, which is exactly what that button is for.
+    static func fetchable(_ all: [Activity],
+                          have: Set<String>,
+                          unavailable: Set<String>) -> [Activity] {
+        all.filter {
+            $0.isOutdoor
+            && $0.startDateUTC != nil
+            && !have.contains($0.id)
+            && !unavailable.contains($0.id)
+        }
+        .sorted { $0.startLocal < $1.startLocal }
+    }
+
+    /// How many activities the backfill button would actually attempt. Not
+    /// "how many lack weather" — see `fetchable`.
     func pending(_ all: [Activity]) -> Int {
-        all.filter { $0.isOutdoor && $0.startDateUTC != nil && byActivity[$0.id] == nil }.count
+        Self.fetchable(all, have: Set(byActivity.keys), unavailable: unavailable).count
+    }
+
+    /// The activities behind the "Weather failed this session" count, newest
+    /// first. A number with no names cannot be acted on or disbelieved: two
+    /// failures out of 576 is noise if they are last week's runs and a defect
+    /// if they are this morning's.
+    /// Newest first — the opposite order from `fetchable`, and deliberately: a
+    /// queue is worked from the far end of the history, a failure list is read
+    /// from today backwards.
+    ///
+    /// Static and pure for the same reason `fetchable` is: the failure set is
+    /// session state with no way to install it from a test, so a function that
+    /// reads it off `self` can only be asserted vacuously.
+    static func failedList(_ all: [Activity],
+                           unavailable: Set<String>) -> [Activity] {
+        all.filter { unavailable.contains($0.id) }
+            .sorted { $0.startLocal > $1.startLocal }
+    }
+
+    func failed(_ all: [Activity]) -> [Activity] {
+        Self.failedList(all, unavailable: unavailable)
     }
 
     /// Every eligible activity, oldest first, one at a time.
@@ -461,9 +512,8 @@ final class WeatherStore {
         // sleeping between 571 refusals and reporting a progress bar for it.
         guard ReleaseGates.isOpen(.coordinateWeather) else { return }
         guard !backfillRunning else { return }
-        let queue = all
-            .filter { $0.isOutdoor && $0.startDateUTC != nil && byActivity[$0.id] == nil }
-            .sorted { $0.startLocal < $1.startLocal }
+        let queue = Self.fetchable(all, have: Set(byActivity.keys),
+                                   unavailable: unavailable)
         backfillTotal = queue.count
         backfillDone = 0
         guard !queue.isEmpty else { return }
