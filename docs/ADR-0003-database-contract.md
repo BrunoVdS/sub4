@@ -417,6 +417,39 @@ Ten groups, in dependency order:
 9. **sync_state, work_queue, content_revision** — operational.
 10. **lifecycle_event** — deletion and export receipts.
 
+### 8.1 Three amendments, made while building the schema — patch 202
+
+Writing the tables found three places where the list above was wrong. Recorded
+here rather than corrected silently, because the list is what a reader checks
+the schema against.
+
+**Group 6's `constants` table does not exist, and should not.** `AthleteConstants`
+holds a maximum heart rate, a resting override, a sex coefficient, and a
+dictionary of resting rates by month. That is a profile, three scalars and a
+time series. A table called `constants` containing a bag of unrelated values is
+a transport shape, and the first line of this section forbids exactly that. They
+are stored as columns on `athlete_profile` and as a `resting_month` table.
+
+**Group 5 lists `proposal` under "authored". It is not.** The athlete does not
+author a proposal — a model produces one, inside a review, and the only reason
+it is kept is the audit trail. `proposal` and `proposal_change` carry foreign
+keys to `review` and belong to group 7.
+
+**Group 10 cannot hold deletion receipts.** The database lives inside the folder
+that "Delete local data" removes, so a delete receipt written here goes with the
+thing it describes. That is also the correct outcome rather than a limitation:
+patch 186 decided the delete receipt stays in memory precisely because a record
+of the deletion surviving the deletion is a record nobody asked to keep.
+`lifecycle_event.operation` is constrained to `export` and `disconnect`, and a
+test asserts that `delete` is refused.
+
+**One addition rather than a correction.** Evidence lineage is a join table,
+`review_evidence_source`, not a column. ADR-0002's purge has to find every
+stored piece of evidence carrying Strava lineage and remove it while leaving the
+verdict standing — that is a query, and a data-deletion obligation whose
+correctness rests on substring matching against a comma-separated column is not
+one this project should sign.
+
 ---
 
 ## 9. Decisions
@@ -556,9 +589,9 @@ paragraph instead.
 ## 10. Acceptance criteria for 3.1
 
 - [x] This ADR is approved or amended, with all six questions answered — 3 Aug 2026.
-- [x] Every table in §8 maps to a domain concept, not a transport DTO — for the
-      five tables of groups 1 and 3, shipped in patch 195. Groups 2 and 4–10 are
-      3.2b and this box reopens for them.
+- [x] Every table in §8 maps to a domain concept, not a transport DTO — groups 1
+      and 3 in patch 195, groups 2 and 4–10 in patch 202. The three places the
+      §8 list itself failed that rule are amended in §8.1.
 - [x] The identity rules here, `DataLifecycle`, and the schema diagram agree —
       the schema is the diagram, and `DatabaseInventoryTests` asserts the
       agreement with `DataLifecycle` rather than leaving it to a reading.
@@ -580,6 +613,34 @@ caller for `Sub4Database.open()` and no health screen. Both arrive with 3.2b.
 Recorded rather than implied, because a step that cannot be seen on hardware has
 not been verified — six of the eleven defects found in Phase 2 were reachable
 only on a device.
+
+### 11.1 What 3.2b shipped
+
+Patch 202, 4 August 2026. 229 tests in 26 suites green.
+
+Migration `2026-08-04-domain`: twenty tables covering groups 2 and 4–10, in its
+own file, because `2026-08-03-initial` has now run on a real device and the
+surest way to keep a migration body frozen is to stop opening the file it lives
+in. Nothing reads or writes any of it — 3.3 builds the importer, 3.4 moves the
+app across.
+
+The rules the schema now enforces rather than merely describes:
+
+- `user_note.planSessionUID` is deliberately **not** a foreign key. A note is
+  written against the plan that was current at the time, and plan versions are
+  replaced wholesale by an app update. An FK to `plan_session` would delete
+  thirteen months of writing the first time an update renumbered a week — the
+  same failure `activity_alias` exists to prevent, one table over.
+- Notes and match decisions use `ON DELETE SET NULL` against `activity`.
+  Deleting a recording must not delete what you wrote about it.
+- At most one active `plan_version`, as a partial unique index rather than a
+  rule somebody remembers.
+- Weather is keyed by the canonical activity and has no column that could hold a
+  source's identifier — the Strava-lineage gap in `weather.json`, closed by
+  construction.
+
+Still open in 3.2: the health screen (3.2c) and the benchmarks (3.2d), including
+the normalised-versus-chunked recording comparison §9 question 3 defers to.
 
 **Two things this step changed about the ADR itself**, both because writing the
 code exposed them:

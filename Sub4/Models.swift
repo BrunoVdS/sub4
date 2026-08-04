@@ -93,7 +93,11 @@ enum Discipline: String, Codable, Hashable, CaseIterable {
 }
 
 /// Run sub-type — drives the accent colour, mirroring the HTML plan's swatches.
-enum Intensity: String, Codable, Hashable {
+/// `CaseIterable` added in patch 202, for the same reason as `Discipline`:
+/// `plan_session.intensity` carries a CHECK constraint whose value list is
+/// frozen inside the migration that created the table, and the two are held
+/// together by a test rather than by one reading the other.
+enum Intensity: String, Codable, Hashable, CaseIterable {
     case easy, long, threshold
     case marathonPace = "marathon_pace"
 }

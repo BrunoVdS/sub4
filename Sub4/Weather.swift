@@ -83,7 +83,12 @@ import WeatherKit
 // MARK: - What is stored
 
 /// Who measured it. Stored per reading, shown on the card.
-enum WeatherSource: String, Codable, Hashable {
+///
+/// `CaseIterable` added in patch 202 — `weather.provider` carries a CHECK
+/// constraint frozen inside its migration, and this is what a test compares it
+/// against. A third provider added here fails that test, which is the prompt to
+/// write the migration that widens the constraint.
+enum WeatherSource: String, Codable, Hashable, CaseIterable {
     case appleWeather, openMeteo
 
     var label: String {

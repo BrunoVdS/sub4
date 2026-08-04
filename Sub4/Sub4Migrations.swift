@@ -53,12 +53,13 @@ nonisolated enum Sub4Migrations {
     /// Every migration, in the order they must run. `IntegrityReport` compares
     /// against this, so a migration registered below and forgotten here reports
     /// as "not migrated" rather than passing quietly.
-    static let all: [String] = [initial]
+    static let all: [String] = [initial, domain]
 
     static var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()
         // See the header. Not set, and not to be set.
         registerInitial(&m)
+        registerDomain(&m)      // Sub4Migrations+Domain.swift
         return m
     }
 
