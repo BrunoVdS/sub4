@@ -256,6 +256,20 @@ enum ReleaseGates {
         return open.map(\.title).joined(separator: ", ")
     }
 
+    /// Whether this build is one of the athlete's own.
+    ///
+    /// The same `#if DEBUG` that `permitted` uses, given a name — patch 203.
+    /// Diagnostic screens are gated on it, and a bare `#if DEBUG` repeated at
+    /// each call site is how one of them ends up on the wrong side of a build
+    /// configuration nobody was thinking about.
+    static var isInternalBuild: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
+
     #if DEBUG
     static let distributionLabel = "Internal build — switches are available."
     #else

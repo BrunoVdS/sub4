@@ -236,6 +236,63 @@ nonisolated struct Sub4Database: Sendable {
         }
     }
 
+    /// Row counts, every table, ordered as `sqlite_master` holds them.
+    ///
+    /// COUNTS AND NOTHING ELSE, deliberately. This is what the diagnostics text
+    /// is built from, and a diagnostic a person is invited to paste into a
+    /// message must not carry a session name, a coordinate or a date. A count
+    /// is the most that can be said about a table without saying anything about
+    /// the athlete.
+    ///
+    /// `COUNT(*)` per table rather than a stored figure: on an empty database
+    /// it costs nothing, and on a full one a stale cached number is worse than
+    /// a slow accurate one on a screen whose whole job is to be believed.
+    /// Tables that exist to run the database rather than to hold the athlete's
+    /// training, and are therefore not what a screen headed "Rows" is about.
+    ///
+    /// `grdb_migrations` is the one that is easy to miss: it carries no
+    /// `sqlite_` prefix, so a filter written against that prefix alone lets it
+    /// through — and it holds one row per applied migration, so a database with
+    /// nothing in it reports two rows and reads as not-empty. Found by the test
+    /// that asserted a fresh database is empty, which is exactly the assertion
+    /// that would have been quietly deleted as "obviously true".
+    ///
+    /// What it would tell a reader is already on the screen, spelled out, as
+    /// the list of applied migrations.
+    nonisolated static let bookkeepingTables: Set<String> = ["grdb_migrations"]
+
+    /// Tables a migration fills, rather than an import.
+    ///
+    /// `source` is seeded with one row per known source by
+    /// `2026-08-03-initial`, so a database that has never held a single
+    /// activity still reports six rows. That is correct and it is not data —
+    /// and a screen that reported "6 rows in total" for an empty database would
+    /// leave the reader unable to tell reference data from training history,
+    /// which is the one question that screen exists to answer before 3.3.
+    ///
+    /// Found by the same assertion that caught `grdb_migrations`: "a fresh
+    /// database is empty". It has now been wrong twice for two different
+    /// reasons, which is a better argument for keeping it than any reasoning
+    /// about what it might catch.
+    nonisolated static let seededTables: Set<String> = ["source"]
+
+    func tableCounts() throws -> [(table: String, rows: Int)] {
+        try queue.read { db in
+            let names = try String.fetchAll(db, sql: """
+                SELECT name FROM sqlite_master
+                WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                ORDER BY name
+                """).filter { !Self.bookkeepingTables.contains($0) }
+            return try names.map { name in
+                // The name comes from `sqlite_master`, so it cannot be
+                // attacker-supplied — but it is still interpolated into SQL,
+                // and quoting it costs one character.
+                let n = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM \"\(name)\"") ?? 0
+                return (table: name, rows: n)
+            }
+        }
+    }
+
     func integrityReport(using fm: FileManager = .default) throws -> IntegrityReport {
         let bytes: Int64? = {
             guard case .onDisk(let url) = location,

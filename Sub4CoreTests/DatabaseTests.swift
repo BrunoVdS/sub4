@@ -569,3 +569,76 @@ struct DatabaseInventoryTests {
                 "the backup behaviour is no longer disclosed as a gap")
     }
 }
+
+// MARK: - What the health screen reads — patch 203
+
+@Suite
+struct DatabaseCountsTests {
+
+    let db: Sub4Database
+
+    init() throws { db = try Sub4Database.inMemory(label: "counts-tests") }
+
+    /// EVERY TABLE, INCLUDING THE EMPTY ONES. Twenty-eight tables reading zero
+    /// is the correct state before 3.3, and it is the single most informative
+    /// thing the health screen can say — a list that hid empty tables would be
+    /// blank, and blank cannot be told apart from "no schema".
+    @Test("Every table is counted, empty ones included")
+    func everyTableIsCounted() throws {
+        let counts = try db.tableCounts()
+        #expect(counts.count >= 28, "got \(counts.count) tables")
+        #expect(counts.contains { $0.table == "activity" })
+        #expect(counts.contains { $0.table == "lifecycle_event" })
+    }
+
+    /// CORRECTED, AND THE CORRECTION IS THE FINDING.
+    ///
+    /// This began as "a fresh database is empty" and failed twice, for two
+    /// different reasons neither of which was a bug in the schema.
+    ///
+    /// First `grdb_migrations`, which has no `sqlite_` prefix and holds one row
+    /// per applied migration. Then `source`, which `2026-08-03-initial` seeds
+    /// with the six places data can come from. Both are correct; both would
+    /// have made the health screen say "6 rows" for a database holding nothing,
+    /// which is the one question that screen exists to answer before 3.3.
+    ///
+    /// So "empty" had to be defined rather than assumed: nothing imported, and
+    /// the seed present and complete.
+    @Test("A fresh database has imported nothing and seeded its sources")
+    func aFreshDatabaseHasOnlyItsSeed() throws {
+        let counts = try db.tableCounts()
+        let imported = counts.filter { !Sub4Database.seededTables.contains($0.table) }
+        #expect(imported.allSatisfy { $0.rows == 0 },
+                "imported before anything imported: \(imported.filter { $0.rows > 0 })")
+
+        let sources = counts.first { $0.table == "source" }
+        #expect(sources?.rows == DataSource.allCases.count,
+                "the seed is incomplete: \(sources?.rows ?? -1) of \(DataSource.allCases.count)")
+    }
+
+    /// SQLite's own bookkeeping is not this app's data and has no business on a
+    /// screen headed "Rows".
+    @Test("SQLite's internal tables are not counted")
+    func internalTablesAreExcluded() throws {
+        let names = try db.tableCounts().map(\.table)
+        #expect(!names.contains { $0.hasPrefix("sqlite_") }, "got \(names)")
+        // The one without a `sqlite_` prefix, and the reason this assertion is
+        // written out rather than left to the prefix check. GRDB's own table
+        // holds one row per applied migration, so a database with nothing in it
+        // reads as two rows.
+        #expect(!names.contains("grdb_migrations"),
+                "the migration bookkeeping is not the athlete's data")
+        for name in Sub4Database.bookkeepingTables {
+            #expect(!names.contains(name), "\(name) is bookkeeping, not data")
+        }
+    }
+
+    /// A count that does not move when a row is inserted is a cached number
+    /// pretending to be a measurement.
+    @Test("A count reflects what was actually inserted")
+    func countsAreLive() throws {
+        try db.queue.write { try Fixture.insertAccount($0) }
+        let accounts = try db.tableCounts().first { $0.table == "account" }
+        #expect(accounts?.rows == 1)
+    }
+}

@@ -59,6 +59,7 @@ struct SettingsView: View {
     @State private var hrRestField = ""
     @State private var load = LoadStore.shared
     @State private var showLoadDiagnostics = false
+    @State private var showDatabaseHealth = false
     @State private var showHealthReconcile = false
     @State private var thresholds = LoadThresholds.shared
     @State private var weather = WeatherStore.shared
@@ -171,6 +172,7 @@ struct SettingsView: View {
         // with the diagnostics open and it would vanish.
         .sheet(isPresented: $showManual) { ManualView() }
         .sheet(isPresented: $showLoadDiagnostics) { LoadDiagnosticView() }
+        .sheet(isPresented: $showDatabaseHealth) { DatabaseHealthView() }
         .sheet(isPresented: $showHealthReconcile) { HealthReconcileView() }
         .sheet(item: $notesCSV) { ShareSheet(items: [$0.url]) }
         // The button is disabled at zero notes, so the only way to reach
@@ -832,6 +834,19 @@ struct SettingsView: View {
     private var syncRows: some View {
         LabeledContent("Ingest from", value: MatchRules.cutoffDayKey)
 
+        // INTERNAL ONLY, per plan step 3.2.5. Here rather than beside "Load
+        // diagnostics" because that screen is about training load and this one
+        // is about storage — and the group a diagnostic sits in is the first
+        // hint anybody gets about what it will tell them.
+        //
+        // Nothing in the app reads the database yet. This is the screen that
+        // lets somebody confirm it was created, migrated and protected on a
+        // real phone rather than only in a test runner, and opening it is what
+        // puts the file on disk for the first time.
+        if ReleaseGates.isInternalBuild {
+            Button("Database health") { showDatabaseHealth = true }
+        }
+
         // Two windows since patch 117, so one row can no longer answer "how far
         // back does this app see". The charts get the full history; the Week
         // tab starts at the block, because it grades against a plan that does
@@ -1038,6 +1053,23 @@ struct SettingsView: View {
             LabeledContent("Access", value: health.hasRequestedAuthorization ? "granted" : "not granted")
             LabeledContent("Days with steps", value: "\(health.stepsByDay.count)")
 
+            // THE THREE STATUSES, FINALLY ON A SCREEN — patch 203.
+            //
+            // `SeriesStatus` was added in 2.2.6 for a specific reason:
+            // HealthKit refuses to say whether a read was denied, so "granted"
+            // is a claim this app cannot make. Five states are what it CAN
+            // distinguish, and each implies something different about whether
+            // to retry, re-prompt, or leave the reader alone.
+            //
+            // They have been computed on every refresh since, asserted by
+            // `HealthTypeTests`, and displayed nowhere — so the distinction the
+            // type exists to draw has never reached the person who needs it.
+            // Found while writing installation instructions for a screen that
+            // turned out not to exist.
+            healthSeriesRow("Steps", health.stepsStatus)
+            healthSeriesRow("Walking and running distance", health.walkRunStatus)
+            healthSeriesRow("Resting heart rate", health.restingHRStatus)
+
             Button("Allow step access") {
                 Task { await health.requestAuthorization() }
             }
@@ -1053,6 +1085,20 @@ struct SettingsView: View {
             Button("Compare with Strava") { showHealthReconcile = true }
                 .disabled(!health.hasRequestedAuthorization)
         }
+    }
+
+    /// `noData` is shown plainly rather than in red: a device with no swims is
+    /// not broken, and colouring an honest absence as a fault teaches the
+    /// reader to ignore the colour.
+    @ViewBuilder
+    private func healthSeriesRow(_ title: String,
+                                 _ status: HealthStore.SeriesStatus) -> some View {
+        LabeledContent(title) {
+            Text(status.label)
+                .font(.callout)
+                .foregroundStyle(status.isProblem ? Color.red : Color.secondary)
+        }
+        .font(.caption)
     }
 
     private let healthFooter =
