@@ -491,7 +491,7 @@ actually renders. 243,194 bytes, SHA-256 beginning `e93bf5ea`.
 - The ADR records the hash so a future divergence is detectable rather than
   arguable.
 
-### 9.3 Recordings are NORMALIZED rows, pending benchmark
+### 9.3 Recordings are NORMALIZED rows — RESOLVED 4 August 2026, patch 212
 
 One row per sample. ~300 samples per activity, ~660 activities today — about
 200,000 rows, which SQLite does not consider interesting.
@@ -505,6 +505,118 @@ Normalized is chosen because it is queryable in a terminal, diffable, and
 partially recoverable: one corrupt row is one lost sample, where one corrupt
 blob is a whole session's trace. That last property is worth real performance —
 DATA-06 is precisely about corruption isolation.
+
+#### 9.3.1 The benchmark ran. Normalized stays.
+
+Measured on an iPhone 17 Pro Max, 4 August 2026, patch 212, Debug build.
+10,000 activities × 300 samples = **3,000,000 rows**, built in a throwaway
+database in temporary space. Two consecutive runs, no changes between them:
+
+| | run 1 | run 2 |
+|---|---|---|
+| Build (10,000 activities) | 1.88 s | 1.88 s |
+| `day` / `week` | 0.61 / 0.65 ms | 0.58 / 0.64 ms |
+| `source` (join, 7,500 rows) | 61 ms | 61 ms |
+| `sport` (1,667 rows) | 16 ms | 16 ms |
+| `unmatched` (anti-join, 6,666 rows) | 54 ms | 81 ms |
+| `detail` (single activity) | 0.49 ms | 0.63 ms |
+| Normalized sample storage | 223.6 MB | 223.6 MB |
+| Chunked sample storage | 102.6 MB | 102.6 MB |
+| Normalized import | 40.31 s | 39.98 s |
+| Chunked import | 1.07 s | 1.02 s |
+| Normalized read, per recording | 0.313 ms | 0.282 ms |
+| Chunked read, per recording | 0.142 ms | 0.061 ms |
+
+Storage came back byte-identical across every run of the day (223,637,504),
+which is the fixture determinism §9's condition assumed and nobody had checked.
+
+**Against the budgets:**
+
+| Budget | Allowed | Measured | Headroom |
+|---|---|---|---|
+| Read one activity's trace | < 5 ms | 0.28–0.31 ms | ~16× |
+| Import one activity | < 50 ms | 4.0 ms | ~12× |
+| Sample storage at 10,000 | < 500 MB | 223.6 MB | ~2.2× |
+
+Normalized passes all three, twice. **Decision: `recording_sample` stays as one
+row per sample. `recording_chunk` is not created by any migration and does not
+exist outside the benchmark.**
+
+At the real corpus — roughly 700 activities — this scales to about **16 MB and
+2.5 s for a full backfill**. The 224 MB and the 40 seconds are artifacts of a
+fixture fifteen times larger than the athlete's actual history, and quoting them
+without that context would misrepresent the cost by an order of magnitude.
+
+#### 9.3.2 The budgets are absolute, and that is a correction
+
+The condition in §9.3 said "misses budget" without saying what the budget was.
+Patch 206 filled that in as **ratios** — keep normalized unless it costs more
+than 3× the storage or 3× the read of chunked. That rule was wrong, and the
+phone proved it: five runs gave read ratios of ×5.04, ×4.73, ×2.73, ×2.21 and
+×4.63, and the verdict flipped between *chunk it* and *keep normalized* on
+consecutive runs of the same size on the same device.
+
+The fault was comparing the shapes to each other rather than to what the app
+needs. Chunked reads a trace two to five times faster than normalized; both are
+under a third of a millisecond, against a 16 ms frame. A ratio between two
+numbers that do not matter is still a number, and it was steering the decision.
+
+Patch 212 replaced it with the three absolute budgets above. Ratios are still
+reported — they are the right way to *describe* the difference — they no longer
+decide. Import is in the rule now because it was the largest real difference
+(×37 to ×39) and the ratio rule ignored it completely.
+
+Evidence that the fix worked: between the two runs above, the read ratio moved
+by more than a factor of two while every budget verdict stayed identical.
+
+#### 9.3.3 What chunking would have cost, and is not on the screen
+
+The benchmark measures storage, import and read. It does not measure the thing
+that actually decides this, and the numbers should not be read as if it did:
+
+- **A blob is not queryable.** With `recording_sample`, "every sample above 170
+  bpm across the block" or "average pace in the final kilometre" is SQL. Chunked,
+  every such question becomes application code that loads and unpacks whole
+  series. Phase 5 onward is largely questions of that shape.
+- **Corruption isolation** — DATA-06, and already argued in §9.3 above. One
+  corrupt row is one lost sample; one corrupt blob is a session's whole trace.
+- **A migration is history.** Shipping `recording_chunk` for the shape that might
+  lose would have committed the schema to both. It exists only inside the
+  benchmark's temporary database, and that was deliberate.
+
+The ×2.18 storage and the ×37 import are what normalized costs. The three points
+above are what it buys.
+
+#### 9.3.4 What would reopen this
+
+Not instinct, and not a slow screen without a measurement behind it. Specifically:
+
+- any budget above failing on a real device at the size actually stored, or
+- sample storage crossing 500 MB in the live database (visible on the Database
+  health screen, which counts every table), or
+- an import path that needs to insert more than about 50 activities' samples in
+  one user-visible operation.
+
+Re-running the benchmark from Settings → Sync & data → Database health is how
+that gets checked. It never touches the real database — verified on device: after
+writing three million rows, the live file was still 417,792 bytes with every
+table at zero except the six seeded `source` rows.
+
+#### 9.3.5 Two defects the device run found
+
+Recorded because both were invisible to a green test suite, which is the pattern
+this project keeps rediscovering:
+
+1. **The chunked read measured nothing.** Patch 209 read both shapes with the
+   normalized key `"R\(i)"`, but `recording_chunk` keys its rows `"C\(i)"`. The
+   chunked side timed a lookup that matched no row and unpacked an empty blob.
+   A read that returns nothing is the fastest read there is. Fixed in patch 211,
+   which also added the read check — both shapes must hand back the same number
+   of values, shown on screen, and the verdict is **withheld** rather than
+   computed when they disagree.
+2. **One measurement is not a measurement.** The read was a single
+   sub-millisecond sample. Patch 211 made it twenty recordings spread across the
+   fixture, so neither shape wins on a page that happened to stay hot.
 
 ### 9.4 The database IS included in device backup — and this exposes an existing problem
 
@@ -641,6 +753,40 @@ The rules the schema now enforces rather than merely describes:
 
 Still open in 3.2: the health screen (3.2c) and the benchmarks (3.2d), including
 the normalised-versus-chunked recording comparison §9 question 3 defers to.
+
+### 11.2 What 3.2c and 3.2d shipped — patches 203–212
+
+**3.2c, the Database health screen** (patches 203–205). Settings → Sync & data →
+Database health, internal builds only. Opening it is what creates
+`db/sub4.sqlite` for the first time. Verdict, file, every table's row count
+including the zeros, and a redacted copy button. Two defects it caught on the way
+in, both the same assertion failing twice for unrelated reasons: `grdb_migrations`
+was being counted as a table (it has no `sqlite_` prefix), and the six seeded
+`source` rows were counted as imported data.
+
+**3.2d, the benchmark** (patches 206–212). Runs from the health screen at 500,
+2,000 or 10,000 activities, on a detached task with ordered progress and working
+cancellation. Answered §9 question 3 — see §9.3.1.
+
+Four defects surfaced between the simulator and the phone, and only one of them
+was found by a test:
+
+| | Found by |
+|---|---|
+| Shared temp directory name → parallel tests deleted each other's open database | the test suite, as `vnode unlinked while in use` |
+| Chunked read used the normalized key, so it timed a miss | reading a number on the phone that made no sense |
+| Read measured once, sub-millisecond | the same |
+| Ratio-based verdict flipped between identical runs | running it twice, which nothing forced |
+
+The last three were invisible to 248 green tests. The benchmark had a test
+asserting every query shape was measured, and none asserting the reads returned
+anything — which is the same omission, in a new place, as every entry in §11's
+list above.
+
+Not done, and deliberately: the benchmark's fixtures write in batches of 250
+activities per transaction, which is not how the 3.3 importer will necessarily
+batch. The comparison is fair because both shapes use the same batch size, but
+the absolute import figures are the benchmark's, not the importer's.
 
 **Two things this step changed about the ADR itself**, both because writing the
 code exposed them:

@@ -59,6 +59,11 @@ struct DatabaseHealthView: View {
     @State private var failure: String?
     @State private var copied = false
 
+    /// Patch 209. Owned by the screen rather than shared: two presentations
+    /// should not see each other's run.
+    @State private var benchmark = DatabaseBenchmarkRunner()
+    @State private var benchmarkSize = DatabaseBenchmarkRunner.sizes[0]
+
     var body: some View {
         NavigationStack {
             List {
@@ -71,6 +76,7 @@ struct DatabaseHealthView: View {
                     verdictSection
                     fileSection(db)
                     contentsSection
+                    benchmarkSection
                     diagnosticsSection(db)
                 }
             }
@@ -177,6 +183,150 @@ struct DatabaseHealthView: View {
         }
     }
 
+    /// PLAN STEP 3.2.7, ON THE DEVICE IT IS ABOUT.
+    ///
+    /// The tests run this benchmark on every build and assert nothing about its
+    /// timings, deliberately — a threshold that fails on a busy CI machine
+    /// teaches everybody to ignore the suite. The numbers that decide §9
+    /// question 3 have to come from here, because the simulator has the Mac's
+    /// disk and none of the phone's limits.
+    @ViewBuilder
+    private var benchmarkSection: some View {
+        Section {
+            Picker("Activities", selection: $benchmarkSize) {
+                ForEach(DatabaseBenchmarkRunner.sizes, id: \.self) { n in
+                    Text(n.formatted()).tag(n)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(benchmark.isRunning)
+
+            if benchmark.isRunning {
+                HStack {
+                    ProgressView()
+                    Text(benchmark.progressLine ?? "Running…")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Button("Stop", role: .destructive) { benchmark.cancel() }
+            } else {
+                Button("Run benchmark") {
+                    copied = false
+                    benchmark.start(activities: benchmarkSize)
+                }
+            }
+
+            switch benchmark.phase {
+            case .cancelled:
+                Text("Stopped before finishing.")
+                    .font(.caption).foregroundStyle(.secondary)
+            case .failed(let message):
+                Text(message)
+                    .font(.caption).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            default:
+                EmptyView()
+            }
+
+            if let r = benchmark.result {
+                benchmarkResult(r)
+            }
+        } header: {
+            Text("Benchmark")
+        } footer: {
+            Text(benchmark.result == nil
+                 ? "Builds a throwaway database in temporary space, measures it, "
+                 + "and deletes it. Your own database is never opened by this. "
+                 + "10,000 activities is three million sample rows and writes "
+                 + "several hundred megabytes while it runs — start at 500 to "
+                 + "get a per-activity figure before committing to it."
+                 : "Storage and read within three times the chunked shape means "
+                 + "one row per sample stays. Above it, the recording tables and "
+                 + "the importer both change, which is why this runs before step "
+                 + "3.3 and not after.")
+                .font(.caption2)
+        }
+    }
+
+    @ViewBuilder
+    private func benchmarkResult(_ r: DatabaseBenchmark.Result) -> some View {
+        LabeledContent("Ran", value: "\(r.activities.formatted()) activities")
+        LabeledContent("Build", value: String(format: "%.1f s", r.buildSeconds))
+
+        ForEach(r.queries) { m in
+            LabeledContent(m.name) {
+                Text("\(m.label) · \(m.rows) rows")
+                    .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+            }
+            .font(.caption)
+        }
+
+        LabeledContent("Normalised") {
+            Text(bytes(r.storage.normalisedBytes)).monospacedDigit()
+        }
+        .font(.caption)
+        LabeledContent("Chunked") {
+            Text(bytes(r.storage.chunkedBytes)).monospacedDigit()
+        }
+        .font(.caption)
+        LabeledContent("Storage cost") {
+            Text(String(format: "×%.2f", r.storage.storageRatio)).monospacedDigit()
+        }
+        .font(.caption)
+        LabeledContent("Read cost") {
+            Text(String(format: "×%.2f", r.storage.readRatio)).monospacedDigit()
+        }
+        .font(.caption)
+
+        // ABOVE THE VERDICT, NOT BELOW IT — patch 211.
+        //
+        // Patch 209 read the chunked side with the normalised side's key, so
+        // it timed a lookup that matched nothing and the screen reported a
+        // read cost with confidence. This row is what makes that impossible to
+        // miss: both shapes hold the same series, so both must hand back the
+        // same number of values.
+        // THE BUDGETS, NOT THE RATIOS — patch 212. The ratios above describe
+        // the difference between the shapes; these decide. Each shows what was
+        // measured against what was allowed, so a fail says which budget and
+        // by how much rather than only that something was wrong.
+        ForEach(r.storage.budgetChecks) { check in
+            LabeledContent(check.name) {
+                Text("\(check.measured) / \(check.budget)")
+                    .font(.caption).monospacedDigit()
+                    .foregroundStyle(check.passes ? Color.dim : Color.red)
+            }
+            .font(.caption)
+        }
+
+        LabeledContent("Read check") {
+            Text(r.storage.readCheckLabel)
+                .font(.caption)
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(r.storage.readsAgree ? Color.dim : Color.red)
+        }
+        .font(.caption)
+
+        // The verdict, first-class rather than left to the reader to compute
+        // from two ratios — the same argument as the status row at the top.
+        // Withheld outright when the read check failed: a verdict computed
+        // from a measurement known to be invalid is worse than no verdict,
+        // because somebody will write it into the ADR.
+        LabeledContent("Verdict") {
+            if r.storage.readsAgree {
+                Text(r.storage.normalisedIsAffordable ? "Keep normalised" : "Chunk it")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(r.storage.normalisedIsAffordable ? Color.secondary : Color.red)
+            } else {
+                Text("Withheld")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(Color.red)
+            }
+        }
+    }
+
+    private func bytes(_ n: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
+    }
+
     @ViewBuilder
     private func diagnosticsSection(_ db: Sub4Database) -> some View {
         Section {
@@ -267,6 +417,13 @@ struct DatabaseHealthView: View {
         lines.append("Tables: \(counts.count), imported rows: \(importedRows), total: \(totalRows)")
         for row in counts where row.rows > 0 {
             lines.append("  \(row.table): \(row.rows)")
+        }
+        // The benchmark is the reason this screen gets pasted at all now — the
+        // §9 decision is made from these lines. They are counts and durations
+        // over synthetic fixtures, so they describe nobody.
+        if let r = benchmark.result {
+            lines.append("")
+            lines.append(contentsOf: r.diagnosticLines)
         }
         return lines.joined(separator: "\n")
     }

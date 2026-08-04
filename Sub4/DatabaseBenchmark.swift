@@ -75,8 +75,32 @@ nonisolated enum DatabaseBenchmark {
         let chunkedBytes: Int64
         let normalisedImportSeconds: Double
         let chunkedImportSeconds: Double
+        /// Total across `readsSampled` reads, not one read. Divide before
+        /// quoting a per-chart figure.
         let normalisedReadSeconds: Double
         let chunkedReadSeconds: Double
+
+        /// How many recordings each shape was asked for — patch 211.
+        let readsSampled: Int
+        let normalisedValuesRead: Int
+        let chunkedValuesRead: Int
+
+        /// THE CHECK THAT WOULD HAVE CAUGHT PATCH 209's DEFECT IN A SECOND.
+        ///
+        /// Both shapes hold the same series, so twenty reads must return
+        /// twenty × `samplesPerActivity` values on each side. A key that
+        /// matches nothing returns zero, and zero is very fast — which is
+        /// exactly how a read of nothing passed for a read worth quoting.
+        var readsAgree: Bool {
+            let expected = readsSampled * samplesPerActivity
+            return normalisedValuesRead == expected && chunkedValuesRead == expected
+        }
+
+        var readCheckLabel: String {
+            readsAgree
+                ? "\(readsSampled) reads, \(normalisedValuesRead) values each side"
+                : "MISMATCH — normalised \(normalisedValuesRead), chunked \(chunkedValuesRead), expected \(readsSampled * samplesPerActivity)"
+        }
 
         var sampleRows: Int { activities * samplesPerActivity }
         var storageRatio: Double {
@@ -89,16 +113,120 @@ nonisolated enum DatabaseBenchmark {
             chunkedReadSeconds == 0 ? 0 : normalisedReadSeconds / chunkedReadSeconds
         }
 
-        /// The verdict, stated rather than left to the reader.
+        /// The comparison as lines, for the copy button and for the ADR.
         ///
-        /// NOT A RECOMMENDATION — a reading of the budget in plan step 3.2.7:
-        /// keep the simpler shape unless it costs materially more. "Materially"
-        /// is defined here as more than three times the storage or more than
-        /// three times the read cost, and the number is written down so that a
-        /// later disagreement is with the threshold rather than with the
-        /// arithmetic.
+        /// Shared with the screen rather than formatted twice: a diagnostic
+        /// that says something different from what the reader is looking at is
+        /// worse than no diagnostic.
+        var diagnosticLines: [String] {
+            let n = Double(max(1, readsSampled))
+            return [
+                "Samples: \(sampleRows) (\(activities) × \(samplesPerActivity))",
+                String(format: "Normalised: %lld bytes, import %.2f s, read %.3f ms/recording",
+                       normalisedBytes, normalisedImportSeconds, normalisedReadSeconds * 1000 / n),
+                String(format: "Chunked:    %lld bytes, import %.2f s, read %.3f ms/recording",
+                       chunkedBytes, chunkedImportSeconds, chunkedReadSeconds * 1000 / n),
+                String(format: "Ratios (reported, not deciding): storage ×%.2f, import ×%.2f, read ×%.2f",
+                       storageRatio, importRatio, readRatio),
+                "Read check: \(readCheckLabel)"
+            ] + budgetChecks.map {
+                "Budget \($0.passes ? "PASS" : "FAIL") — \($0.name): \($0.measured) against \($0.budget)"
+            } + [
+                readsAgree
+                    ? "Verdict: normalised is \(normalisedIsAffordable ? "affordable" : "NOT affordable")"
+                    : "Verdict: WITHHELD — the read measurement is not valid"
+            ]
+        }
+
+        // MARK: The verdict — rewritten in patch 212
+
+        /// Per recording, not per run.
+        var normalisedReadMillisecondsPerRecording: Double {
+            readsSampled == 0 ? 0 : normalisedReadSeconds * 1000 / Double(readsSampled)
+        }
+        var chunkedReadMillisecondsPerRecording: Double {
+            readsSampled == 0 ? 0 : chunkedReadSeconds * 1000 / Double(readsSampled)
+        }
+
+        /// Per activity, because that is how importing actually arrives —
+        /// a handful of new sessions at a time, not ten thousand at once.
+        var normalisedImportMillisecondsPerActivity: Double {
+            activities == 0 ? 0 : normalisedImportSeconds * 1000 / Double(activities)
+        }
+
+        /// Sample storage scaled to the design target, so a 500-activity run
+        /// and a 10,000-activity run are judged against the same number.
+        var normalisedBytesAtDesignTarget: Int64 {
+            activities == 0 ? 0
+                : Int64(Double(normalisedBytes) / Double(activities)
+                        * Double(Budget.designTargetActivities))
+        }
+
+        var budgetChecks: [BudgetCheck] {
+            [
+                BudgetCheck(name: "Read a trace",
+                            measured: String(format: "%.2f ms", normalisedReadMillisecondsPerRecording),
+                            budget: String(format: "< %.0f ms", Budget.readMillisecondsPerRecording),
+                            passes: normalisedReadMillisecondsPerRecording < Budget.readMillisecondsPerRecording),
+                BudgetCheck(name: "Import an activity",
+                            measured: String(format: "%.2f ms", normalisedImportMillisecondsPerActivity),
+                            budget: String(format: "< %.0f ms", Budget.importMillisecondsPerActivity),
+                            passes: normalisedImportMillisecondsPerActivity < Budget.importMillisecondsPerActivity),
+                BudgetCheck(name: "Storage at \(Budget.designTargetActivities.formatted())",
+                            measured: ByteCountFormatter.string(fromByteCount: normalisedBytesAtDesignTarget,
+                                                                countStyle: .file),
+                            budget: "< " + ByteCountFormatter.string(fromByteCount: Budget.storageBytes,
+                                                                     countStyle: .file),
+                            passes: normalisedBytesAtDesignTarget < Budget.storageBytes)
+            ]
+        }
+
+        /// THE VERDICT, AND WHY IT IS NO LONGER A RATIO — patch 212.
+        ///
+        /// Patch 206 said "keep normalised unless it costs more than three
+        /// times the storage or three times the read". Three runs on the phone
+        /// gave read ratios of ×5.04, ×4.73 and ×2.73, so the same rule on the
+        /// same hardware answered "chunk it" and "keep normalised" on
+        /// consecutive runs. A verdict that flips between identical runs is not
+        /// a verdict.
+        ///
+        /// The fault was measuring one shape against the other instead of
+        /// against what the app needs. Reading a trace takes 0.165 ms
+        /// normalised and 0.060 ms chunked; chunked is nearly three times
+        /// faster and BOTH are irrelevant next to a frame at 16 ms. A ratio
+        /// between two numbers that do not matter is still a number, and it
+        /// was steering the decision.
+        ///
+        /// These budgets are absolute, tied to what the app does, and stated
+        /// so that a later disagreement is with the budget rather than with
+        /// the arithmetic. Ratios are still reported — they are the right way
+        /// to describe the difference — they just no longer decide.
+        ///
+        /// Import is in here because it was the largest real difference (×28)
+        /// and the old rule ignored it entirely.
+        enum Budget {
+            /// One activity's full trace, which is what drawing a stream chart
+            /// costs. Well inside a 16 ms frame with room for the drawing.
+            static let readMillisecondsPerRecording = 5.0
+            /// Fifty new sessions after a long gap should import in about two
+            /// seconds, so fifty milliseconds each.
+            static let importMillisecondsPerActivity = 50.0
+            /// Half a gigabyte of samples on a phone is the point at which
+            /// this stops being a personal app's business.
+            static let storageBytes: Int64 = 500_000_000
+            static let designTargetActivities = 10_000
+        }
+
+        struct BudgetCheck: Sendable, Equatable, Identifiable {
+            let name: String
+            let measured: String
+            let budget: String
+            let passes: Bool
+            var id: String { name }
+        }
+
         var normalisedIsAffordable: Bool {
-            storageRatio <= 3.0 && readRatio <= 3.0
+            readsAgree && budgetChecks.allSatisfy(\.passes)
         }
     }
 
@@ -113,9 +241,42 @@ nonisolated enum DatabaseBenchmark {
         /// with 31 tables and 60-odd indexes costs before a single row exists,
         /// which is not what anybody is trying to measure.
         let growthBytes: Int64
+
+        var diagnosticLines: [String] {
+            var lines = ["Benchmark: \(activities) activities, \(samplesPerActivity) samples each",
+                         String(format: "Build: %.2f s", buildSeconds)]
+            for m in queries {
+                // %ld, not %d: `Int` is 64-bit here and `%d` reads 32 of them.
+                lines.append(String(format: "  %@: %@ — %ld rows, %.2f µs/row",
+                                    m.name, m.label, m.rows, m.microsecondsPerRow))
+            }
+            lines.append("Growth over empty schema: \(growthBytes) bytes")
+            lines.append(contentsOf: storage.diagnosticLines)
+            return lines
+        }
     }
 
     // MARK: Running
+
+    /// ACTIVITIES PER TRANSACTION — patch 209.
+    ///
+    /// Ten thousand activities at 300 samples is three million `recording_sample`
+    /// rows. Writing them in ONE transaction, which is what patch 206 did, keeps
+    /// the whole rollback journal alive until the commit; on a phone that is a
+    /// memory-pressure kill rather than a measurement, and it is not how the
+    /// importer in 3.3 will work either.
+    ///
+    /// The SAME size is used for both storage shapes, which is what keeps the
+    /// comparison honest — batching changes both sides equally, so the ratio
+    /// that §9 question 3 turns on is unaffected by the number chosen here.
+    static let batchSize = 250
+
+    /// Recordings read per shape when measuring read cost — patch 211.
+    ///
+    /// One was not enough. At 500 activities a single read of one recording
+    /// runs in half a millisecond, which is inside the noise of anything else
+    /// the phone is doing, and it decides half of §9 question 3.
+    static let readSamples = 20
 
     /// Builds a database of `activities` activities and measures it.
     ///
@@ -161,7 +322,7 @@ nonisolated enum DatabaseBenchmark {
         progress("Building \(activities) activities…")
         let clock = ContinuousClock()
         let build = try clock.measure {
-            try insertActivities(queue, count: activities)
+            try insertActivities(queue, count: activities, progress: progress)
         }
 
         progress("Measuring queries…")
@@ -185,15 +346,19 @@ nonisolated enum DatabaseBenchmark {
 
     /// Deterministic, index-derived. See the header on why nothing here is
     /// random.
-    private static func insertActivities(_ queue: DatabaseQueue, count: Int) throws {
+    private static func insertActivities(_ queue: DatabaseQueue, count: Int,
+                                         progress: (String) -> Void) throws {
         try queue.write { db in
             try db.execute(sql: """
                 INSERT INTO account (id, label, createdUTC)
                 VALUES ('BENCH', 'Benchmark', '2020-01-01T00:00:00Z')
                 """)
+        }
 
-            let disciplines = Sub4Migrations.initialDisciplines
-            for i in 0..<count {
+        let disciplines = Sub4Migrations.initialDisciplines
+        try eachBatch(of: count, in: queue, label: "Building activities",
+                      progress: progress) { db, range in
+            for i in range {
                 // Spread across roughly ten years of days so the day and week
                 // queries have realistic selectivity rather than every row
                 // landing on one date.
@@ -229,6 +394,32 @@ nonisolated enum DatabaseBenchmark {
                         """, arguments: ["M\(i)", "s-\(i)", "A\(i)"])
                 }
             }
+        }
+    }
+
+    /// Walks `0..<count` in `batchSize` chunks, checking for cancellation at
+    /// each boundary.
+    ///
+    /// CANCELLATION IS CHECKED HERE AND NOWHERE ELSE, deliberately. A phone
+    /// run of ten thousand takes long enough that the athlete will want a way
+    /// out, and a batch boundary is the only place where stopping leaves a
+    /// consistent database — which does not matter for a temporary file that is
+    /// about to be deleted, but does mean the abandoned transaction is small.
+    /// One transaction per batch, which is also why the write lives here rather
+    /// than at the call sites: a caller that opened its own transaction around
+    /// the whole loop would silently undo the batching.
+    private static func eachBatch(of count: Int,
+                                  in queue: DatabaseQueue,
+                                  label: String,
+                                  progress: (String) -> Void,
+                                  _ body: (Database, Range<Int>) throws -> Void) throws {
+        var start = 0
+        while start < count {
+            try Task.checkCancellation()
+            let end = min(start + batchSize, count)
+            try queue.write { db in try body(db, start..<end) }
+            if count > batchSize { progress("\(label) \(end)/\(count)…") }
+            start = end
         }
     }
 
@@ -306,33 +497,61 @@ nonisolated enum DatabaseBenchmark {
 
         progress("Importing normalised…")
         let normalisedImport = try clock.measure {
-            try insertNormalised(queue, activities: activities, series: series)
+            try insertNormalised(queue, activities: activities, series: series,
+                                 progress: progress)
         }
         let afterNormalised = fileSize(file)
 
         progress("Importing chunked…")
         let chunkedImport = try clock.measure {
-            try insertChunked(queue, activities: activities, series: series)
+            try insertChunked(queue, activities: activities, series: series,
+                              progress: progress)
         }
         let afterChunked = fileSize(file)
 
-        // A representative read: one activity's full trace, which is what
-        // drawing a stream chart costs.
-        let target = "R\(activities / 2)"
+        // THE READ COST — REBUILT IN PATCH 211, BECAUSE THE FIRST VERSION
+        // MEASURED NOTHING.
+        //
+        // It read BOTH shapes with `"R\(activities / 2)"`. `insertChunked`
+        // writes its key as `"C\(i)"`, so the chunked side was a lookup for a
+        // row that does not exist: it timed a miss and unpacked an empty blob.
+        // The phone reported "Read cost ×0.28" and the number was furniture.
+        // No test caught it because no test asserted the read returned
+        // anything — the same omission as every other defect in this file's
+        // history.
+        //
+        // Three changes. Each shape reads its OWN key. Twenty recordings
+        // rather than one, because a single sub-millisecond sample is noise
+        // and this figure decides half of §9 question 3. And both sides count
+        // what they got back, so a miss can never again pass for a fast read.
+        //
+        // Spread across the fixture on purpose: reading R0 twenty times would
+        // measure a page that stayed hot after the first touch, which is not
+        // what drawing twenty different activities' charts costs.
+        let step = max(1, activities / readSamples)
+        let indices = Array(stride(from: 0, to: activities, by: step).prefix(readSamples))
+
+        var normalisedValues = 0
         let normalisedRead = try clock.measure {
-            _ = try queue.read { db in
-                try Double.fetchAll(db, sql: """
-                    SELECT distanceM FROM recording_sample
-                    WHERE recordingID = ? ORDER BY ordinal
-                    """, arguments: [target])
+            try queue.read { db in
+                for i in indices {
+                    normalisedValues += try Double.fetchAll(db, sql: """
+                        SELECT distanceM FROM recording_sample
+                        WHERE recordingID = ? ORDER BY ordinal
+                        """, arguments: ["R\(i)"]).count
+                }
             }
         }
+
+        var chunkedValues = 0
         let chunkedRead = try clock.measure {
-            _ = try queue.read { db in
-                let blob = try Data.fetchOne(db, sql: """
-                    SELECT distanceM FROM recording_chunk WHERE recordingID = ?
-                    """, arguments: [target])
-                return blob.map(unpack) ?? []
+            try queue.read { db in
+                for i in indices {
+                    let blob = try Data.fetchOne(db, sql: """
+                        SELECT distanceM FROM recording_chunk WHERE recordingID = ?
+                        """, arguments: ["C\(i)"])
+                    chunkedValues += unpack(blob ?? Data()).count
+                }
             }
         }
 
@@ -344,14 +563,19 @@ nonisolated enum DatabaseBenchmark {
             normalisedImportSeconds: seconds(normalisedImport),
             chunkedImportSeconds: seconds(chunkedImport),
             normalisedReadSeconds: seconds(normalisedRead),
-            chunkedReadSeconds: seconds(chunkedRead))
+            chunkedReadSeconds: seconds(chunkedRead),
+            readsSampled: indices.count,
+            normalisedValuesRead: normalisedValues,
+            chunkedValuesRead: chunkedValues)
     }
 
     private static func insertNormalised(_ queue: DatabaseQueue,
                                          activities: Int,
-                                         series: Series) throws {
-        try queue.write { db in
-            for i in 0..<activities {
+                                         series: Series,
+                                         progress: (String) -> Void) throws {
+        try eachBatch(of: activities, in: queue, label: "Importing normalised",
+                      progress: progress) { db, range in
+            for i in range {
                 try db.execute(sql: """
                     INSERT INTO recording (id, activityID, fetchedUTC, sampleCount, sourceID)
                     VALUES (?, ?, '2020-01-01T00:00:00Z', ?, 'strava')
@@ -375,13 +599,15 @@ nonisolated enum DatabaseBenchmark {
 
     private static func insertChunked(_ queue: DatabaseQueue,
                                       activities: Int,
-                                      series: Series) throws {
+                                      series: Series,
+                                      progress: (String) -> Void) throws {
         let distance = pack(series.distance)
         let heartRate = pack(series.heartRate)
         let speed = pack(series.speed)
         let altitude = pack(series.altitude)
-        try queue.write { db in
-            for i in 0..<activities {
+        try eachBatch(of: activities, in: queue, label: "Importing chunked",
+                      progress: progress) { db, range in
+            for i in range {
                 let args: StatementArguments = ["C\(i)", "A\(i)", series.distance.count,
                                                 distance, heartRate, speed, altitude]
                 try db.execute(sql: """
