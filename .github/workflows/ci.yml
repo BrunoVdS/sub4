@@ -31,26 +31,48 @@ name: Build and test
 # minutes are 200 macOS minutes. The allowance was exhausted in early August
 # 2026, which is what prompted the following four changes.
 #
-#   1. ONE JOB, NOT TWO. Debug tests and the Release build were separate jobs.
-#      They ran in parallel, which looked faster and cost more: each job bills
-#      its own wall time and each paid separately for checkout, Xcode selection
-#      and GRDB resolution. Sequential is slower in wall-clock and roughly a
-#      minute cheaper per push. On a 200-minute budget, billed minutes are the
-#      number that matters.
+#   1. NOT ON EVERY PUSH — the change that actually mattered.
+#
+#      Measured from the billing page: 3 August 2026 cost 193.55 macOS minutes
+#      across 21 successful runs. Wall-clock was ~109 minutes; billing was 1.78×
+#      that, because two parallel jobs each bill their own time while the run's
+#      duration only shows the longer one. A push therefore costs about 8.7
+#      billed minutes, and 200 minutes a month is ~23 pushes.
+#
+#      Ten pushes in a working day is normal on this project. Push-triggered CI
+#      on macOS was never compatible with the free tier — no amount of tuning
+#      closes a gap that large.
+#
+#      So: weekly, on tags, and on demand. That is ~4 runs a month against an
+#      allowance of ~23, and it keeps the two things CI gives that a local
+#      `xcodebuild test` does not — proof that a clean checkout builds, and
+#      proof that the Release configuration compiles.
+#
+#      The cost, stated: a clean-checkout break can now sit undetected for up
+#      to six days. Acceptable only because the thing that breaks daily —
+#      regressions — is caught by the local suite, which is run before every
+#      patch on this project. It would not be acceptable on a team.
+#
+#   2. ONE JOB, NOT TWO. Debug tests and the Release build were separate jobs.
+#      They ran in parallel, which looked faster and cost more: each paid
+#      separately for checkout, Xcode selection and GRDB resolution. Merging
+#      saves that duplicated setup — about 1.5–2 minutes, so roughly 20% of a
+#      push, not the half it first appeared to be. The Release build still
+#      costs what it costs.
 #
 #      The consequence, stated: a failing test now hides a Release-only
 #      compile error until the tests pass. That is the right trade while
 #      minutes are the constraint, and it is the first thing to revert when
 #      they are not.
 #
-#   2. TIMEOUT 40 → 20. A hung job at 40 minutes bills 400 — twice the monthly
+#   3. TIMEOUT 40 → 20. A hung job at 40 minutes bills 400 — twice the monthly
 #      allowance, from one stuck run. Real runs finish in a few minutes; 20 is
 #      already generous and it caps the disaster.
 #
-#   3. `paths-ignore` ON PULL REQUESTS TOO. It was on `push` only, so a
-#      documentation-only PR spent minutes proving documentation compiles.
+#   4. `paths-ignore` KEPT ON THE TAG TRIGGER's SIBLINGS. Documentation-only
+#      changes never justified a macOS runner.
 #
-#   4. COVERAGE ON DEMAND. Instrumenting every run to produce a number this
+#   5. COVERAGE ON DEMAND. Instrumenting every run to produce a number this
 #      file itself calls "information, not a gate" is build time and artifact
 #      storage spent on something nobody reads most weeks. It now runs on
 #      `workflow_dispatch`, where somebody has actually asked for it.
@@ -62,17 +84,24 @@ name: Build and test
 # acceptance criterion for plan step 1.1.
 
 on:
+  # Monday morning. Late enough that a Sunday evening push is included, early
+  # enough that the answer is waiting rather than arriving mid-week.
+  schedule:
+    - cron: '0 6 * * 1'
+
+  # A tag is the one push that is worth a run on its own: it is the commit
+  # somebody intends to keep.
   push:
-    branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-  pull_request:
-    branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
+    tags: ['v*']
+
+  # And whenever it is actually wanted — before a long session, after a
+  # dependency change, or when something feels wrong.
   workflow_dispatch:
+    inputs:
+      coverage:
+        description: 'Instrument and report code coverage'
+        type: boolean
+        default: true
     inputs:
       coverage:
         description: 'Instrument and report code coverage'
@@ -80,8 +109,8 @@ on:
         default: true
 
 concurrency:
-  # A second push supersedes the first — no point testing a commit that is
-  # already behind.
+  # Kept although pushes no longer trigger this: two manual runs started in
+  # quick succession are the same mistake, and the later one is the one meant.
   group: ${{ github.ref }}
   cancel-in-progress: true
 
