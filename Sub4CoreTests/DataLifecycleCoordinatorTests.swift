@@ -146,12 +146,64 @@ struct DataLifecycleCoordinatorTests {
             // Consent — patch 193, PRIV-04. Separate from the gate it guards:
             // "the feature is on" and "somebody agreed to the transfer" are
             // different facts, and a delete must remove the second.
-            "consent.locationToWeather"
+            "consent.locationToWeather",
+            // LoadThresholds — MISSING UNTIL PATCH 214, and the reason this
+            // test is weaker than its name suggests. See the two below.
+            "load.rampWarn", "load.rampNote", "load.tsbDeep",
+            "load.tsbDeepDays", "load.monotonyHigh"
         ]
         let covered = Set(DataLifecycle.preferenceKeys)
         for k in written {
             #expect(covered.contains(k), "\(k) is written by the app but appears in no category")
         }
+    }
+
+    /// THE VERSION OF THE TEST ABOVE THAT CANNOT DRIFT.
+    ///
+    /// `everyPreferenceKeyIsCovered` compares a HAND-WRITTEN array against the
+    /// inventory. Both lists were written the same day by the same person, and
+    /// both forgot `LoadThresholds` — so a test called "Every UserDefaults key
+    /// the app writes is covered by a category" passed while five written keys
+    /// were covered by nothing, and `Delete local data` left the athlete's tuned
+    /// thresholds in place without the receipt naming them as survivors.
+    ///
+    /// `noStoreIsMissedByTheMemoryDrop` could not have caught it either: that
+    /// one pins against stores declaring an Application Support location, and
+    /// `LoadThresholds` declares no file. A preferences-only store is the blind
+    /// spot in both checks.
+    ///
+    /// This asks the type that WRITES the keys, so a sixth threshold is covered
+    /// the moment it is added and no array needs updating.
+    @Test("The keys LoadThresholds writes are the keys the inventory covers")
+    func loadThresholdKeysAreCoveredAtTheirSource() {
+        let covered = Set(DataLifecycle.preferenceKeys)
+        let missing = LoadThresholds.preferenceKeys.filter { !covered.contains($0) }
+        #expect(missing.isEmpty, "not covered by any category: \(missing)")
+        #expect(LoadThresholds.preferenceKeys.count == 5)
+    }
+
+    /// Dropping in memory must not write the defaults back into the keys the
+    /// delete has just removed.
+    ///
+    /// `deleteEverything` removes preference keys first and calls
+    /// `dropAllInMemory()` after, so a plain `reset()` would fire all five
+    /// `didSet`s and re-create the keys holding default values. Deleted-and-
+    /// recreated is not deleted, and nothing about the app's behaviour would
+    /// look wrong — which is why this is a test and not a comment.
+    @Test("Dropping thresholds in memory writes nothing back")
+    func droppingThresholdsDoesNotRecreateTheKeys() {
+        let d = UserDefaults.standard
+        let t = LoadThresholds.shared
+
+        t.rampWarn = 9.5                                   // persists, as designed
+        #expect(d.object(forKey: "load.rampWarn") != nil)
+
+        for k in LoadThresholds.preferenceKeys { d.removeObject(forKey: k) }
+        t.dropInMemory()
+
+        let recreated = LoadThresholds.preferenceKeys.filter { d.object(forKey: $0) != nil }
+        #expect(recreated.isEmpty, "dropInMemory wrote back: \(recreated)")
+        #expect(t.isDefault, "the in-memory values were not returned to defaults")
     }
 
     /// The gate keys are COMPUTED — `"gate." + rawValue` — so a gate renamed in

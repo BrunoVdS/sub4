@@ -221,7 +221,13 @@ enum DataLifecycleCoordinator {
     /// the inventory knows where data rests, not which object graph is holding
     /// a copy. `noStoreIsMissedByTheMemoryDrop` in the tests pins it against the
     /// set of stores that declare an Application Support location, which is the
-    /// closest check available.
+    /// closest check available — AND IS WHERE `LoadThresholds` GOT THROUGH.
+    ///
+    /// It declares no file, only preference keys, so a check built around
+    /// Application Support locations could never see it. It was missing here
+    /// and from the inventory both, until patch 214. A store that writes only
+    /// preferences is the blind spot; there is one now, and the next one will
+    /// be missed the same way unless somebody remembers this comment.
     static func dropAllInMemory() {
         ActivityStore.shared.dropInMemory()
         DetailStore.shared.dropInMemory()
@@ -230,6 +236,7 @@ enum DataLifecycleCoordinator {
         AthleteStore.shared.dropInMemory()
         ConstantsStore.shared.dropInMemory()
         WeatherStore.shared.dropInMemory()
+        LoadThresholds.shared.dropInMemory()
     }
 
     private static func reason(for s: StorageLocation) -> String {

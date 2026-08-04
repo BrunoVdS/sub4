@@ -497,16 +497,27 @@ enum DataLifecycle {
             purpose: "Answering whether you are building, holding or digging a "
                    + "hole, and whether tomorrow should be hard or easy.",
             lineage: [.strava, .appleHealth],
-            storage: [.memoryOnly],
+            // `.memoryOnly` ALONE WAS WRONG — patch 214. True of `LoadStore`,
+            // which recomputes the curve every launch and persists nothing;
+            // false of `LoadThresholds`, which writes five preference keys on
+            // every edit. The category read as "nothing is stored", so Delete
+            // local data left the athlete's tuned thresholds in place and the
+            // receipt named no survivor.
+            //
+            // Read from the type that writes them rather than repeated as
+            // literals here, so a sixth threshold is covered by construction.
+            storage: [.memoryOnly, .preferences(LoadThresholds.preferenceKeys)],
             retention: .forThisSessionOnly,
             sharedWith: [],
             isExportable: true,
             aiShareable: false,
-            deletionRule: "Nothing to delete — it is recomputed from the activities "
-                        + "each time the app runs, and disappears with them.",
+            deletionRule: "The curve itself has nothing to delete — it is recomputed "
+                        + "from the activities each time the app runs, and disappears "
+                        + "with them. The thresholds you have tuned are stored, and "
+                        + "Delete local data returns them to their defaults.",
             gaps: ["Derived from Strava data, so the restriction travels with it "
                  + "even though no file holds it (ADR-0002, step 2.1.11)."],
-            onStravaDisconnect: .keep(why: "nothing is stored. It is recomputed from whatever activities remain, which after a disconnect is none")),
+            onStravaDisconnect: .keep(why: "the curve is recomputed from whatever activities remain, which after a disconnect is none — and the thresholds are yours, not Strava's, so they stay")),
 
         DataCategoryEntry(
             category: .weather,

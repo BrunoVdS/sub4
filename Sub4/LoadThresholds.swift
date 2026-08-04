@@ -78,6 +78,42 @@ final class LoadThresholds {
         monotonyHigh = Self.defaults.monotonyHigh
     }
 
+    /// THE KEYS THIS TYPE WRITES, OWNED BY THE TYPE THAT WRITES THEM — patch 214.
+    ///
+    /// `DataLifecycle` used to list every preference key as a literal, and these
+    /// five were in neither the inventory nor the hand-written array in
+    /// `DataLifecycleCoordinatorTests` that is supposed to catch exactly that.
+    /// Both lists were written the same day by the same person and both forgot
+    /// this file, so the test named "Every UserDefaults key the app writes is
+    /// covered by a category" passed while five written keys were covered by
+    /// nothing. `Delete local data` left the athlete's tuned thresholds in
+    /// place, and the receipt did not name them as survivors.
+    ///
+    /// Referencing this constant from the inventory means a sixth threshold is
+    /// covered the moment it is added. Note this is the OPPOSITE of the rule for
+    /// migrations, deliberately: a migration is history and must freeze its
+    /// literals, while an inventory describes the present and should read live.
+    nonisolated static let preferenceKeys = [
+        "load.rampWarn", "load.rampNote",
+        "load.tsbDeep", "load.tsbDeepDays",
+        "load.monotonyHigh"
+    ]
+
+    /// Back to defaults WITHOUT writing them to disk.
+    ///
+    /// `DataLifecycleCoordinator.deleteEverything` removes the preference keys
+    /// first and calls `dropAllInMemory()` afterwards. Plain `reset()` here
+    /// would fire every `didSet` and write the defaults straight back into the
+    /// keys the coordinator has just cleared — a delete that leaves five keys
+    /// on disk holding default values, which is not what "deleted" means.
+    func dropInMemory() {
+        isPersisting = false
+        reset()
+        isPersisting = true
+    }
+
+    private var isPersisting = true
+
     private init() {
         let d = UserDefaults.standard
         func read(_ key: String, _ fallback: Double) -> Double {
@@ -91,6 +127,7 @@ final class LoadThresholds {
     }
 
     private func save(_ v: Double, _ key: String) {
+        guard isPersisting else { return }
         UserDefaults.standard.set(v, forKey: key)
     }
 }
