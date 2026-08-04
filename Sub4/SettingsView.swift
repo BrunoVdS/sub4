@@ -1050,8 +1050,27 @@ struct SettingsView: View {
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(health.hasUsageDescription ? Color.secondary : Color.red)
             }
-            LabeledContent("Access", value: health.hasRequestedAuthorization ? "granted" : "not granted")
-            LabeledContent("Days with steps", value: "\(health.stepsByDay.count)")
+            // "PROMPT SHOWN", NOT "ACCESS GRANTED" — patch 213.
+            //
+            // This row read `granted / not granted` off
+            // `hasRequestedAuthorization`, which is a UserDefaults bool set when
+            // the PROMPT WAS SHOWN. It says nothing about what was allowed, and
+            // HealthKit will not say either — the comment immediately below and
+            // the footer at the bottom of this section both state that
+            // outright, so the screen contradicted itself twice.
+            //
+            // The cost of the lie is specific: steps come back empty while this
+            // row says "granted", and the reader goes looking at the query
+            // instead of at iOS Settings. The three series rows below are what
+            // actually describe the reads, and they are the answer to
+            // "did it work".
+            LabeledContent("Health prompt",
+                           value: health.hasRequestedAuthorization ? "shown" : "never shown")
+
+            // `Days with steps` stood here, showing `stepsByDay.count` — the
+            // same number the Steps row below carries, one row apart and
+            // phrased differently. It predates the series rows; they say it
+            // better, with a status a bare count cannot express.
 
             // THE THREE STATUSES, FINALLY ON A SCREEN — patch 203.
             //
@@ -1070,7 +1089,12 @@ struct SettingsView: View {
             healthSeriesRow("Walking and running distance", health.walkRunStatus)
             healthSeriesRow("Resting heart rate", health.restingHRStatus)
 
-            Button("Allow step access") {
+            // NOT "step access" — patch 213. `requestAuthorization` asks for
+            // `typesRead`: steps, walking and running distance, resting heart
+            // rate, workouts, and the swim distance inside them. A button
+            // naming only steps gives the reader whose heart-rate row is empty
+            // no reason to press it.
+            Button("Allow Health access") {
                 Task { await health.requestAuthorization() }
             }
             .disabled(!health.hasUsageDescription)
@@ -1101,10 +1125,26 @@ struct SettingsView: View {
         .font(.caption)
     }
 
+    /// THE WINDOWS ARE STATED — patch 213.
+    ///
+    /// The day counts above are days WITH DATA INSIDE A WINDOW, and the window
+    /// is not the same for all three: `HealthStore.refresh` reads 120 days of
+    /// steps and distance against 420 of resting heart rate, deliberately,
+    /// because a January session has to be scored against January's resting
+    /// rate rather than this month's.
+    ///
+    /// Today those windows are full, so "121 days" and "421 days" happen to
+    /// describe both the window and the data. The day Health holds less, a row
+    /// reading "40 days" cannot be told apart from "we only asked for 40" — and
+    /// the reader has no way to know which, unless it says so here.
     private let healthFooter =
-        "Steps and walking distance are read only — this app never writes to Health. "
-        + "iOS won't reveal whether read access was granted, so if steps stay empty, "
-        + "check Settings → Privacy & Security → Health → Sub4."
+        "Read only — this app never writes to Health. Steps and walking "
+        + "distance are read over the last 120 days, resting heart rate over "
+        + "420, so a session in January is scored against January's resting "
+        + "rate. The day counts are days with data inside those windows.\n\n"
+        + "iOS will not reveal whether read access was granted, which is why "
+        + "the row above says only whether the prompt was shown. If a series "
+        + "stays empty, check Settings → Privacy & Security → Health → Sub4."
 
     // MARK: Noise filter
 
