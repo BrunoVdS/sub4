@@ -84,6 +84,14 @@ nonisolated enum Sub4Import {
         var reviewsImported = 0
         var reviewsUpdated = 0
 
+        // Patch 226. `weatherUnmatched` is NOT a refusal: the schema is
+        // correctly declining to hold a reading about an activity that is not
+        // here. Expected to be 1 — the August 2025 artifact.
+        var weatherSeen = 0
+        var weatherImported = 0
+        var weatherUpdated = 0
+        var weatherUnmatched = 0
+
         /// WHICH ids did not resolve, and how many activities named each —
         /// patch 221.
         ///
@@ -119,6 +127,7 @@ nonisolated enum Sub4Import {
                      "  inserted: \(activitiesInserted), refreshed: \(activitiesUpdated)",
                      "Notes seen: \(notesSeen) — imported \(notesImported), refreshed \(notesUpdated)",
                      "Reviews seen: \(reviewsSeen) — imported \(reviewsImported), refreshed \(reviewsUpdated)",
+                     "Weather seen: \(weatherSeen) — imported \(weatherImported), refreshed \(weatherUpdated), no activity \(weatherUnmatched)",
                      "Gear inserted: \(gearInserted), already present: \(gearAlreadyPresent)",
                      "Activities naming unknown gear: \(gearUnresolved)"]
             for (external, count) in unresolvedGearRanked {
@@ -149,7 +158,8 @@ nonisolated enum Sub4Import {
                     activities: [Activity],
                     shoes: [AthleteStore.Shoe],
                     notes: [NotesStore.Note] = [],
-                    proposals: [ProposalStore.Record] = []) throws -> Report {
+                    proposals: [ProposalStore.Record] = [],
+                    weather: [ActivityWeather] = []) throws -> Report {
 
         let clock = ContinuousClock()
         var report = Report()
@@ -177,6 +187,11 @@ nonisolated enum Sub4Import {
                 // are already there.
                 try importNotes(d, notes: notes, now: now, into: &report)
                 try importProposals(d, records: proposals, now: now, into: &report)
+
+                // AFTER the activities, and here the order is load-bearing
+                // rather than tidy: every reading is resolved through
+                // `activity_alias`, which the activity loop above writes.
+                try importWeather(d, readings: weather, now: now, into: &report)
             }
         }
         report.seconds = seconds(elapsed)

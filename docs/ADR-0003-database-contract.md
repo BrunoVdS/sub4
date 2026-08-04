@@ -1199,3 +1199,39 @@ tests too, and measured nothing for two patches.
 - `review.appVersion` records the build that produced it — the field that
   existed in the JSON and had no column until patch 225.
 - A second import refreshes rather than stacking: the counts above stay put.
+
+### 12.9 `weather.json` → `weather` — clean, and it closes §8's Strava-key gap
+
+Checked against `ActivityWeather` before the importer was written, the same way
+§12.3 and §12.7 were. **Nothing was missing.** Every stored property has a
+column; `WeatherSource`'s raw values are exactly the frozen
+`domainWeatherProviders`; and the CHECK bounds — humidity 0…1, samples > 0,
+non-negative wind and precipitation — restate rules `WeatherStore` already
+enforces.
+
+Recorded because a clean result is worth as much as the two findings. §12.3
+found five missing columns and §12.7 five missing fields, both in tables 3.2b
+designed from §8's prose. `weather` was designed the same way and came out
+complete, which is what makes the checking a habit rather than a reaction to
+being burned.
+
+**This import closes a known gap rather than carrying it.** §8 records that
+`weather.json` is keyed by Strava activity id — "the key itself carries Strava
+lineage (ADR-0002 — re-key at 4A M4)". The schema keys `weather` by the
+canonical activity, so the import resolves every key through `activity_alias`
+and the row that lands carries no Strava identity at all. That is 4A M4 done
+early, as a side effect of the cutover rather than as a migration of its own,
+and it is the first thing to need the aliases that patch 218 wrote three patches
+before anything read them.
+
+**Weather for an activity that is not in the database is COUNTED, not refused.**
+`weather.activityID` is NOT NULL with a foreign key, so a reading whose activity
+never arrived cannot be stored — and that is the schema being right rather than
+the import being wrong. Weather is *about* an activity; a reading attached to
+nothing is not a fact anybody can use. A refusal means the schema rejected
+something that should have fitted; this is a correct decline, and conflating the
+two would make the screen report a defect where there is none.
+
+The expected count is **one** — the August 2025 artifact, which has weather and
+no activity. Anything larger means activities are missing that should not be,
+and the number is on the health screen for that reason.

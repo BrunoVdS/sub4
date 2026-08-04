@@ -255,6 +255,16 @@ struct DatabaseHealthView: View {
                 LabeledContent("Reviews",
                                value: "\(r.reviewsImported) new, \(r.reviewsUpdated) refreshed")
                     .font(.caption)
+                LabeledContent("Weather",
+                               value: "\(r.weatherImported) new, \(r.weatherUpdated) refreshed")
+                    .font(.caption)
+                if r.weatherUnmatched > 0 {
+                    // Not red: the schema is correctly declining to hold a
+                    // reading about an activity that is not here.
+                    LabeledContent("Weather with no activity",
+                                   value: "\(r.weatherUnmatched)")
+                        .font(.caption).foregroundStyle(Color.dim)
+                }
                 if r.gearUnresolved > 0 {
                     LabeledContent("Naming unknown gear", value: "\(r.gearUnresolved)")
                         .font(.caption)
@@ -305,7 +315,8 @@ struct DatabaseHealthView: View {
                     activities: ActivityStore.shared.activities,
                     shoes: AthleteStore.shared.shoes,
                     notes: Array(NotesStore.shared.notes.values),
-                    proposals: ProposalStore.shared.records)
+                    proposals: ProposalStore.shared.records,
+                    weather: Array(WeatherStore.shared.byActivity.values))
                 await recheck(db)
             } catch {
                 importError = String(describing: error)
