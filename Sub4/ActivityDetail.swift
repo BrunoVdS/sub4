@@ -224,6 +224,20 @@ enum Fmt {
 // MARK: - Strava DTO
 
 struct StravaDetailDTO: Decodable {
+    /// Strava sends `average_heartrate: 0` for a lap or split it has no reading
+    /// for — patch 244. Zero bpm is a strap that was not worn, not a dead
+    /// athlete, and it is the same rule `activity.averageHeartrate` already
+    /// carries as a CHECK.
+    ///
+    /// Left unconverted, twelve details on this device were REFUSED WHOLE on
+    /// import: the lap insert violated `averageHeartrate IS NULL OR > 0`, the
+    /// savepoint rolled back, and the detail took its splits with it. On screen
+    /// the same zero rendered as a lap at 0 bpm.
+    static func positiveOrNil(_ v: Double?) -> Double? {
+        guard let v, v > 0 else { return nil }
+        return v
+    }
+
     struct SplitDTO: Decodable {
         let distance: Double?
         let elapsed_time: Int?
@@ -276,7 +290,7 @@ struct StravaDetailDTO: Decodable {
                     movingTime: s.moving_time ?? s.elapsed_time ?? 0,
                     elapsedTime: s.elapsed_time ?? 0,
                     elevationDiff: s.elevation_difference,
-                    averageHR: s.average_heartrate)
+                    averageHR: Self.positiveOrNil(s.average_heartrate))
             },
             bestEfforts: (best_efforts ?? []).compactMap {
                 guard let n = $0.name, let t = $0.elapsed_time else { return nil }
@@ -286,7 +300,7 @@ struct StravaDetailDTO: Decodable {
                 ActivityDetail.Lap(index: l.lap_index ?? (i + 1),
                                    distanceM: l.distance ?? 0,
                                    movingTime: l.moving_time ?? 0,
-                                   averageHR: l.average_heartrate)
+                                   averageHR: Self.positiveOrNil(l.average_heartrate))
             },
             fetched: Date()
         )

@@ -1448,3 +1448,225 @@ not answerable by reasoning about what was run. The device is the only witness.
 When the answer matters, the honest move is a new migration — it costs one file
 and settles the question, where being wrong costs a silently divergent schema
 that a green suite will keep hiding.
+
+## 12.11 The bundled plan — step 3.3, patch 237
+
+`Plan` → `plan`, `plan_version`, `plan_week`, `plan_session`, `plan_exercise`,
+plus thirteen tables added by migration `2026-08-09-plan-content`.
+
+### 12.11.1 Why the plan is in the database at all
+
+It ships in the app bundle and is replaced wholesale on update, so storing it
+looks redundant. The answer is `plan_version`. A note written in March was
+written against the plan as it stood in March; a proposal's reasoning refers to
+sessions a later build may renumber, retitle or drop. §12.7 records that
+`user_note.planSessionUID` is deliberately NOT a foreign key for exactly this
+reason — an FK would delete the reasoning behind every past note the first time
+a week was renumbered. Storing each version, hashed and dated, is what turns
+that dangling reference into something answerable later.
+
+### 12.11.2 Four things §8's prose had no home for
+
+Read against `Models.swift`, `Fuel.swift` and `Warmup.swift`:
+
+| | |
+|---|---|
+| `Week.stats` | 37 weeks × 5 figures — the document's own weekly totals |
+| `Session.swimDetail` / `strengthDetail` | 82 sessions, **634 blocks** |
+| `Plan.fuel` | 3 products, 7 targets, a 5-step ladder, caution, race day |
+| `Plan.warmup` | 9 timeline steps, 7 movements, 4 conditions, caution |
+
+The breakdowns are the serious one: without them `plan_session` holds a
+one-line summary of a session whose actual prescription lives only in the
+bundle.
+
+**Week stats are stored as key/value**, because the set of keys belongs to the
+source document rather than to this app. That decision paid immediately — see
+§12.11.5.
+
+**Fuel and warm-up get named columns, not a blob.** Both are ordered lists of
+short labelled strings, and the lazy shape is one generic table with columns
+`c1…c4`. That stores the data and destroys the meaning: a column named `c2`
+cannot be read six months later without the code that wrote it.
+
+**Ordinals everywhere**, because order is content. A warm-up timeline out of
+order is a different warm-up; a fuelling ladder out of order is wrong advice.
+None of these lists carry a key of their own — `Fuel.Product.id` is its name, a
+display convenience — so position is the only thing that preserves them.
+
+### 12.11.3 Identity is a content hash
+
+SHA-256 over the plan re-encoded with sorted keys, UNIQUE in the schema.
+
+Not the file bytes: the bundle's whitespace is whatever the extractor emitted,
+so a formatting change would mint a version with identical content. Sorted keys
+because dictionary order is not stable across encodes, and a hash that changed
+on its own would mint a new version on every launch.
+
+Activation **clears before it sets**. `plan_version_one_active` is a unique
+partial index on `planID WHERE activatedUTC IS NOT NULL`, so writing the new
+timestamp first violates it mid-transaction.
+
+A version's content is replaced, never merged: merging would need an identity
+for a fuelling ladder step, and it has none — it is the third row in a list.
+
+### 12.11.4 What the device measured
+
+37 weeks, 260 sessions, 82 breakdowns, 634 blocks, 184 week statistics, 20
+exercises, 29 fuel rows, 20 warm-up rows. Three versions now exist — the
+original numbers, the corrected ones from patch 238, and the rebuilt ones from
+242 — each retained and deactivated, exactly as the design intends.
+
+### 12.11.5 The weekly totals were wrong, and the key/value table is what showed it
+
+22 of 37 weeks stated volume requiring an average cycling speed of **58–79
+km/h**. One factor of two applied to one contiguous block reconciled all of
+them. Week 20 claimed 190 km against zero rides and 32 km of running.
+
+Eleven weeks write different statistic key names — `rides`, `swims`, `easy`,
+`shakeouts` — so anything reading `stats["runs"]` sees nothing for all three
+vacation weeks and race week. A column-per-statistic schema would have dropped
+every one of those on the floor with nothing to show for it.
+
+The totals were rebuilt twice. First from a regex outside the app, which was
+then caught counting "18 km, last 5 km @MP" as 23 km and including optional
+rides the app excludes. Then from `PlanStore.plannedVolume` itself, via a
+`Copy plan volumes` diagnostic, so the stated figures and the derived line under
+them are now the same arithmetic. Implied cycling speed across every week
+carrying a ride is 29.3–29.8 km/h.
+
+The logged prologue weeks were left alone: they describe what happened in July,
+and a planned-volume function correctly returns nothing for them.
+
+Still true, and named rather than smoothed over: ten weeks carry
+`runExact = 0`, meaning a run is written as a duration and the total is a lower
+bound. And `extract_plan.py` regenerates `plan.json`, so the correction is
+overwritten the next time it runs — the factor of two lives in the source
+document.
+
+### 12.11.6 PlanFocus — the header asks the plan what it is
+
+Patch 239. The week header printed "125 km all sports", which adds running
+kilometres to cycling kilometres to swimming kilometres; those are three
+quantities and their sum is not one.
+
+`PlanFocus` derives the answer from the plan's own content: share of committed
+endurance sessions per discipline, ≥30% leads. Sub-4 is 60/20/20 and running
+leads alone; an even triathlon block is 33/33/33 and all three lead; a cycling
+block leads in hours rather than kilometres. Derived rather than declared, so
+nothing in `plan.json` or the extractor changes and nothing goes stale.
+
+Session counts rather than time, because converting run kilometres, ride hours
+and swim metres to a common unit needs three assumed rates — the exact mixing
+this exists to stop. The 30% line is a judgement, named as one, and tested at
+both edges.
+
+## 12.12 Traces and details — step 3.3, patches 243–245
+
+`ActivityStreams` → `recording` + `recording_sample`. `ActivityDetail` →
+`activity_detail`, `activity_split`, `activity_lap`, `activity_best_effort`,
+added by migration `2026-08-10-activity-detail`.
+
+§12.4 said "`details/` and `streams/` → `recording` + `recording_sample`". That
+was wrong: `recording` holds the trace and nothing else. `ActivityDetail` — the
+splits, the laps, the best efforts, the device name, the route polyline, the
+calories — had no table anywhere in the schema. The splits matter most:
+`closingPace(km:)` reads them to answer the question the plan actually asks,
+"last 4 km at marathon pace", and there was nowhere to put one.
+
+Sixth mapping written before its importer, sixth to find missing schema.
+
+### 12.12.1 What the first real run measured
+
+| | |
+|---|---|
+| Traces | 387, rising to 415 as the backfill continued |
+| Samples | 115,923, then 124,323 |
+| Samples per trace | 299.5 — `ActivityStreams.targetSamples` is 300 |
+| Details | 378 → 420 |
+| Splits / laps / efforts | 5,428 / 1,483 / 537 |
+| Database | 1.6 MB → 23.8 MB |
+
+**This settles §9 question 3.** The benchmark measured the normalised
+one-row-per-sample shape at ×2.09 the storage of chunked, projected against a
+10,000-activity design target — three million rows. The real history is 661
+activities, of which 387 carry a trace; even if every activity eventually gets
+one, that is roughly 200,000 samples and about 35 MB. Chunked would save some
+ten megabytes. The provisional shape stands, and now on measurement rather than
+on projection.
+
+The estimate that preceded this was wrong by six-fold — "about sixty traces"
+came from reading Load diagnostics' `Trace / avg / power = 60 / 183 / 22`, which
+counts sessions *scored* from a trace, not traces held.
+
+### 12.12.2 Idempotency, proven on 115,923 rows
+
+A trace is replaced whole or skipped whole: an existing recording whose
+`fetchedUTC` matches is left alone, and one that differs is deleted and
+rewritten with `ON DELETE CASCADE` clearing its samples. Merging sample by
+sample would need an identity for a sample, and it has none — it is the four
+hundredth reading in a list.
+
+The second import proved it without needing the report: `recording` rose by 28
+and `recording_sample` by exactly 8,400. 8,400 ÷ 28 = 300. Not one of the 387
+existing traces was rewritten.
+
+### 12.12.3 The rule the schema cannot state
+
+`recording_sample.distanceM >= 0` is a column CHECK. "Never decreasing" is not
+expressible as one, so it lives in the importer, is checked before anything is
+written, and refuses the recording whole with the offending ordinal named. A
+trace whose x axis doubles back draws a chart that lies, and every pace read
+between those two points is nonsense.
+
+### 12.12.4 Zero bpm is an absent reading — patch 244
+
+Strava sends `average_heartrate: 0` for a lap it has no reading for.
+`StravaDetailDTO` passed it through unchanged, the schema refused it — correctly;
+zero bpm is a strap that was not worn — and because a detail is written inside
+one savepoint, **twelve details rolled back entire, splits and all, over one lap
+each**.
+
+The savepoint isolation worked exactly as designed. It isolated the wrong-sized
+thing, because the value should never have reached the column.
+
+Converted at both boundaries, and the duplication is deliberate:
+`StravaDetailDTO` stops new zeros arriving and fixes the display, where those
+laps had been rendering as 0 bpm; the importer stops the 378 details **already
+cached in `details.json`** from failing, since they are not re-fetched.
+
+A test that asserted the old behaviour — a zero heart rate being refused — had
+to be repointed at a negative distance, which no boundary coerces. Worth
+recording: a test written against a defect passes until the defect is fixed, and
+then reads as a regression.
+
+### 12.12.5 The one refusal that stays — a decision, not an outstanding defect
+
+Activity `18883849470` is refused on every import by
+`elapsedSeconds <= 604800`, and this is expected. It is not a bug and it is not
+waiting to be fixed.
+
+August 2025, Romania. 199.2 km, 2,403 m of climbing, **694,865 seconds elapsed —
+8.04 days** — against 70,153 seconds moving. No heart rate. 62.5 W average,
+estimated rather than measured. Maximum speed 30.6 m/s, which is 110 km/h.
+
+The segment efforts are what settle it. Thirty-five matched around the
+Transfăgărășan and Poiana Mărului at sustained 55–66 km/h over tens of
+kilometres — 29.6 km at 63 km/h, 20.8 km at 57 km/h, a "fastest 10k" at
+85 km/h. Those are car speeds. The recording contains some real riding, some
+road transfer, and eight days of a holiday with the device never stopped.
+
+It survived this long because nothing else looks at elapsed time. The
+speed-contradiction rule catches impossibly *fast* averages — 322, 620 and
+199 km/h on three November rides — and this one averages 1.03 km/h across its
+elapsed span, far too slow to trip it. `ignoredActivities` holds only the
+18 December swim. The database is the first thing that ever asked the question.
+
+**The athlete's decision, 4 August 2026: leave it refused.** The consequence is
+stated rather than hidden — the app keeps counting 199 km and 2,403 m into its
+own volume totals while the database declines the row, so the two disagree
+permanently on that one activity. It contributes no training load either way:
+no heart rate, and the estimated power is refused by `PowerLoad`.
+
+So `Refused: 1` on the import screen is the expected steady state. A second
+entry appearing there is news; this one is not.

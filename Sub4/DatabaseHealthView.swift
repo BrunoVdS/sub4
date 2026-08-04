@@ -312,6 +312,39 @@ struct DatabaseHealthView: View {
                         .font(.caption2).foregroundStyle(Color.dim)
                 }
 
+                // Patch 243. Traces and details, counted apart: a session
+                // can have one, both or neither, and folding them into a total
+                // would make "no trace" and "no detail" the same number.
+                LabeledContent("Traces",
+                               value: r.recordingsSeen == 0 ? "none held"
+                                      : "\(r.recordingsImported) new, \(r.recordingsUpdated) replaced, \(r.recordingsUnchanged) unchanged")
+                    .font(.caption)
+                if r.samplesImported > 0 {
+                    LabeledContent("  samples", value: "\(r.samplesImported)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.recordingsShort > 0 {
+                    LabeledContent("  under 8 samples", value: "\(r.recordingsShort)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.recordingsUnmatched > 0 {
+                    LabeledContent("  trace with no activity", value: "\(r.recordingsUnmatched)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                LabeledContent("Details",
+                               value: r.detailsSeen == 0 ? "none held"
+                                      : "\(r.detailsImported) new, \(r.detailsUpdated) replaced, \(r.detailsUnchanged) unchanged")
+                    .font(.caption)
+                if r.splitsImported + r.lapsImported + r.effortsImported > 0 {
+                    LabeledContent("  splits / laps / efforts",
+                                   value: "\(r.splitsImported) / \(r.lapsImported) / \(r.effortsImported)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.detailsUnmatched > 0 {
+                    LabeledContent("  detail with no activity", value: "\(r.detailsUnmatched)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+
                 if r.gearUnresolved > 0 {
                     LabeledContent("Naming unknown gear", value: "\(r.gearUnresolved)")
                         .font(.caption)
@@ -367,7 +400,9 @@ struct DatabaseHealthView: View {
                     constants: ConstantsStore.shared.c,
                     ftpWatts: AthleteStore.shared.ftp,
                     zones: AthleteStore.shared.hrZones,
-                    plan: PlanStore.shared.plan)
+                    plan: PlanStore.shared.plan,
+                    streams: Array(DetailStore.shared.streams.values),
+                    details: Array(DetailStore.shared.details.values))
                 await recheck(db)
             } catch {
                 importError = String(describing: error)

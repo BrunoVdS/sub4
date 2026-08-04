@@ -128,6 +128,29 @@ nonisolated enum Sub4Import {
         var planWarmup = 0
         var planWarmupRows = 0
 
+        // Patch 243 — the traces and the details. `recordingsUnmatched` and
+        // `detailsUnmatched` are NOT refusals: a trace on disk for an activity
+        // the app has excluded is the exclusion working, exactly as with
+        // weather in §12.9.
+        var recordingsSeen = 0
+        var recordingsImported = 0
+        var recordingsUpdated = 0
+        var recordingsUnchanged = 0
+        var recordingsUnmatched = 0
+        /// Fewer than eight samples — below what the app will chart, stored
+        /// anyway. A charting threshold is not a truth threshold.
+        var recordingsShort = 0
+        var samplesImported = 0
+
+        var detailsSeen = 0
+        var detailsImported = 0
+        var detailsUpdated = 0
+        var detailsUnchanged = 0
+        var detailsUnmatched = 0
+        var splitsImported = 0
+        var lapsImported = 0
+        var effortsImported = 0
+
         /// WHICH ids did not resolve, and how many activities named each —
         /// patch 221.
         ///
@@ -171,6 +194,10 @@ nonisolated enum Sub4Import {
                      "  weeks: \(planWeeks), stats: \(planWeekStats), sessions: \(planSessions)",
                      "  breakdowns: \(planDetails), blocks: \(planBlocks), exercises: \(planExercises)",
                      "  fuel: \(planFuel) with \(planFuelRows) rows, warm-up: \(planWarmup) with \(planWarmupRows) rows",
+                     "Traces seen: \(recordingsSeen) — imported \(recordingsImported), replaced \(recordingsUpdated), unchanged \(recordingsUnchanged)",
+                     "  samples: \(samplesImported), short: \(recordingsShort), no activity: \(recordingsUnmatched)",
+                     "Details seen: \(detailsSeen) — imported \(detailsImported), replaced \(detailsUpdated), unchanged \(detailsUnchanged)",
+                     "  splits: \(splitsImported), laps: \(lapsImported), efforts: \(effortsImported), no activity: \(detailsUnmatched)",
                      "Gear inserted: \(gearInserted), already present: \(gearAlreadyPresent)",
                      "Activities naming unknown gear: \(gearUnresolved)"]
             for (external, count) in unresolvedGearRanked {
@@ -207,7 +234,9 @@ nonisolated enum Sub4Import {
                     ftpWatts: Int? = nil,
                     zones: [AthleteStore.HRZone] = [],
                     plan: Plan? = nil,
-                    planSourceLabel: String = "bundled") throws -> Report {
+                    planSourceLabel: String = "bundled",
+                    streams: [ActivityStreams] = [],
+                    details: [ActivityDetail] = []) throws -> Report {
 
         let clock = ContinuousClock()
         var report = Report()
@@ -264,6 +293,11 @@ nonisolated enum Sub4Import {
                     try importPlan(d, plan: plan, sourceLabel: planSourceLabel,
                                    now: now, into: &report)
                 }
+
+                // AFTER the activities, like weather: both resolve a Strava id
+                // through `activity_alias`, which the activity loop writes.
+                try importRecordings(d, streams: streams, now: now, into: &report)
+                try importDetails(d, details: details, now: now, into: &report)
             }
         }
         report.seconds = seconds(elapsed)

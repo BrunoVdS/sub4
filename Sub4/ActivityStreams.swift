@@ -24,7 +24,14 @@
 import Foundation
 import CoreLocation
 
-struct ActivityStreams: Codable, Hashable {
+/// `nonisolated` since patch 245 — a pure value type whose COMPUTED members
+/// (`count`, `isUsable`, `totalKm`, `availableSeries`) are read by
+/// `Sub4Import.importRecordings` off the main actor. Stored properties would
+/// have been fine; computed ones inherit the type's isolation, which is the
+/// same correction `Activity.discipline` needed in patch 219 and the plan model
+/// in 237. Main-actor callers are unaffected: nonisolated is strictly more
+/// permissive.
+nonisolated struct ActivityStreams: Codable, Hashable {
 
     let activityId: String
     var distanceM: [Double]          // cumulative metres — the x axis
