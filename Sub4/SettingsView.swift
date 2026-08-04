@@ -64,6 +64,19 @@ struct SettingsView: View {
     @State private var thresholds = LoadThresholds.shared
     @State private var weather = WeatherStore.shared
 
+    /// "4 Aug 19:16". Day and time, no year and no seconds: this is read to
+    /// answer "did that just happen" and "how stale is this", and both are
+    /// answered at that resolution. en_GB because the phone is in Belgium and
+    /// the 24-hour clock is what every other time in the app uses.
+    private static let stampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_GB")
+        f.dateFormat = "d MMM HH:mm"
+        return f
+    }()
+
+    static func stamp(_ d: Date) -> String { stampFormatter.string(from: d) }
+
     @AppStorage(AppearanceKey.selected) private var appearanceRaw = Appearance.system.rawValue
 
     /// One of the eleven places Settings can be.
@@ -963,6 +976,37 @@ struct SettingsView: View {
         manualRunButton
 
         Button("Refresh zones & gear") { Task { await athlete.refresh() } }
+        // Patch 233. WHEN, not just what. "5 zones, 6 gear" reads identically
+        // before and after a tap, so it cannot answer the only question being
+        // asked — did that press do anything. `lastFetch` is persisted, so
+        // this survives a relaunch and says how stale the held values are.
+        // `{ Self.stamp($0) }` and NOT `Self.stamp` — patch 234, and the second
+        // time this project has been caught by it; `ReleaseGates.openGates`
+        // carries the same note from patch 179. Handing a MainActor-isolated
+        // method to `map` as a function VALUE passes it out of the actor and
+        // the call is then made from wherever `map` runs. Written as a closure
+        // it is an ordinary call in this context and stays isolated.
+        LabeledContent("Last refresh",
+                       value: athlete.lastFetch.map { Self.stamp($0) } ?? "never")
+            .font(.caption).foregroundStyle(.secondary)
+
+        // Patch 232. The outcome as well as the error: a refresh that returns
+        // six shoes and no zones is not a failure and is not a success either,
+        // and one line has to be able to say so.
+        if let o = athlete.lastOutcome {
+            LabeledContent("Returned", value: o)
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        LabeledContent("Zones held", value: "\(athlete.hrZones.count)")
+            .font(.caption).foregroundStyle(.secondary)
+
+        // Shown only when the last press did NOT produce data. Then `lastFetch`
+        // is unchanged and every other row on screen is stale, so without this
+        // the refusal below has no time attached to it.
+        if let a = athlete.lastAttempt, athlete.lastError != nil {
+            LabeledContent("Attempted", value: Self.stamp(a))
+                .font(.caption).foregroundStyle(.orange)
+        }
         if let e = athlete.lastError {
             Text(e).font(.caption).foregroundStyle(.orange)
         }

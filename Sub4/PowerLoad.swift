@@ -105,11 +105,21 @@ struct PowerDiagnosis {
             // "Check now": Check now calls activities.sync() and has never
             // touched AthleteStore, so the old instruction pointed at a button
             // that could not have helped even once the endpoint was right.
-            return "No FTP on the Strava profile. Set one in the Strava app "
-                 + "under Settings → Training Zones → Power, or on strava.com "
-                 + "under Settings → My Performance. Then: Sub4 → Settings → "
-                 + "Strava → Refresh athlete. A ride's intensity cannot be "
-                 + "computed without it."
+            // "No FTP HELD", not "no FTP on the Strava profile" — patch 235.
+            // The old wording asserted a fact about Strava that the app had
+            // never actually checked: the read was aimed at `/athlete/zones`,
+            // which does not carry the field, so this line appeared for a
+            // profile with 270 W set on it and sent the athlete to go and set
+            // it again. The endpoint is fixed; the sentence is narrowed anyway,
+            // because "we do not have it" is what this code can honestly say
+            // and "Strava does not have it" is an inference from one failed
+            // read.
+            return "No FTP held. Sub4 reads it from your Strava profile — if "
+                 + "it is not set there, set one in the Strava app under "
+                 + "Settings → Training Zones → Power, or on strava.com under "
+                 + "Settings → My Performance. Then: Sub4 → Settings → Sync & "
+                 + "data → Refresh zones & gear, and check the \"Last refresh\" "
+                 + "row moves. A ride's intensity cannot be computed without it."
         }
         if hrMax == nil {
             return "No max heart rate, so the heart-rate side of the conversion "

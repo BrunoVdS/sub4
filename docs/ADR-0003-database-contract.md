@@ -1235,3 +1235,216 @@ two would make the screen report a defect where there is none.
 The expected count is **one** — the August 2025 artifact, which has weather and
 no activity. Anything larger means activities are missing that should not be,
 and the number is on the health screen for that reason.
+
+## 12.10 The athlete profile, the zones and the resting series
+
+Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,
+`resting_month`.
+
+Three scalars, five zone boundaries and a month-keyed series: a few hundred
+bytes against 661 activities and 576 weather readings. It is also the
+denominator of every training-load figure the app has ever produced. TRIMP
+divides by the resting rate for the month, scales by the reserve between rest
+and maximum, and raises the result to `sexCoefficient`. Lose this and the 661
+activities are all still there and every CTL, ATL and TSB computed from them is
+wrong — with no error, no gap, and nothing visibly broken on any chart.
+
+### 12.10.1 One row from two stores
+
+`athlete_profile` is assembled from both stores, which is invisible from either
+side alone:
+
+| Column | Source | Field |
+|---|---|---|
+| `hrMaxOverride` | `AthleteConstants` | `hrMaxOverride` |
+| `hrMaxObserved` | `AthleteConstants` | `hrMaxObserved` |
+| `hrMaxObservedOnDayKey` | `AthleteConstants` | `hrMaxObservedOn` |
+| `hrMaxObservedActivityID` | — | **no field** — see 12.10.3 |
+| `restOverride` | `AthleteConstants` | `restOverride` |
+| `sexCoefficient` | `AthleteConstants` | `sexCoefficient` |
+| `ftpWatts` | `AthleteStore` | `ftp` |
+| `updatedUTC` | — | import time |
+
+`AthleteConstants` is computed on this phone from recorded activities;
+`AthleteStore` is fetched from Strava. Different lifetimes, different
+provenance, and one row — the profile is the athlete, not the source.
+
+`AthleteConstants.version` has no column and needs none: it versions the JSON
+encoding, and the database has migrations for that job.
+
+### 12.10.2 The defect: the top zone has no ceiling
+
+`hr_zone.maxBpm` was built NOT NULL. `AthleteStore.HRZone.max` is `Int?`, and
+its comment says why:
+
+    let max: Int?           // nil = open-ended top zone
+
+Strava returns the top zone as `min: 168, max: -1`, and the app models that
+absence honestly. The schema could not hold it. Z1–Z4 would have imported and
+Z5 would have been refused by a NOT NULL constraint — the one zone every hard
+session finishes in, and the one `topZoneFloor` reads to sanity-check the
+observed maximum. Reported as four successes and one refusal in a list nobody
+reads twice.
+
+Migration `2026-08-07-open-top-zone` drops and rebuilds `hr_zone` with `maxBpm`
+nullable and the CHECK rewritten as `maxBpm IS NULL OR maxBpm >= minBpm`.
+Dropping is safe for the same reason it was for `proposal_change` in §12.7:
+nothing in the app has ever written this table, so there is nothing to copy.
+
+**A sentinel was rejected.** 220, or 250, or any number meaning "no ceiling"
+would satisfy the column and put a lie in it — every later query asking which
+zone contains 205 bpm would get a defensible answer from a value nobody
+measured, with no way afterwards to tell a real ceiling from the placeholder.
+
+`ordinal` is Strava's 1-based zone number, not an array index, because every
+label in the app reads `Z\(index)`.
+
+This is the fourth mapping written before its importer and the fourth to find
+missing or wrong schema: §12.5 (five activity columns), §12.6 (gear
+references), §12.7 (five proposal fields), and this. The schema was written
+from §8's prose. The prose said "zone boundaries"; the type says one of them is
+absent on purpose.
+
+### 12.10.3 A provenance column with no field behind it
+
+`athlete_profile.hrMaxObservedActivityID` references `activity`.
+`AthleteConstants` holds `hrMaxObservedName` — a String, because that is what
+the Settings row prints. `refreshFromSources` carries `(bpm, day, name)` and
+drops the id it had in hand.
+
+Rather than leave the column permanently NULL, the activity is resolved
+arithmetically: the one activity on that dayKey whose recorded maximum, rounded
+the same way `hrMaxObserved` was rounded, IS the observed maximum. The name
+narrows further but cannot decide alone — an activity renamed on Strava since
+the maximum was recorded still matches on the two facts that cannot be edited.
+
+If exactly one activity satisfies all three, the column is filled with the
+canonical id, resolved through `activity_alias` like weather. If none or
+several do, it stays NULL and `profileProvenanceUnresolved` counts it. This is
+**not** a refusal: the profile imports either way. The figure is the fact; the
+activity is the provenance, and losing the second is not a reason to lose the
+first.
+
+Refusing to guess is the point. A provenance column holding a plausible wrong
+activity is worse than an empty one, because the empty one is visibly empty.
+
+The honest fix is upstream — `AthleteConstants` should keep the id it already
+had. That is a change to a store the training-load path reads, so it is not
+made here. `refreshFromSources` recomputes the field, so the day it starts
+keeping the id, one refresh repopulates it and this resolution becomes a
+fallback for old data.
+
+### 12.10.4 Zones are replaced whole; the resting series is not
+
+Opposite calls, deliberately.
+
+**Zones.** A zone set is one object. If the boundaries move from five zones to
+three, upserting by ordinal leaves Z4 and Z5 behind as rows nobody wrote and
+nothing deletes, and `zone(forHR:)` answers from a set that never existed.
+Deleted and rewritten every run; five rows cost nothing. An import carrying no
+zones at all deletes nothing — "not fetched yet" is not "no zones".
+
+**The resting series.** `restByMonth` is recomputed from a rolling window of
+Health data, so a month that has aged out of that window is absent from the
+store and is still the only figure the app has ever had for it — and every
+activity in that month is scored against it. Delete-and-rewrite would silently
+rescore the whole history. Upsert by month, never delete.
+
+`resting_month.computedUTC` is set to the import time. The store keeps no such
+stamp, so this column currently answers "when did this row arrive" rather than
+"when was this figure computed". Recorded here rather than dressed up; it
+answers its real question the day the store starts keeping one.
+
+### 12.10.5 Ordering
+
+The profile is imported **last**, after the activities, for the same reason
+weather is: `hrMaxObservedActivityID` resolves through `activity_alias`, which
+the activity loop writes. A profile imported first would lose its provenance on
+every run and give no sign of it — the column would simply be NULL.
+
+### 12.10.6 The bottom zone also starts at zero — amendment to 12.10.2, patch 229
+
+There were **two** defects in `hr_zone`, one at each end of the zone set. The
+second was found by the first one's test failing.
+
+`minBpm` was built `NOT NULL CHECK (minBpm > 0)`. The bottom zone starts at
+zero. `AthleteStore.HRZone.range` says so in its own comment — *"The bottom
+zone starts at zero, and '0–115 bpm' is a range whose lower bound describes
+being dead"* — and Strava returns Z1 as `min: 0`.
+
+So the schema would have taken three of five zones: Z1 refused for starting at
+zero, Z5 refused for having no ceiling, Z2–Z4 imported. A zone set missing both
+ends, which `zone(forHR:)` would then answer from without complaint for every
+heart rate below 116 or above 172 — the easy end and the hard end of every
+session in the history.
+
+In practice the whole set was refused rather than three-fifths landing, because
+`importHRZones` writes inside one savepoint: *"The whole set or none of it.
+Half a zone set is not a smaller problem than no zone set — it is a zone set
+with a hole, and `zone(forHR:)` would answer confidently from it."* That was a
+guess when it was written and is now measured — the test asserting five zones
+reported **zero**, not three.
+
+The migration relaxes the constraint to `minBpm >= 0`, not to a nullable
+column. A nil ceiling means "no upper bound" and is a distinction `HRZone`
+makes; a zero floor is a real number the app holds and prints, and `min` is not
+optional there. Symmetry would have been prettier and would have invented a
+distinction the type does not have.
+
+**What this says about the method.** Writing the mapping first found the
+missing ceiling. It did not find the floor — that took running the test, on
+data shaped the way Strava actually sends it. Four rounds of "the mapping
+caught it" and this one is the correction: the mapping catches fields that have
+nowhere to go, and only real values catch constraints that are wrong about
+values that do fit.
+
+### 12.10.7 A migration body was edited after it had run
+
+Patch 236, correcting patch 229.
+
+`2026-08-07-open-top-zone` built `hr_zone` with `minBpm > 0`. Patch 229 changed
+that line **in place** to `>= 0`, and §12.10.6 as first written justified it
+like this:
+
+> `2026-08-07-open-top-zone`'s body was edited rather than a second migration
+> added. The rule is that a migration which has run against a persistent
+> database is never touched again — this one had not. […] Checked before
+> editing rather than assumed.
+
+The last sentence is false. Nothing was checked. It was **inferred** from the
+fact that only the test suite had been run — and the inference was wrong: the
+app had already been launched on the device from Xcode while patch 228 was
+installed. GRDB recorded the identifier at that launch, so the edited body
+never ran again on that phone, or anywhere.
+
+**What that looked like from the outside.** Eight tests asserting the bottom
+zone stores a floor of zero, green on every run, for seven consecutive patches.
+And on the device, all five zones refused with `CHECK constraint failed:
+minBpm > 0`, `hr_zone` at 0 rows, and the import reporting
+`Heart-rate zones: 0 of 5`.
+
+**Why the suite could not see it.** Every test builds a fresh in-memory
+database from the current source, so it measures the schema the source
+*describes*. A device holds the schema its migration history *built*. Those are
+the same object only if no migration body has ever been edited after running —
+which is exactly what the never-edit rule guarantees, and exactly what had been
+given up.
+
+Three corrections:
+
+1. `2026-08-07-open-top-zone` is restored to `minBpm > 0`, the text that
+   actually ran, with a comment saying it is wrong on purpose. A body that
+   differs from what ran gives two devices two schemas under one identifier.
+2. `2026-08-08-zone-floor-zero` drops and recreates `hr_zone` with
+   `minBpm >= 0`. Still safe to drop: 0 rows, verified on the health screen
+   after the refusal, not assumed.
+3. `AthleteImportTests.theStoredSchemaAdmitsAZeroFloor` reads `sqlite_master`
+   after the full history has run and asserts the **stored** schema contains
+   `minBpm >= 0`. It is the only test in the file that can tell an edited body
+   from an honest one, and it exists because nothing else could.
+
+**The rule, restated.** "Has this migration run on a persistent database?" is
+not answerable by reasoning about what was run. The device is the only witness.
+When the answer matters, the honest move is a new migration — it costs one file
+and settles the question, where being wrong costs a silently divergent schema
+that a green suite will keep hiding.

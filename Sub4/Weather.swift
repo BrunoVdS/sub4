@@ -133,7 +133,11 @@ struct ActivityWeather: Codable, Hashable {
     /// vague "unknown source" the card would have to apologise for.
     var source: WeatherSource?
 
-    var provider: WeatherSource { source ?? .openMeteo }
+    /// nonisolated — a COMPUTED member of a struct inherits the type's
+    /// isolation, which is MainActor by default, and the importer reads this
+    /// from a nonisolated context. Same correction as `Activity.discipline` in
+    /// patch 219; the stored `source` beside it needs nothing.
+    nonisolated var provider: WeatherSource { source ?? .openMeteo }
 
     /// The compass point the wind came from, which is what anybody actually
     /// wants. A bearing in degrees is precise and unreadable.

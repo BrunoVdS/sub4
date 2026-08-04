@@ -265,6 +265,28 @@ struct DatabaseHealthView: View {
                                    value: "\(r.weatherUnmatched)")
                         .font(.caption).foregroundStyle(Color.dim)
                 }
+                // Patch 228. Two hundred bytes, and the denominator of every
+                // training-load figure in the app — so it gets rows of its own
+                // rather than being folded into a total it would vanish inside.
+                LabeledContent("Profile",
+                               value: r.profileSeen == 0
+                               ? "not offered"
+                               : "\(r.profileImported) new, \(r.profileUpdated) refreshed")
+                    .font(.caption)
+                if r.profileProvenanceUnresolved > 0 {
+                    // Not red, and not a refusal: the profile imported. What is
+                    // missing is which activity produced the observed maximum.
+                    LabeledContent("Observed max — no activity found", value: "1")
+                        .font(.caption).foregroundStyle(Color.dim)
+                }
+                LabeledContent("Heart-rate zones",
+                               value: r.zonesSeen == 0
+                               ? "none held" : "\(r.zonesImported) of \(r.zonesSeen)")
+                    .font(.caption)
+                LabeledContent("Resting months",
+                               value: "\(r.restingImported) new, \(r.restingUpdated) refreshed")
+                    .font(.caption)
+
                 if r.gearUnresolved > 0 {
                     LabeledContent("Naming unknown gear", value: "\(r.gearUnresolved)")
                         .font(.caption)
@@ -316,7 +338,10 @@ struct DatabaseHealthView: View {
                     shoes: AthleteStore.shared.shoes,
                     notes: Array(NotesStore.shared.notes.values),
                     proposals: ProposalStore.shared.records,
-                    weather: Array(WeatherStore.shared.byActivity.values))
+                    weather: Array(WeatherStore.shared.byActivity.values),
+                    constants: ConstantsStore.shared.c,
+                    ftpWatts: AthleteStore.shared.ftp,
+                    zones: AthleteStore.shared.hrZones)
                 await recheck(db)
             } catch {
                 importError = String(describing: error)

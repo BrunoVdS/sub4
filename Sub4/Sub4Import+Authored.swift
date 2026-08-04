@@ -44,10 +44,12 @@ extension Sub4Import {
 
     // MARK: Notes
 
-    static func importNotes(_ d: Database,
-                            notes: [NotesStore.Note],
-                            now: String,
-                            into report: inout Report) throws {
+    nonisolated static func importNotes(
+        _ d: Database,
+        notes: [NotesStore.Note],
+        now: String,
+        into report: inout Report
+    ) throws {
         for note in notes {
             report.notesSeen += 1
 
@@ -98,10 +100,12 @@ extension Sub4Import {
 
     // MARK: Reviews and proposals
 
-    static func importProposals(_ d: Database,
-                                records: [ProposalStore.Record],
-                                now: String,
-                                into report: inout Report) throws {
+    nonisolated static func importProposals(
+        _ d: Database,
+        records: [ProposalStore.Record],
+        now: String,
+        into report: inout Report
+    ) throws {
         for record in records {
             report.reviewsSeen += 1
             let ranUTC = iso8601(record.ranAt)
@@ -201,15 +205,18 @@ extension Sub4Import {
     /// replacement text, so rendering `newDetail` into a NOT NULL column would
     /// write an empty string into the one field that is supposed to say what
     /// changed.
-    static func changeSummary(_ c: ReviewProposal.Change) -> String {
+    nonisolated static func changeSummary(_ c: ReviewProposal.Change) -> String {
         c.skip ? "Skip this session" : c.newDetail
     }
 
     /// Written rather than inferred from the model string — §12.7.2. A provider
     /// guessed from "claude-…" would be a fact invented by an import.
-    static let reviewProvider = "anthropic"
+    nonisolated static let reviewProvider = "anthropic"
 
-    static func iso8601(_ date: Date) -> String {
+    /// nonisolated, like everything else in these extensions. This one is the
+    /// reason the others' warnings did not appear until 228: it is called from
+    /// `run`, which is nonisolated, so the whole chain has to be.
+    nonisolated static func iso8601(_ date: Date) -> String {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
         return f.string(from: date)

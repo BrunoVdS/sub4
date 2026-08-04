@@ -49,10 +49,12 @@ import GRDB
 
 extension Sub4Import {
 
-    static func importWeather(_ d: Database,
-                              readings: [ActivityWeather],
-                              now: String,
-                              into report: inout Report) throws {
+    nonisolated static func importWeather(
+        _ d: Database,
+        readings: [ActivityWeather],
+        now: String,
+        into report: inout Report
+    ) throws {
         for w in readings {
             report.weatherSeen += 1
 

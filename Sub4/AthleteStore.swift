@@ -19,13 +19,36 @@ final class AthleteStore {
 
     /// Functional threshold power, watts, as configured in Strava.
     ///
-    /// Only kept when Strava reports it as measured rather than estimated: an
-    /// estimated FTP is derived from ride data, so scoring rides against it
-    /// would be scoring them against themselves. Nil until zones are fetched.
+    /// Read from the DetailedAthlete — `/athlete` — which is where Strava
+    /// keeps it. Until patch 235 this said it was "only kept when Strava
+    /// reports it as measured rather than estimated", which described a check
+    /// against a field that was not in the response being decoded. The check
+    /// is gone rather than reworded: `/athlete` carries no such flag, and a
+    /// comment claiming a distinction the data does not make is worse than no
+    /// comment.
+    ///
+    /// Nil until the athlete is fetched, or if no FTP is set on the profile.
     private(set) var ftp: Int?
     private(set) var shoes: [Shoe] = []
     private(set) var lastFetch: Date?
     private(set) var lastError: String?
+
+    /// When the button was last PRESSED, as opposed to when data last arrived
+    /// — patch 233.
+    ///
+    /// Session-scoped and deliberately separate from `lastFetch`. A refusal
+    /// leaves `lastFetch` untouched, which is right — nothing arrived — but it
+    /// also means a failed tap changes nothing on screen and reads as a dead
+    /// button. This is the row that proves the tap registered.
+    private(set) var lastAttempt: Date?
+
+    /// What the last refresh actually did — patch 232.
+    ///
+    /// A refresh that fetches nothing and says nothing is indistinguishable
+    /// from a button that is not wired up, which is exactly how this one read
+    /// on the phone: tapped, no spinner, no error, no number moving. Set on
+    /// every path including the ones that return early.
+    private(set) var lastOutcome: String?
 
     private let fileURL: URL
 
@@ -196,11 +219,28 @@ final class AthleteStore {
         // Note what this does NOT do: it does not clear `hrZones`, `ftp` or
         // `shoes`. The gate stops new reads; the values already held stay
         // readable, which is the "frozen, not extended" position ADR-0002 took.
-        guard ReleaseGates.isOpen(.stravaSync) else { return }
-        guard let token = await StravaAuth.shared.validAccessToken() else { return }
+        // FIRST, before every guard — patch 233. A tap that is refused still
+        // happened, and the timestamp is the only thing that says so.
+        lastAttempt = Date()
+
+        // PATCH 232. Both guards used to return in silence. On the phone that
+        // read as a dead button: tapped, nothing happened, nothing said why —
+        // and the gate lives in UserDefaults, which a reinstall clears, so the
+        // most likely reason was also the most invisible one.
+        guard ReleaseGates.isOpen(.stravaSync) else {
+            lastError = "\"Read activities from Strava\" is switched off under "
+                      + "Data & privacy, so nothing was requested."
+            lastOutcome = nil
+            return
+        }
+        guard let token = await StravaAuth.shared.validAccessToken() else {
+            lastError = "Not signed in to Strava. Reconnect under Settings → Strava."
+            lastOutcome = nil
+            return
+        }
 
         async let zones: [HRZone] = fetchZones(token: token)
-        async let gear: [Shoe] = fetchGear(token: token)
+        async let gear: [Shoe] = fetchAthlete(token: token)
         let (z, g) = await (zones, gear)
 
         // Keep whatever we already had if a call came back empty — better a
@@ -208,14 +248,36 @@ final class AthleteStore {
         if !z.isEmpty { hrZones = z }
         if !g.isEmpty { shoes = g }
 
-        if z.isEmpty && g.isEmpty {
-            lastError = "No zone or gear data returned. If you connected before "
-                      + "the profile scope was added, disconnect and reconnect."
-        } else {
-            lastError = nil
+        // THE DEFECT THIS REPLACES. The old condition was `z.isEmpty &&
+        // g.isEmpty`, so a refresh that returned six shoes and no zones cleared
+        // the error, stamped `lastFetch` and reported success — the half that
+        // worked concealed the half that did not. Strava holds five zones for
+        // this account; the app held none and said nothing was wrong.
+        let problems = Self.refreshProblems(zones: z.count, gear: g.count)
+        lastError = problems.isEmpty ? nil : problems.joined(separator: " ")
+        lastOutcome = "\(z.count) zones, \(g.count) gear"
+
+        if !z.isEmpty || !g.isEmpty {
             lastFetch = Date()
             save()
         }
+    }
+
+    /// One message per thing that came back empty, so a partial failure reads
+    /// as a partial failure. Pure and static because `refresh` cannot be run in
+    /// a test — it needs a token and a network — and this is the part that was
+    /// wrong.
+    nonisolated static func refreshProblems(zones: Int, gear: Int) -> [String] {
+        var out: [String] = []
+        if zones == 0 {
+            out.append("Strava returned no heart-rate zones. If you connected "
+                       + "before the profile scope was added, disconnect and "
+                       + "reconnect.")
+        }
+        if gear == 0 {
+            out.append("Strava returned no gear.")
+        }
+        return out
     }
 
     private func fetchZones(token: String) async -> [HRZone] {
@@ -225,8 +287,6 @@ final class AthleteStore {
                 let zones: [Z]
             }
             let heart_rate: HR?
-            let ftp: Int?
-            let ftp_is_estimated: Bool?
         }
         guard let data = await get("https://www.strava.com/api/v3/athlete/zones",
                                   token: token),
@@ -234,10 +294,21 @@ final class AthleteStore {
               let hr = r.heart_rate
         else { return [] }
 
-        // Piggy-backed on the same response rather than a second request.
-        if let f = r.ftp, f > 50, r.ftp_is_estimated != true {
-            ftp = f
-        }
+        // THE FTP READ USED TO BE HERE, AND IT COULD NEVER HAVE WORKED —
+        // patch 235. `/athlete/zones` returns `{ heart_rate, power }` and
+        // nothing else; there is no `ftp` field on it to piggy-back on, so
+        // `r.ftp` was nil on every response Strava has ever sent. The decode
+        // succeeded, the zones arrived, and the FTP silently did not.
+        //
+        // The cost was not a blank row. `PowerLoad.diagnose` printed "No FTP
+        // on the Strava profile" and told the athlete to go and set one — for
+        // a profile that has had 270 W set on it, not estimated, the whole
+        // time. An app inventing a fact about the outside world and then
+        // issuing instructions based on it.
+        //
+        // FTP lives on the DetailedAthlete, which `fetchAthlete` below already
+        // requests for gear. It is read there now, from a response that
+        // actually contains it.
 
         let raw = hr.zones.enumerated().map { i, z in
             // Strava sends -1 for the open-ended top zone.
@@ -271,7 +342,11 @@ final class AthleteStore {
         return out
     }
 
-    private func fetchGear(token: String) async -> [Shoe] {
+    /// Gear AND FTP — both live on the DetailedAthlete, and this was already
+    /// asking for it. Renamed from `fetchGear` in patch 235 so the name stops
+    /// under-describing what the response carries; a function called
+    /// `fetchGear` is exactly why the FTP read ended up on the wrong endpoint.
+    private func fetchAthlete(token: String) async -> [Shoe] {
         struct Athlete: Decodable {
             struct Gear: Decodable {
                 let id: String
@@ -280,11 +355,24 @@ final class AthleteStore {
                 let primary: Bool?
             }
             let shoes: [Gear]?
+            let ftp: Int?
         }
         guard let data = await get("https://www.strava.com/api/v3/athlete", token: token),
-              let a = try? JSONDecoder().decode(Athlete.self, from: data),
-              let shoes = a.shoes
+              let a = try? JSONDecoder().decode(Athlete.self, from: data)
         else { return [] }
+
+        // Set even when the gear list is absent — they are two independent
+        // facts in one response, and the old `guard let shoes` would have
+        // thrown the FTP away along with an empty shoe rack.
+        //
+        // `> 50` is the only filter left. `ftp_is_estimated` was checked
+        // against a field that was never in the response; on the
+        // DetailedAthlete there is no such flag, and claiming to distinguish
+        // measured from estimated here would be inventing the distinction
+        // rather than reading it.
+        if let f = a.ftp, f > 50 { ftp = f }
+
+        guard let shoes = a.shoes else { return [] }
 
         return shoes.map {
             Shoe(id: $0.id,

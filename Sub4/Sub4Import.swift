@@ -92,6 +92,22 @@ nonisolated enum Sub4Import {
         var weatherUpdated = 0
         var weatherUnmatched = 0
 
+        // Patch 228 — the profile. `profileSeen` is 0 or 1 and exists so the
+        // screen can tell "no profile was offered" from "a profile was offered
+        // and refused"; without it both read as a blank row.
+        var profileSeen = 0
+        var profileImported = 0
+        var profileUpdated = 0
+        /// An observed maximum whose activity could not be identified — §12.10.
+        /// NOT a refusal: the profile imports either way, and the column is
+        /// provenance rather than the figure itself.
+        var profileProvenanceUnresolved = 0
+        var zonesSeen = 0
+        var zonesImported = 0
+        var restingSeen = 0
+        var restingImported = 0
+        var restingUpdated = 0
+
         /// WHICH ids did not resolve, and how many activities named each —
         /// patch 221.
         ///
@@ -128,6 +144,9 @@ nonisolated enum Sub4Import {
                      "Notes seen: \(notesSeen) — imported \(notesImported), refreshed \(notesUpdated)",
                      "Reviews seen: \(reviewsSeen) — imported \(reviewsImported), refreshed \(reviewsUpdated)",
                      "Weather seen: \(weatherSeen) — imported \(weatherImported), refreshed \(weatherUpdated), no activity \(weatherUnmatched)",
+                     "Profile seen: \(profileSeen) — imported \(profileImported), refreshed \(profileUpdated), provenance unresolved \(profileProvenanceUnresolved)",
+                     "Zones seen: \(zonesSeen) — imported \(zonesImported)",
+                     "Resting months seen: \(restingSeen) — imported \(restingImported), refreshed \(restingUpdated)",
                      "Gear inserted: \(gearInserted), already present: \(gearAlreadyPresent)",
                      "Activities naming unknown gear: \(gearUnresolved)"]
             for (external, count) in unresolvedGearRanked {
@@ -159,7 +178,10 @@ nonisolated enum Sub4Import {
                     shoes: [AthleteStore.Shoe],
                     notes: [NotesStore.Note] = [],
                     proposals: [ProposalStore.Record] = [],
-                    weather: [ActivityWeather] = []) throws -> Report {
+                    weather: [ActivityWeather] = [],
+                    constants: AthleteConstants? = nil,
+                    ftpWatts: Int? = nil,
+                    zones: [AthleteStore.HRZone] = []) throws -> Report {
 
         let clock = ContinuousClock()
         var report = Report()
@@ -192,6 +214,21 @@ nonisolated enum Sub4Import {
                 // rather than tidy: every reading is resolved through
                 // `activity_alias`, which the activity loop above writes.
                 try importWeather(d, readings: weather, now: now, into: &report)
+
+                // LAST, and after the activities for the same reason weather
+                // is: `hrMaxObservedActivityID` is resolved through
+                // `activity_alias`, which the activity loop writes. A profile
+                // imported first would lose its provenance every run and give
+                // no sign of it — the column would simply be NULL.
+                if let constants {
+                    try importAthleteProfile(d, constants: constants,
+                                             ftpWatts: ftpWatts,
+                                             activities: activities,
+                                             now: now, into: &report)
+                    try importRestingMonths(d, byMonth: constants.restByMonth,
+                                            now: now, into: &report)
+                }
+                try importHRZones(d, zones: zones, now: now, into: &report)
             }
         }
         report.seconds = seconds(elapsed)
