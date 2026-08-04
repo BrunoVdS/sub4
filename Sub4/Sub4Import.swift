@@ -108,6 +108,26 @@ nonisolated enum Sub4Import {
         var restingImported = 0
         var restingUpdated = 0
 
+        // Patch 237 — the bundled plan. `planUnchanged` is the normal answer
+        // on every run after the first: the content hash matched, so nothing
+        // was rewritten. It is counted rather than folded into "imported"
+        // because "we already had this exact plan" and "we wrote a new
+        // version" are different events and only one of them should ever
+        // follow an app update.
+        var planSeen = 0
+        var planImported = 0
+        var planUnchanged = 0
+        var planWeeks = 0
+        var planWeekStats = 0
+        var planSessions = 0
+        var planDetails = 0
+        var planBlocks = 0
+        var planExercises = 0
+        var planFuel = 0
+        var planFuelRows = 0
+        var planWarmup = 0
+        var planWarmupRows = 0
+
         /// WHICH ids did not resolve, and how many activities named each —
         /// patch 221.
         ///
@@ -147,6 +167,10 @@ nonisolated enum Sub4Import {
                      "Profile seen: \(profileSeen) — imported \(profileImported), refreshed \(profileUpdated), provenance unresolved \(profileProvenanceUnresolved)",
                      "Zones seen: \(zonesSeen) — imported \(zonesImported)",
                      "Resting months seen: \(restingSeen) — imported \(restingImported), refreshed \(restingUpdated)",
+                     "Plan seen: \(planSeen) — imported \(planImported), unchanged \(planUnchanged)",
+                     "  weeks: \(planWeeks), stats: \(planWeekStats), sessions: \(planSessions)",
+                     "  breakdowns: \(planDetails), blocks: \(planBlocks), exercises: \(planExercises)",
+                     "  fuel: \(planFuel) with \(planFuelRows) rows, warm-up: \(planWarmup) with \(planWarmupRows) rows",
                      "Gear inserted: \(gearInserted), already present: \(gearAlreadyPresent)",
                      "Activities naming unknown gear: \(gearUnresolved)"]
             for (external, count) in unresolvedGearRanked {
@@ -181,7 +205,9 @@ nonisolated enum Sub4Import {
                     weather: [ActivityWeather] = [],
                     constants: AthleteConstants? = nil,
                     ftpWatts: Int? = nil,
-                    zones: [AthleteStore.HRZone] = []) throws -> Report {
+                    zones: [AthleteStore.HRZone] = [],
+                    plan: Plan? = nil,
+                    planSourceLabel: String = "bundled") throws -> Report {
 
         let clock = ContinuousClock()
         var report = Report()
@@ -229,6 +255,15 @@ nonisolated enum Sub4Import {
                                             now: now, into: &report)
                 }
                 try importHRZones(d, zones: zones, now: now, into: &report)
+
+                // The plan last. It references nothing the other importers
+                // write — a plan version is its own object — so the position
+                // is about the report reading in the order the work happened
+                // rather than about correctness.
+                if let plan {
+                    try importPlan(d, plan: plan, sourceLabel: planSourceLabel,
+                                   now: now, into: &report)
+                }
             }
         }
         report.seconds = seconds(elapsed)

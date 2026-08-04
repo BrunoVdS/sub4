@@ -287,6 +287,31 @@ struct DatabaseHealthView: View {
                                value: "\(r.restingImported) new, \(r.restingUpdated) refreshed")
                     .font(.caption)
 
+                // Patch 237. `unchanged` is the expected answer on every run
+                // after the first — the content hash matched and nothing was
+                // rewritten. Shown rather than hidden, because a plan import
+                // that quietly did nothing and one that quietly did everything
+                // twice would otherwise look the same.
+                LabeledContent("Plan",
+                               value: r.planSeen == 0 ? "not offered"
+                                      : (r.planImported > 0 ? "new version"
+                                         : "unchanged"))
+                    .font(.caption)
+                if r.planImported > 0 {
+                    LabeledContent("  weeks / sessions",
+                                   value: "\(r.planWeeks) / \(r.planSessions)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                    LabeledContent("  breakdowns / blocks",
+                                   value: "\(r.planDetails) / \(r.planBlocks)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                    LabeledContent("  week stats / exercises",
+                                   value: "\(r.planWeekStats) / \(r.planExercises)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                    LabeledContent("  fuel / warm-up rows",
+                                   value: "\(r.planFuelRows) / \(r.planWarmupRows)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+
                 if r.gearUnresolved > 0 {
                     LabeledContent("Naming unknown gear", value: "\(r.gearUnresolved)")
                         .font(.caption)
@@ -341,7 +366,8 @@ struct DatabaseHealthView: View {
                     weather: Array(WeatherStore.shared.byActivity.values),
                     constants: ConstantsStore.shared.c,
                     ftpWatts: AthleteStore.shared.ftp,
-                    zones: AthleteStore.shared.hrZones)
+                    zones: AthleteStore.shared.hrZones,
+                    plan: PlanStore.shared.plan)
                 await recheck(db)
             } catch {
                 importError = String(describing: error)

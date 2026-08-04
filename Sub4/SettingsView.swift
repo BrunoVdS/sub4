@@ -63,6 +63,7 @@ struct SettingsView: View {
     @State private var showHealthReconcile = false
     @State private var thresholds = LoadThresholds.shared
     @State private var weather = WeatherStore.shared
+    @State private var copiedVolumes = false
 
     /// "4 Aug 19:16". Day and time, no year and no seconds: this is read to
     /// answer "did that just happen" and "how stale is this", and both are
@@ -858,6 +859,21 @@ struct SettingsView: View {
         // puts the file on disk for the first time.
         if ReleaseGates.isInternalBuild {
             Button("Database health") { showDatabaseHealth = true }
+
+            // Patch 240. The week header shows the plan's STATED totals beside
+            // the app's DERIVED ones, and they were produced by different code
+            // — so they disagreed. This copies what the app computes, so the
+            // stated figures can be rebuilt from it and the two stop being two.
+            // Internal-only, next to the other diagnostic, for the same reason:
+            // it exists to settle a question, not as a feature.
+            Button(copiedVolumes ? "Copied" : "Copy plan volumes") {
+                UIPasteboard.general.string = PlanStore.shared.volumeExport
+                copiedVolumes = true
+            }
+            Text("Per week: run km, ride hours, swim km, strength count — as "
+                 + "PlanStore computes them, committed sessions only. The "
+                 + "stated km and h from plan.json follow, for comparison.")
+                .font(.caption2).foregroundStyle(.secondary)
         }
 
         // Two windows since patch 117, so one row can no longer answer "how far

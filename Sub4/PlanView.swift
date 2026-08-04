@@ -314,15 +314,21 @@ struct PlanWeekDetail: View {
                 }
                 .padding(.top, 2)
 
-                // The plan's own headline volume counts riding, swimming and the
-                // daily commute. Spelling that out here stops "275 km" being
-                // read as running.
-                let run = PlanStore.shared.plannedRunKm(week: week)
-                if run.km > 0 {
-                    Text(String(format: "of which %@%.0f km is running",
-                                run.exact ? "" : "about ", run.km))
+                // The plan's own headline volume adds running kilometres to
+                // cycling kilometres to swimming kilometres, which is not a
+                // quantity. These two lines are the correction, and since
+                // patch 239 they are written in whatever sports THIS plan is
+                // made of rather than assuming running: one lead for a running
+                // or cycling block, three side by side for a triathlon one.
+                // `PlanFocus` derives which from the sessions.
+                if let lead = PlanStore.shared.leadLine(for: week) {
+                    Text(lead)
                         .font(.caption).foregroundStyle(Color.accent4)
                         .padding(.top, 1)
+                }
+                if let supporting = PlanStore.shared.supportingLine(for: week) {
+                    Text(supporting)
+                        .font(.caption2).foregroundStyle(Color.dim)
                 }
             }
         }

@@ -25,7 +25,7 @@
 
 import Foundation
 
-struct Fuel: Codable, Hashable {
+nonisolated struct Fuel: Codable, Hashable {
 
     struct Product: Codable, Hashable, Identifiable {
         let name: String?

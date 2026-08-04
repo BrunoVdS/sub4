@@ -25,7 +25,7 @@
 
 import Foundation
 
-struct Warmup: Codable, Hashable {
+nonisolated struct Warmup: Codable, Hashable {
 
     struct Step: Codable, Hashable, Identifiable {
         let time: String?

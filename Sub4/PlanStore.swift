@@ -20,6 +20,13 @@ final class PlanStore {
     private(set) var byDate: [String: [Session]] = [:]
     private(set) var weeksByUid: [String: Week] = [:]
 
+    /// Patch 239. Derived once from `plan`, which is `let` and read from the
+    /// bundle in `init` — so the answer cannot change and recomputing it per
+    /// week would be 260 filters for a constant. Internal rather than private
+    /// because the derivation lives in `PlanFocus.swift`, next to the rule it
+    /// implements.
+    var focusCache: PlanFocus?
+
     // MARK: Load
 
     private init() {
@@ -209,23 +216,30 @@ final class PlanStore {
             if let day, let d = s.date, d > day { continue }
             if s.date == nil { continue }
             if Self.isOptional(s) { continue }
-
-            switch s.discipline {
-            case .run:
-                let d = Self.plannedRunKm(s)
-                v.runKm += d.km
-                if !d.exact { v.runExact = false }
-            case .bike:
-                v.bikeHours += Self.plannedHours(s)
-            case .swim:
-                v.swimKm += Self.plannedMetres(s) / 1000
-            case .strength:
-                v.strengthSessions += 1
-            default:
-                break
-            }
+            accumulate(s, into: &v)
         }
         return v
+    }
+
+    /// The switch, extracted in patch 239 so `plannedVolume(throughDay:)` and
+    /// `plannedVolume(week:)` cannot come to disagree about what a session
+    /// contributes. The EXCLUSIONS stay at each call site — they differ — but
+    /// the accumulation is one piece of code.
+    func accumulate(_ s: Session, into v: inout PlanVolume) {
+        switch s.discipline {
+        case .run:
+            let d = Self.plannedRunKm(s)
+            v.runKm += d.km
+            if !d.exact { v.runExact = false }
+        case .bike:
+            v.bikeHours += Self.plannedHours(s)
+        case .swim:
+            v.swimKm += Self.plannedMetres(s) / 1000
+        case .strength:
+            v.strengthSessions += 1
+        default:
+            break
+        }
     }
 
     static func isOptional(_ s: Session) -> Bool {

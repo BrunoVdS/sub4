@@ -11,7 +11,7 @@ import Foundation
 
 // MARK: - Root
 
-struct Plan: Codable {
+nonisolated struct Plan: Codable {
     let meta: Meta
     let weeks: [Week]
     let sessions: [Session]
@@ -24,7 +24,7 @@ struct Plan: Codable {
     let warmup: Warmup?
 }
 
-struct Meta: Codable {
+nonisolated struct Meta: Codable {
     let plan: String
     let week1Monday: String
     let raceDate: String
@@ -34,7 +34,7 @@ struct Meta: Codable {
 
 // MARK: - Week
 
-struct Week: Codable, Identifiable, Hashable {
+nonisolated struct Week: Codable, Identifiable, Hashable {
     let uid: String
     let weekNo: Int?          // nil for the logged July prologue weeks (P1–P3)
     let label: String
@@ -100,12 +100,12 @@ nonisolated enum Discipline: String, Codable, Hashable, CaseIterable {
 /// `plan_session.intensity` carries a CHECK constraint whose value list is
 /// frozen inside the migration that created the table, and the two are held
 /// together by a test rather than by one reading the other.
-enum Intensity: String, Codable, Hashable, CaseIterable {
+nonisolated enum Intensity: String, Codable, Hashable, CaseIterable {
     case easy, long, threshold
     case marathonPace = "marathon_pace"
 }
 
-struct Session: Codable, Identifiable, Hashable {
+nonisolated struct Session: Codable, Identifiable, Hashable {
     let uid: String
     let weekUid: String
     let day: String?
@@ -136,14 +136,14 @@ struct Session: Codable, Identifiable, Hashable {
 
 // MARK: - Detail (identical shape for swim and strength)
 
-struct SessionDetail: Codable, Hashable {
+nonisolated struct SessionDetail: Codable, Hashable {
     let total: String?
     let tag: String?
     let focus: String?
     let blocks: [Block]
 }
 
-struct Block: Codable, Hashable, Identifiable {
+nonisolated struct Block: Codable, Hashable, Identifiable {
     let d: String?   // duration or reps  — "5′", "×10/leg", "600 m"
     let t: String?   // title             — "Warm-up", "Back squat"
     let x: String?   // explanation / cue
@@ -155,7 +155,7 @@ struct Block: Codable, Hashable, Identifiable {
 
 // MARK: - Exercise library
 
-struct Exercise: Codable, Identifiable, Hashable {
+nonisolated struct Exercise: Codable, Identifiable, Hashable {
     let uid: String
     let name: String
     let videoUrl: String
