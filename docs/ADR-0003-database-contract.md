@@ -891,7 +891,7 @@ is indistinguishable from a row that was never there.
 | `id` | `activity_source_record.externalID` | with `sourceID = 'strava'` — never `activity.id` |
 | — | `activity.id` | minted opaque, per §12.1 |
 | `name` | `activity.name` | |
-| `sportType` | `activity.sportType` | stored raw, unconstrained — "a sport label the app has never seen is stored rather than rejected" |
+| `sportType` | `activity.sportLabel` | stored raw, unconstrained — "a sport label the app has never seen is stored rather than rejected". The column is `sportLabel`; an earlier draft of this table said `sportType` and was wrong. |
 | `sportType` | `activity.discipline` | mapped through `Discipline`; anything unmapped becomes `other`, and the raw label above is what preserves the detail |
 | `startLocal` | `activity.startLocal` | |
 | `startLocal[0..<10]` | `activity.dayKey` | derived, not stored twice by accident — §4.5 |
@@ -900,8 +900,12 @@ is indistinguishable from a row that was never there.
 | `startOffsetSeconds` | `activity.startOffsetSeconds` | the frozen offset; outranks the identifier |
 | `distance` | `activity.distanceM` | metres, SI at rest — §5 |
 | `movingTime` / `elapsedTime` | `activity.movingSeconds` / `elapsedSeconds` | |
-| `elevationGain`, `averageHeartrate`, `maxHeartrate`, `averageWatts`, `maxSpeed`, `deviceWatts`, `isTrainer`, `startLat`, `startLon` | corresponding `activity` columns | nullable throughout — §6, absent is not zero |
-| `gearId` | `gear` + a reference from `activity` | one `gear` row per distinct id |
+| `elevationGain`, `averageHeartrate`, `maxHeartrate`, `startLat`, `startLon` | `elevationGainM`, `averageHeartrate`, `maxHeartrate`, `startLatitude`, `startLongitude` | nullable throughout — §6, absent is not zero |
+| `averageWatts` | `activity.averageWatts` | added by `2026-08-05-activity-inputs` — see §12.5 |
+| `deviceWatts` | `activity.hasPowerMeter` | renamed: the schema is source-neutral, and `device_watts` is Strava's word |
+| `isTrainer` | `activity.isIndoor` | likewise. Nullable — absent is not "outdoors", and `Weather` reads this |
+| `maxSpeed` | `activity.maxSpeedMS` | SI, and no upper bound — §12.5 |
+| `gearId` | `activity.gearID`, resolved through `gear` | the CANONICAL gear id, not Strava's. Gear imports first or every value lands null |
 
 `account` gets exactly one row, minted at import. §9.6: the column exists for
 Phase 4A, not because this app has users.
@@ -923,3 +927,45 @@ shape); `notes.json` → `user_note`; `proposals.json` → `proposal` +
 Each gets its own row in this section before its importer is written. The
 activity mapping above is the pattern: what the JSON holds, which column it
 becomes, and what happens to the rows that do not fit.
+
+
+### 12.5 The five columns 3.2 did not build — migration `2026-08-05-activity-inputs`
+
+Writing §12.3 found that `activities.json` holds five fields with no column
+anywhere in the thirty-one tables 3.2 built: `gearId`, `averageWatts`,
+`deviceWatts`, `isTrainer`, `maxSpeed`.
+
+None is decorative:
+
+| field | read by | cost of dropping it |
+|---|---|---|
+| `deviceWatts` | `PowerLoad`, **`TrainingLoad`** | changes CTL/ATL/TSB, silently |
+| `isTrainer` | `PowerLoad`; `isOutdoor` → `Weather` | indoor sessions start requesting weather |
+| `gearId` | `SessionDetailView`, `ActivityDetailExtras` | per-session shoe attribution disappears |
+| `averageWatts` | `PowerLoad`, `ActivityDetail` | bike load loses its input |
+| `maxSpeed` | `ActivityStore` | minor |
+
+A cutover without them would have moved the load model onto data missing its
+power inputs, and nothing would have looked broken — the curve would simply have
+been different, for reasons nobody could trace weeks later. Every test passed
+while the gap existed, because they all asked "does what is declared work" and
+none asked "is what is declared enough".
+
+**A separate migration, not an edit to `2026-08-04-domain`.** That one has run
+on a real phone; a shipped migration is history, and editing it would give a
+fresh install a different database from an existing one under the same
+identifier — the trap already recorded in §11.
+
+**Two naming decisions.** `device_watts` becomes `hasPowerMeter` and `trainer`
+becomes `isIndoor`, because a column named after one provider's JSON key embeds
+that provider in a schema §3 says is source-neutral. Both are nullable: absent
+is a third answer, distinct from false, and `PowerLoad` and `Weather` both need
+to tell them apart.
+
+**Why these CHECKs are looser than §7's.** `distanceM` and `elapsedSeconds`
+carry upper bounds because the August 2025 artifact was a session that was
+wrong. `maxSpeedMS` and `averageWatts` get none: a GPS spike does not make the
+run untrue, and refusing it would cost the whole activity — the insert fails,
+the row lands in `rejection`, and a real session disappears over a field nobody
+reads closely. An upper bound is worth having only where the suspect value IS
+the session being wrong.
