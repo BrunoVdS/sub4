@@ -131,6 +131,24 @@ struct DatabaseHealthView: View {
                 LabeledContent("Foreign keys", value: report.foreignKeysEnabled ? "on" : "OFF")
                     .foregroundStyle(report.foreignKeysEnabled ? Color.primary : Color.red)
             }
+            // WHO OPENED IT — patch 216, and the only self-evident proof that
+            // 3.3.1 works.
+            //
+            // The claim the launch gate makes is that the database is prepared
+            // before `ContentView` is constructed. Verifying that by deleting
+            // the app, launching, avoiding Settings and looking at a healthy
+            // screen depends entirely on the procedure being followed, and a
+            // database that already existed looks identical.
+            //
+            // `Sub4Launch.shared.database` is non-nil only if the gate opened
+            // it. If this screen had to fall back to opening its own connection,
+            // the gate did not run — which on a real launch means it is broken.
+            LabeledContent("Prepared",
+                           value: Sub4Launch.shared.database != nil
+                                ? "at launch" : "by this screen")
+                .foregroundStyle(Sub4Launch.shared.database != nil
+                                 ? Color.primary : Color.red)
+
             LabeledContent("Protection", value: "Until first unlock")
         } header: {
             Text("The file")
@@ -380,8 +398,29 @@ struct DatabaseHealthView: View {
               .reduce(0) { $0 + $1.rows }
     }
 
+    /// THE CONNECTION IS THE LAUNCH'S, NOT THIS SCREEN'S — patch 215.
+    ///
+    /// This screen used to call `Sub4Database.open()` itself, and until 3.3.1
+    /// it was the only caller, so that was also the only connection. Now the
+    /// launch gate opens the database before `ContentView` exists; opening a
+    /// second `DatabaseQueue` against the same file from here would put two
+    /// connections on one SQLite file for no reason, and the first symptom of
+    /// that is a busy timeout on a screen nobody suspects.
+    ///
+    /// The fallback stays for the case the gate never ran — a preview, or a
+    /// future caller that presents this outside the app's scene.
     private func load() async {
         guard opened == nil else { return }
+
+        if let db = Sub4Launch.shared.database {
+            opened = .success(db)
+            await recheck(db)
+            return
+        }
+        if let message = Sub4Launch.shared.failureMessage {
+            opened = .failure(Sub4DatabaseError.launchFailed(message))
+            return
+        }
         do {
             let db = try Sub4Database.open()
             opened = .success(db)
@@ -414,6 +453,7 @@ struct DatabaseHealthView: View {
                 lines.append("Size: \(bytes) bytes")
             }
         }
+        lines.append("Prepared: \(Sub4Launch.shared.database != nil ? "at launch" : "by this screen")")
         lines.append("Tables: \(counts.count), imported rows: \(importedRows), total: \(totalRows)")
         for row in counts where row.rows > 0 {
             lines.append("  \(row.table): \(row.rows)")

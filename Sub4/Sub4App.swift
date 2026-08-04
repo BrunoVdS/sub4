@@ -8,8 +8,21 @@ import SwiftUI
 @main
 struct Sub4App: App {
     var body: some Scene {
+        // `RootView`, NOT `ContentView` — patch 215, plan step 3.3.1.
+        //
+        // Every disk-backed store loads its file inside its own `private
+        // init()`, and those run while SwiftUI initialises `ContentView`'s
+        // stored properties — before `body`, before any `.task`. `RootView`
+        // keeps `ContentView()` behind a branch that is not taken until the
+        // database has been migrated, which is the only hook early enough to
+        // matter and still able to show an error.
+        //
+        // NOTE FOR BACKGROUND REFRESH, below: it does NOT go through
+        // `RootView`. A background wake runs `BackgroundRefresh.run()` without
+        // building the scene, so anything it eventually needs from the database
+        // has to open it itself. Nothing does today; 3.3.3 will have to.
         WindowGroup {
-            ContentView()
+            RootView()
         }
         // SwiftUI registers the launch handler for us. The equivalent
         // BGTaskScheduler.register call has to happen before

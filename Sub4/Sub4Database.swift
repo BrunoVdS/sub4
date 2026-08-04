@@ -59,6 +59,11 @@ import GRDB
 nonisolated enum Sub4DatabaseError: Error, LocalizedError, Equatable {
     case applicationSupportUnavailable
     case couldNotCreateDirectory(String)
+    /// Carried forward from `Sub4Launch` — patch 215. The launch gate already
+    /// tried and failed, so the health screen reports THAT failure rather than
+    /// opening a second connection and possibly succeeding, which would show a
+    /// healthy database on a launch that did not get one.
+    case launchFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -66,6 +71,8 @@ nonisolated enum Sub4DatabaseError: Error, LocalizedError, Equatable {
             "Application Support is not reachable, so there is nowhere to keep the database."
         case .couldNotCreateDirectory(let why):
             "The database folder could not be created: \(why)"
+        case .launchFailed(let why):
+            "The database could not be prepared when the app started: \(why)"
         }
     }
 }

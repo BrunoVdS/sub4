@@ -696,6 +696,42 @@ key that survives Phase 4A, and so a future second source has somewhere to go.
 Anyone reading `account_id` and concluding this app has users should read this
 paragraph instead.
 
+### 9.7 The legacy JSON stores are migrated ONCE, not dual-written — decided 4 August 2026
+
+Nine stores hold the app's data in JSON under Application Support today:
+`activities.json`, `details/`, `streams/`, `athlete.json`, `constants.json`,
+`notes.json`, `proposals.json`, `weather.json`, plus preference keys. 3.3 moves
+them into SQLite.
+
+**Decision: a one-time cutover.** The migration reads each JSON file once,
+writes the database, and from that point the database is the only source. The
+JSON files stay on disk, untouched and unread, until a later patch retires them.
+
+The alternative considered and rejected was dual-writing — stores writing both
+JSON and SQLite for some patches while reads stay on JSON — which is safer
+against a bad migration and worse in every other respect. It gives every store a
+second write path, and any divergence between the two copies is a silent bug
+class that only surfaces when the reads are flipped, which is exactly when
+nobody is looking for it. One writer is the property worth having.
+
+**What makes the cutover survivable:**
+
+- The JSON files are kept. A bad migration is recoverable by deleting the
+  database and the applied-migration row, not by reconstructing from a backup
+  the athlete does not have.
+- The import is **idempotent**. Re-running after a partial failure must reach
+  the same state, not a doubled one. See §12 for how canonical ids make that
+  true.
+- Nothing is deleted in 3.3. Retiring `activities.json` is a separate, later
+  patch, taken only once the database has been the sole source for long enough
+  to trust.
+
+**The consequence for `Sub4Launch.migrationFailureBlocksTheApp`**, which is
+`false` today: it must become `true` in the same patch that makes the first
+store read from the database. Before that, a failed migration costs nothing.
+After it, carrying on means showing an empty training history that looks exactly
+like a real one — the worst failure this app has available.
+
 ---
 
 ## 10. Acceptance criteria for 3.1
@@ -798,3 +834,92 @@ code exposed them:
    added, under one migration identifier. The lists are frozen in the migration
    and coupled to the enums by test instead. Worth stating in the ADR because
    the same temptation will return at every later migration.
+
+---
+
+## 12. What the import writes — step 3.3
+
+Written before the importer, for the same reason §8 was written before the
+schema: the mapping is where the mistakes are, and a mapping argued in a diff is
+a mapping nobody reviewed.
+
+### 12.1 Canonical ids, and how the import stays idempotent
+
+§3.1 says Strava ids are never primary keys. `Activity.id` in
+`activities.json` **is** the Strava id, so the import cannot carry it across as
+`activity.id`.
+
+Nor can the canonical id be *derived* from it — that smuggles Strava identity
+into the primary key by another route, and §3.1 exists to stop exactly that.
+
+So: **look up, then mint.**
+
+1. Look for an existing `activity_source_record` with
+   `(sourceID = 'strava', externalID = <the JSON id>)`.
+2. If found, reuse its `activityID`. The row is already imported; update it in
+   place or skip it.
+3. If not found, mint a fresh opaque id, write the `activity` row, and write the
+   `activity_source_record` that links the two.
+
+That is what makes a re-run after a partial failure converge rather than double.
+A `UUID()` minted unconditionally would be idempotent-looking and wrong: every
+re-run would produce a second copy of every activity, and nothing in the schema
+forbids it, because the schema has no way to know two rows describe one session.
+The uniqueness that saves us is `(accountID, sourceID, externalID)` on
+`activity_source_record`, which the initial migration already declares.
+
+### 12.2 Rows that the schema will refuse, and what happens to them
+
+The domain migration's CHECK constraints are not advisory. `activities.json`
+holds at least one row the database will reject: the August 2025 artifact at
+199 km / 694,865 s, which fails the upper bounds added after the §7 correction.
+There may be others nobody has looked for.
+
+**A refused row must not abort the import.** It is recorded in `rejection` with
+its source, external id and the constraint that refused it, and the import
+continues. An importer that stops at the first bad row would leave the database
+half-populated and the app showing a partial history, which is worse than the
+one row being missing and far harder to notice.
+
+The count of refusals belongs on the Database health screen. A silent rejection
+is indistinguishable from a row that was never there.
+
+### 12.3 Activities — the first store, and the shape for the rest
+
+| `activities.json` | table.column | note |
+|---|---|---|
+| `id` | `activity_source_record.externalID` | with `sourceID = 'strava'` — never `activity.id` |
+| — | `activity.id` | minted opaque, per §12.1 |
+| `name` | `activity.name` | |
+| `sportType` | `activity.sportType` | stored raw, unconstrained — "a sport label the app has never seen is stored rather than rejected" |
+| `sportType` | `activity.discipline` | mapped through `Discipline`; anything unmapped becomes `other`, and the raw label above is what preserves the detail |
+| `startLocal` | `activity.startLocal` | |
+| `startLocal[0..<10]` | `activity.dayKey` | derived, not stored twice by accident — §4.5 |
+| `startUTC` | `activity.startUTC` | |
+| `timeZoneIdentifier` | `activity.timeZoneIdentifier` | §4.4 |
+| `startOffsetSeconds` | `activity.startOffsetSeconds` | the frozen offset; outranks the identifier |
+| `distance` | `activity.distanceM` | metres, SI at rest — §5 |
+| `movingTime` / `elapsedTime` | `activity.movingSeconds` / `elapsedSeconds` | |
+| `elevationGain`, `averageHeartrate`, `maxHeartrate`, `averageWatts`, `maxSpeed`, `deviceWatts`, `isTrainer`, `startLat`, `startLon` | corresponding `activity` columns | nullable throughout — §6, absent is not zero |
+| `gearId` | `gear` + a reference from `activity` | one `gear` row per distinct id |
+
+`account` gets exactly one row, minted at import. §9.6: the column exists for
+Phase 4A, not because this app has users.
+
+**Duplicates are preserved, not merged.** Strava holds the same ride twice from
+21 April 2026, uploaded by two devices under two ids. Both import, as two
+activities with two source records. Merging them is a matching decision, and
+the importer is not the matcher — an importer that silently dropped one would be
+making a judgement nobody could audit afterwards.
+
+### 12.4 The remaining stores, named but not yet specified
+
+`details/` and `streams/` → `recording` + `recording_sample` (§9.3.1 settled the
+shape); `notes.json` → `user_note`; `proposals.json` → `proposal` +
+`proposal_change`; `weather.json` → `weather`; `athlete.json` and
+`constants.json` → `athlete_profile` + `hr_zone`; the bundled plan → `plan`,
+`plan_version`, `plan_week`, `plan_session`, `plan_exercise`.
+
+Each gets its own row in this section before its importer is written. The
+activity mapping above is the pattern: what the JSON holds, which column it
+becomes, and what happens to the rows that do not fit.
