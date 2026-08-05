@@ -36,6 +36,8 @@ struct AthleteFileAgreementTests {
                           distanceM: 412_000, primary: true)],
             bikes: [.init(id: "b6932581", name: "Gravel",
                           distanceM: 5_680_000, primary: true)],
+            retired: [.init(id: "g15316986", name: "Old Novablast",
+                            distanceM: 812_000, primary: false)],
             fetched: Date(timeIntervalSince1970: 776_000_000),
             ftp: 270)
 
@@ -57,6 +59,13 @@ struct AthleteFileAgreementTests {
         #expect(file.bikes?.first?.id == "b6932581")
         #expect(file.bikes?.first?.distanceM == 5_680_000)
 
+        // Patch 268. A retired shoe's wear is the number that made it
+        // retired, so losing its distance in the mirror would lose the only
+        // thing it is kept for.
+        #expect(file.retired?.count == cache.retired?.count)
+        #expect(file.retired?.first?.id == "g15316986")
+        #expect(file.retired?.first?.distanceM == 812_000)
+
         #expect(file.shoes.count == cache.shoes.count)
         #expect(file.shoes.map(\.id) == cache.shoes.map(\.id))
         #expect(file.shoes.map(\.name) == cache.shoes.map(\.name))
@@ -76,10 +85,12 @@ struct AthleteFileAgreementTests {
         let cache = AthleteStore.Cache(
             zones: [], shoes: [],
             bikes: [.init(id: "b1", name: "Bike", distanceM: 1, primary: false)],
+            retired: [.init(id: "g1", name: "Old", distanceM: 1, primary: false)],
             fetched: Date(timeIntervalSince1970: 0), ftp: 200)
         let file = AthleteFile(
             zones: [], shoes: [],
             bikes: [.init(id: "b1", name: "Bike", distanceM: 1, primary: false)],
+            retired: [.init(id: "g1", name: "Old", distanceM: 1, primary: false)],
             fetched: Date(timeIntervalSince1970: 0), ftp: 200)
 
         let fromCache = try keys(of: JSONEncoder().encode(cache))
@@ -127,6 +138,7 @@ struct AthleteFileTests {
         let data = try #require(LegacyDamage.valid.bytes(for: .athlete))
         let file = try AthleteFile.read(data)
         #expect(file.bikes == nil)
+        #expect(file.retired == nil)
         // And everything else still arrives, which is the part that would
         // have been lost.
         #expect(file.ftp == 270)

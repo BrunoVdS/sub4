@@ -81,6 +81,8 @@ nonisolated struct AthleteFile: Codable, Hashable {
     /// every file written before today is missing the key, and a synthesised
     /// decoder does not use default values.
     var bikes: [Shoe]?
+    /// Patch 268. Same optionality, same reason.
+    var retired: [Shoe]?
     /// When the athlete profile was last fetched from Strava. Seconds from
     /// 2001 on disk — see `decoder`.
     var fetched: Date?

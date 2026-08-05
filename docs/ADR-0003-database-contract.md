@@ -1701,6 +1701,43 @@ onto a persisted-model change. Those 51 runs are the only ones whose distance
 still counts against no shoe, and shoe wear is the one thing gear is actually
 for.
 
+## 12.18.1 The retired shoe — patch 268
+
+§12.18 left 51 activities naming `g15316986`, a shoe in neither list Strava
+returns. **That is what retired means at the API**: the athlete endpoint carries
+what you own now, and a shoe you retired is gone from it along with every
+reference to the runs you did in it.
+
+`GET /gear/{id}` still returns it, and this app had never called it.
+
+**The lookup is driven from the activities, because there is no other
+evidence.** Strava will not tell you what you used to own. The only trace a
+retired shoe leaves is that 51 activities name it — which is exactly what
+`activity_gear_reference` was built to keep (§12.18), and this is the first
+thing to read that evidence back rather than merely preserve it.
+
+**Capped at ten per run, and the cap is not politeness.** An id that 404s —
+gear deleted at Strava rather than retired — stays missing and would be asked
+for on every subsequent refresh. Ten bounds that to ten wasted calls rather
+than one per unknown id for ever. In practice the list is empty after the
+first successful run, because the results are persisted.
+
+**A `Shoe`, not a third kind.** A retired shoe is a shoe; its wear is the most
+meaningful wear in the app, since it is the number that made it retired. What
+it is not is *active*: `retired` is excluded from `activeShoes`, so it belongs
+to the history and not to the rack.
+
+**Reported apart from the two lists.** `lastOutcome` says "5 zones, 10 gear, 1
+retired" rather than folding the retired count in, because it comes from a
+different call. Adding it to the gear total would let a profile fetch that
+returned nothing look like one that returned something — the same "one half
+concealing the other" defect §12.18 and the comment above `refreshProblems`
+both already carry.
+
+**Expected after this lands:** `Naming unknown gear` reaches **0** for the
+first time since the importer was written, and every one of 666 activities
+that names gear resolves to a row.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

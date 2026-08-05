@@ -40,9 +40,24 @@ final class AthleteStore {
     /// the wrong question unaskable.
     private(set) var bikes: [Shoe] = []
 
-    /// Everything the athlete owns, for callers that only need a name for an
-    /// id — the importer, the verifier, and `gear(id:)` below.
-    var allGear: [Shoe] { shoes + bikes }
+    /// Gear the athlete once had — patch 268.
+    ///
+    /// Strava's athlete response carries what you own NOW. A shoe you retired
+    /// is gone from it, and so is every reference to the runs you did in it:
+    /// `g15316986` named 51 activities here and was in neither list.
+    ///
+    /// `GET /gear/{id}` still returns it. This array is what that call fills,
+    /// and it is a `Shoe` rather than a third kind because it IS one — a
+    /// retired shoe's wear is the most meaningful wear there is, since it is
+    /// the number that made it retired.
+    ///
+    /// NOT IN `activeShoes`, deliberately. It belongs in the history and not
+    /// in the rack.
+    private(set) var retired: [Shoe] = []
+
+    /// Everything the athlete owns or once owned, for callers that only need a
+    /// name for an id — the importer, the verifier, and `gear(id:)` below.
+    var allGear: [Shoe] { shoes + bikes + retired }
     private(set) var lastFetch: Date?
     private(set) var lastError: String?
 
@@ -281,10 +296,21 @@ final class AthleteStore {
         // back" — patch 267a. Reporting only the shoes would put a cyclist's
         // successful refresh in the error line, which is the same shape as the
         // defect described above: one half concealing the other.
+        // AFTER the two lists are in place — patch 268 — because what counts
+        // as missing is defined against them. Running it first would ask
+        // Strava for every bike as well.
+        await resolveRetiredGear(token: token)
+
         let gearCount = g.shoes.count + g.bikes.count
         let problems = Self.refreshProblems(zones: z.count, gear: gearCount)
         lastError = problems.isEmpty ? nil : problems.joined(separator: " ")
-        lastOutcome = "\(z.count) zones, \(gearCount) gear"
+        // Retired gear is reported apart from the two lists, because it is not
+        // evidence the athlete endpoint worked — it comes from a different
+        // call — and folding it in would let a profile fetch that returned
+        // nothing look like one that returned something.
+        lastOutcome = retired.isEmpty
+            ? "\(z.count) zones, \(gearCount) gear"
+            : "\(z.count) zones, \(gearCount) gear, \(retired.count) retired"
 
         if !z.isEmpty || gearCount > 0 {
             lastFetch = Date()
@@ -296,6 +322,54 @@ final class AthleteStore {
     /// as a partial failure. Pure and static because `refresh` cannot be run in
     /// a test — it needs a token and a network — and this is the part that was
     /// wrong.
+    /// Gear named by an activity and held by neither list — patch 268.
+    ///
+    /// WHY THIS IS DRIVEN FROM THE ACTIVITIES rather than from a list Strava
+    /// gives us: there is no such list. The athlete endpoint returns current
+    /// gear only, so the only evidence a retired shoe ever existed is that 51
+    /// activities name it. That is exactly the evidence
+    /// `activity_gear_reference` was built to keep — §12.18 — and this is the
+    /// first thing to read it back.
+    ///
+    /// CAPPED, and the cap is not politeness. An id that 404s stays missing
+    /// and would be asked for again on every refresh; ten per run bounds that
+    /// to ten wasted calls rather than one per unknown id for ever. In
+    /// practice this list is empty after the first successful run.
+    private func resolveRetiredGear(token: String, limit: Int = 10) async {
+        let held = Set(allGear.map(\.id))
+        let named = Set(ActivityStore.shared.activities.compactMap(\.gearId))
+        let missing = named.subtracting(held).sorted().prefix(limit)
+        guard !missing.isEmpty else { return }
+
+        var found: [Shoe] = []
+        for id in missing {
+            if let shoe = await fetchGear(id: id, token: token) { found.append(shoe) }
+        }
+        // Appended, not replaced. A run that resolved two of three must not
+        // drop the two it already had.
+        guard !found.isEmpty else { return }
+        retired += found
+    }
+
+    private func fetchGear(id: String, token: String) async -> Shoe? {
+        struct DetailedGear: Decodable {
+            let id: String
+            let name: String?
+            let distance: Double?
+            let primary: Bool?
+        }
+        guard let data = await get("https://www.strava.com/api/v3/gear/\(id)",
+                                   token: token),
+              let g = try? JSONDecoder().decode(DetailedGear.self, from: data)
+        else { return nil }
+        return Shoe(id: g.id,
+                    name: g.name ?? "Retired gear",
+                    distanceM: g.distance ?? 0,
+                    // A retired shoe is nobody's primary, whatever the API
+                    // says about the day it was.
+                    primary: false)
+    }
+
     nonisolated static func refreshProblems(zones: Int, gear: Int) -> [String] {
         var out: [String] = []
         if zones == 0 {
@@ -460,6 +534,9 @@ final class AthleteStore {
         /// `constants.json`, which has three properties carrying exactly this
         /// trap.
         var bikes: [Shoe]?
+        /// Optional for the same reason as `bikes` above, and it will stay
+        /// optional: every file written before patch 268 lacks the key.
+        var retired: [Shoe]?
         var fetched: Date?
         var ftp: Int?
     }
@@ -474,6 +551,7 @@ final class AthleteStore {
         // Absent in every file written before patch 267, which is the whole
         // reason the column is optional. Empty until the next refresh.
         bikes = c.bikes ?? []
+        retired = c.retired ?? []
         lastFetch = c.fetched
         ftp = c.ftp
     }
@@ -492,6 +570,7 @@ final class AthleteStore {
         ftp = nil
         shoes = []
         bikes = []
+        retired = []
         lastFetch = nil
         lastError = nil
     }
@@ -499,6 +578,7 @@ final class AthleteStore {
     private func save() {
         let c = Cache(zones: hrZones, shoes: shoes,
                       bikes: bikes.isEmpty ? nil : bikes,
+                      retired: retired.isEmpty ? nil : retired,
                       fetched: lastFetch, ftp: ftp)
         // A bare `JSONEncoder`, as it has always been — `AthleteFile` decodes
         // this file with `.deferredToDate` on the strength of it, and changing
