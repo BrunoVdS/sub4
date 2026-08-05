@@ -1251,6 +1251,106 @@ patches — the August 2025 artifact, which has weather and no activity — and
 means activities are missing that should not be, which is what the number was
 always supposed to mean and could not while it had a permanent occupant.
 
+## 12.9b `athlete.json` becomes readable — patch 259, contract item 4
+
+Every legacy input has a type you can hand a `Data` to. `athlete.json` did not:
+`AthleteStore.Cache` was `private`, so the file-level decoders, the semantic
+verifier and `@testable import` alike were all locked out. Patch 246 recorded
+that as a test — `athleteCannotBeDecodedFromOutsideItsStore` — thirteen patches
+before anything needed it, which is why 259 began with a known obstacle instead
+of discovering one halfway through.
+
+**A mirror rather than a promotion.** Dropping `private` from `Cache` is the
+obvious fix and is half of what 259 does. The other half is `AthleteFile`, a
+`nonisolated` mirror of the shape, so `athlete.json` can be decoded by anything
+— including the parts of the migration that do not run on the main actor.
+
+> **Corrected by patch 260.** This section originally justified the mirror by
+> saying the reader would run `nonisolated` inside a database write. It does
+> not. Every other legacy type — `Activity`, `NotesStore.Note`,
+> `ProposalStore.Record`, `ActivityWeather`, `ActivityDetail` — is main-actor
+> isolated, so a nonisolated reader would have needed nine more mirrors, which
+> is a far worse trade than the one made here for one private type.
+> `LegacyClassifier`'s typed pass is `@MainActor`; only its structural pass is
+> not. The mirror is still right — `Cache` being private was the actual
+> obstacle, and `AthleteFile` is what the verifier will use — but the reason
+> given for it was a guess about code that had not been written yet, stated as
+> though it were a constraint. Worth leaving visible rather than editing away:
+> **a justification written ahead of the thing it justifies is a prediction,
+> and should be marked as one.**
+
+So `AthleteFile` mirrors the shape with its own `nonisolated` `Zone` and `Shoe`,
+carrying the stored properties and nothing else. `label`, `range` and `contains`
+stay on the store's types: a mirror that copied them would be a second
+implementation of the same rules, which is worse than the duplication it saved.
+
+**Two declarations of one shape is the obvious objection, and it is answered by
+a test rather than by discipline.** `AthleteFileAgreementTests` encodes a real
+`AthleteStore.Cache` and decodes it as an `AthleteFile`, field by field, and
+separately compares the key sets each one writes — so a property added to either
+is a failure rather than a key silently ignored. Making `Cache` internal is what
+lets that test exist; a mirror nothing can compare against is a second guess.
+
+**And the date strategy is part of the shape.** `AthleteStore.save()` has always
+used a bare `JSONEncoder()`, so `fetched` is a `Double` counting seconds from
+2001. Read with the app's own `JSONDecoder.sub4` it does not produce a wrong
+date — it throws, and a decoder that throws is one that can be corrected. That
+is the entire point of contract item 4: the alternative is a decoder that
+succeeds and is wrong, and nothing downstream can tell.
+
+## 12.9c Damage that says which damage — patch 260, contract items 2 and 4
+
+`LegacyFixtureTests.todayEverythingBrokenLooksTheSame` asserted since patch 246
+that an empty file, a whitespace file, a truncated file, a corrupt file and a
+captive portal's HTML body all fail in exactly one way: `try decode` throws, and
+nothing anywhere can tell them apart. It was written to be replaced.
+
+**It was not replaced by failing.** The test still passes — all five still
+throw, and they should. What stopped being true was its *name*. That is worth
+recording on its own: a test can keep passing long after it has stopped
+describing the system, and a green run says nothing about the gap. It has been
+renamed to what it actually asserts — that the store decoders stay strict, so
+the classifier's extra information is never bought by letting something through.
+
+**Why the distinctions earn their code.** Because the athlete does different
+things about them:
+
+| Condition | What happened | What to do |
+|---|---|---|
+| `absent` | no file — a fresh install | **nothing. Not a fault** |
+| `empty` | a write that never started | nothing was in it to lose |
+| `whitespace` | the same, one buffer later | as above |
+| `truncated` | a write interrupted part way | **restore a backup** |
+| `corrupt` | full length, broken structure | not a length problem |
+| `notJSON` | a captive portal's sign-in page | this is not our file |
+| `wrongContainer` | an array where an object belongs | a file from elsewhere |
+| `undecodable` | parses, and the store's decoder refuses | the wrong decoder |
+
+`absent` is the most important line in the table. A migration that reports
+"notes.json is missing" on a phone that has never had notes cries wolf on day
+one, and contract item 2 exists to stop it.
+
+**Truncated versus corrupt is decided by a bracket-balance scan, not by the
+error message and not by the last byte.** Foundation's wording is not a
+contract, and a 60% prefix of a JSON file can end on `}` — every nested object
+closes somewhere. A classifier reading only the final character would call that
+corrupt and tell the athlete *not* to restore the backup that would fix it. The
+scan tracks strings and escapes, because session notes are free prose and
+proposal evidence is Markdown: braces inside strings are not hypothetical.
+
+**`readable` is only ever returned by the store's own decoder succeeding.**
+Nothing infers success from the absence of a structural failure. That is what
+puts the wrong date strategy into `undecodable` rather than letting it pass —
+contract item 4 becoming visible instead of becoming a silent 1970.
+
+**What 260 deliberately does not do.** A key mismatch still reads clean: the
+outer key wins and the embedded id is never consulted. That is contract item 5,
+it needs a `quarantine` table and a migration, and folding a schema change into
+a classifier would make one patch out of two. It is recorded as a passing
+assertion — `aKeyMismatchIsStillInvisible` — which 261 inverts, the same way
+patch 246 recorded the `athlete.json` obstacle thirteen patches before 259
+needed it.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

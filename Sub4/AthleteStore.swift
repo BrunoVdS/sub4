@@ -394,7 +394,22 @@ final class AthleteStore {
 
     // MARK: Persistence
 
-    private struct Cache: Codable {
+    /// INTERNAL SINCE PATCH 259, and it was never private for a reason.
+    ///
+    /// `LegacyFixtureTests` recorded in patch 246 that this being `private`
+    /// meant `athlete.json` had no decodable type anywhere — not for the
+    /// file-level decoders, not for the semantic verifier, not even for
+    /// `@testable import`. Every other legacy input has a type you can hand a
+    /// `Data`. This one had a store and nothing else.
+    ///
+    /// It stays main-actor isolated, because `AthleteStore` is, and the reader
+    /// that decodes this file runs `nonisolated` inside a database write. That
+    /// is what `AthleteFile` is for: a mirror with its own nonisolated shapes,
+    /// held to this declaration field by field by
+    /// `AthleteFileAgreementTests`. Making this internal is what lets that
+    /// test exist at all — a mirror nothing can compare against is just a
+    /// second guess.
+    struct Cache: Codable {
         var zones: [HRZone]
         var shoes: [Shoe]
         var fetched: Date?

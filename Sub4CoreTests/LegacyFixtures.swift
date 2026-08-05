@@ -169,9 +169,9 @@ enum LegacyInput: String, CaseIterable {
             """
 
         case .athlete:
-            // AthleteStore.Cache · numeric · NOTE: `Cache` is `private`, so
-            // this fixture is asserted structurally rather than by decoding.
-            // See `LegacyFixtureTests.athleteCannotBeDecodedFromOutsideItsStore`.
+            // AthleteStore.Cache · numeric · decoded by `AthleteFile` since
+            // patch 259. Until then `Cache` was `private` and this fixture
+            // could only be asserted structurally — see `AthleteFileTests`.
             """
             {"zones":[{"index":1,"min":0,"max":120},{"index":5,"min":171}],\
             "shoes":[{"id":"g11111","name":"Novablast 4","distanceM":412000.0,\

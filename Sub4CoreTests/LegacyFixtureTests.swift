@@ -170,8 +170,10 @@ struct LegacyFixtureTests {
     func aKeyMismatchIsInvisibleToTheDecoder(_ input: LegacyInput) throws {
         let data = try #require(LegacyDamage.keyMismatch.bytes(for: input))
         // Contract item 5 wants this quarantined. Today it decodes, the outer
-        // key wins, and the embedded id is never consulted. Patch 248 makes
+        // key wins, and the embedded id is never consulted. Patch 261 makes
         // this a quarantine; until then the behaviour is recorded, not hidden.
+        // `LegacyClassifierTests.aKeyMismatchIsStillInvisible` says the same
+        // thing about the classifier, which 260 deliberately left alone.
         try decode(input, data)
     }
 
@@ -190,10 +192,24 @@ struct LegacyFixtureTests {
 
     // MARK: Today's behaviour, asserted so tomorrow's change is visible
 
-    @Test("Today every broken file fails the same way — nothing is classified",
+    /// RENAMED IN PATCH 260, and the rename is the finding.
+    ///
+    /// This was `todayEverythingBrokenLooksTheSame`, written to fail when the
+    /// classifier landed. It did not fail. Its `#expect` is still true — all
+    /// five damage classes still throw, and they should — while its NAME
+    /// stopped being true the moment `LegacyClassifier` existed.
+    ///
+    /// **A test can keep passing long after it has stopped describing the
+    /// system.** The assertion was about the decoders; the name was about the
+    /// app. Only one of those changed, and a green run said nothing about it.
+    ///
+    /// What it asserts now is worth keeping on its own terms: the store
+    /// decoders remain strict, so the classifier's extra information is never
+    /// bought by letting something through. `LegacyClassifierTests` is where
+    /// the five outcomes are asserted to be five.
+    @Test("The store decoders refuse all five, so classification adds no leniency",
           arguments: LegacyInput.allCases)
-    func todayEverythingBrokenLooksTheSame(_ input: LegacyInput) throws {
-        // Read this file's header before touching this test.
+    func theStoreDecodersStillRefuseAllFive(_ input: LegacyInput) throws {
         for damage in [LegacyDamage.empty, .whitespace, .truncated, .corrupt, .notJSON] {
             let data = try #require(damage.bytes(for: input),
                                     "\(damage.rawValue) has no bytes for \(input.rawValue)")
@@ -245,23 +261,24 @@ struct LegacyFixtureTests {
 
     // MARK: The findings this corpus produced
 
-    @Test("athlete.json has no decodable type outside its own store")
-    func athleteCannotBeDecodedFromOutsideItsStore() throws {
-        // `AthleteStore.Cache` is `private`, so `@testable import` does not
-        // reach it and neither will a file-level decoder. This is why
-        // `Sub4Import+Athlete` reads the live store rather than the file, and
-        // it is a real obstacle to migration contract item 3: patch 248 needs
-        // a non-private mirror of this shape before it can read athlete.json
-        // as bytes.
-        //
-        // Recorded as a test so the constraint is discovered here rather than
-        // halfway through writing 248.
-        let data = try #require(LegacyDamage.valid.bytes(for: .athlete))
-        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let keys = Set(try #require(object).keys)
-        #expect(keys == ["zones", "shoes", "fetched", "ftp"],
-                "athlete.json's top-level shape changed: \(keys.sorted())")
-    }
+    // REMOVED IN PATCH 259 — `athleteCannotBeDecodedFromOutsideItsStore`.
+    //
+    // It asserted that `athlete.json` had no decodable type outside its own
+    // store, and it was right for thirteen patches. 259 gives it one, so the
+    // test now asserts the opposite of what the app does and belongs to the
+    // patch that changed the behaviour — the rule §12.12.4 was written under.
+    //
+    // Deleted rather than inverted, because its replacement is not one test:
+    // `AthleteFileTests` decodes the file without the main actor and
+    // `AthleteFileAgreementTests` holds the mirror to `AthleteStore.Cache`
+    // field by field. The one assertion worth carrying over — that the
+    // top-level shape is still those four keys — moved to
+    // `AthleteFileTests.theShapeIsUnchanged`.
+    //
+    // Worth keeping the epitaph rather than the silence: this test cost one
+    // line to write in 246 and saved the patch that needed it from
+    // discovering the obstacle halfway through. That is the whole argument
+    // for recording a constraint as a test before anything depends on it.
 
     @Test("The corpus states which decoder wrote each file")
     func everyInputDeclaresItsDateStrategy() {
