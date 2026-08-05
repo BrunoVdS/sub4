@@ -30,6 +30,10 @@ struct ProposalView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var share: ShareItem?
 
+    /// Patch 270. `remove(_:)` was written in 225 and had no caller until now.
+    @State private var confirmDelete = false
+    @State private var deleteFailure: StoreWriteError?
+
     private var proposal: ReviewProposal { record.proposal }
     private var accepted: [ReviewProposal.Change] {
         proposal.acceptedChanges(plan: PlanStore.shared)
@@ -61,8 +65,42 @@ struct ProposalView: View {
                 }
             }
             .sheet(item: $share) { ShareSheet(items: [$0.url]) }
+            // The export is offered inside the confirmation as well as above
+            // it, because this is the moment somebody realises they wanted a
+            // copy — §12.8.1's lesson, at the point it applies.
+            .confirmationDialog("Delete this review?",
+                                isPresented: $confirmDelete,
+                                titleVisibility: .visible) {
+                Button("Delete", role: .destructive) { delete() }
+                Button("Export a copy first") {
+                    if let url = ProposalStore.shared.writeMarkdown(record) {
+                        share = ShareItem(url: url)
+                    }
+                }
+            } message: {
+                Text("A review cannot be produced again — the figures behind it "
+                     + "move as the block goes on, and the evidence pack is "
+                     + "stored with the verdict. This cannot be undone.")
+            }
+            .storeWriteFailure($deleteFailure, retry: { delete() })
         }
         .tint(.accent4)
+    }
+
+    /// Dismisses only if the record actually went — patch 270, the same rule
+    /// as `NoteEditorView.commit()`. A sheet that closed on a failed delete
+    /// would show the review back in the list a moment later.
+    private func delete() {
+        do {
+            try ProposalStore.shared.remove(record)
+            dismiss()
+        } catch let error as StoreWriteError {
+            deleteFailure = error
+        } catch {
+            deleteFailure = StoreWriteError(store: "proposals.json",
+                                            stage: .writing,
+                                            reason: String(describing: error))
+        }
     }
 
     // MARK: Verdict
@@ -271,6 +309,26 @@ struct ProposalView: View {
 
             Text("\(record.model) · \(record.appVersion)")
                 .font(.caption2).foregroundStyle(Color.dim)
+
+            Divider()
+
+            // PATCH 270. Deliberately here and not on the history list.
+            //
+            // A swipe-to-delete in `ReviewView.historyCard` would put an
+            // irreversible action one careless gesture from a row you were
+            // trying to open. This sits at the bottom of the record itself,
+            // after the evidence and the export, which is the order the
+            // decision actually wants: read it, keep a copy, then decide.
+            Button(role: .destructive) { confirmDelete = true } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "trash").font(.caption)
+                    Text("Delete this review").font(.subheadline.weight(.semibold))
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.dangerColor)
             Text("The evidence pack is stored with the verdict. Thresholds and "
                  + "estimators change over 34 weeks, so the same window would "
                  + "not produce the same numbers twice.")

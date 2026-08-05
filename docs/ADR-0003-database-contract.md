@@ -1213,6 +1213,83 @@ tests too, and measured nothing for two patches.
   existed in the JSON and had no column until patch 225.
 - A second import refreshes rather than stacking: the counts above stay put.
 
+#### 12.8.3 The rehearsal — patch 269
+
+§12.8.2 called the proposals path "written, tested and unproven" and listed
+what to check on 24 August. This makes the 24th a repeat rather than a
+premiere.
+
+**What it does.** Builds a REAL `Review` over however many plan weeks have
+actually finished — walking the four-week requirement down rather than
+bypassing it, so every figure in the window is the athlete's own — attaches a
+synthetic proposal, and writes it through `ProposalStore.add`. That is the
+whole untested path: writer → `proposals.json` → importer → `review`,
+`review_evidence`, `proposal`, `proposal_change`, `proposal_watch`.
+
+**What it deliberately does not do: call the model.** The Claude request is
+exercised every time the review button is pressed and has its own tests, its
+own error handling and its own screen. Spending a real API call here would test
+the one link in the chain that is not in question — and it would make the
+rehearsal non-deterministic, because a real answer might come back with zero
+changes (the expected verdict most months) and a rehearsal that exercised
+`proposal_change` only sometimes is worth very little.
+
+**The proposal is shaped to the checklist rather than to plausibility.** Two
+changes, both naming real session uids from the athlete's own plan, the second
+of them a SKIP — which is the case where `newDetail` is empty and `what` has to
+come from somewhere else, and the one assertion in §12.8.2 that a proposal with
+only edits would never reach. Two watch items, distinguishable, so
+`proposal_watch`'s ordinal can be checked rather than assumed.
+
+**Marked in the database, not just on screen.** `model` is `"rehearsal"`, and
+`model` is a column on `review`. The 24 August record will be distinguishable
+from this one by something more reliable than its date.
+
+**It must be deleted before the first real review.** `ReviewDue` reads the
+newest record's `ranAt` and adds 28 days, so a rehearsal left in place would
+push the first real review into September. `ProposalStore.remove(_:)` already
+exists and Progress already offers it. Recorded here because it is the kind of
+consequence a rehearsal is supposed to surface, and this one surfaced while the
+rehearsal was being written rather than on the day.
+
+**Internal builds only, checked twice.** `ReleaseGates.isInternalBuild` is
+`#if DEBUG`, so neither the button nor `run()` is in a release binary. `run()`
+throws on that same value anyway: a gate enforced only by its caller is a gate
+that moves the first time somebody adds a second caller.
+
+#### 12.8.4 A review can be deleted — patch 270
+
+`ProposalStore.remove(_:)` was written in patch 225 and **never had a caller**.
+Nothing in the app could delete a review record, which nobody noticed because
+nobody had ever wanted to — until 269 wrote a rehearsal record that MUST be
+removed before 24 August, or `ReviewDue` reads its date, adds 28 days, and
+pushes the first real review into September.
+
+**A method written in anticipation is not a feature.** It compiled, it was
+correct, and it did nothing — and the gap only became visible when something
+depended on it. Worth recording beside the several controls this project has
+found that reported work they did not do: this is the same shape from the other
+side, a control that would have done the work and was never asked.
+
+**On the record, not on the list.** A swipe-to-delete in
+`ReviewView.historyCard` would put an irreversible action one careless gesture
+away from a row you were trying to open. The button sits at the bottom of the
+record itself, below the evidence and the export — which is the order the
+decision actually wants: read it, keep a copy, then decide.
+
+**The confirmation offers the export.** §12.8.1's lesson is that authored
+content has nowhere to come back from, and the moment somebody realises they
+wanted a copy is the moment they are asked to confirm. So *Export a copy first*
+is one of the two actions, not something they have to back out and find.
+
+**This one write waits for the disk.** §12.17.2 put `proposals.json` on the
+journal route because it is written by the review runner with nobody present.
+A delete button is the exception that argument names — there IS somebody
+present — so `remove` follows §12.17 instead: memory follows disk, the record
+goes back if the write throws, and the sheet dismisses only if it landed.
+`save()` returns a `Bool` for that one caller; every other one discards it and
+keeps the journal's behaviour.
+
 ### 12.9 `weather.json` → `weather` — clean, and it closes §8's Strava-key gap
 
 Checked against `ActivityWeather` before the importer was written, the same way

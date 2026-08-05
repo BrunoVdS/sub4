@@ -309,6 +309,9 @@ struct SettingsView: View {
         .navigationSplitViewStyle(.balanced)
     }
 
+    /// Patch 269. What the last rehearsal said, or why it did not run.
+    @State private var rehearsalResult: String?
+
     private var needsAttention: Bool {
         !auth.isConnected || activities.lastError != nil
             || StoreWriteJournal.shared.hasUnsaved
@@ -1009,6 +1012,28 @@ struct SettingsView: View {
         }
         if let e = bgError { Text(e).font(.caption).foregroundStyle(.red) }
         manualRunButton
+
+        // PATCH 269 — the rehearsal for 24 August. Internal builds only,
+        // and `ReviewRehearsal.run()` throws if it is somehow reached in any
+        // other kind: a gate enforced only by its caller is a gate that moves
+        // the first time somebody adds a second caller.
+        if ReviewRehearsal.isAvailable {
+            Button("Rehearse a monthly review") {
+                do {
+                    let record = try ReviewRehearsal.run()
+                    rehearsalResult = "Wrote \(record.windowLabel) — "
+                        + "\(record.proposal.changes.count) changes, "
+                        + "\(record.proposal.watchFor.count) watch items. "
+                        + "Import and check, then delete it on Progress."
+                } catch {
+                    rehearsalResult = error.localizedDescription
+                }
+            }
+            if let rehearsalResult {
+                Text(rehearsalResult)
+                    .font(.caption2).foregroundStyle(Color.dim)
+            }
+        }
 
         Button("Refresh zones & gear") { Task { await athlete.refresh() } }
         // Patch 233. WHEN, not just what. "5 zones, 6 gear" reads identically

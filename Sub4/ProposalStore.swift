@@ -82,8 +82,17 @@ final class ProposalStore {
 
     // MARK: Writing
 
+    /// - Parameter model: what produced this. Defaults to whatever is
+    ///   configured, and is `"rehearsal"` for the one record `ReviewRehearsal`
+    ///   writes — patch 269.
+    ///
+    ///   A PARAMETER RATHER THAN A FLAG ON `Record`. `model` is already a
+    ///   column on `review`, so a rehearsal announces itself in the database
+    ///   as well as on screen, and the first real record will be
+    ///   distinguishable from it by something more reliable than its date.
     @discardableResult
-    func add(review: Review, proposal: ReviewProposal, evidence: String) -> Record {
+    func add(review: Review, proposal: ReviewProposal, evidence: String,
+             model: String = ClaudeConfig.model) -> Record {
         let n = existing(startDay: review.window.startDay,
                          endDay: review.window.endDay).count
         let r = Record(
@@ -98,7 +107,7 @@ final class ProposalStore {
             evidence: evidence,
             proposal: proposal,
             appVersion: AppVersion.stamp,
-            model: ClaudeConfig.model)
+            model: model)
         records.append(r)
         save()
         return r
@@ -106,10 +115,28 @@ final class ProposalStore {
 
     /// Deleting one record is allowed — deleting the history is not offered
     /// anywhere, for the reason in the header.
-    func remove(_ record: Record) {
+    /// THROWS SINCE PATCH 270, and the record goes back when it does.
+    ///
+    /// This is the one write in this store with somebody watching, so it
+    /// follows §12.17's rule rather than §12.17.2's: memory follows disk, and
+    /// a delete that did not happen is not reported as one. Everything else
+    /// here is written by the review runner with nobody present, and keeps the
+    /// journal's behaviour.
+    ///
+    /// A review is not re-fetchable. §12.8.1 is the record of what that costs:
+    /// the reinstall on 4 August took every past review and there was nowhere
+    /// to get them back from.
+    func remove(_ record: Record) throws {
         guard let i = records.firstIndex(where: { $0.id == record.id }) else { return }
-        records.remove(at: i)
-        save()
+        let removed = records.remove(at: i)
+        guard save() else {
+            records.insert(removed, at: i)
+            // The journal holds what actually went wrong; this is the same
+            // error, handed to the caller that has a screen for it.
+            throw StoreWriteJournal.shared.unsaved["proposals.json"]?.error
+                ?? StoreWriteError(store: "proposals.json", stage: .writing,
+                                   reason: "the record was put back")
+        }
     }
 
     // MARK: Disk
@@ -144,7 +171,14 @@ final class ProposalStore {
     /// First real run is 24 August 2026. If a write ever fails there, the
     /// unsaved row in Settings is the difference between noticing that day and
     /// noticing next month.
-    private func save() {
+    /// Returns whether the write landed — patch 270.
+    ///
+    /// The journal still records a failure either way; the Bool exists because
+    /// `remove` has an athlete standing in front of it and §12.17 says a
+    /// deletion that did not reach the disk must not be reported as done. Every
+    /// other caller discards it, which is §12.17.2's position unchanged.
+    @discardableResult
+    private func save() -> Bool {
         StoreWriteJournal.shared.attempt("proposals.json") {
             try StoreWrite.encode(records, to: fileURL, store: "proposals.json")
         }
