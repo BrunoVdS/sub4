@@ -412,8 +412,35 @@ final class DetailStore {
         dirtyStreams = []
 
         Task.detached(priority: .utility) { [payload, legacy] in
+            // ONE JOURNAL ENTRY FOR THE BATCH, not one per file. A backfill
+            // writes hundreds of these; a per-file entry would turn "is
+            // anything unsaved" into a list nobody reads, which is the failure
+            // §12.12.6 is about.
+            var failed = 0
             for (url, data) in payload {
-                try? data.write(to: url, options: FileProtection.options)
+                do {
+                    try data.write(to: url, options: FileProtection.options)
+                } catch {
+                    failed += 1
+                }
+            }
+            if failed > 0 {
+                let n = failed
+                await MainActor.run {
+                    // Discarded INSIDE the closure, so the closure is `Void`
+                    // and `MainActor.run` has no result of its own to ignore.
+                    // `@discardableResult` covers `attempt`, not the `run`
+                    // that wraps it.
+                    _ = StoreWriteJournal.shared.attempt("details/ and streams/") {
+                        throw StoreWriteError(
+                            store: "details/ and streams/", stage: .writing,
+                            reason: "\(n) of \(payload.count) files could not be written")
+                    }
+                }
+            } else if !payload.isEmpty {
+                await MainActor.run {
+                    _ = StoreWriteJournal.shared.attempt("details/ and streams/") { }
+                }
             }
             for url in legacy {
                 try? FileManager.default.removeItem(at: url)

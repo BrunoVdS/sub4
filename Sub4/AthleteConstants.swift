@@ -406,9 +406,16 @@ final class ConstantsStore {
         save()
     }
 
+    /// The denominator of every training-load figure in the app, and until
+    /// patch 266 it was written with a `try?`. A lost write here does not lose
+    /// the figures — they are recomputed from Health and Strava — but it does
+    /// mean the next launch recomputes them, and nothing said why.
     private func save() {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try? enc.encode(c).write(to: fileURL, options: FileProtection.options)
+        StoreWriteJournal.shared.attempt("constants.json") {
+            try StoreWrite.encode(c, to: fileURL, store: "constants.json",
+                                  encoder: enc)
+        }
     }
 }

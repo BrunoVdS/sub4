@@ -311,6 +311,7 @@ struct SettingsView: View {
 
     private var needsAttention: Bool {
         !auth.isConnected || activities.lastError != nil
+            || StoreWriteJournal.shared.hasUnsaved
     }
 
     @ViewBuilder
@@ -420,6 +421,24 @@ struct SettingsView: View {
 
             if let e = auth.lastError {
                 Text(e).font(.caption).foregroundStyle(.red)
+            }
+
+            // Patch 266. THE APP IS SHOWING YOU MORE THAN IT HAS SAVED, said
+            // out loud. Everything listed here is re-fetchable, so this is not
+            // a loss — it is a warning that a relaunch would lose the newest
+            // of it, and the reason it is worth a row rather than silence.
+            ForEach(StoreWriteJournal.shared.all) { unsaved in
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(unsaved.store) — not saved")
+                            .font(.caption.weight(.semibold))
+                        Text(unsaved.line)
+                            .font(.caption2).foregroundStyle(Color.dim)
+                    }
+                } icon: {
+                    Image(systemName: "externaldrive.badge.exclamationmark")
+                }
+                .foregroundStyle(.red)
             }
 
             // The gate notice, in the dim ink rather than in red — patch 179.

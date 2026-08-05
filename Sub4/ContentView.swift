@@ -68,7 +68,14 @@ struct ContentView: View {
     /// connection is healthy, which is the whole point — it is an alarm, not a
     /// status display, and it sits on the tab that can fix it.
     private var settingsBadge: Int {
-        (auth.isConnected && activities.lastError == nil) ? 0 : 1
+        // Patch 266 adds the third condition. It is an alarm and not a status
+        // display — the same argument as the two above it — and a store that
+        // cannot be written is exactly the kind of thing that otherwise shows
+        // up as data quietly going missing at the next launch.
+        let healthy = auth.isConnected
+            && activities.lastError == nil
+            && !StoreWriteJournal.shared.hasUnsaved
+        return healthy ? 0 : 1
     }
 
     var body: some View {

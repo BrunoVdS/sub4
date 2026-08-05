@@ -1092,6 +1092,16 @@ struct DatabaseHealthView: View {
             lines.append("")
             lines.append(contentsOf: v.diagnosticLines)
         }
+        // Patch 266c. UNCONDITIONAL, unlike the two above it. Those are nil
+        // until a button is pressed; the journal always has an answer, and
+        // "none" is that answer said out loud. A section that simply vanished
+        // when nothing was wrong would be indistinguishable from a check that
+        // never ran — which is the same argument §12.9c makes for `absent`.
+        //
+        // Store names, stages and counts only. The underlying reason is left
+        // out because a file-system error can carry a container path.
+        lines.append("")
+        lines.append(contentsOf: StoreWriteJournal.shared.diagnosticLines)
         return lines.joined(separator: "\n")
     }
 }

@@ -1612,6 +1612,55 @@ time the alert is on screen the toggle shows the OLD value again, so
 value is held rather than recomputed. Small, and exactly the kind of thing that
 would have worked in every test and been wrong on the phone.
 
+## 12.17.2 The stores that write while nobody is watching — patch 266
+
+`notes.json` and `commutes.json` are written while the athlete watches. A failed
+write gets an alert, and the store rolls its memory back so the screen tells the
+truth — §12.17, §12.17.1.
+
+The other six write during a sync. Nobody is watching, there is no sheet to keep
+open, and **there is nothing to roll back to**: the data came off the network a
+moment ago, and discarding it would throw away a completed sync to buy a
+consistency nobody asked for.
+
+**So the rule inverts, and the inversion is the decision.** Memory keeps what
+was fetched, and the disagreement with the disk is *recorded* —
+`StoreWriteJournal`, one entry per store, surfaced as a red row in Settings and
+a badge on the tab.
+
+**What makes that safe rather than the defect §12.17 removed.** 264 existed
+because a note could appear on screen and be gone at the next launch with
+nothing anywhere saying so. The difference here is the last clause: an unsaved
+store is a fact the journal holds, Settings shows and the diagnostic carries, so
+"the app is showing you more than it has saved" is a sentence somebody can read
+rather than a surprise at relaunch. It is also recoverable in a way a note is
+not — all six hold something Strava or Open-Meteo will hand over again.
+
+**`attempt` is non-throwing on purpose, and that is why this patch touched six
+files and no callers.** These stores save from inside syncs, backfills and
+detached tasks. Making `save()` throw would have pushed one decision out to
+forty call sites that all want the same answer, and forty places to get it
+wrong. The decision is made once: keep the memory, record the fact.
+
+**One entry per store, and one for the whole detail batch.** A backfill writes
+hundreds of files; a per-file entry would turn "is anything unsaved" into a list
+nobody reads, which is the §12.12.6 failure exactly.
+
+**`proposals.json` is the odd one, and it is here on purpose.** A monthly review
+costs a model call and cannot be reproduced by asking Strava again — by that
+measure it belongs with the notes. But it is written by the review runner, not
+by an editor the athlete is sitting in front of: there is no sheet to hold open
+and no text to copy. So it takes the journal's route, and the record stays in
+memory where the export can still reach it. First real run is 24 August 2026,
+and if a write fails there the unsaved row is the difference between noticing
+that day and noticing next month.
+
+**Two encoders are left bare deliberately.** `athlete.json` and `weather.json`
+have always been written with a plain `JSONEncoder`, so their dates are seconds
+from 2001 — `LegacyStore.dates` declares it and `AthleteFile.decoder` depends on
+it. Switching them to `JSONEncoder.sub4` while sweeping would have rewritten
+thirteen months of files into a shape two other files disagree with.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

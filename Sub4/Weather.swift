@@ -558,8 +558,13 @@ final class WeatherStore {
     }
 
     private func save() {
-        guard let d = try? JSONEncoder().encode(byActivity) else { return }
-        try? d.write(to: fileURL, options: FileProtection.options)
+        // Bare encoder, like `athlete.json` and for the same reason: the
+        // numeric date encoding on disk is thirteen months old and `LegacyStore`
+        // declares it.
+        StoreWriteJournal.shared.attempt("weather.json") {
+            try StoreWrite.encode(byActivity, to: fileURL, store: "weather.json",
+                                  encoder: JSONEncoder())
+        }
     }
 
     func resetCache() {

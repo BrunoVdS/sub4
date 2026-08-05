@@ -446,6 +446,12 @@ final class AthleteStore {
 
     private func save() {
         let c = Cache(zones: hrZones, shoes: shoes, fetched: lastFetch, ftp: ftp)
-        try? JSONEncoder().encode(c).write(to: fileURL, options: FileProtection.options)
+        // A bare `JSONEncoder`, as it has always been — `AthleteFile` decodes
+        // this file with `.deferredToDate` on the strength of it, and changing
+        // the encoder here would break thirteen months of files on disk.
+        StoreWriteJournal.shared.attempt("athlete.json") {
+            try StoreWrite.encode(c, to: fileURL, store: "athlete.json",
+                                  encoder: JSONEncoder())
+        }
     }
 }

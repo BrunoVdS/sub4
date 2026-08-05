@@ -517,10 +517,21 @@ final class ActivityStore {
         isSyncing = false
     }
 
+    /// THE MEMORY IS NOT ROLLED BACK — patch 266, and unlike `NotesStore` that
+    /// is deliberate.
+    ///
+    /// These activities came off the network a moment ago. Discarding them
+    /// because a write failed would throw away a completed sync and show the
+    /// athlete less than the app actually has, to buy a consistency nobody
+    /// asked for. The disagreement is recorded instead: Settings says so, the
+    /// tab badge lights, and the next successful sync clears it.
     private func save() {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try? enc.encode(activities).write(to: fileURL, options: FileProtection.options)
+        StoreWriteJournal.shared.attempt("activities.json") {
+            try StoreWrite.encode(activities, to: fileURL,
+                                  store: "activities.json", encoder: enc)
+        }
     }
 
     /// Wipe local cache and re-pull from the cutoff.

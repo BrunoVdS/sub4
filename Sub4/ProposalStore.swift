@@ -132,9 +132,22 @@ final class ProposalStore {
         records = []
     }
 
+    /// THE ONE THAT IS NOT RE-FETCHABLE, and the reason it is here rather
+    /// than with the notes.
+    ///
+    /// A monthly review costs a call to a model and cannot be reproduced by
+    /// asking Strava again. But it is written by the review runner, not by an
+    /// editor the athlete is sitting in front of — there is no sheet to hold
+    /// open and no text field to copy from. So it takes the journal's route
+    /// and keeps the record in memory, where the export can still reach it.
+    ///
+    /// First real run is 24 August 2026. If a write ever fails there, the
+    /// unsaved row in Settings is the difference between noticing that day and
+    /// noticing next month.
     private func save() {
-        guard let data = try? JSONEncoder.sub4.encode(records) else { return }
-        try? data.write(to: fileURL, options: FileProtection.options)
+        StoreWriteJournal.shared.attempt("proposals.json") {
+            try StoreWrite.encode(records, to: fileURL, store: "proposals.json")
+        }
     }
 
     private func migrateIfNeeded() {
