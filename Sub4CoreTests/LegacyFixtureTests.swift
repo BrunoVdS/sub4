@@ -66,6 +66,18 @@ struct LegacyFixtureTests {
                 case .directory(let d):     declared.insert(d)
                 // The database is this migration's destination, not its input.
                 case .databaseDirectory:    break
+                // Patch 247. The snapshot is this migration's OUTPUT — dated
+                // copies of every path above it — so it is excluded here for
+                // the same reason `LegacySnapshot.plan` excludes it: a corpus
+                // of legacy inputs that contained the backup of itself would
+                // grow with every capture.
+                //
+                // WORTH RECORDING: this line exists because adding
+                // `.snapshotDirectory` broke this switch. That is the
+                // case-over-name-check decision paying for itself on the first
+                // occasion it could — a `pathComponent != "snapshots"` test
+                // would have compiled and quietly done the wrong thing.
+                case .snapshotDirectory:    break
                 }
             }
         }

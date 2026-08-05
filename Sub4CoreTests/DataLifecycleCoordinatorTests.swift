@@ -89,7 +89,11 @@ struct DataLifecycleCoordinatorTests {
             // path with no file behind it costs one receipt line reading
             // "Nothing stored", which `LocationOutcome` already treats as a
             // normal answer rather than a failure.
-            "db"                 // Sub4Database.directoryName
+            "db",                // Sub4Database.directoryName
+            // Patch 247, and declared before the first capture for exactly the
+            // reason spelled out above `db`: a folder holding copies of every
+            // file in this list is the last thing a delete flow may walk past.
+            "snapshots"          // LegacySnapshot.directoryName
         ]
         #expect(declared == written,
                 "missing: \(written.subtracting(declared)); undeclared: \(declared.subtracting(written))")
@@ -107,7 +111,8 @@ struct DataLifecycleCoordinatorTests {
     @Test("Directories are declared as directories")
     func directoriesAreDirectories() {
         let dirs = Set(DataLifecycle.appSupportItems.filter(\.isDirectory).map(\.pathComponent))
-        #expect(dirs == ["details", "streams", "db"], "directory set is \(dirs)")
+        #expect(dirs == ["details", "streams", "db", "snapshots"],
+                "directory set is \(dirs)")
     }
 
     // MARK: Preference keys

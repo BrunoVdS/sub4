@@ -73,7 +73,19 @@ enum DataSource: String, CaseIterable, Codable, Hashable {
 /// category to path, which is exactly the drift this whole file exists to stop.
 /// So the inventory resolves itself, and the sentence shown to the reader and
 /// the file that actually gets unlinked come from the same value.
-enum AppSupportItem: Equatable, Hashable {
+/// `nonisolated`, and it is a claim rather than tidiness — patch 247.
+///
+/// This target builds with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so
+/// without this line every case pattern and every computed property below
+/// belongs to the main actor. `LegacySnapshot` switches over these cases while
+/// hashing and copying twenty-five megabytes, which is the one place in this
+/// app that most certainly may not run there, and it hands an array of them to
+/// a detached task — which needs them `Sendable`, which needs this.
+///
+/// Safe to state because the type is pure: no stored state, no mutation, three
+/// computed properties that are switches over `self`, and one that reads
+/// `container`, which was already `nonisolated`.
+nonisolated enum AppSupportItem: Equatable, Hashable {
     /// One named file: `activities.json`.
     case file(String)
     /// A directory holding one file per activity: `streams`, `details`.
@@ -100,6 +112,23 @@ enum AppSupportItem: Equatable, Hashable {
     /// sidecar behind, and the protection class set on it is inherited by
     /// everything SQLite creates inside.
     case databaseDirectory(String)
+    /// A directory holding dated copies of every legacy input, taken before
+    /// anything decodes them — migration contract item 3, patch 247.
+    ///
+    /// WHY ITS OWN CASE AND NOT `.directory`. Two callers must be able to tell
+    /// this apart from an input, and neither may do it by comparing a string.
+    /// `LegacySnapshot.plan` excludes it so a capture cannot recurse into its
+    /// own output, and it excludes `.databaseDirectory` beside it for the
+    /// different reason that the database is the migration's destination. A
+    /// name check would work today and break the first time somebody renamed a
+    /// folder; a case cannot be got wrong, because a new location has to be
+    /// spelled as one to compile.
+    ///
+    /// It is still `applicationSupport`, and therefore still deleted by
+    /// "Delete local data". A folder of copies of the athlete's own files that
+    /// no delete flow knew about would be a privacy defect introduced by a
+    /// privacy measure.
+    case snapshotDirectory(String)
 
     var displayName: String {
         switch self {
@@ -107,6 +136,7 @@ enum AppSupportItem: Equatable, Hashable {
         case .directory(let d):  "\(d)/<activity>.json"
         case .legacyFile(let f): "\(f) — written by an older version"
         case .databaseDirectory(let d): "\(d)/ — the database and its journal files"
+        case .snapshotDirectory(let d): "\(d)/ — dated copies of your files, taken before the migration reads them"
         }
     }
 
@@ -118,13 +148,14 @@ enum AppSupportItem: Equatable, Hashable {
         case .directory(let d):  d
         case .legacyFile(let f): f
         case .databaseDirectory(let d): d
+        case .snapshotDirectory(let d): d
         }
     }
 
     var isDirectory: Bool {
         switch self {
-        case .directory, .databaseDirectory: true
-        case .file, .legacyFile:             false
+        case .directory, .databaseDirectory, .snapshotDirectory: true
+        case .file, .legacyFile:                                 false
         }
     }
 
@@ -673,13 +704,19 @@ enum DataLifecycle {
             // gap rather than pre-declared, because an inventory that describes
             // next month's behaviour is the thing this file exists to prevent.
             lineage: [.device],
-            storage: [.applicationSupport(.databaseDirectory("db"))],
+            storage: [.applicationSupport(.databaseDirectory("db")),
+                      // Patch 247. Filed under the database rather than given a
+                      // category of its own because a snapshot exists only to
+                      // serve the migration and is removed with it — but it is
+                      // declared, because it holds copies of everything above.
+                      .applicationSupport(.snapshotDirectory("snapshots"))],
             retention: .indefinite,
             sharedWith: [],
             isExportable: false,
             aiShareable: false,
-            deletionRule: "Removed by Delete local data — the whole folder, so "
-                        + "the database and its journal files go together.",
+            deletionRule: "Removed by Delete local data — both folders, so the "
+                        + "database, its journal files, and every snapshot taken "
+                        + "before the migration go together.",
             gaps: ["Holds no training data yet. When step 3.4 moves the stores "
                  + "into it, this entry's lineage, export rule and disconnect "
                  + "rule must all be rewritten — a disconnect will have to "

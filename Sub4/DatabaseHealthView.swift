@@ -70,6 +70,14 @@ struct DatabaseHealthView: View {
     @State private var importReport: Sub4Import.Report?
     @State private var importError: String?
 
+    /// Patch 247 — migration contract item 3. Manual for now, like the import
+    /// above it: launch ownership belongs to the migration engine, and wiring a
+    /// capture into launch before the ledger exists would be a second answer to
+    /// a question one patch away from being answered once.
+    @State private var snapshotting = false
+    @State private var snapshot: SnapshotManifest?
+    @State private var snapshotError: String?
+
     var body: some View {
         NavigationStack {
             List {
@@ -82,6 +90,11 @@ struct DatabaseHealthView: View {
                     verdictSection
                     fileSection(db)
                     contentsSection
+                    // BEFORE the import, on screen and in the contract. Item 3
+                    // says copy every legacy input before decoding, and a
+                    // screen that offers to import above the button that
+                    // protects the inputs teaches the wrong order.
+                    snapshotSection
                     importSection(db)
                     benchmarkSection
                     diagnosticsSection(db)
@@ -205,6 +218,64 @@ struct DatabaseHealthView: View {
                  + "from, not data."
                  : "\(importedRows) imported rows, \(totalRows) in total.")
                 .font(.caption2)
+        }
+    }
+
+    /// The snapshot: what the last one found, and a button to take another.
+    ///
+    /// Four numbers and not one. "Healthy" would be the wrong shape here —
+    /// a capture that copied 800 files and missed one is not a failure and is
+    /// not a success, and the only honest presentation is the counts.
+    @ViewBuilder
+    private var snapshotSection: some View {
+        Section {
+            if let m = snapshot {
+                LabeledContent("Last snapshot", value: m.id)
+                    .font(.caption)
+                LabeledContent("Files copied", value: "\(m.copiedCount) of \(m.presentCount)")
+                    .font(.caption)
+                LabeledContent("Size",
+                               value: ByteCountFormatter.string(
+                                fromByteCount: Int64(m.totalBytes), countStyle: .file))
+                    .font(.caption)
+                if m.missingCount > 0 {
+                    // Not red. A declared file that is not there is a normal
+                    // answer on a fresh install, and the row exists so the
+                    // number is visible rather than inferred from a total.
+                    LabeledContent("Declared but not present", value: "\(m.missingCount)")
+                        .font(.caption).foregroundStyle(Color.dim)
+                }
+                if m.failureCount > 0 {
+                    LabeledContent("Failed to copy", value: "\(m.failureCount)")
+                        .font(.caption).foregroundStyle(.red)
+                }
+                LabeledContent("Taken by", value: "patch \(m.appVersion)")
+                    .font(.caption).foregroundStyle(Color.dim)
+            } else {
+                Text("No snapshot has ever been taken. Every legacy file is "
+                     + "one reinstall away from being gone — two of those "
+                     + "happened in one week and cost four session notes.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if snapshotting {
+                HStack { ProgressView(); Text("Copying…").font(.caption) }
+            } else {
+                Button("Snapshot now") { runSnapshot() }
+            }
+
+            if let e = snapshotError {
+                Text(e).font(.caption).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            Text("Protected snapshot")
+        } footer: {
+            Text("A dated copy of every file the app has written, with a "
+                 + "SHA-256 for each, taken before anything reads them. "
+                 + "Copies — nothing is moved or removed. Removed by Delete "
+                 + "local data along with the database.")
         }
     }
 
@@ -382,6 +453,43 @@ struct DatabaseHealthView: View {
                  + "JSON files, and the JSON files are not touched. Running it "
                  + "twice imports nothing twice.")
                 .font(.caption2)
+        }
+    }
+
+    /// Off the main actor, and not as a nicety: this hashes and copies every
+    /// file the app has ever written — on this device roughly 850 files and 25
+    /// megabytes. `LegacySnapshot` is `nonisolated` throughout so the work can
+    /// leave the main actor here and only the result comes back to it.
+    private func runSnapshot() {
+        snapshotting = true
+        snapshotError = nil
+        let version = "\(AppVersion.patch)"
+        // Read here, on the main actor, where the inventory lives. Inside the
+        // detached task below it would not be reachable.
+        let items = DataLifecycle.appSupportItems
+        Task {
+            let stamp = LegacySnapshot.stamp(for: Date())
+            let result: Result<SnapshotManifest, Error> = await Task.detached(priority: .userInitiated) {
+                do {
+                    return .success(try LegacySnapshot.capture(stamp: stamp,
+                                                               appVersion: version,
+                                                               items: items))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+            switch result {
+            case .success(let m):
+                snapshot = m
+                if m.failureCount > 0 {
+                    snapshotError = "\(m.failureCount) file\(m.failureCount == 1 ? "" : "s") "
+                                  + "could not be copied or did not verify. The manifest "
+                                  + "in \(m.id) names each one."
+                }
+            case .failure(let error):
+                snapshotError = error.localizedDescription
+            }
+            snapshotting = false
         }
     }
 
@@ -621,6 +729,13 @@ struct DatabaseHealthView: View {
     /// future caller that presents this outside the app's scene.
     private func load() async {
         guard opened == nil else { return }
+
+        // Reading the manifests touches the file system, so it goes off the
+        // main actor too — the same rule as the capture, for a much smaller
+        // amount of work, because the rule does not get exceptions for size.
+        snapshot = await Task.detached(priority: .utility) {
+            LegacySnapshot.latest()
+        }.value
 
         if let db = Sub4Launch.shared.database {
             opened = .success(db)
