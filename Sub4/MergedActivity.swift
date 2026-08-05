@@ -14,12 +14,20 @@
 //  entry — one row on Today and Week, one detail page, one map carrying every
 //  leg. Two commute rides become "Commutes"; four walks become "Walks".
 //
+//  WHAT "COMMUTE" MEANS HERE — patch 250. It is `Activity.isCommuteRide`:
+//  Strava's own flag when the athlete has set it, the sub-10 km distance rule
+//  when he has not. The group can only contain rides that failed
+//  `isPlanEligible`, which for a bike is exactly that test, so the heading
+//  below is a consequence rather than a guess. It is still checked — see the
+//  note on `title`.
+//
 //  WHAT DOES NOT MERGE, DELIBERATELY:
-//   · Anything plan-eligible. `extras` includes plan-eligible activities that
-//     found no session — an unmatched 40 km training ride. Folding that into
-//     the commutes would file real training under a commute heading, so the
-//     merge takes only the non-eligible rows and an unmatched session stays
-//     its own entry.
+//   · Commutes with training rides. They are the same sport and not the same
+//     thing, so the bucket key is sport AND commute-ness — patch 254. Two
+//     unmatched training rides on one day now group with each other as
+//     "Rides", which they did not until then: the old rule excluded every
+//     plan-eligible row from merging, which solved the mixing problem by
+//     preventing half the merging.
 //   · A type that appears once. A single walk is an activity, not a group of
 //     one — it keeps its own name, its own row and its own detail page.
 //
@@ -99,7 +107,12 @@ struct MergedExtra: Identifiable, Hashable {
         switch sportType {
         case "Walk":        return "Walks"
         case "Hike":        return "Hikes"
-        case "Ride":        return "Commutes"
+        // CHECKED, not assumed — patch 250. `group` only merges rows failing
+        // `isPlanEligible`, and for a bike that now means `isCommuteRide` is
+        // true, so every part here IS a commute. That is a guarantee living in
+        // another file, and this is the row that would print the wrong word if
+        // it ever stopped holding. Costs one pass over two or three parts.
+        case "Ride":        return parts.allSatisfy(\.isCommuteRide) ? "Commutes" : "Rides"
         case "VirtualRide": return "Zwift rides"
         case "Kayaking":    return "Kayak outings"
         case "Rowing":      return "Rows"
@@ -113,7 +126,7 @@ struct MergedExtra: Identifiable, Hashable {
         switch sportType {
         case "Walk":        noun = "walks"
         case "Hike":        noun = "hikes"
-        case "Ride":        noun = "commutes"
+        case "Ride":        noun = parts.allSatisfy(\.isCommuteRide) ? "commutes" : "rides"
         case "VirtualRide": noun = "Zwift rides"
         default:            noun = "parts"
         }
@@ -135,26 +148,48 @@ struct MergedExtra: Identifiable, Hashable {
     /// Collapses an extras list. Order is preserved: a merged group sits where
     /// its FIRST part sat, so the list still reads chronologically.
     ///
-    /// Only non-plan-eligible rows merge — see the header. `extras` is already
-    /// sorted by start (Matcher sorts it), so buckets come out sorted too.
+    /// THE BUCKET KEY IS SPORT **AND** COMMUTE-NESS — patch 254.
+    ///
+    /// It used to be sport alone, with plan-eligible rows excluded from merging
+    /// altogether. That exclusion existed for one reason, stated in the header:
+    /// folding an unmatched 40 km training ride into the commutes would file
+    /// real training under a commute heading. Correct problem, blunt fix — it
+    /// also stopped two training rides on one day from grouping with EACH
+    /// OTHER, which is the same fact stated twice, which is what this whole
+    /// file exists to stop.
+    ///
+    /// Keying on both settles it properly. Commutes group with commutes,
+    /// training rides group with training rides, and the two can never mix
+    /// because they land in different buckets. `title` already read
+    /// `parts.allSatisfy(\.isCommuteRide)` to choose between "Commutes" and
+    /// "Rides"; until now the second branch was unreachable.
+    ///
+    /// `extras` is already sorted by start (Matcher sorts it), so buckets come
+    /// out sorted too.
     static func group(_ extras: [Activity]) -> [ExtraItem] {
+        /// Sport plus, for a bike, which side of the commute line it is on.
+        /// A string rather than a struct because it is a dictionary key used
+        /// twice in one function and nowhere else.
+        func bucketKey(_ a: Activity) -> String {
+            a.discipline == .bike ? "\(a.sportType)|\(a.isCommuteRide)" : a.sportType
+        }
+
         var buckets: [String: [Activity]] = [:]
-        for a in extras where !a.isPlanEligible {
-            buckets[a.sportType, default: []].append(a)
+        for a in extras {
+            buckets[bucketKey(a), default: []].append(a)
         }
 
         var emitted: Set<String> = []
         var out: [ExtraItem] = []
         for a in extras {
-            if a.isPlanEligible {
-                out.append(.single(a))
-                continue
-            }
-            let bucket = buckets[a.sportType] ?? [a]
+            let key = bucketKey(a)
+            let bucket = buckets[key] ?? [a]
             if bucket.count < 2 {
+                // A type that appears once is an activity, not a group of one —
+                // it keeps its own name, its own row and its own detail page.
                 out.append(.single(a))
-            } else if !emitted.contains(a.sportType) {
-                emitted.insert(a.sportType)
+            } else if !emitted.contains(key) {
+                emitted.insert(key)
                 out.append(.merged(MergedExtra(parts: bucket)))
             }
         }

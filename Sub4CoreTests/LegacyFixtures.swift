@@ -68,6 +68,7 @@ enum LegacyInput: String, CaseIterable {
     case detail
     case streams
     case constants
+    case commutes
     case legacyDetails
     case legacyStreams
 
@@ -84,6 +85,7 @@ enum LegacyInput: String, CaseIterable {
         case .detail:     "details/<id>.json"
         case .streams:    "streams/<id>.json"
         case .constants:  "constants.json"
+        case .commutes:   "commutes.json"
         // The two monolithic files the per-activity split replaced. Still on
         // disk on every device that upgraded through it, still read by
         // `DetailStore.load()`, and listed in the inventory as `.legacyFile`
@@ -99,7 +101,10 @@ enum LegacyInput: String, CaseIterable {
     /// Which `JSONDecoder` the store uses. Contract item 4.
     var dates: DateEncoding {
         switch self {
-        case .notes, .proposals:  .iso8601
+        // Authored data uses ISO-8601 throughout — notes, proposals, and now
+        // the commute decisions. The split in contract item 4 is not arbitrary:
+        // what the athlete wrote is stored in a form a human can read.
+        case .notes, .proposals, .commutes:  .iso8601
         case .athlete, .weather, .detail, .streams,
              .legacyDetails, .legacyStreams: .numericReferenceDate
         // Activity stores its instants as strings, not `Date`s — see
@@ -125,6 +130,7 @@ enum LegacyInput: String, CaseIterable {
         case .notes, .weather,
              .legacyDetails, .legacyStreams:    .dictionaryKeyedByID
         case .proposals, .activities:           .array
+        case .commutes:                         .dictionaryKeyedByID
         case .athlete, .detail, .streams,
              .constants:                        .object
         }
@@ -211,6 +217,17 @@ enum LegacyInput: String, CaseIterable {
             {"restByMonth":{"2026-07":48},"sexCoefficient":1.92,"version":1}
             """
 
+        case .commutes:
+            // [String: CommuteDecision] · ISO-8601
+            //
+            // The key is the activity id and so is the embedded `activityId`,
+            // which is why this store gets a key-mismatch fixture below: the
+            // same trap notes and weather carry.
+            """
+            {"19608576674":{"activityId":"19608576674","isCommute":true,\
+            "decided":"2026-08-05T09:12:00Z"}}
+            """
+
         case .legacyDetails:
             // [String: ActivityDetail] · numeric · the pre-split monolith
             """
@@ -276,6 +293,11 @@ enum LegacyInput: String, CaseIterable {
             {"activityId":"11111111","distanceM":[0.0,100.0,200.0,300.0,400.0,\
             500.0,600.0,700.0],"fetched":"2026-08-01T06:12:00Z"}
             """
+        case .commutes:
+            """
+            {"19608576674":{"activityId":"19608576674","isCommute":true,\
+            "decided":776000000.0}}
+            """
         case .legacyDetails:
             """
             {"11111111":{"activityId":"11111111","splits":[{"index":1,\
@@ -310,6 +332,11 @@ enum LegacyInput: String, CaseIterable {
             "humidity":0.78,"windKmh":11.0,"windFromDegrees":225.0,\
             "precipitationMm":0.0,"symbolName":"cloud","conditionLabel":"Cloudy",\
             "samples":3,"fetched":776000000.0}}
+            """
+        case .commutes:
+            """
+            {"99999999":{"activityId":"19608576674","isCommute":true,\
+            "decided":"2026-08-05T09:12:00Z"}}
             """
         case .legacyDetails:
             """

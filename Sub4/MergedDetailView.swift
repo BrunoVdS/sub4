@@ -35,6 +35,21 @@ struct MergedDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var store = DetailStore.shared
+    /// Observed explicitly rather than relied on implicitly — patch 253.
+    /// `Activity.isCommuteRide` reads `CommuteStore.shared` from inside a view
+    /// body, which observation tracking does pick up on its own; holding it
+    /// here says out loud that this screen redraws when a ride is reclassified,
+    /// and matches how every other store on the screen is declared.
+    @State private var commutes = CommuteStore.shared
+
+    /// What kind of group this was when the page opened — patch 254.
+    ///
+    /// Captured rather than computed, and that is the whole point: the parts
+    /// carry their commute state live, so a group that opened as three commutes
+    /// and has had one taken out would otherwise report itself as "two
+    /// commutes and something else" with no memory of having been three. This
+    /// is what `partsRemoved` counts against.
+    @State private var openedAsCommutes = true
     @State private var athlete = AthleteStore.shared
     @State private var load = LoadStore.shared
 
@@ -137,6 +152,8 @@ struct MergedDetailView: View {
             heroRow
             Rectangle().fill(Color.line).frame(height: 1)
             partsList
+            commuteHint
+                .onAppear { openedAsCommutes = parts.allSatisfy(\.isCommuteRide) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardStyle()
@@ -202,6 +219,19 @@ struct MergedDetailView: View {
     /// The legs, as facts. Start time first because it is what distinguishes
     /// them; the Strava name stays because "Lunch Walk" is information the
     /// merged title deliberately gave up.
+    ///
+    /// PATCH 253 — each leg can be taken out of the group. A day's rides are
+    /// not all one thing: two hops to the station and a real ride home arrive
+    /// as three files, and the distance rule puts any of them under 10 km into
+    /// the commutes. The bicycle at the end of each row is how that is undone,
+    /// one ride at a time.
+    ///
+    /// THE PAGE DOES NOT REARRANGE UNDER YOUR FINGER. A ride taken out of the
+    /// commutes stops being part of this group immediately — the list behind
+    /// this sheet already shows it separately — but the totals at the top of
+    /// this page were computed when it opened and still include it. Recomputing
+    /// them live would make a page about three rides silently become a page
+    /// about two while being read. The footer says so instead.
     private var partsList: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(parts) { p in
@@ -215,8 +245,66 @@ struct MergedDetailView: View {
                     Text(partMetrics(p))
                         .font(.caption).monospacedDigit()
                         .foregroundStyle(Color.dim)
+                    if p.discipline == .bike { commuteToggle(p) }
                 }
             }
+            if partsRemoved > 0 { removedFooter }
+        }
+    }
+
+    /// One ride's commute state, as a tap target rather than a switch.
+    ///
+    /// A switch per row would put three of them down the trailing edge of a
+    /// card of one-line facts — the same complaint that made the detail page's
+    /// own toggle a single row in patch 252. A filled bicycle is in, an outline
+    /// is out, and the footer below says which is which.
+    private func commuteToggle(_ p: Activity) -> some View {
+        Button {
+            CommuteStore.shared.set(!p.isCommuteRide, for: p.id)
+        } label: {
+            Image(systemName: p.isCommuteRide ? "bicycle.circle.fill" : "bicycle.circle")
+                .font(.body)
+                .foregroundStyle(p.isCommuteRide ? tint : Color.dim.opacity(0.5))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(p.isCommuteRide ? "Commute" : "Not a commute")
+    }
+
+    /// How many legs this page still lists but the group no longer holds.
+    private var partsRemoved: Int {
+        parts.filter { $0.discipline == .bike && $0.isCommuteRide != openedAsCommutes }.count
+    }
+
+    private var removedFooter: some View {
+        Text(partsRemoved == 1
+             ? "One ride has moved out of this group. The figures above still "
+             + "include it — close this page to see the group as it is now."
+             : "\(partsRemoved) rides have moved out of this group. The figures "
+             + "above still include them — close this page to see the group as "
+             + "it is now.")
+            .font(.caption2).foregroundStyle(Color.dim)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.top, 2)
+    }
+
+    /// Shown under the legs when any of them can be taken out, so the bicycle
+    /// is explained where it is rather than in a manual.
+    @ViewBuilder
+    private var commuteHint: some View {
+        if merged.discipline == .bike {
+            // The sentence has to follow the group — patch 254, when training
+            // rides started grouping too. A "Rides" page telling you to take a
+            // ride "out of the commutes" would describe the opposite of the tap
+            // it is explaining.
+            Text(openedAsCommutes
+                 ? "Tap a bicycle to take that ride out of the commutes. It "
+                 + "counts as training from then on, and can satisfy a planned "
+                 + "session."
+                 : "Tap a bicycle to mark that ride as a commute. It stops "
+                 + "counting towards training volume and can no longer satisfy "
+                 + "a planned session.")
+                .font(.caption2).foregroundStyle(Color.dim)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

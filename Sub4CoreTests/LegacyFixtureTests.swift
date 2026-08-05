@@ -51,7 +51,8 @@ struct LegacyFixtureTests {
          .activities: "activities.json", .athlete: "athlete.json",
          .weather: "weather.json", .detail: "details", .streams: "streams",
          .constants: "constants.json",
-         .legacyDetails: "details.json", .legacyStreams: "streams.json"]
+         .legacyDetails: "details.json", .legacyStreams: "streams.json",
+         .commutes: "commutes.json"]
     }
 
     @Test("Every legacy path DataLifecycle declares has a fixture")
@@ -124,6 +125,7 @@ struct LegacyFixtureTests {
         case .detail:     _ = try numeric.decode(ActivityDetail.self, from: data)
         case .streams:    _ = try numeric.decode(ActivityStreams.self, from: data)
         case .constants:  _ = try numeric.decode(AthleteConstants.self, from: data)
+        case .commutes:   _ = try iso.decode([String: CommuteDecision].self, from: data)
         case .legacyDetails:
             _ = try numeric.decode([String: ActivityDetail].self, from: data)
         case .legacyStreams:
@@ -163,7 +165,8 @@ struct LegacyFixtureTests {
     }
 
     @Test("A key mismatch decodes cleanly — which is the problem",
-          arguments: [LegacyInput.notes, .weather, .legacyDetails, .legacyStreams])
+          arguments: [LegacyInput.notes, .weather, .legacyDetails, .legacyStreams,
+                      .commutes])
     func aKeyMismatchIsInvisibleToTheDecoder(_ input: LegacyInput) throws {
         let data = try #require(LegacyDamage.keyMismatch.bytes(for: input))
         // Contract item 5 wants this quarantined. Today it decodes, the outer
@@ -266,6 +269,7 @@ struct LegacyFixtureTests {
         // claim; the decode tests above are the proof.
         #expect(LegacyInput.notes.dates == .iso8601)
         #expect(LegacyInput.proposals.dates == .iso8601)
+        #expect(LegacyInput.commutes.dates == .iso8601)
         #expect(LegacyInput.athlete.dates == .numericReferenceDate)
         #expect(LegacyInput.weather.dates == .numericReferenceDate)
         #expect(LegacyInput.detail.dates == .numericReferenceDate)

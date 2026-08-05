@@ -119,7 +119,8 @@ struct DataLifecycleTests {
             "proposals.json",
             "athlete.json",
             "constants.json",
-            "weather.json"
+            "weather.json",
+            "commutes.json"     // CommuteStore — patch 251
         ]
         let covered = Set(DataLifecycle.appSupportItems.map(\.pathComponent))
         for store in storesTheAppActuallyWrites {

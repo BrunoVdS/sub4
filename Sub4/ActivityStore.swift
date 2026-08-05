@@ -3,8 +3,46 @@
 //  Sub4
 //
 //  Pulls activities from Strava, dedups them, and keeps them on disk.
-//  Runs on every app launch — incrementally, using Strava's `after` parameter,
-//  so each check costs one request and only fetches what's new.
+//  Runs on every app launch.
+//
+//  SYNC READS EVERYTHING — patch 249, and the reason is a defect that lost data
+//  ---------------------------------------------------------------------------
+//  It used to read incrementally: `after` was set to the highest activity START
+//  time already seen, so each check cost one request and fetched only what was
+//  new. That is wrong, and the way it is wrong is permanent rather than
+//  temporary.
+//
+//  Strava's `after` filters by START DATE. Activities do not arrive in start
+//  order. A bike computer that uploads when it next finds WiFi, a Garmin batch,
+//  a FIT file dragged in by hand — all of these appear on Strava hours or days
+//  after the ride they describe.
+//
+//  What that produced, found on 5 August 2026 and reproducible from the ids:
+//
+//    4 Aug 22:06  Squat day     id 19603201792   uploaded that evening, ingested
+//    4 Aug 07:26  Morning Ride  id 19608576674   uploaded the NEXT morning
+//    4 Aug 08:40  Morning Ride  id 19608576609   uploaded the NEXT morning
+//    4 Aug 17:31  Afternoon Rd  id 19608576461   uploaded the NEXT morning
+//
+//  Strava ids increase with upload time, so the three rides were uploaded after
+//  the squat had already advanced the cursor past 22:06. Every subsequent
+//  request asked for activities after 4 Aug 22:06. The rides start twelve hours
+//  before that. They would never have arrived — not late, not ever.
+//
+//  There is no `uploaded_after` parameter on this endpoint, so the only lever is
+//  how far back each sync reads. An overlap window was considered and rejected:
+//  it converts "always lost" into "lost if delayed more than N days", which is a
+//  smaller hole and still a hole, and the day it swallows something the athlete
+//  will not know either.
+//
+//  THE COST, STATED RATHER THAN GLOSSED. Reading from the cutoff is seven pages
+//  of a hundred for 661 activities, roughly a megabyte, against one page before.
+//  With a two-hourly background refresh that is on the order of ten megabytes a
+//  day on cellular. That was the athlete's call, made with the figure in front
+//  of him, and it buys a sync that cannot silently miss anything.
+//
+//  `cursor` survives this change, doing the opposite job: it is now how a late
+//  arrival is DETECTED rather than how one is missed. See `lateArrivals`.
 //
 
 import Foundation
@@ -84,8 +122,30 @@ final class ActivityStore {
     /// cheapest way to guarantee that is for it to be nothing at all to them.
     private(set) var lastGateNotice: String?
 
-    /// Highest activity start seen, as epoch seconds — the incremental cursor.
+    /// Highest activity start seen, as epoch seconds.
+    ///
+    /// NO LONGER THE QUERY BOUND — patch 249. It was, and that was a defect
+    /// that lost data permanently. See `SYNC READS EVERYTHING` in the header.
+    /// It is kept because it is exactly the right instrument for detecting the
+    /// problem it used to cause: an activity that arrives starting BEFORE this
+    /// mark was uploaded late, and under the old scheme would never have been
+    /// seen at all.
+    ///
+    /// The four backfill blocks below still rewind it to the cutoff. They are
+    /// now inert — re-reading is unconditional, so there is nothing to rewind
+    /// for — and all four have already fired once on this device. Left in
+    /// place: they are the record of why each backfill happened, and deleting
+    /// history to tidy a variable is how the reason for a decision is lost.
     private var cursor: TimeInterval = 0
+
+    /// New activities in the last sync whose start time predates `cursor` —
+    /// uploaded late, and invisible to the app before patch 249.
+    ///
+    /// Per-sync rather than cumulative, and deliberately not persisted: after
+    /// this patch a late arrival is normal and handled, not a fault. The number
+    /// is worth seeing once, to confirm the recovery, and is then just evidence
+    /// that the sync works.
+    private(set) var lateArrivals: Int = 0
 
     private let fileURL: URL
     private let cursorKey = "strava.cursor"
@@ -264,7 +324,7 @@ final class ActivityStore {
         do {
             var fetched: [Activity]
             do {
-                fetched = try await StravaClient.activities(after: cursor, token: token)
+                fetched = try await StravaClient.activities(after: Self.cutoffEpoch, token: token)
             } catch let e as StravaClient.APIError where e.status == 401 {
                 // The token was refused despite looking valid — clock skew, a
                 // revoked token, or a refresh that silently failed earlier.
@@ -275,7 +335,7 @@ final class ActivityStore {
                     return
                 }
                 token = fresh
-                fetched = try await StravaClient.activities(after: cursor, token: token)
+                fetched = try await StravaClient.activities(after: Self.cutoffEpoch, token: token)
             }
 
             ingest(fetched)
@@ -332,8 +392,15 @@ final class ActivityStore {
     private func ingest(_ incoming: [Activity]) {
         var byID = Dictionary(uniqueKeysWithValues: activities.map { ($0.id, $0) })
 
+        // Read BEFORE the loop moves it. Anything new that starts earlier than
+        // this was uploaded after something later had already been seen — the
+        // exact shape the old incremental cursor could never fetch.
+        let highWater = cursor
+        var late = 0
+
         recordRejections(incoming)
         for a in incoming {
+            if byID[a.id] == nil, epoch(of: a) < highWater, Self.isKept(a) { late += 1 }
             // Advance for everything we have SEEN, kept or not. A rejected
             // activity is still processed; leaving the cursor behind it would
             // re-fetch it on every sync for ever.
@@ -356,6 +423,7 @@ final class ActivityStore {
         }
 
         activities = dedup(Array(byID.values)).sorted { $0.startLocal > $1.startLocal }
+        lateArrivals = late
         UserDefaults.standard.set(cursor, forKey: cursorKey)
         save()
     }

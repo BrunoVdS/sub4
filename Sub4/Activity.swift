@@ -103,6 +103,21 @@ struct Activity: Codable, Identifiable, Hashable {
     /// real zone rules.
     var startOffsetSeconds: Int?
 
+    // NO COMMUTE FIELD HERE, and its absence is the decision — patch 251.
+    //
+    // Patch 250 put one here, read from Strava's own flag. It lasted one
+    // patch. Two reasons it had to go, and the second is the one that matters:
+    //
+    //  1. ADR-0002 retires Strava. A classification whose source of truth is a
+    //     field in a service this app is leaving has to be rebuilt the day that
+    //     service goes away.
+    //  2. Since patch 249 the sync re-reads every activity on every run and
+    //     `ingest` replaces each row whole. Anything the athlete wrote onto an
+    //     `Activity` would survive until the next launch and no longer.
+    //
+    // Authored data lives beside the fetched data, never inside it. See
+    // `CommuteStore`.
+
     /// The start instant, or nil for rows that predate the field.
     var startDateUTC: Date? {
         guard let startUTC else { return nil }
@@ -380,6 +395,39 @@ struct Activity: Codable, Identifiable, Hashable {
         }
     }
 
+    /// What the app would guess with nobody to ask — patch 251.
+    ///
+    /// PURE, and kept pure on purpose. It reads nothing but this activity, so
+    /// it can be tested against a distance and reasoned about without a store
+    /// in the room. `isCommuteRide` is the impure one and says so.
+    ///
+    /// The threshold comes from thirteen months of real history: the daily bike
+    /// commute is 3.2–4.2 km and every genuine training ride is over 20 km. It
+    /// is right almost every time, and "almost" is why there is a toggle — on
+    /// 16 July 2026 a 9,985.9 m ride was a commute by fourteen metres.
+    var commuteByDistance: Bool {
+        discipline == .bike && km < MatchRules.minRideKm
+    }
+
+    /// Whether this ride is a commute — the ONE definition, patch 251.
+    ///
+    /// The athlete's answer if he has given one, the distance rule if he has
+    /// not. `CommuteStore` holds the answers; `nil` there means "not asked",
+    /// which is a third state and not a `false`.
+    ///
+    /// IMPURE, and there is no way around it that is worth the cost. It reads a
+    /// singleton, so it cannot be tested without one, and the alternative —
+    /// threading a decision dictionary through `extraLabel`, `isPlanEligible`
+    /// and fourteen call sites — would put the store in the signature of half
+    /// the app to avoid saying so here. `DataCorrections.isIgnored` set this
+    /// precedent and `ActivityStore.isKept` already depends on it.
+    ///
+    /// Both call sites route through this, so they cannot drift apart again.
+    var isCommuteRide: Bool {
+        guard discipline == .bike else { return false }
+        return CommuteStore.shared.decision(for: id) ?? commuteByDistance
+    }
+
     /// Whether this activity may satisfy a *planned* session.
     ///
     /// NOTE: everything is stored regardless — this only gates matching, so the
@@ -393,7 +441,13 @@ struct Activity: Codable, Identifiable, Hashable {
     /// filtering — every recorded run was real training.
     var isPlanEligible: Bool {
         switch discipline {
-        case .bike:     return km >= MatchRules.minRideKm
+        // `!isCommuteRide` and nothing else — patch 251. The distance floor
+        // used to be repeated here as well; it is not, because the athlete's
+        // answer has to be able to win in BOTH directions. Marking a 4 km ride
+        // as "not a commute" now makes it plan-eligible, which is the point of
+        // a toggle: patch 250's asymmetry existed because Strava's flag was a
+        // side-effect of somebody else's app, and an answer given here is not.
+        case .bike:     return !isCommuteRide
         case .run:      return km >= MatchRules.minRunKm
         case .swim:     return distance >= MatchRules.minSwimMetres
         case .strength: return movingTime >= MatchRules.minStrengthSeconds
@@ -403,7 +457,7 @@ struct Activity: Codable, Identifiable, Hashable {
 
     /// Human label for the extras list — "Ride · commute", "Walk", "Kayaking".
     var extraLabel: String {
-        if discipline == .bike && km < MatchRules.minRideKm { return "Ride · commute" }
+        if isCommuteRide { return "Ride · commute" }
         switch sportType {
         case "Walk":                       return "Walk"
         case "Hike":                       return "Hike"
@@ -413,6 +467,25 @@ struct Activity: Codable, Identifiable, Hashable {
         default:                           return sportType
         }
     }
+
+    /// The extras-row TITLE — patch 252.
+    ///
+    /// A single commute used to be titled with its Strava name ("Morning Ride")
+    /// while two or more collapsed into a row titled "Commutes". Same
+    /// classification, two different words, and the difference was how many
+    /// happened to be on one day. `MergedExtra.title` says "Commutes"; this is
+    /// the same sentence in the singular.
+    ///
+    /// Everything else keeps its own name, because a walk called "Lunch Walk"
+    /// is better identified by that than by the word "Walk".
+    var extraTitle: String { isCommuteRide ? "Commute" : name }
+
+    /// The extras-row CAPTION, which must never repeat the title above it.
+    ///
+    /// For a commute the title already says what it is, so the caption says
+    /// WHEN — matching the merged row's "3 commutes · 07:26 – 17:43". For
+    /// anything else it is the kind, which the name usually does not carry.
+    var extraCaption: String { isCommuteRide ? startTimeLabel : extraLabel }
 
     var extraSymbol: String {
         switch sportType {

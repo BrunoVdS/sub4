@@ -16,6 +16,12 @@ struct TodayView: View {
     @State private var health = HealthStore.shared
     @State private var load = LoadStore.shared
     @State private var proposals = ProposalStore.shared
+    /// Observed explicitly rather than relied on implicitly — patch 253.
+    /// `Activity.isCommuteRide` reads `CommuteStore.shared` from inside a view
+    /// body, which observation tracking does pick up on its own; holding it
+    /// here says out loud that this screen redraws when a ride is reclassified,
+    /// and matches how every other store on the screen is declared.
+    @State private var commutes = CommuteStore.shared
 
     @State private var day: Date = Date()
     // ONE sheet, not five.
@@ -328,9 +334,12 @@ struct TodayView: View {
             ForEach(MergedExtra.group(acts)) { item in
                 switch item {
                 case .single(let a):
+                    // `extraTitle`/`extraCaption`, not `name`/`extraLabel` —
+                    // patch 252. One commute and three commutes now read as
+                    // the same kind of thing, which they are.
                     extraRow(symbol: a.extraSymbol,
-                             title: a.name,
-                             caption: a.extraLabel,
+                             title: a.extraTitle,
+                             caption: a.extraCaption,
                              km: a.km,
                              minutes: a.minutes) { route = .activity(a) }
                 case .merged(let m):
@@ -383,25 +392,45 @@ struct TodayView: View {
     /// Day total. Inside the plan: plan volume vs extra. Before the plan:
     /// a single total, because nothing was "planned" to compare against.
     private func movementCard(_ r: (matches: [Match], extras: [Activity])) -> some View {
-        let planKm  = r.matches.compactMap(\.activity).reduce(0) { $0 + $1.km }
-        let extraKm = r.extras.reduce(0) { $0 + $1.km }
-        let mins    = r.matches.compactMap(\.activity).reduce(0) { $0 + $1.minutes }
+        // Patch 249 — see DayDistance.swift. These used to be three sums of
+        // `km` across whatever the day held, which is the "125 km all sports"
+        // defect PlanFocus removed from the week header two patches earlier.
+        let done    = r.matches.compactMap(\.activity)
+        // Patch 253. Commutes come out of the extras and get a cell of their
+        // own. Riding to work is movement and belongs on the page, but it is
+        // not training, and one number holding both means neither can be read:
+        // 4 August showed "Extra 13,3 km bike" for a day whose training was a
+        // 1,2 km swim.
+        let commutes = r.extras.filter(\.isCommuteRide)
+        let others   = r.extras.filter { !$0.isCommuteRide }
+        let plan    = DayDistance.of(done)
+        let extra   = DayDistance.of(others)
+        let commute = DayDistance.of(commutes)
+        let total   = DayDistance.of(done + others)
+        let mins    = done.reduce(0) { $0 + $1.minutes }
                     + r.extras.reduce(0) { $0 + $1.minutes }
         let steps   = health.steps(on: key)
 
         return HStack(spacing: 0) {
             if isPrePlan {
-                MetricCell(label: "Total",
-                           value: String(format: "%.1f", planKm + extraKm),
-                           unit: "km", colour: .accent4)
+                MetricCell(label: "Total", value: total.value, unit: total.unit,
+                           colour: .accent4)
                 MetricDivider()
                 MetricCell(label: "Time", value: "\(mins)", unit: "min", colour: .dim)
             } else {
-                MetricCell(label: "Plan", value: String(format: "%.1f", planKm),
-                           unit: "km", colour: .accent4)
+                MetricCell(label: "Plan", value: plan.value, unit: plan.unit,
+                           colour: .accent4)
                 MetricDivider()
-                MetricCell(label: "Extra", value: String(format: "%.1f", extraKm),
-                           unit: "km", colour: .dim)
+                MetricCell(label: "Extra", value: extra.value, unit: extra.unit,
+                           colour: .dim)
+            }
+            // ONLY WHEN THERE ARE ANY. A fourth cell on every day would squeeze
+            // the three that matter to make room for a zero, and most days have
+            // no commute at all.
+            if commutes.isEmpty == false {
+                MetricDivider()
+                MetricCell(label: "Commute", value: commute.value,
+                           unit: commute.unit, colour: .dim)
             }
             MetricDivider()
             if let s = steps {

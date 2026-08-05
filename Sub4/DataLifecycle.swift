@@ -605,20 +605,31 @@ enum DataLifecycle {
             category: .matchDecisions,
             title: "Your corrections",
             whatItIs: "Where you told the app that a particular recording was — "
-                    + "or was not — the session the plan asked for.",
+                    + "or was not — the session the plan asked for, and which "
+                    + "bike rides are commutes rather than training.",
             purpose: "Overriding the matcher when it guesses wrong, and keeping "
                    + "that decision.",
             lineage: [.authored],
-            storage: [.preferences(["match.overrides"])],
+            // `commutes.json` added in patch 251. Filed here rather than given a
+            // category of its own because it IS a correction to matching: a ride
+            // marked as a commute stops being plan-eligible, which is the same
+            // lever the overrides below pull, one step earlier.
+            storage: [.preferences(["match.overrides"]),
+                      .applicationSupport(.file("commutes.json"))],
             retention: .indefinite,
             sharedWith: [],
             isExportable: true,
             aiShareable: false,
             deletionRule: "Yours. Survives disconnecting a source; the reference to "
-                        + "the recording is remapped rather than dropped.",
+                        + "the recording is remapped rather than dropped. Removed "
+                        + "by Delete local data or by deleting the app.",
             gaps: ["Stored against Strava activity ids, so the decisions must be "
                  + "remapped rather than lost when the source changes "
-                 + "(ADR-0002, step 4A M4)."],
+                 + "(ADR-0002, step 4A M4). True of the commute decisions too.",
+                   "The match overrides are still in UserDefaults rather than in "
+                 + "a transaction (step 3.5.4). `commutes.json` is a file for "
+                 + "the same reason notes are: it is the athlete's, and a new "
+                 + "preference key would be one more thing D5 has to move."],
             onStravaDisconnect: .keep(why: "you made these corrections. They reference Strava ids and are remapped rather than dropped — step 4A M4")),
 
         DataCategoryEntry(

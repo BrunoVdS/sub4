@@ -48,6 +48,8 @@ struct ActivityDetailView: View {
     let activity: Activity
 
     @Environment(\.dismiss) var dismiss
+    /// Patch 252 — the (i) beside the commute switch.
+    @State private var showCommuteInfo = false
     @State var store = DetailStore.shared
     // The matcher and the notes store are observed rather than read once: the
     // note card and the match row both have to redraw when they change, and
@@ -332,6 +334,7 @@ struct ActivityDetailView: View {
             weatherRow
             verdictSection(ctx)
             askedSection
+            commuteSection
             weatherFooter
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -509,6 +512,104 @@ struct ActivityDetailView: View {
                 PlanSessionCard(session: s, compact: true)
             }
         }
+    }
+
+    /// The commute toggle — patch 251, made compact in 252.
+    ///
+    /// ONE ROW. The first version printed a two-line explanation under the
+    /// switch and a "Use the rule" button beside it, which put four lines of
+    /// prose into a card of one-line measurements and made the least important
+    /// thing on the page the tallest. The explanation is real and worth having;
+    /// it belongs behind the (i), not in front of it.
+    ///
+    /// ON BIKE RIDES ONLY. The question does not arise for a run, and a control
+    /// that appears everywhere and matters in one place teaches nothing.
+    ///
+    /// ON ALL BIKE RIDES, not only the short ones. The distance rule already
+    /// handles the short ones correctly nearly every time; the reason to have a
+    /// toggle is the cases it gets wrong, and those live at BOTH edges — the
+    /// 9,985.9 m ride on 16 July that is a commute by fourteen metres, and a
+    /// 15 km ride to a meeting the rule would score as training. Showing the
+    /// control only below the threshold would fix the first and leave the
+    /// second unreachable.
+    @ViewBuilder
+    var commuteSection: some View {
+        if activity.discipline == .bike {
+            Rectangle().fill(Color.line).frame(height: 1)
+            HStack(spacing: 5) {
+                Text("Commute").font(.caption.weight(.semibold))
+                Button { showCommuteInfo = true } label: {
+                    Image(systemName: "info.circle").font(.caption)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.dim)
+                .popover(isPresented: $showCommuteInfo) {
+                    commuteInfo.presentationCompactAdaptation(.popover)
+                }
+                Spacer(minLength: 8)
+                // THE SAME CONTROL AS THE GROUP PAGE — patch 254. This was a
+                // switch and the parts list on `MergedDetailView` was a
+                // bicycle, which is one decision wearing two faces: the athlete
+                // learns the control twice and has to work out that they mean
+                // the same thing. The bicycle won because it is the one that
+                // has to work in a row of three.
+                Button {
+                    CommuteStore.shared.set(!activity.isCommuteRide, for: activity.id)
+                } label: {
+                    Image(systemName: activity.isCommuteRide
+                          ? "bicycle.circle.fill" : "bicycle.circle")
+                        .font(.title3)
+                        .foregroundStyle(activity.isCommuteRide
+                                         ? tint : Color.dim.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(activity.isCommuteRide ? "Commute" : "Not a commute")
+            }
+        }
+    }
+
+    /// What the switch means, and who set it.
+    ///
+    /// The last line is the part that matters: a control that looks identical
+    /// whether a person or a threshold set it is a control that lies about who
+    /// decided. "Use the rule" lives here too, because removing an answer is a
+    /// rarer act than giving one and does not need to be on the card.
+    var commuteInfo: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Commute").font(.subheadline.weight(.semibold))
+            Text(commuteReason)
+                .font(.caption).foregroundStyle(Color.dim)
+                .fixedSize(horizontal: false, vertical: true)
+            if CommuteStore.shared.decision(for: activity.id) != nil {
+                // Distinct from switching it off: "I have no opinion" and "this
+                // is not a commute" are different answers, and only the first
+                // follows the threshold if it ever moves.
+                Button("Use the rule instead") {
+                    CommuteStore.shared.clear(activity.id)
+                    showCommuteInfo = false
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.accent4)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: 280, alignment: .leading)
+    }
+
+    private var commuteReason: String {
+        let km = String(format: "%.0f", MatchRules.minRideKm)
+        if CommuteStore.shared.decision(for: activity.id) != nil {
+            return activity.isCommuteRide
+                ? "You marked this a commute. It is left out of training volume "
+                + "and cannot satisfy a planned session."
+                : "You marked this as training. It counts towards volume and can "
+                + "satisfy a planned session."
+        }
+        return activity.commuteByDistance
+            ? "Under \(km) km, so the app is counting it as a commute. Nobody has "
+            + "said otherwise — change it and the app keeps your answer."
+            : "Over \(km) km, so the app is counting it as training. Nobody has "
+            + "said otherwise — change it and the app keeps your answer."
     }
 
     /// The duration every figure on this page is built from.

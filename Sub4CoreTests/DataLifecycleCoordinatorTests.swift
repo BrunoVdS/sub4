@@ -78,6 +78,7 @@ struct DataLifecycleCoordinatorTests {
             "athlete.json",      // AthleteStore
             "constants.json",    // ConstantsStore
             "weather.json",      // WeatherStore
+            "commutes.json",     // CommuteStore — patch 251
             // DECLARED BEFORE ANYTHING WRITES IT — patch 195, and the only line
             // in this list that is not true yet.
             //
