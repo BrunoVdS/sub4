@@ -1450,6 +1450,61 @@ screen gets the names — which is also the right split for what each is for: th
 paste is for asking somebody a question, and the names are for the person who
 has to answer it.
 
+## 12.16 The semantic verifier — patch 263, plan step 3.5
+
+`migration_run` has had a `verified` state since patch 255 and nothing has ever
+been able to reach it. Every successful import stops at `pending`, which the
+ledger's own header called "the honest answer: the verifier is the next patch".
+It was eight patches away.
+
+**Why an import report is not evidence.** It says what the importer believes it
+did, counted by the importer, from inside the transaction that did it. D7
+switches the app's reads to the database on the strength of that migration
+having been faithful, and "the code that wrote it says it went fine" is not a
+claim about faithfulness — it is the same claim, restated.
+
+**Four layers, cheapest first, and it never stops early.**
+
+1. **Counts** — activities, gear, notes, weather, traces, details, zones. Each
+   names its table, which is the acceptance criterion: delete a row by hand and
+   exactly one of these fails and says where.
+2. **Identities** — not 667 = 667, but *the same 667*. Two sets of equal size
+   can disagree completely and the count layer passes on both. This is what
+   catches an activity imported twice under two ids while another was dropped.
+3. **Fields** — seven per activity, fingerprinted. A row that exists with the
+   wrong distance passes both layers above.
+4. **Domain outputs** — volume by discipline, one activity's splits, one weather
+   reading. Counts, ids and fields can all agree while a figure the app *shows*
+   comes out different, and those figures are the reason any of this exists.
+
+A verifier that quits on the first mismatch answers one question when you have
+several, and turns "what is wrong with this migration" into a sequence of runs.
+
+**The expectations are derived from the stores, never from the exclusion
+rules.** A weather reading, a trace or a detail is expected in the database only
+if its activity is *in the store* — full stop, with no "unless
+`DataCorrections` excludes it". Excluded activities never reach `ActivityStore`
+(§12.12.6), so deriving the expectation from the store's own contents gets the
+exclusions right without this file knowing the policy exists. **A verifier that
+imported the policy would agree with the importer about anything the policy got
+wrong**, which is the single class of error a verifier is for.
+
+**`record` is the one function that must never be made convenient.** It moves a
+run to `verified` and it refuses on any report that did not pass. D7 acts on
+that state, and a run marked verified by something that verified nothing is the
+defect this project has now found six times.
+
+**What is deliberately absent: CTL.** The plan names "CTL on a chosen day"
+among the representative domain outputs. `PMC.build` takes `[DailyLoad]`, and
+the code producing those reads `Activity` values — so comparing CTL both ways
+means writing a second `DailyLoad` builder against SQL, and a disagreement
+between two builders is ambiguous in exactly the wrong direction: nobody could
+tell whether the data diverged or the second builder is wrong. The right place
+is D6 shadow parity, where the app grows a database-backed activity reader and
+the *same* `PMC` runs over both sides. Recorded here rather than quietly
+skipped, because a domain check the plan asked for and did not get is the kind
+of gap that closes itself in a summary.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

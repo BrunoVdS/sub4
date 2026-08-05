@@ -82,6 +82,12 @@ struct DatabaseHealthView: View {
     @State private var lastRun: MigrationRun?
     @State private var staleRuns: Int = 0
 
+    /// Patch 263 — the semantic verifier. Nil until the button is pressed,
+    /// like the survey below and for the same reason: it reads every row the
+    /// migration wrote and every value the stores hold.
+    @State private var verifying = false
+    @State private var verification: VerificationReport?
+
     /// Patch 262 — the legacy survey. Nil until the button is pressed.
     ///
     /// NOT run on open, unlike everything else on this screen. It reads every
@@ -111,6 +117,10 @@ struct DatabaseHealthView: View {
                     snapshotSection
                     importSection(db)
                     ledgerSection
+                    // DIRECTLY AFTER THE LEDGER, because it is the thing that
+                    // moves a run out of `pending`. The screen reads in the
+                    // order the states go: imported, then verified.
+                    verifySection(db)
                     // AFTER the import and before the benchmark. It is about
                     // the files the import reads FROM, so it belongs beside
                     // the import; it is a survey rather than an action, so it
@@ -718,6 +728,81 @@ struct DatabaseHealthView: View {
         ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
     }
 
+    // MARK: The semantic verifier — patch 263
+
+    /// Does the database say the same thing as the stores.
+    ///
+    /// EVERY COMPARISON IS LISTED, PASSING OR NOT. A green tick would be the
+    /// same defect the import report avoided in patch 218: a control that says
+    /// it is happy without saying what it looked at cannot be argued with, and
+    /// D7 is a decision somebody has to be able to argue with.
+    @ViewBuilder
+    private func verifySection(_ db: Sub4Database) -> some View {
+        Section {
+            if verifying {
+                HStack { ProgressView(); Text("Comparing…").font(.caption) }
+            } else {
+                Button("Verify against the app's stores") { runVerify(db) }
+            }
+
+            if let v = verification {
+                LabeledContent("Verdict",
+                               value: v.passed ? "everything agreed"
+                                               : "\(v.failures.count) disagreed")
+                    .font(.caption)
+                    .foregroundStyle(v.passed ? Color.dim : .red)
+                LabeledContent("Compared", value: "\(v.checks.count) things")
+                    .font(.caption).foregroundStyle(Color.dim)
+
+                ForEach(v.checks) { check in
+                    LabeledContent("  \(check.name)",
+                                   value: check.passed ? check.found
+                                                       : "\(check.expected) → \(check.found)")
+                        .font(.caption2)
+                        .foregroundStyle(check.passed ? Color.dim : .red)
+                    // Only failures earn a second line, and it names the table
+                    // — the acceptance criterion, on screen.
+                    if !check.passed {
+                        Text("    in \(check.table)\(check.detail.map { " · " + $0 } ?? "")")
+                            .font(.caption2).foregroundStyle(.red)
+                    }
+                }
+            }
+        } header: {
+            Text("Verification")
+        } footer: {
+            Text("Compares the database against the app's own stores: counts, "
+                 + "which activities are there, the fields of every one, and a "
+                 + "few figures the app actually shows. The last import is "
+                 + "marked verified only if every comparison agrees.")
+                .font(.caption2)
+        }
+    }
+
+    private func runVerify(_ db: Sub4Database) {
+        verifying = true
+        Task {
+            let report = SemanticVerifier.attempt(
+                db,
+                activities: ActivityStore.shared.activities,
+                shoes: AthleteStore.shared.shoes,
+                notes: Array(NotesStore.shared.notes.values),
+                weather: Array(WeatherStore.shared.byActivity.values),
+                zones: AthleteStore.shared.hrZones,
+                streams: Array(DetailStore.shared.streams.values),
+                details: Array(DetailStore.shared.details.values))
+            verification = report
+            // A passing run moves the ledger to `verified`. A failing one
+            // leaves it where it is — `SemanticVerifier.record` is what
+            // refuses, not this screen.
+            if let runID = lastRun?.id {
+                _ = try? SemanticVerifier.record(report, for: runID, in: db)
+                await reloadLedger(db)
+            }
+            verifying = false
+        }
+    }
+
     // MARK: The legacy survey — patch 262
 
     /// What is actually on this phone, classified.
@@ -1000,6 +1085,12 @@ struct DatabaseHealthView: View {
         if let survey {
             lines.append("")
             lines.append(contentsOf: LegacyReader.diagnosticLines(survey))
+        }
+        // Patch 263. Counts, table names and verdicts — the `detail` on each
+        // check can carry an activity id, and that stays on the screen.
+        if let v = verification {
+            lines.append("")
+            lines.append(contentsOf: v.diagnosticLines)
         }
         return lines.joined(separator: "\n")
     }
