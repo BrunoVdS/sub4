@@ -39,9 +39,21 @@
 //
 //  It is counted rather than refused, and the distinction matters. A refusal
 //  means the schema rejected something that should have fitted; this is the
-//  schema correctly declining to hold an orphan. The expected count is one —
-//  the August 2025 artifact — and anything larger means activities are missing
-//  that should not be.
+//  schema correctly declining to hold an orphan.
+//
+//  THE EXPECTED COUNT IS NOW ZERO, AND THAT IS THE POINT — patch 257
+//  -----------------------------------------------------------------
+//  It used to be one: the August 2025 artifact, which the schema refused, so
+//  its weather had no activity to attach to. Patch 256 excluded that recording
+//  outright and gave its trace and its detail a counter of their own — and
+//  missed this one. Three lines on the health screen went to zero and a fourth,
+//  saying the same thing about the same recording, stayed at one.
+//
+//  That is worse than the original defect, because a screen where one number is
+//  known-noise trains the reader to skim all of them. So the weather of an
+//  excluded recording is now `weatherIgnored` — never seen, never unmatched —
+//  and `weatherUnmatched` means what its name says: an activity is missing and
+//  nobody knows why. Anything above zero there is news.
 //
 
 import Foundation
@@ -56,6 +68,19 @@ extension Sub4Import {
         into report: inout Report
     ) throws {
         for w in readings {
+            // BEFORE IT IS COUNTED AS SEEN — patch 257, the same shape as the
+            // trace and the detail in `Sub4Import+Recording`. Counting it and
+            // then declining it would put it back in a total the screen reads
+            // as work attempted, which is exactly what "seen" is for.
+            //
+            // Keyed by Strava id, because `weather.json` is: the re-keying
+            // happens below, through the alias, and an excluded recording has
+            // no alias to re-key through.
+            if DataCorrections.isIgnored(id: w.activityId) {
+                report.weatherIgnored += 1
+                continue
+            }
+
             report.weatherSeen += 1
 
             // THROUGH THE ALIAS, NOT THE SOURCE RECORD. Both would work today.

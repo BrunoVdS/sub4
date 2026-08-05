@@ -208,14 +208,61 @@ enum DataCorrections {
     /// Per the rules at the top of this file, a second recording failing this
     /// way is evidence for a rule — a plausibility band on seconds per 100 m —
     /// rather than a second line here.
+    ///
+    /// 18883849470 — Aug 2025, Romania. 199.2 km and 2,403 m of climbing across
+    /// 694,865 seconds elapsed, which is 8.04 days, against 70,153 seconds
+    /// moving. No heart rate. 62.5 W average, estimated rather than measured.
+    /// Maximum speed 30.6 m/s — 110 km/h.
+    ///
+    ///   THE SEGMENT EFFORTS SETTLE IT. Thirty-five matched around the
+    ///   Transfăgărășan and Poiana Mărului at sustained 55–66 km/h over tens of
+    ///   kilometres: 29.6 km at 63 km/h, 20.8 km at 57 km/h, a "fastest 10k" at
+    ///   85 km/h. Those are car speeds. The file contains some real riding, some
+    ///   road transfer, and eight days of a holiday with the device never
+    ///   stopped.
+    ///
+    ///   ADDED 5 AUGUST 2026, AND IT REVERSES PART OF THE 4 AUGUST DECISION.
+    ///   That decision — ADR §12.12.5 — was to leave it refused by the database
+    ///   and keep it in the app, with the consequence stated: the two disagree
+    ///   permanently on this one activity. A day later that consequence had
+    ///   grown three heads. Every import printed a raw SQLite CHECK failure on
+    ///   the health screen; the refusal meant no `activity_alias`, so its trace
+    ///   and its detail both reported "with no activity"; and one decision was
+    ///   producing three lines that all read as faults on the screen whose job
+    ///   is to show faults.
+    ///
+    ///   The deciding argument is the semantic verifier, two patches away,
+    ///   whose whole job is that the database and the stores agree. A permanent
+    ///   known disagreement would mean an exception list on the day it was
+    ///   born. Excluding the activity in both places costs 199 km and 2,403 m
+    ///   from August 2025 — a figure that was never real — and buys agreement.
+    ///
+    ///   It contributes no training load either way: no heart rate, and the
+    ///   estimated power is refused by `PowerLoad`.
     static let ignoredActivities: [String: String] = [
         "16775873379":
             "18 Dec 2025 swim — 400 m recorded across 45 minutes of moving "
-            + "time, 11 of 16 laps logging no distance."
+            + "time, 11 of 16 laps logging no distance.",
+        "18883849470":
+            "Aug 2025 Romania ride — 8.04 days of elapsed time against 19.5 "
+            + "hours moving, with segment efforts at car speeds. A holiday "
+            + "with the recording left running, not a 199 km ride."
     ]
 
     static func isIgnored(_ a: Activity) -> Bool {
-        ignoredActivities[a.id] != nil
+        isIgnored(id: a.id)
+    }
+
+    /// By id, for the stores that hold something ABOUT an activity rather than
+    /// the activity itself — patch 256.
+    ///
+    /// `DetailStore` keys its traces and details by Strava id and never sees an
+    /// `Activity`. Without this the detail and the trace of an excluded
+    /// recording would still be offered to the importer, fail to resolve, and
+    /// be counted as "with no activity" — which is true, and reads as a gap
+    /// rather than as the decision it is.
+    static func isIgnored(id: String) -> Bool {
+        ignoredActivities[id] != nil
     }
 
     /// For the diagnostics row in Settings. Sorted, so the list does not

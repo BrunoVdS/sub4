@@ -124,6 +124,16 @@ struct DomainVocabularyTests {
                 "got \(Sub4Migrations.domainFeels)")
     }
 
+    @Test("The state vocabulary lists exactly the states an import can be in")
+    func migrationRunStatesMatch() {
+        // Patch 255. The migration body freezes five literals; this is what
+        // makes adding a sixth a red build and a new migration rather than an
+        // edit to history.
+        #expect(Set(Sub4Migrations.migrationRunStates)
+                == Set(MigrationRunState.allCases.map(\.rawValue)),
+                "got \(Sub4Migrations.migrationRunStates)")
+    }
+
     @Test("The weather provider constraint lists exactly the providers in use")
     func weatherProvidersMatch() {
         #expect(Set(Sub4Migrations.domainWeatherProviders)

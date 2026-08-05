@@ -57,6 +57,14 @@ extension Sub4Import {
         into report: inout Report
     ) throws {
         for s in streams.sorted(by: { $0.activityId < $1.activityId }) {
+            // BEFORE `recordingsSeen` — patch 256. A trace belonging to a
+            // recording the app has excluded is not a trace this import has
+            // anything to say about, and counting it as seen-then-unmatched
+            // reported a decision as a gap. See `DataCorrections`.
+            if DataCorrections.isIgnored(id: s.activityId) {
+                report.recordingsIgnored += 1
+                continue
+            }
             report.recordingsSeen += 1
 
             guard let activityID = try canonicalActivity(d, externalID: s.activityId) else {
@@ -155,6 +163,11 @@ extension Sub4Import {
         into report: inout Report
     ) throws {
         for detail in details.sorted(by: { $0.activityId < $1.activityId }) {
+            // Same rule as the traces above, and the same reason.
+            if DataCorrections.isIgnored(id: detail.activityId) {
+                report.detailsIgnored += 1
+                continue
+            }
             report.detailsSeen += 1
 
             guard let activityID = try canonicalActivity(d, externalID: detail.activityId) else {

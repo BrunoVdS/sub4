@@ -1245,9 +1245,11 @@ nothing is not a fact anybody can use. A refusal means the schema rejected
 something that should have fitted; this is a correct decline, and conflating the
 two would make the screen report a defect where there is none.
 
-The expected count is **one** — the August 2025 artifact, which has weather and
-no activity. Anything larger means activities are missing that should not be,
-and the number is on the health screen for that reason.
+The expected count is **zero since patch 257**. It was one for thirty-one
+patches — the August 2025 artifact, which has weather and no activity — and
+§12.12.7 records why that stopped being acceptable. Anything above zero now
+means activities are missing that should not be, which is what the number was
+always supposed to mean and could not while it had a permanent occupant.
 
 ## 12.10 The athlete profile, the zones and the resting series
 
@@ -1675,7 +1677,7 @@ speed-contradiction rule catches impossibly *fast* averages — 322, 620 and
 elapsed span, far too slow to trip it. `ignoredActivities` holds only the
 18 December swim. The database is the first thing that ever asked the question.
 
-**The athlete's decision, 4 August 2026: leave it refused.** The consequence is
+**The athlete's decision, 4 August 2026: leave it refused.** The consequence was
 stated rather than hidden — the app keeps counting 199 km and 2,403 m into its
 own volume totals while the database declines the row, so the two disagree
 permanently on that one activity. It contributes no training load either way:
@@ -1683,6 +1685,76 @@ no heart rate, and the estimated power is refused by `PowerLoad`.
 
 So `Refused: 1` on the import screen is the expected steady state. A second
 entry appearing there is news; this one is not.
+
+### 12.12.6 That decision was reversed a day later — patch 256
+
+**Not because it was wrong, but because "leave it refused" turned out to mean
+more than it said.** Living with it for one day showed the consequence had three
+heads rather than one:
+
+- Every import printed a raw SQLite CHECK failure on the health screen — twelve
+  lines of red SQL on the one screen whose job is to show faults.
+- A refused activity gets no `activity_alias`, so its trace and its detail could
+  not resolve either. Both reported "with no activity". One decision, three
+  lines, all reading as gaps.
+- And the paragraph above only works if a person reads that list closely on
+  every run. A list that always has one item in it is a list nobody reads, which
+  is the opposite of what "a second entry appearing there is news" needs.
+
+**The deciding argument was the semantic verifier**, whose whole job is that the
+database and the stores agree. A permanent, known disagreement would have meant
+an exception list on the day it was born.
+
+So the activity is now excluded in BOTH places: it is the second entry in
+`DataCorrections.ignoredActivities`, with the evidence beside it, which drops it
+from `ActivityStore` and means the importer never offers it. Its trace and its
+detail are skipped by id and counted as `recordingsIgnored` / `detailsIgnored`
+— named on screen as "for an excluded recording", because a recording the app
+throws away without saying so is indistinguishable from one it failed to fetch.
+
+**What it costs:** 199.2 km and 2,403 m leave the app's August 2025 volume. That
+figure was never real. **What it buys:** `Refused` returns to zero, so the next
+entry there is news; the two "with no activity" counts return to zero, so those
+are news too; and the verifier is born without an exception.
+
+Worth recording as a shape rather than an incident: **a decision to tolerate
+something is a decision about what it will look like every day, and that part is
+easy to leave unmade.** The 4 August entry decided the data question and left
+the presentation to whatever happened to fall out. What fell out was three
+false alarms.
+
+### 12.12.7 There were four — patch 257
+
+The section above counts three consequences and 256 fixed three. The count was
+wrong. The same recording also has a **weather reading**, and weather resolves
+through `activity_alias` exactly as the trace and the detail do, so it went on
+landing in `weatherUnmatched` — one grey line still reporting "with no
+activity" about a recording the app had already ruled on.
+
+**That state is worse than the one 256 started from.** Four lines all saying
+the same thing is at least consistent; three at zero and one at one teaches the
+reader that some of these numbers are furniture, and a screen whose numbers are
+furniture is not a health screen. The whole argument of §12.12.6 — "the next
+entry there is news" — needs every one of them at zero, not most.
+
+So `weatherIgnored` joins `recordingsIgnored` and `detailsIgnored`, counted
+before the reading is counted as seen, and shown as "weather for an excluded
+recording". `weatherUnmatched` now means what its name says.
+
+**The miss is worth more than the fix.** It was not a reasoning error — the
+reasoning in §12.12.6 was right and applied unchanged here. It was a *sweep*
+error: the two consequences that had just been on screen got fixed, and the
+third sharing the identical mechanism was never looked for. The mechanism is
+"resolves through the alias", and it is greppable. The general form:
+
+> When a decision has consequences, enumerate them from the MECHANISM, not from
+> the symptoms you happen to have seen. Symptoms are whichever ones were
+> visible on the day; the mechanism is all of them.
+
+The same rule would also have caught this at 226, where the header of
+`Sub4Import+Weather.swift` wrote "the expected count is one" and froze a known
+defect into a documented constant. **A number a comment excuses is a number
+nobody will ever question again** — the excuse is what makes it permanent.
 
 ---
 

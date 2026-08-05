@@ -62,6 +62,10 @@ nonisolated enum Sub4Import {
     }
 
     struct Report: Sendable, Equatable {
+        /// The `migration_run` row this import opened — patch 255. Carried on
+        /// the report so a caller can find the ledger entry without guessing
+        /// which row is the newest.
+        var runID: String?
         var activitiesSeen = 0
         var activitiesInserted = 0
         /// Rows already present, refreshed from the source rather than skipped.
@@ -86,11 +90,23 @@ nonisolated enum Sub4Import {
 
         // Patch 226. `weatherUnmatched` is NOT a refusal: the schema is
         // correctly declining to hold a reading about an activity that is not
-        // here. Expected to be 1 — the August 2025 artifact.
+        // here.
+        //
+        // EXPECTED TO BE 0 SINCE PATCH 257. It was 1 for thirty-one patches —
+        // the August 2025 artifact, whose activity the schema refused, so its
+        // weather had nothing to attach to. 256 excluded that recording and
+        // gave its trace and its detail counters of their own; this one was
+        // missed and stayed at 1 while the other three went to 0. A screen
+        // where one number is known-noise is a screen nobody reads.
         var weatherSeen = 0
         var weatherImported = 0
         var weatherUpdated = 0
         var weatherUnmatched = 0
+        /// A reading belonging to a recording `DataCorrections` excludes —
+        /// patch 257. Split out of `weatherUnmatched`, which had carried it
+        /// since 226 and reported it as a missing activity the whole time.
+        /// Never counted as seen: the import declines it before it tries.
+        var weatherIgnored = 0
 
         // Patch 228 — the profile. `profileSeen` is 0 or 1 and exists so the
         // screen can tell "no profile was offered" from "a profile was offered
@@ -132,6 +148,13 @@ nonisolated enum Sub4Import {
         // `detailsUnmatched` are NOT refusals: a trace on disk for an activity
         // the app has excluded is the exclusion working, exactly as with
         // weather in §12.9.
+        /// Traces and details belonging to a recording `DataCorrections`
+        /// excludes — patch 256. Counted rather than dropped silently, because
+        /// this project's rule is that a number the app declines to import is
+        /// visible. Distinct from `unmatched`, which means the activity is not
+        /// there and nobody knows why.
+        var recordingsIgnored = 0
+        var detailsIgnored = 0
         var recordingsSeen = 0
         var recordingsImported = 0
         var recordingsUpdated = 0
@@ -165,6 +188,21 @@ nonisolated enum Sub4Import {
 
         var isClean: Bool { refusals.isEmpty }
 
+        /// What the ledger stores about this run — patch 255.
+        ///
+        /// COUNTS ONLY. The ledger is read back into the redacted diagnostic
+        /// paste, which promises no session names and no dates from the
+        /// athlete's history, so this may never carry either. Refusals are a
+        /// number here; which ones they were is on the import screen.
+        var ledgerNote: String {
+            var parts = ["\(activitiesSeen) activities",
+                         "\(recordingsSeen) traces",
+                         "\(detailsSeen) details"]
+            if refusals.isEmpty == false { parts.append("\(refusals.count) refused") }
+            parts.append(String(format: "%.1fs", seconds))
+            return parts.joined(separator: ", ")
+        }
+
         /// Most-named first, so the answer is in the first line rather than
         /// somewhere in a list of forty.
         var unresolvedGearRanked: [(external: String, count: Int)] {
@@ -186,7 +224,7 @@ nonisolated enum Sub4Import {
                      "  inserted: \(activitiesInserted), refreshed: \(activitiesUpdated)",
                      "Notes seen: \(notesSeen) — imported \(notesImported), refreshed \(notesUpdated)",
                      "Reviews seen: \(reviewsSeen) — imported \(reviewsImported), refreshed \(reviewsUpdated)",
-                     "Weather seen: \(weatherSeen) — imported \(weatherImported), refreshed \(weatherUpdated), no activity \(weatherUnmatched)",
+                     "Weather seen: \(weatherSeen) — imported \(weatherImported), refreshed \(weatherUpdated), no activity \(weatherUnmatched), excluded \(weatherIgnored)",
                      "Profile seen: \(profileSeen) — imported \(profileImported), refreshed \(profileUpdated), provenance unresolved \(profileProvenanceUnresolved)",
                      "Zones seen: \(zonesSeen) — imported \(zonesImported)",
                      "Resting months seen: \(restingSeen) — imported \(restingImported), refreshed \(restingUpdated)",
@@ -236,12 +274,24 @@ nonisolated enum Sub4Import {
                     plan: Plan? = nil,
                     planSourceLabel: String = "bundled",
                     streams: [ActivityStreams] = [],
-                    details: [ActivityDetail] = []) throws -> Report {
+                    details: [ActivityDetail] = [],
+                    appVersion: String = "unknown",
+                    snapshotID: String? = nil) throws -> Report {
 
         let clock = ContinuousClock()
         var report = Report()
         let now = iso8601(Date())
 
+        // THE LEDGER OPENS BEFORE THE WRITE AND CLOSES AFTER IT — patch 255,
+        // migration contract item 11. Three transactions rather than one, and
+        // the reason is the acceptance criterion: a `failed` row written inside
+        // the import's own `write` would be rolled back by the very throw it
+        // was recording, leaving the run reading `running` for ever.
+        let runID = try MigrationLedger.open(db, appVersion: appVersion,
+                                             snapshotID: snapshotID, now: now)
+        report.runID = runID
+
+        do {
         let elapsed = try clock.measure {
             try db.queue.write { d in
                 try ensureAccount(d, now: now)
@@ -301,7 +351,27 @@ nonisolated enum Sub4Import {
             }
         }
         report.seconds = seconds(elapsed)
+
+        // `pending`, NOT `verified`. The write committed and nothing has
+        // checked it — see `MigrationLedger`'s header on what the word means
+        // here. Marking a run verified from inside the importer that produced
+        // it would be a control reporting work it did not do, which is the
+        // defect this project has now found five times.
+        try MigrationLedger.finish(db, id: runID, state: .pending,
+                                   note: report.ledgerNote,
+                                   now: iso8601(Date()))
         return report
+
+        } catch {
+            // Best effort, and deliberately swallowing its own failure: the
+            // import's error is the one worth raising, and a ledger write that
+            // also fails must not replace it with a less useful one.
+            try? MigrationLedger.finish(db, id: runID, state: .failed,
+                                        note: String(describing: error).prefix(500)
+                                            .description,
+                                        now: iso8601(Date()))
+            throw error
+        }
     }
 
     // MARK: The account

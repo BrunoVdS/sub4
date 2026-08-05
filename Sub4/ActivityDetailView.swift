@@ -538,13 +538,37 @@ struct ActivityDetailView: View {
             Rectangle().fill(Color.line).frame(height: 1)
             HStack(spacing: 5) {
                 Text("Commute").font(.caption.weight(.semibold))
+                // THE SAME AFFORDANCE AND THE SAME PRESENTATION AS EVERY
+                // OTHER (i) IN THIS APP — patch 256.
+                //
+                // 252 used a `.popover`, which on iPhone renders as a bubble
+                // pinned to the glyph: it covered the weather row above it and
+                // clipped its own button off the bottom. `InfoButton` — used by
+                // Heart rate, Pace, Fitness, Volume and four others — presents a
+                // real sheet with detents, a drag indicator and the card
+                // background, and that is what a reader of this app has already
+                // learnt an (i) does.
+                //
+                // Not literally `InfoButton(topic:)`, because that takes a
+                // static `InfoTopic` built from `InfoEntry` groups and this note
+                // is per-activity: it says what the app currently believes and
+                // who decided. The presentation is copied exactly; only the
+                // content is local.
                 Button { showCommuteInfo = true } label: {
-                    Image(systemName: "info.circle").font(.caption)
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(Color.dim)
+                        // A 12pt glyph is a 12pt target. This is the tappable
+                        // area — same frame as `InfoButton`.
+                        .frame(width: 24, height: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.dim)
-                .popover(isPresented: $showCommuteInfo) {
-                    commuteInfo.presentationCompactAdaptation(.popover)
+                .sheet(isPresented: $showCommuteInfo) {
+                    commuteInfo
+                        .presentationDetents([.fraction(0.42), .large])
+                        .presentationDragIndicator(.visible)
+                        .presentationBackground(Color.card)
                 }
                 Spacer(minLength: 8)
                 // THE SAME CONTROL AS THE GROUP PAGE — patch 254. This was a
@@ -575,25 +599,45 @@ struct ActivityDetailView: View {
     /// decided. "Use the rule" lives here too, because removing an answer is a
     /// rarer act than giving one and does not need to be on the card.
     var commuteInfo: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Commute").font(.subheadline.weight(.semibold))
-            Text(commuteReason)
-                .font(.caption).foregroundStyle(Color.dim)
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Commute — what this means")
+                .font(.title3.weight(.bold))
                 .fixedSize(horizontal: false, vertical: true)
+
+            Text(commuteReason)
+                .font(.subheadline).foregroundStyle(Color.ink)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("A commute is movement, not training. It still appears on the "
+                 + "day and still counts towards your steps and time, but it is "
+                 + "left out of training volume and cannot be matched to a "
+                 + "planned session.")
+                .font(.subheadline).foregroundStyle(Color.dim)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("With nobody to ask, a ride under \(Int(MatchRules.minRideKm)) km "
+                 + "is treated as a commute. That is right almost every time and "
+                 + "wrong at the edges — one ride in July missed the line by "
+                 + "fourteen metres. Your answer always wins over the rule.")
+                .font(.subheadline).foregroundStyle(Color.dim)
+                .fixedSize(horizontal: false, vertical: true)
+
             if CommuteStore.shared.decision(for: activity.id) != nil {
+                Divider()
                 // Distinct from switching it off: "I have no opinion" and "this
                 // is not a commute" are different answers, and only the first
                 // follows the threshold if it ever moves.
-                Button("Use the rule instead") {
+                Button("Forget my answer and use the rule") {
                     CommuteStore.shared.clear(activity.id)
                     showCommuteInfo = false
                 }
-                .font(.caption.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.accent4)
             }
+            Spacer(minLength: 0)
         }
-        .padding(14)
-        .frame(maxWidth: 280, alignment: .leading)
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var commuteReason: String {

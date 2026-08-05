@@ -162,13 +162,21 @@ struct CommuteTests {
         #expect(group.countLabel == "3 commutes")
     }
 
-    @Test("Training rides never reach the merged row at all")
-    func trainingRidesDoNotMerge() {
-        let items = MergedExtra.group([ride(42, id: "m4"), ride(38, id: "m5")])
-        let merged = items.contains { if case .merged = $0 { return true }; return false }
-        #expect(merged == false, "two training rides were folded into one row")
-        #expect(items.count == 2)
-    }
+    // `trainingRidesDoNotMerge` LIVED HERE AND WAS DELETED IN PATCH 254.
+    //
+    // It asserted "training rides never reach the merged row at all", which was
+    // true and deliberate until 254 keyed the merge bucket on commute-ness and
+    // made two training rides on one day group as "Rides". Its replacement is
+    // `trainingRidesGroupWithEachOther` below; the half of it worth keeping —
+    // that a training ride is never folded in with the commutes — is
+    // `theTwoKindsDoNotMix`.
+    //
+    // Recorded rather than silently removed, because this is the second time
+    // this project has left a test asserting behaviour a later patch changed on
+    // purpose. §12.12.4 was the first: a test written against a zero heart rate
+    // being refused, which read as a regression the moment the defect was
+    // fixed. The rule both times: when a patch changes intended behaviour, the
+    // test that asserted the old intent is part of the patch.
 
     @Test("Marking two long rides as commutes sends them into the group")
     func markedLongRidesMerge() throws {
@@ -262,9 +270,16 @@ struct CommuteTests {
         defer { forget("s6", "s7") }
 
         let rides = [ride(2.79, id: "s6"), ride(6.09, id: "s7")]
-        #expect(rides.filter(\.isCommuteRide).isEmpty)
+        // Computed into locals, and not for readability. `#expect` decomposes
+        // into `Testing.__checkFunctionCall`, which is `rethrows`, so a
+        // `rethrows` method — `allSatisfy`, `filter`, `first(where:)` — written
+        // inline inside it demands a `try` that reads as nonsense. Documented
+        // in this project since patch 234 and hit again here.
+        let anyCommutes = rides.contains(where: \.isCommuteRide)
+        let allEligible = rides.filter(\.isPlanEligible).count == rides.count
+        #expect(anyCommutes == false)
         // Which is what Today's Commute cell keys off: no commutes, no cell.
-        #expect(rides.allSatisfy(\.isPlanEligible))
+        #expect(allEligible)
     }
 
     // MARK: Training rides group too — patch 254

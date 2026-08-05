@@ -48,7 +48,7 @@ enum AppVersion {
     /// prevent, and it is worse than having no number at all: a stale reading
     /// here normally means nothing landed, so it argues for re-installing
     /// patches that are already in place.
-    static let patch = 254
+    static let patch = 257
 
     /// From Xcode's General tab — Version.
     static var marketing: String {

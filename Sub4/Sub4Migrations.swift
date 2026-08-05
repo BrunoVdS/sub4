@@ -55,7 +55,7 @@ nonisolated enum Sub4Migrations {
     /// as "not migrated" rather than passing quietly.
     static let all: [String] = [initial, domain, activityInputs, gearReference,
                                 proposalInputs, openTopZone, zoneFloorZero,
-                                planContent, activityDetail]
+                                planContent, activityDetail, migrationRun]
 
     static var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()
@@ -69,6 +69,7 @@ nonisolated enum Sub4Migrations {
         registerZoneFloorZero(&m)   // Sub4Migrations+ZoneFloorZero.swift
         registerPlanContent(&m)     // Sub4Migrations+PlanContent.swift
         registerActivityDetail(&m)  // Sub4Migrations+ActivityDetail.swift
+        registerMigrationRun(&m)    // Sub4Migrations+MigrationRun.swift
         return m
     }
 

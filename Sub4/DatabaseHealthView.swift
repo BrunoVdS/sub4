@@ -78,6 +78,10 @@ struct DatabaseHealthView: View {
     @State private var snapshot: SnapshotManifest?
     @State private var snapshotError: String?
 
+    /// Patch 255 — the import ledger. Read on open and after every import.
+    @State private var lastRun: MigrationRun?
+    @State private var staleRuns: Int = 0
+
     var body: some View {
         NavigationStack {
             List {
@@ -96,6 +100,7 @@ struct DatabaseHealthView: View {
                     // protects the inputs teaches the wrong order.
                     snapshotSection
                     importSection(db)
+                    ledgerSection
                     benchmarkSection
                     diagnosticsSection(db)
                 }
@@ -332,9 +337,23 @@ struct DatabaseHealthView: View {
                 if r.weatherUnmatched > 0 {
                     // Not red: the schema is correctly declining to hold a
                     // reading about an activity that is not here.
-                    LabeledContent("Weather with no activity",
+                    //
+                    // DEMOTED TO A SUB-ROW IN 257, to match the trace and the
+                    // detail below. It is a fact ABOUT the Weather row, and
+                    // rendering it at the same weight as its own parent made a
+                    // known-benign count the loudest thing in the section.
+                    LabeledContent("  weather with no activity",
                                    value: "\(r.weatherUnmatched)")
-                        .font(.caption).foregroundStyle(Color.dim)
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.weatherIgnored > 0 {
+                    // Patch 257. Named for the decision rather than the
+                    // symptom: this reading belongs to a recording the app
+                    // excludes on purpose, which is not the same thing as an
+                    // activity that went missing.
+                    LabeledContent("  weather for an excluded recording",
+                                   value: "\(r.weatherIgnored)")
+                        .font(.caption2).foregroundStyle(Color.dim)
                 }
                 // Patch 228. Two hundred bytes, and the denominator of every
                 // training-load figure in the app — so it gets rows of its own
@@ -402,6 +421,13 @@ struct DatabaseHealthView: View {
                     LabeledContent("  trace with no activity", value: "\(r.recordingsUnmatched)")
                         .font(.caption2).foregroundStyle(Color.dim)
                 }
+                if r.recordingsIgnored > 0 {
+                    // Not a gap. `DataCorrections` names each one with its
+                    // reason, and Settings lists them.
+                    LabeledContent("  trace for an excluded recording",
+                                   value: "\(r.recordingsIgnored)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
                 LabeledContent("Details",
                                value: r.detailsSeen == 0 ? "none held"
                                       : "\(r.detailsImported) new, \(r.detailsUpdated) replaced, \(r.detailsUnchanged) unchanged")
@@ -413,6 +439,11 @@ struct DatabaseHealthView: View {
                 }
                 if r.detailsUnmatched > 0 {
                     LabeledContent("  detail with no activity", value: "\(r.detailsUnmatched)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.detailsIgnored > 0 {
+                    LabeledContent("  detail for an excluded recording",
+                                   value: "\(r.detailsIgnored)")
                         .font(.caption2).foregroundStyle(Color.dim)
                 }
 
@@ -510,10 +541,19 @@ struct DatabaseHealthView: View {
                     zones: AthleteStore.shared.hrZones,
                     plan: PlanStore.shared.plan,
                     streams: Array(DetailStore.shared.streams.values),
-                    details: Array(DetailStore.shared.details.values))
+                    details: Array(DetailStore.shared.details.values),
+                    appVersion: "\(AppVersion.patch)",
+                    // The link between contract items 3 and 11: a run records
+                    // which snapshot of its inputs was taken first, or records
+                    // that none was.
+                    snapshotID: snapshot?.id)
                 await recheck(db)
+                await reloadLedger(db)
             } catch {
                 importError = String(describing: error)
+                // The ledger recorded the failure inside `run`. Read it back so
+                // the screen shows `failed` rather than the previous run.
+                await reloadLedger(db)
             }
             importing = false
         }
@@ -740,6 +780,7 @@ struct DatabaseHealthView: View {
         if let db = Sub4Launch.shared.database {
             opened = .success(db)
             await recheck(db)
+            await reloadLedger(db)
             return
         }
         if let message = Sub4Launch.shared.failureMessage {
@@ -750,9 +791,71 @@ struct DatabaseHealthView: View {
             let db = try Sub4Database.open()
             opened = .success(db)
             await recheck(db)
+            await reloadLedger(db)
         } catch {
             opened = .failure(error)
         }
+    }
+
+    /// What the last import did, and how it ended — patch 255.
+    ///
+    /// AFTER the import section, because it is the record of the button above
+    /// it. The state is the row that matters: everything else on this screen
+    /// says what the database CONTAINS, and this says whether anything has
+    /// checked it.
+    @ViewBuilder
+    private var ledgerSection: some View {
+        Section {
+            if let r = lastRun {
+                LabeledContent("State") {
+                    Text(r.state.label)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(r.state == .failed ? Color.red : Color.secondary)
+                }
+                LabeledContent("Started", value: r.startedUTC).font(.caption)
+                if let f = r.finishedUTC {
+                    LabeledContent("Finished", value: f).font(.caption)
+                }
+                LabeledContent("By", value: "patch \(r.appVersion)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Snapshot", value: r.snapshotID ?? "none taken")
+                    .font(.caption)
+                    .foregroundStyle(r.snapshotID == nil ? Color.red : Color.dim)
+                if let n = r.note, !n.isEmpty {
+                    Text(n).font(.caption2).foregroundStyle(Color.dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if staleRuns > 0 {
+                    // Not repaired automatically — see `MigrationLedger.stale`.
+                    // Rewriting these would destroy the only evidence the app
+                    // was killed while writing.
+                    LabeledContent("Interrupted runs", value: "\(staleRuns)")
+                        .font(.caption).foregroundStyle(.red)
+                }
+            } else {
+                Text("No import has been recorded. Nothing in this database can "
+                     + "be called verified until one has.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            Text("Import ledger")
+        } footer: {
+            Text("One row per import. A run reaches \"imported, not verified\" "
+                 + "when the write commits; the verifier that can move it to "
+                 + "\"verified\" is the next step, and until it exists nothing "
+                 + "may switch its reads to this database.")
+        }
+    }
+
+    private func reloadLedger(_ db: Sub4Database) async {
+        let read: (run: MigrationRun?, stale: Int)? = await Task.detached(priority: .utility) {
+            guard let latest = try? MigrationLedger.latest(db) else { return nil }
+            let stale = (try? MigrationLedger.stale(db).count) ?? 0
+            return (latest, stale)
+        }.value
+        lastRun = read?.run
+        staleRuns = read?.stale ?? 0
     }
 
     private func recheck(_ db: Sub4Database) async {
@@ -789,6 +892,13 @@ struct DatabaseHealthView: View {
         if let m = snapshot {
             lines.append("")
             lines.append(contentsOf: m.redactedLines)
+        }
+        // Patch 255. `MigrationRun.line` is counts and timestamps of the import
+        // itself — nothing from the athlete's history — so it is safe here.
+        if let r = lastRun {
+            lines.append("")
+            lines.append("Last import: \(r.line)")
+            if staleRuns > 0 { lines.append("Interrupted runs: \(staleRuns)") }
         }
         // The benchmark is the reason this screen gets pasted at all now — the
         // §9 decision is made from these lines. They are counts and durations
