@@ -152,6 +152,19 @@ final class NotesStore {
         migrateIfNeeded()
     }
 
+    /// A store rooted somewhere else — patch 264, and it exists for the tests.
+    ///
+    /// A failable save cannot be trusted until something has watched it fail,
+    /// and the only honest way to make a write fail is to give it somewhere it
+    /// cannot write to. That needs an instance which is not the singleton, so
+    /// here is one. It does not run `migrateIfNeeded` — the migration reads a
+    /// shared `UserDefaults` key, and a test instance has no business touching
+    /// the real one.
+    init(directory: URL) {
+        fileURL = directory.appendingPathComponent("notes.json")
+        load()
+    }
+
     // MARK: Reading
 
     func note(for session: Session) -> Note? { notes[session.uid] }
@@ -178,8 +191,19 @@ final class NotesStore {
 
     /// Saves, or deletes when everything has been cleared. Returns the stored
     /// note, or nil if the call removed it.
+    ///
+    /// THROWS SINCE PATCH 264, and the memory is rolled back when it does.
+    ///
+    /// The rollback is the part worth reading. Before this, a failed write left
+    /// the new note sitting in `notes` — so the editor closed, the list showed
+    /// it, and the next launch read the old file back and it was gone. **A note
+    /// that appears and then disappears overnight is worse than one that was
+    /// refused**, because the athlete has no reason to write it again.
+    ///
+    /// So memory follows disk. If the write did not happen, neither did the
+    /// edit, and the caller is told.
     @discardableResult
-    func save(session: Session, rpe: Int?, feel: Note.Feel?, text: String) -> Note? {
+    func save(session: Session, rpe: Int?, feel: Note.Feel?, text: String) throws -> Note? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let candidate = Note(sessionUid: session.uid, rpe: rpe, feel: feel,
                              text: trimmed,
@@ -190,18 +214,33 @@ final class NotesStore {
             // Clearing every field is how you delete a note. Keeping an empty
             // record would put a note marker on a session with nothing behind
             // it, which reads as a bug.
-            remove(session: session)
+            try remove(session: session)
             return nil
         }
 
+        let previous = notes[session.uid]
         notes[session.uid] = candidate
-        save()
+        do {
+            try save()
+        } catch {
+            if let previous { notes[session.uid] = previous }
+            else { notes.removeValue(forKey: session.uid) }
+            throw error
+        }
         return candidate
     }
 
-    func remove(session: Session) {
-        guard notes.removeValue(forKey: session.uid) != nil else { return }
-        save()
+    func remove(session: Session) throws {
+        guard let previous = notes.removeValue(forKey: session.uid) else { return }
+        do {
+            try save()
+        } catch {
+            // A delete that did not reach the disk is not a delete. Putting it
+            // back is what stops the note reappearing at the next launch as if
+            // the app had changed its mind.
+            notes[session.uid] = previous
+            throw error
+        }
     }
 
     // MARK: Disk
@@ -224,9 +263,14 @@ final class NotesStore {
         notes = [:]
     }
 
-    private func save() {
-        guard let data = try? JSONEncoder.sub4.encode(notes) else { return }
-        try? data.write(to: fileURL, options: FileProtection.options)
+    /// TWO `try?`s AND A `return` UNTIL PATCH 264.
+    ///
+    /// A full disk, a device locked in a way that blocks writing, a container
+    /// that moved — all of them landed here and did nothing at all. The only
+    /// data in this app that cannot be fetched again was the least protected
+    /// thing in it.
+    private func save() throws {
+        try StoreWrite.encode(notes, to: fileURL, store: "notes.json")
     }
 
     /// Migrates forward. Never clears — see the header. A future version 2 adds
@@ -352,7 +396,16 @@ final class NotesStore {
 // by anything — including whatever ends up doing the monthly review.
 
 extension JSONEncoder {
-    static var sub4: JSONEncoder {
+    /// NONISOLATED — patch 264a, and it is §12.12.7 a second time.
+    ///
+    /// This is a computed property that builds a fresh `JSONEncoder` on every
+    /// call. Nothing is shared, so there is no race for an actor to prevent —
+    /// it was main-actor isolated because it is declared in a file the build
+    /// setting isolates, not because anyone decided it should be.
+    ///
+    /// `StoreWrite` is nonisolated and takes this as a default argument, which
+    /// is evaluated at the CALL SITE. Three warnings, all from one default.
+    nonisolated static var sub4: JSONEncoder {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
         e.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -361,7 +414,10 @@ extension JSONEncoder {
 }
 
 extension JSONDecoder {
-    static var sub4: JSONDecoder {
+    /// Nonisolated for the same reason as the encoder above: a fresh instance
+    /// per call, nothing shared, and the reader that will use it does not run
+    /// on the main actor.
+    nonisolated static var sub4: JSONDecoder {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
         return d

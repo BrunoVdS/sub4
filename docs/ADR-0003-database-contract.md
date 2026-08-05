@@ -1505,6 +1505,66 @@ the *same* `PMC` runs over both sides. Recorded here rather than quietly
 skipped, because a domain check the plan asked for and did not get is the kind
 of gap that closes itself in a summary.
 
+## 12.17 A save that can fail — D4 step 1, patch 264
+
+Every store in this app has written the same way since it was built:
+
+```swift
+guard let data = try? JSONEncoder.sub4.encode(notes) else { return }
+try? data.write(to: fileURL, options: FileProtection.options)
+```
+
+Two `try?`s and a `return`. A full disk, a device locked in a way that blocks
+writing, a container that moved — all of them land there and do nothing at all,
+and `NoteEditorView.commit()` then called `dismiss()` on the next line
+regardless.
+
+**The failure mode is not "the note was not saved".** It is worse than that. The
+note *was* in memory, so the sheet closed, the list showed it, and the note
+survived until the next launch read the old file back. **A note that appears and
+then disappears overnight is worse than one that was refused**, because the
+athlete has no reason to write it again — and no way to know they should.
+
+**Notes first, and the reason is the same one that ordered the whole D-series.**
+Every other store holds something fetchable: activities, weather, traces,
+details and the profile all come back on the next sync. `notes.json` holds what
+the athlete wrote. Nothing anywhere can reproduce it, and it was the least
+protected file in the app.
+
+**Memory follows disk.** `save` and `remove` roll back the in-memory change when
+the write throws, so the two never disagree. That is what turns a silent loss
+into a visible refusal.
+
+**The two stages are separate because the advice is.** An encoding failure is a
+defect in this app and retrying runs the same code over the same value; a write
+failure is the phone, and is worth another attempt. `StoreWriteError.Stage`
+carries the difference, and the alert offers **Try again** only for the second.
+Offering it for the first would be a button that lies.
+
+**And there is no "discard".** The failure alert has three actions — *Copy the
+text*, *Try again*, *Keep editing* — and none of them throws the text away.
+This sheet may hold the only copy of something the athlete wrote, and a single
+tap that destroys it is not a button, it is a trap. *Copy the text* is
+deliberately first: somewhere it can be pasted beats anything this app can
+promise about its own disk.
+
+**The shared coders went nonisolated in 264a**, which is §12.12.7 for the
+second time in two days. `JSONEncoder.sub4` is a computed property building a
+fresh encoder per call — nothing shared, no race to prevent — and it was
+isolated only because it is declared in `NotesStore.swift`, which the build
+setting isolates. `StoreWrite` takes it as a default argument, and a default
+argument is evaluated at the call site, so one declaration produced three
+warnings. The pattern is now familiar enough to name: **anything that is data
+rather than state should say `nonisolated` when it is written, not after a
+build says so.**
+
+**What is not done yet.** Six other stores still write with `try?` —
+`ActivityStore`, `AthleteStore`, `AthleteConstants`, `CommuteStore`,
+`DetailStore`, `WeatherStore`, `ProposalStore`. They hold re-fetchable data, so
+a lost write there costs a sync rather than a memory, and they follow in the
+rest of D4. `StoreWrite.encode` is the shared piece so that each one is a small
+patch rather than a rewrite.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

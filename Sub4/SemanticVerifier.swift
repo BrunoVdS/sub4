@@ -421,10 +421,16 @@ enum SemanticVerifier {
                                         AND al.sourceID = ?
                  WHERE al.externalID = ?
                 """, arguments: [Sub4Import.sourceID, first.activityId])
-            let mine = String(format: "%.2f °C, %d samples", first.tempC, first.samples)
+            // `1 samples` on the device, 5 August. Both sides go through the
+            // same formatter, so the comparison was never wrong — it just read
+            // badly, and a screen that reads badly gets trusted less than one
+            // that does not.
+            func line(_ t: Double, _ n: Int) -> String {
+                String(format: "%.2f °C, %d sample%@", t, n, n == 1 ? "" : "s")
+            }
+            let mine = line(first.tempC, first.samples)
             let theirs = stored.map {
-                String(format: "%.2f °C, %d samples",
-                       $0["t"] as Double? ?? 0, $0["n"] as Int? ?? 0)
+                line($0["t"] as Double? ?? 0, $0["n"] as Int? ?? 0)
             } ?? "no row"
             out.append(.init(name: "one weather reading", table: "weather",
                              expected: mine, found: theirs,

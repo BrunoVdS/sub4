@@ -34,6 +34,10 @@ struct NoteEditorView: View {
     @State private var text: String = ""
     @State private var confirmDelete = false
 
+    /// Patch 264. Non-nil means the last write did not happen — see
+    /// `failureActions`.
+    @State private var failure: StoreWriteError?
+
     @FocusState private var typing: Bool
 
     private let existing: NotesStore.Note?
@@ -81,11 +85,33 @@ struct NoteEditorView: View {
         .confirmationDialog("Delete this note?",
                             isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                store.remove(session: session)
-                dismiss()
+                // Same rule as saving: the sheet closes only if the disk
+                // agreed. A delete that silently did not happen would put the
+                // note back at the next launch, which reads as the app
+                // undoing a decision.
+                do {
+                    try store.remove(session: session)
+                    dismiss()
+                } catch let error as StoreWriteError {
+                    failure = error
+                } catch {
+                    failure = StoreWriteError(store: "notes.json", stage: .writing,
+                                              reason: String(describing: error))
+                }
             }
         } message: {
             Text("Notes are not backed up anywhere. This cannot be undone.")
+        }
+        // Patch 264. `presenting:` rather than a bare flag, so the actions can
+        // ask what KIND of failure this was — an encoding fault gets no "try
+        // again", because retrying runs the same code over the same value.
+        .alert("Not saved",
+               isPresented: Binding(get: { failure != nil },
+                                    set: { if !$0 { failure = nil } }),
+               presenting: failure) { _ in
+            failureActions
+        } message: { error in
+            Text(error.errorDescription ?? "The note could not be saved.")
         }
     }
 
@@ -265,9 +291,63 @@ struct NoteEditorView: View {
         .cardStyle()
     }
 
+    /// DISMISSES ONLY AFTER THE WRITE — patch 264, D4 step 1.
+    ///
+    /// It used to call `save` and `dismiss` on consecutive lines with nothing
+    /// between them, because `save` could not fail. Now that it can, the sheet
+    /// closing IS the confirmation, and it may not be given until there is
+    /// something to confirm.
     private func commit() {
-        store.save(session: session, rpe: rpe, feel: feel, text: text)
-        dismiss()
+        do {
+            try store.save(session: session, rpe: rpe, feel: feel, text: text)
+            dismiss()
+        } catch let error as StoreWriteError {
+            failure = error
+        } catch {
+            failure = StoreWriteError(store: "notes.json", stage: .writing,
+                                      reason: String(describing: error))
+        }
+    }
+
+    /// What to do when the note did not save.
+    ///
+    /// THREE ACTIONS, AND NONE OF THEM THROWS THE TEXT AWAY. There is no
+    /// "discard" here and there will not be one: this sheet may hold the only
+    /// copy of something the athlete wrote, and a single tap that destroys it
+    /// is not a button, it is a trap.
+    ///
+    /// - **Copy the text** is the one that matters, and it is deliberately
+    ///   first for a failure that retrying will not fix. Somewhere it can be
+    ///   pasted beats anything this app can promise about its own disk.
+    /// - **Try again** only appears when the stage was `writing`. An encoding
+    ///   failure is a defect in the app, and offering to run the same code
+    ///   over the same value again is a button that lies.
+    /// - **Keep editing** dismisses the alert, not the sheet.
+    @ViewBuilder
+    private var failureActions: some View {
+        Button("Copy the text") {
+            UIPasteboard.general.string = pasteboardText
+            // The alert closes and the sheet does not. The text is still on
+            // screen and still in the clipboard, and nothing has been lost.
+        }
+        if failure?.stage.isWorthRetrying == true {
+            Button("Try again") { commit() }
+        }
+        Button("Keep editing", role: .cancel) { }
+    }
+
+    /// Everything that was typed, in one block, so a paste into Messages or
+    /// Notes carries the judgement as well as the words.
+    private var pasteboardText: String {
+        var parts: [String] = []
+        if let rpe { parts.append("RPE \(rpe)") }
+        if let feel { parts.append(feel.label) }
+        // `title` is optional on `Session` — the eight logged prologue
+        // sessions have none — so the uid stands in. It is not pretty and it
+        // does identify the session, which is what a paste needs to do.
+        let name = session.title ?? session.uid
+        let header = parts.isEmpty ? name : "\(name) — \(parts.joined(separator: " · "))"
+        return text.isEmpty ? header : "\(header)\n\n\(text)"
     }
 }
 
