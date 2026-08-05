@@ -202,6 +202,16 @@ nonisolated enum Sub4Import {
         /// missing shoes are completely different problems, and a number cannot
         /// tell them apart. Naming them is cheap and stops the next answer
         /// being a guess.
+        // Patch 280 — D5 slice 4. Which rides are commutes. `removed` is
+        // this importer pruning its own FIELD, and it holds back entirely
+        // while any decision is unaccounted for — see the guard.
+        var correctionsSeen = 0
+        var correctionsImported = 0
+        var correctionsUpdated = 0
+        var correctionsUnresolved = 0
+        var correctionsIgnored = 0
+        var correctionsRemoved = 0
+
         // Patch 278 — D5 slice 3. What a rule threw away. NEVER pruned:
         // nothing in the app removes a receipt short of Delete local data,
         // which removes the database in the same breath.
@@ -336,6 +346,7 @@ nonisolated enum Sub4Import {
                     syncState: SyncState? = nil,
                     workItems: [WorkItem] = [],
                     rejections: [RejectionReceipt] = [],
+                    commutes: [CommuteDecision] = [],
                     // PATCH 274. DEFAULTS TO NOT RECONCILING, and that is the
                     // safe direction: a forgotten argument leaves rows behind,
                     // which is the status quo and is visible on the health
@@ -454,6 +465,15 @@ nonisolated enum Sub4Import {
                 // seed and from `ensureAccount`. It references no ACTIVITY,
                 // deliberately: the receipt outlives the recording.
                 try importRejections(d, receipts: rejections, now: now, into: &report)
+
+                // AFTER THE ACTIVITIES, like weather: the store is keyed by
+                // Strava id and `correction.subjectID` holds the canonical one.
+                // It takes `reconcile` because it prunes its own field, and
+                // `commutes.json` is an authored store with a decode step —
+                // §12.20's hazard is real on this path.
+                try importCorrections(d, decisions: commutes,
+                                      reconcile: reconcile, now: now,
+                                      into: &report)
 
                 // LAST, AND INSIDE THE SAME WRITE — patch 274.
                 //

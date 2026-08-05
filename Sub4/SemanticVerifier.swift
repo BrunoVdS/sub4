@@ -136,6 +136,7 @@ enum SemanticVerifier {
                        syncState: SyncState? = nil,
                        workItems: [WorkItem] = [],
                        rejections: [RejectionReceipt] = [],
+                       commutes: [CommuteDecision] = [],
                        matchDecisions: [MatchDecision] = [],
                        weather: [ActivityWeather] = [],
                        zones: [AthleteStore.HRZone] = [],
@@ -153,7 +154,7 @@ enum SemanticVerifier {
                 checks.append(contentsOf: try countChecks(
                     d, activities: activities, shoes: shoes, notes: notes,
                     proposals: proposals, workItems: workItems,
-                    rejections: rejections,
+                    rejections: rejections, commutes: commutes,
                     matchDecisions: matchDecisions,
                     weather: weather, zones: zones, streams: streams,
                     details: details, storeIDs: storeIDs))
@@ -190,6 +191,7 @@ enum SemanticVerifier {
                         syncState: SyncState? = nil,
                         workItems: [WorkItem] = [],
                         rejections: [RejectionReceipt] = [],
+                        commutes: [CommuteDecision] = [],
                         matchDecisions: [MatchDecision] = [],
                         weather: [ActivityWeather] = [],
                         zones: [AthleteStore.HRZone] = [],
@@ -199,7 +201,7 @@ enum SemanticVerifier {
             return try verify(db, activities: activities, shoes: shoes,
                               notes: notes, proposals: proposals,
                               syncState: syncState, workItems: workItems,
-                              rejections: rejections,
+                              rejections: rejections, commutes: commutes,
                               matchDecisions: matchDecisions,
                               weather: weather, zones: zones,
                               streams: streams, details: details)
@@ -255,6 +257,7 @@ enum SemanticVerifier {
                                     proposals: [ProposalStore.Record],
                                     workItems: [WorkItem],
                                     rejections: [RejectionReceipt],
+                                    commutes: [CommuteDecision],
                                     matchDecisions: [MatchDecision],
                                     weather: [ActivityWeather],
                                     zones: [AthleteStore.HRZone],
@@ -332,6 +335,13 @@ enum SemanticVerifier {
             // none of them.
             .compare("refused recordings", table: "rejection",
                      expected: rejections.count, found: try count(d, "rejection")),
+            // FILTERED BY `storeIDs`, unlike the rejections directly above.
+            // A correction is ABOUT an activity the database holds; a rejection
+            // is about one it refuses. The two lines look alike and mean
+            // opposite things.
+            .compare("corrections", table: "correction",
+                     expected: commutes.filter { storeIDs.contains($0.activityId) }.count,
+                     found: try count(d, "correction")),
             .compare("weather readings", table: "weather",
                      expected: expectedWeather, found: try count(d, "weather")),
             .compare("traces", table: "recording",

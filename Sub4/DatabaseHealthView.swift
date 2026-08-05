@@ -506,6 +506,31 @@ struct DatabaseHealthView: View {
                         .foregroundStyle(Color.dim)
                     }
                 }
+                // PATCH 280. Named "Commute decisions" and not
+                // "Corrections", because that is what these rows ARE today —
+                // `DataCorrections` will land in the same table later and this
+                // row would then be lying about what it counts.
+                LabeledContent("Commute decisions",
+                               value: r.correctionsSeen == 0
+                               ? "none"
+                               : "\(r.correctionsImported) new, \(r.correctionsUpdated) refreshed")
+                    .font(.caption)
+                if r.correctionsUnresolved > 0 {
+                    LabeledContent("  decision naming a missing ride",
+                                   value: "\(r.correctionsUnresolved)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.correctionsIgnored > 0 {
+                    LabeledContent("  decision on an excluded recording",
+                                   value: "\(r.correctionsIgnored)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.correctionsRemoved > 0 {
+                    LabeledContent("  opinions withdrawn",
+                                   value: "\(r.correctionsRemoved)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+
                 // PATCH 278. The one row on this screen that describes
                 // recordings the database does not hold and never will — so it
                 // sits with the counts rather than with the activities.
@@ -698,7 +723,8 @@ struct DatabaseHealthView: View {
                 // they resolve to.
                 let permission: Reconciliation =
                     StoreReadJournal.shared.canReconcile(
-                        ["notes.json", "proposals.json", Matcher.decisionsKey])
+                        ["notes.json", "proposals.json", "commutes.json",
+                         Matcher.decisionsKey])
                     ? .run
                     : .skipped("a store could not be read")
 
@@ -716,6 +742,7 @@ struct DatabaseHealthView: View {
                     syncState: ActivityStore.shared.syncState,
                     workItems: DetailStore.shared.workItems,
                     rejections: ActivityStore.shared.receipts,
+                    commutes: Array(CommuteStore.shared.decisions.values),
                     reconcile: permission,
                     weather: Array(WeatherStore.shared.byActivity.values),
                     constants: ConstantsStore.shared.c,
@@ -948,6 +975,7 @@ struct DatabaseHealthView: View {
                 syncState: ActivityStore.shared.syncState,
                 workItems: DetailStore.shared.workItems,
                 rejections: ActivityStore.shared.receipts,
+                commutes: Array(CommuteStore.shared.decisions.values),
                 matchDecisions: Array(Matcher.shared.decisions.values),
                 weather: Array(WeatherStore.shared.byActivity.values),
                 zones: AthleteStore.shared.hrZones,
