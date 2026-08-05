@@ -532,16 +532,31 @@ struct DatabaseInventoryTests {
                 "the database is not declared as a database folder")
     }
 
-    /// It holds nothing yet and must not be described as holding anything. When
-    /// 3.4 moves the stores into it, this test is what makes somebody rewrite
-    /// the entry rather than leave the old sentence in place.
-    @Test("The empty database says it is empty, and says what changes when it is not")
-    func emptinessIsDisclosed() throws {
+    /// REPLACED IN 281, AND THE REPLACEMENT IS THE FINDING — ADR-0003 §12.27.3.
+    ///
+    /// This asserted `entry.lineage == [.device]` and that a gap named "3.4",
+    /// under a comment saying it was "what makes somebody rewrite the entry
+    /// rather than leave the old sentence in place".
+    ///
+    /// IT DID NOT DO THAT, AND IT COULD NOT HAVE. It pinned the stale claim.
+    /// Step 3.4 ran across patches 265–280, the entry became false in every
+    /// particular, and this test went on passing the whole way — because
+    /// nothing about it was connected to whether the database held any rows. It
+    /// would only ever have fired if somebody had already fixed the entry.
+    ///
+    /// A test that pins a description keeps the description. A test that pins a
+    /// description to SOMETHING THAT MOVES keeps it true.
+    /// `databaseLineageIsTheUnionOfItsInputs` is the second kind and lives in
+    /// DataLifecycleTests beside the inventory it checks.
+    ///
+    /// What stays here is the obligation that is still genuinely open.
+    @Test("The database still names the step that will make its disconnect rule wrong")
+    func theRemainingObligationIsNamed() throws {
         let entry = try #require(DataLifecycle.entry(.database))
-        #expect(entry.lineage == [.device],
-                "the database claims data it does not hold yet")
-        #expect(entry.gaps.contains { $0.contains("3.4") },
-                "nothing records that this entry has to be rewritten at 3.4")
+        #expect(entry.gaps.contains { $0.contains("3.7") },
+                "nothing records that a disconnect must start deleting rows at 3.7")
+        #expect(entry.lineage.contains(.strava),
+                "the database holds Strava-derived rows and the entry must say so")
     }
 
     /// ADR-0003 §9.4, action 2. The old sentence — "Nothing leaves this phone

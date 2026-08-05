@@ -2562,6 +2562,158 @@ table the row will be counting two different things, and a label that already
 said "Corrections" would quietly start being wrong instead of visibly needing a
 change.
 
+## 12.27 The inventory said it was empty — patch 281
+
+### 12.27.1 What was actually declared
+
+`DataLifecycle.swift`'s `.database` entry, at patch 280, on a phone holding 51
+tables and roughly 212,297 rows:
+
+- `whatItIs`: *"Today it holds no training data at all — only an empty schema."*
+- `lineage: [.device]`
+- `onStravaDisconnect: .keep(why: "it is empty…")`
+
+Three statements, all false, and the third one load-bearing: the entry exempted
+itself from a disconnect **on the strength of the first two**.
+
+The entry predicted its own correction. Its gap read *"When step 3.4 moves the
+stores into it, this entry's lineage, export rule and disconnect rule must all
+be rewritten."* Step 3.4 ran across patches 265–280. Nothing rewrote it, because
+nothing was watching.
+
+### 12.27.2 The failure is a class, not an incident
+
+`DataLifecycle.swift`'s header states the rule it broke: *"It describes what the
+app does, not what it should do."* The file is scrupulous about this — several
+categories are handled worse than their stated policy and each says so.
+
+What it had no defence against was the opposite drift: a statement that was true
+when written and became false while nobody was reading it. Recording a gap makes
+a known shortfall visible; it does not make the arrival of the fix detectable.
+**A prediction is not a trigger.**
+
+This is the same shape as §12.25's two-answers-to-one-question: correct code,
+correct at the time, with no mechanism to notice a change elsewhere. The answer
+is the same in kind — couple the claim to the thing that would falsify it.
+
+### 12.27.3 The entry was not unguarded. It was guarded by the wrong kind of test.
+
+This is the part worth keeping. **Two tests already existed for exactly this
+entry, written for exactly this eventuality, and both passed the whole way
+through 3.4.**
+
+`DatabaseTests.emptinessIsDisclosed` asserted `entry.lineage == [.device]` and
+that a gap named "3.4", under a comment saying it was *"what makes somebody
+rewrite the entry rather than leave the old sentence in place"*.
+
+`DataLifecycleCoordinatorTests.theDatabaseExemptionExpiresWhenItHoldsSomething`
+guarded on `lineage != [.device]` and was titled *"THE TRAP THAT MAKES THE
+EXEMPTION ABOVE SAFE"*, closing with *"a sentence in ADR-0003 §9.4 relies on
+somebody rereading ADR-0003 §9.4."*
+
+Both were pinned to **the declared value**, not to reality. So the only way
+either could fire was if somebody had *already* corrected the entry — at which
+point the test's job was done by the person it was supposed to prompt. A test
+that pins a description keeps the description; it does not keep it true.
+
+The distinction is not subtle once stated, and it is easy to write the wrong
+one while believing you have written the right one — both of these read, in
+their own comments, as though they were traps. **The test for a trap is: name
+the event that should spring it, and check that the assertion reads something
+that changes when that event happens.** `lineage == [.device]` does not change
+when the importer runs. `migrationFailureBlocksTheApp` does change when a store
+starts reading from the database, and it changes *by a person's deliberate
+act*, which is the second property a trap wants: it fires in front of somebody
+who is already thinking about the thing.
+
+Both tests are replaced in this patch rather than deleted, and both are
+re-aimed at that flag.
+
+**A footnote on the export one.** Left as written it would have failed under
+this patch — for the wrong reason. The export writes JSON out of the stores,
+and the stores are still the originals; the database holds a copy, and omitting
+a copy omits nothing. Its premise — *"an export that omits the database omits
+everything"* — becomes true when the database holds the ONLY rows, not when it
+holds rows. A failing test whose premise is wrong is worse than no test, because
+the fix it invites is to make the app satisfy it.
+
+### 12.27.4 `.removeEverything` is right, and only while this is a copy
+
+The softer fix was to reword the `.keep`. That leaves 212,297 Strava-derived
+rows on the phone of somebody who has just read a receipt saying their Strava
+data was removed. It is the same falsehood, better written.
+
+While nothing reads the database, `.removeEverything` is correct on all three
+axes that matter:
+
+1. **Harmless.** No screen reads it. The migrator rebuilds an empty schema on
+   the next launch in milliseconds.
+2. **Honest.** Every row in there today is Strava-derived, weather, or authored
+   *about* Strava data, and after a disconnect none of it should survive.
+3. **It sweeps the snapshots.** `.snapshotDirectory("snapshots")` sits in the
+   same entry and holds *"copies of everything above"* — legacy inputs captured
+   before decode. It had survived every disconnect until now. Second retention
+   hole, same entry, closed by the same edit.
+
+It becomes **wrong** the day a kept category's data lives only in the database.
+The entries above promise that session notes, corrections and review verdicts
+survive a disconnect; a whole-folder delete would break all three.
+
+### 12.27.5 The trigger, and why it is that flag
+
+`Sub4Launch.migrationFailureBlocksTheApp` is already this project's declared
+marker for the moment the database stops being a copy: *"IT MUST BECOME `true`
+IN 3.3.3, the moment the first store reads its data from the database instead of
+from JSON."* It is a stored constant specifically so that flipping it is a
+deliberate act.
+
+So the test reads it:
+
+```swift
+if Sub4Launch.migrationFailureBlocksTheApp {
+    #expect(db.onStravaDisconnect != .removeEverything)
+} else {
+    #expect(db.onStravaDisconnect == .removeEverything)
+}
+```
+
+**The act that makes the row-level disconnect necessary is the act that fails
+the suite.** No calendar reminder, no item in a handoff that ages out — the
+person activating the reads is the person told what they now owe, at the moment
+they can least talk themselves out of it.
+
+This is preferable to a date-based or patch-numbered check for the reason patch
+272a established: a test that cites a patch number is policing bookkeeping. A
+test that cites a behaviour is policing behaviour.
+
+### 12.27.6 The lineage is held to a union
+
+`lineage` has to stay a literal — an entry cannot read the array it lives in.
+So `DataLifecycle.databaseContributors` lists the categories that write rows,
+and `databaseLineageIsTheUnionOfItsInputs` holds the literal to the union of
+their lineages plus `.device` for `migration_run`.
+
+Two decisions inside that:
+
+- **`.database` is not in its own contributor list.** It would make the
+  assertion circular — the value under test would be one of its own inputs, and
+  any superset would pass. `.device` is added explicitly instead.
+- **`.trainingLoad` is not in it either**, because it stores no rows. The curve
+  is computed; comparing it both ways is deferred to step 3.6 (§12.16).
+
+The union at patch 281 is all six sources. That is not an artefact of being
+generous — it is what "one database holds everything" means, and six sources on
+the privacy pane is the correct disclosure rather than an embarrassing one.
+
+### 12.27.7 The gap this patch opens rather than closes
+
+A disconnect now removes the database folder while GRDB still holds the file
+open. SQLite keeps working against the unlinked inode, so the rows survive until
+the app is quit. Harmless while nothing reads them, and dishonest the moment
+something does — so it is recorded as a gap against step 3.7 rather than fixed
+here. Closing it means a real `close()` on `Sub4Launch.database`, which is a
+change to a `private(set)` lifecycle and does not belong in a patch about prose.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

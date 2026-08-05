@@ -247,6 +247,90 @@ struct DataLifecycleTests {
                 "the Strava application keys survive a disconnect")
     }
 
+    // MARK: The database is a copy of everything, and said it was empty
+
+    /// THE ASSERTION THIS PATCH EXISTS FOR — patch 281, ADR-0003 §12.27.
+    ///
+    /// `.removeEverything` is the right rule for a database nothing reads: the
+    /// rows are a copy, the files above are the originals, and after a
+    /// disconnect neither should survive. It becomes the WRONG rule the moment
+    /// a kept category's data lives only in here.
+    ///
+    /// `migrationFailureBlocksTheApp` is this project's declared marker for
+    /// that moment — "IT MUST BECOME `true` IN 3.3.3, the moment the first
+    /// store reads its data from the database instead of from JSON" — and it is
+    /// a stored constant precisely so that flipping it is a decision somebody
+    /// makes on purpose. This test makes that decision fail the build until
+    /// the disconnect has been taught to delete rows.
+    ///
+    /// So the person who activates the database reads is the same person who
+    /// gets told what they now owe. That is the whole design: the act that
+    /// makes the work necessary is the act that surfaces it.
+    @Test("The disconnect rule is coupled to whether anything reads the database")
+    func theDisconnectRuleIsCoupledToActivation() throws {
+        let db = try #require(DataLifecycle.entry(.database))
+
+        // HOISTED, and not for readability — patch 278b. `#expect`'s second
+        // argument is `Comment?`, which a string LITERAL converts to and a
+        // `String` value does not. `"a " + "b"` is a value, so writing the
+        // sentence across two quoted pieces fails to compile with a diagnostic
+        // that names the type and not the cause.
+        let activated = "a store now reads from the database, so a disconnect "
+            + "may no longer remove the whole folder — it holds the only copy "
+            + "of notes, corrections and reviews that other categories promise "
+            + "to keep. See ADR-0003 §12.27 and step 3.7."
+        let shadow = "nothing reads the database, so its rows are a copy of "
+            + "the files above and a disconnect must take them too"
+
+        if Sub4Launch.migrationFailureBlocksTheApp {
+            #expect(db.onStravaDisconnect != .removeEverything, "\(activated)")
+        } else {
+            #expect(db.onStravaDisconnect == .removeEverything, "\(shadow)")
+        }
+    }
+
+    /// The literal cannot be computed — an entry cannot read the array it lives
+    /// in — so it is held to the union instead. This is the test that would
+    /// have caught the original defect: `weather` and `sessionNotes` started
+    /// feeding the database at patches 265 and 271, and `[.device]` went on
+    /// being the declared answer.
+    ///
+    /// `.device` is added here rather than taken from `.database`'s own entry,
+    /// which would make this circular. It is in the set for `migration_run`.
+    @Test("The database's lineage is the union of what feeds it")
+    func databaseLineageIsTheUnionOfItsInputs() throws {
+        let db = try #require(DataLifecycle.entry(.database))
+
+        var expected: Set<DataSource> = [.device]
+        for c in DataLifecycle.databaseContributors {
+            let e = try #require(DataLifecycle.entry(c),
+                                 "\(c.rawValue) is named as a contributor and has no entry")
+            expected.formUnion(e.lineage)
+        }
+
+        let missing = expected.subtracting(db.lineage).map(\.rawValue).sorted()
+        let extra = db.lineage.subtracting(expected).map(\.rawValue).sorted()
+        #expect(db.lineage == expected,
+                "the database's lineage is wrong — missing \(missing), unexpected \(extra)")
+    }
+
+    /// THE WEAKEST OF THE THREE, and recorded as such.
+    ///
+    /// It asserts the absence of two sentences, which is a test about prose —
+    /// the thing `knownProblemsAreDisclosed` had to be corrected for once
+    /// already. It earns its place on the same grounds as that test does in
+    /// reverse: those two claims were read by a person deciding whether to
+    /// disconnect, they were false for sixteen patches, and if they ever come
+    /// back it should be because somebody deleted this test on purpose.
+    @Test("The database no longer claims to be empty")
+    func theDatabaseDoesNotClaimToBeEmpty() throws {
+        let db = try #require(DataLifecycle.entry(.database))
+        #expect(!db.whatItIs.localizedCaseInsensitiveContains("no training data"))
+        #expect(!db.whatItIs.localizedCaseInsensitiveContains("empty schema"))
+        #expect(db.lineage.contains(.strava),
+                "the database holds 668 Strava activities and must say so")
+    }
+
     // MARK: The summary line
 
     @Test("The summary counts what the table shows")

@@ -732,19 +732,31 @@ enum DataLifecycle {
             category: .database,
             title: "The database",
             whatItIs: "A SQLite file and the journal files SQLite keeps beside "
-                    + "it. Today it holds no training data at all — only an "
-                    + "empty schema.",
+                    + "it. It now holds a copy of nearly everything above — your "
+                    + "activities, their traces and routes, the weather, your "
+                    + "notes and your corrections — written by the import on the "
+                    + "Database screen. No screen in the app reads from it yet; "
+                    + "they all still read the files above.",
             purpose: "Phase 3 replaces the folder of JSON files above with one "
                    + "database, so that a note you wrote against a session "
                    + "still finds it after the source it came from is gone.",
-            // HONEST FOR TODAY, AND WRONG BY 3.4. The file is created by this
-            // phone and contains nothing from anywhere else, so `.device` is
-            // the only true answer right now. The moment 3.4 imports the
-            // stores, this set becomes the union of every category's lineage
-            // and the disconnect rule below stops being `.keep`. Recorded as a
-            // gap rather than pre-declared, because an inventory that describes
-            // next month's behaviour is the thing this file exists to prevent.
-            lineage: [.device],
+            // CORRECTED IN 281, AND THE CORRECTION IS THE FINDING.
+            //
+            // This read `[.device]`, under a comment explaining that the file
+            // "contains nothing from anywhere else" and that step 3.4 would
+            // change it. 3.4 happened across patches 265–280. The rewrite did
+            // not follow, so for sixteen patches the one place holding every
+            // row claimed to hold none — and exempted itself from a disconnect
+            // on that basis.
+            //
+            // The previous comment was right that pre-declaring next month's
+            // behaviour is the thing this file exists to prevent. What it did
+            // not have was anything that would notice when next month arrived.
+            // That is what `databaseContributors` and its test are: the literal
+            // below is held to the union of every category that feeds this
+            // database, so changing a contributor's lineage names this file.
+            lineage: [.strava, .appleHealth, .authored,
+                      .weatherProvider, .bundled, .device],
             storage: [.applicationSupport(.databaseDirectory("db")),
                       // Patch 247. Filed under the database rather than given a
                       // category of its own because a snapshot exists only to
@@ -758,16 +770,42 @@ enum DataLifecycle {
             deletionRule: "Removed by Delete local data — both folders, so the "
                         + "database, its journal files, and every snapshot taken "
                         + "before the migration go together.",
-            gaps: ["Holds no training data yet. When step 3.4 moves the stores "
-                 + "into it, this entry's lineage, export rule and disconnect "
-                 + "rule must all be rewritten — a disconnect will have to "
-                 + "delete Strava-derived ROWS rather than a file (ADR-0003 §8).",
-                   "Not included in an export. The export writes JSON and a "
-                 + "SQLite file is not JSON, so a readable dump has to exist "
-                 + "before any category's data moves here (ADR-0003 §9.4).",
+            gaps: ["A copy, not the original: it holds the rows and nothing "
+                 + "reads them. When step 3.7 makes it the place the app reads "
+                 + "from, a disconnect will have to delete the Strava-derived "
+                 + "ROWS and re-key the ones you wrote, rather than removing "
+                 + "the folder — the rule below is only correct while every row "
+                 + "in here also exists in the files above (ADR-0003 §8).",
+                   "Not included in an export, and it is now the only place "
+                 + "your whole training record sits together. The export writes "
+                 + "JSON and a SQLite file is not JSON, so a readable dump has "
+                 + "to exist before this entry can honestly be exportable "
+                 + "(ADR-0003 §9.4).",
+                   "A disconnect removes the folder while the app still has the "
+                 + "database open, so the rows survive in an unlinked file until "
+                 + "you quit the app. Harmless while nothing reads them, and it "
+                 + "has to become a real close before step 3.7 (ADR-0003 §8).",
                    "Included in your device backup, like everything else under "
                  + "Application Support (ADR-0003 §9.4)."],
-            onStravaDisconnect: .keep(why: "it is empty. When step 3.4 moves the training data into it, this rule has to change to one that deletes the Strava-derived rows")),
+            // FLIPPED IN 281, AND IT IS CORRECT ONLY WHILE THIS IS A COPY.
+            //
+            // The softer fix was to reword the `.keep` — which would leave
+            // 212,297 Strava-derived rows on the phone of somebody who has just
+            // been shown a receipt saying their Strava data was removed. That is
+            // the same falsehood in better prose.
+            //
+            // Removing it is harmless (nothing reads it; the migrator rebuilds
+            // an empty schema on the next launch), honest (every row in here
+            // today is Strava-derived, weather, or written by you ABOUT Strava
+            // data), and it finally sweeps `snapshots/`, which holds copies of
+            // everything above and had been surviving every disconnect.
+            //
+            // It becomes WRONG the day a kept category's data lives only in
+            // here — your notes, your corrections, a review verdict, all of
+            // which the entries above promise survive a disconnect. That day is
+            // step 3.7, and `theDisconnectRuleIsCoupledToActivation` fails the
+            // build on it.
+            onStravaDisconnect: .removeEverything),
 
         DataCategoryEntry(
             category: .diagnostics,
@@ -832,6 +870,42 @@ enum DataLifecycle {
     static func entry(_ c: DataCategory) -> DataCategoryEntry? {
         entries.first { $0.category == c }
     }
+
+    /// The categories that put rows in the database — patch 281.
+    ///
+    /// DECLARED RATHER THAN COMPUTED, and the reason is structural: an entry
+    /// cannot read the array it lives in, so `.database`'s `lineage` has to be
+    /// a literal. Hand-writing that literal next to the entry is exactly how it
+    /// went sixteen patches out of date. So the literal stays, this list stays
+    /// beside it, and `databaseLineageIsTheUnionOfItsInputs` holds one to the
+    /// other — change any contributor's lineage and the test names this file.
+    ///
+    /// `.reviews` is listed with an empty table behind it. The review importer
+    /// exists and runs; there has simply been no review yet. This list is what
+    /// the import WRITES, not what happens to be in the file this afternoon.
+    ///
+    /// `.database` IS DELIBERATELY NOT IN ITS OWN LIST. `migration_run` is
+    /// generated by this phone and `.device` belongs in the set for it — but
+    /// including the category here would make the assertion circular, since the
+    /// value being checked would be one of its own inputs. The test adds
+    /// `.device` explicitly instead.
+    ///
+    /// ABSENT AND CORRECTLY SO: `.trainingLoad`, which stores no rows — the
+    /// curve is computed, and comparing it both ways is deferred to step 3.6
+    /// (ADR-0003 §12.16); `.credentials`, which is Keychain and where nothing
+    /// in this database is a secret; `.diagnostics` and `.appSettings`, whose
+    /// preference keys are staying where they are.
+    static let databaseContributors: [DataCategory] = [
+        .activitySummaries,
+        .routes,
+        .sensorStreams,
+        .weather,
+        .athleteProfile,
+        .sessionNotes,
+        .matchDecisions,
+        .reviews,
+        .trainingPlan,
+    ]
 
     /// Everything the Strava restriction travels with — raw and derived alike.
     /// This is the list ADR-0002's purge works from, and the reason `lineage`

@@ -269,23 +269,39 @@ struct DataLifecycleCoordinatorTests {
         }
     }
 
-    /// THE TRAP THAT MAKES THE EXEMPTION ABOVE SAFE, and the reason it is a
-    /// test rather than a line in an ADR.
+    /// THE TRAP THAT MAKES THE EXEMPTION ABOVE SAFE — RE-AIMED IN 281.
     ///
-    /// The database may be left out of the export only while it is empty. Its
-    /// lineage is `[.device]` today because the file holds nothing that came
-    /// from anywhere. The moment step 3.4 moves a category's data into it, that
-    /// stops being true — and an export that omits the database then omits
-    /// everything, which is the opposite of what "Export my data" means.
+    /// It guarded on `lineage != [.device]`: the database may be left out of
+    /// the export only while it is EMPTY. Patch 281 makes that guard fall
+    /// through, and the assertion behind it — that the database must therefore
+    /// be in the export — would fail.
     ///
-    /// This fails on the day that happens. A sentence in ADR-0003 §9.4 relies
-    /// on somebody rereading ADR-0003 §9.4.
-    @Test("The database may be left out of the export only while it is empty")
-    func theDatabaseExemptionExpiresWhenItHoldsSomething() throws {
+    /// IT WOULD FAIL FOR THE WRONG REASON, which is why this is a re-aim and
+    /// not a deletion. The export writes JSON out of the STORES, and the stores
+    /// are still the originals; the database holds a copy of them. Omitting a
+    /// copy omits nothing. The premise this test defends — "an export that
+    /// omits the database omits everything" — becomes true not when the
+    /// database holds rows, but when it holds the ONLY rows.
+    ///
+    /// So the guard moves to the marker for that: `migrationFailureBlocksTheApp`,
+    /// flipped at step 3.7 by whoever makes the database authoritative. On that
+    /// day this and `theDisconnectRuleIsCoupledToActivation` fail together,
+    /// which is the correct pair — a database that cannot be exported and
+    /// cannot be selectively deleted is not one the app may depend on.
+    @Test("The database may be left out of the export only while nothing reads it")
+    func theDatabaseExemptionExpiresWhenItBecomesAuthoritative() throws {
         let entry = try #require(DataLifecycle.entry(.database))
-        guard entry.lineage != [.device] else { return }
+
+        guard Sub4Launch.migrationFailureBlocksTheApp else {
+            // Still a copy. The export takes the same data from the stores, and
+            // the manifest names this file in `excluded` with the reason.
+            #expect(entry.isExportable == false,
+                    "nothing reads the database, so the export takes the stores instead")
+            return
+        }
+
         #expect(entry.isExportable,
-                "the database now holds data from \(entry.lineage.map(\.rawValue).sorted()) and must be in the export")
+                "the database is now the only copy of your training and must be in the export")
     }
 
     /// An export that runs on a device with no data must still be a valid file
