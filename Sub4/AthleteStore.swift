@@ -30,6 +30,19 @@ final class AthleteStore {
     /// Nil until the athlete is fetched, or if no FTP is set on the profile.
     private(set) var ftp: Int?
     private(set) var shoes: [Shoe] = []
+
+    /// The athlete's bikes — patch 267.
+    ///
+    /// A SEPARATE ARRAY RATHER THAN A `kind` ON `Shoe`, and the reason is
+    /// `Shoe.wear`: 600 km is "start thinking about it" for a running shoe and
+    /// nothing at all for a bike. A shared type with a flag would put a
+    /// meaningless threshold one `if` away from every caller. Two arrays make
+    /// the wrong question unaskable.
+    private(set) var bikes: [Shoe] = []
+
+    /// Everything the athlete owns, for callers that only need a name for an
+    /// id — the importer, the verifier, and `gear(id:)` below.
+    var allGear: [Shoe] { shoes + bikes }
     private(set) var lastFetch: Date?
     private(set) var lastError: String?
 
@@ -191,6 +204,14 @@ final class AthleteStore {
         return shoes.first { $0.id == id }
     }
 
+    /// Any gear by id, shoe or bike — patch 267. `shoe(id:)` above is
+    /// deliberately left alone: its callers want a shoe and would be wrong to
+    /// be handed a bike.
+    func gear(id: String?) -> Shoe? {
+        guard let id else { return nil }
+        return allGear.first { $0.id == id }
+    }
+
     var activeShoes: [Shoe] {
         shoes.sorted { $0.km > $1.km }
     }
@@ -240,24 +261,32 @@ final class AthleteStore {
         }
 
         async let zones: [HRZone] = fetchZones(token: token)
-        async let gear: [Shoe] = fetchAthlete(token: token)
+        async let gear: (shoes: [Shoe], bikes: [Shoe]) = fetchAthlete(token: token)
         let (z, g) = await (zones, gear)
 
         // Keep whatever we already had if a call came back empty — better a
-        // slightly stale zone than none at all.
+        // slightly stale zone than none at all. Shoes and bikes are held to
+        // that rule separately, for the reason the comment below gives about
+        // zones: one list arriving empty must not clear the other.
         if !z.isEmpty { hrZones = z }
-        if !g.isEmpty { shoes = g }
+        if !g.shoes.isEmpty { shoes = g.shoes }
+        if !g.bikes.isEmpty { bikes = g.bikes }
 
         // THE DEFECT THIS REPLACES. The old condition was `z.isEmpty &&
         // g.isEmpty`, so a refresh that returned six shoes and no zones cleared
         // the error, stamped `lastFetch` and reported success — the half that
         // worked concealed the half that did not. Strava holds five zones for
         // this account; the app held none and said nothing was wrong.
-        let problems = Self.refreshProblems(zones: z.count, gear: g.count)
+        // GEAR IS SHOES PLUS BIKES for the purposes of "did anything come
+        // back" — patch 267a. Reporting only the shoes would put a cyclist's
+        // successful refresh in the error line, which is the same shape as the
+        // defect described above: one half concealing the other.
+        let gearCount = g.shoes.count + g.bikes.count
+        let problems = Self.refreshProblems(zones: z.count, gear: gearCount)
         lastError = problems.isEmpty ? nil : problems.joined(separator: " ")
-        lastOutcome = "\(z.count) zones, \(g.count) gear"
+        lastOutcome = "\(z.count) zones, \(gearCount) gear"
 
-        if !z.isEmpty || !g.isEmpty {
+        if !z.isEmpty || gearCount > 0 {
             lastFetch = Date()
             save()
         }
@@ -346,7 +375,7 @@ final class AthleteStore {
     /// asking for it. Renamed from `fetchGear` in patch 235 so the name stops
     /// under-describing what the response carries; a function called
     /// `fetchGear` is exactly why the FTP read ended up on the wrong endpoint.
-    private func fetchAthlete(token: String) async -> [Shoe] {
+    private func fetchAthlete(token: String) async -> (shoes: [Shoe], bikes: [Shoe]) {
         struct Athlete: Decodable {
             struct Gear: Decodable {
                 let id: String
@@ -355,11 +384,16 @@ final class AthleteStore {
                 let primary: Bool?
             }
             let shoes: [Gear]?
+            /// PATCH 267, AND IT HAD ALWAYS BEEN IN THE RESPONSE. Strava's
+            /// DetailedAthlete carries `bikes` beside `shoes`; this app
+            /// decoded one of them for thirteen months, which is why 356
+            /// activities named gear the profile did not hold.
+            let bikes: [Gear]?
             let ftp: Int?
         }
         guard let data = await get("https://www.strava.com/api/v3/athlete", token: token),
               let a = try? JSONDecoder().decode(Athlete.self, from: data)
-        else { return [] }
+        else { return (shoes: [], bikes: []) }
 
         // Set even when the gear list is absent — they are two independent
         // facts in one response, and the old `guard let shoes` would have
@@ -372,14 +406,19 @@ final class AthleteStore {
         // rather than reading it.
         if let f = a.ftp, f > 50 { ftp = f }
 
-        guard let shoes = a.shoes else { return [] }
-
-        return shoes.map {
-            Shoe(id: $0.id,
-                 name: $0.name ?? "Shoe",
-                 distanceM: $0.distance ?? 0,
-                 primary: $0.primary ?? false)
+        // Two independent lists in one response, and each is allowed to be
+        // absent on its own — the same reasoning as the FTP above. An athlete
+        // with bikes and no shoes is a cyclist, not an error.
+        func gear(_ list: [Athlete.Gear]?, fallbackName: String) -> [Shoe] {
+            (list ?? []).map {
+                Shoe(id: $0.id,
+                     name: $0.name ?? fallbackName,
+                     distanceM: $0.distance ?? 0,
+                     primary: $0.primary ?? false)
+            }
         }
+        return (shoes: gear(a.shoes, fallbackName: "Shoe"),
+                bikes: gear(a.bikes, fallbackName: "Bike"))
     }
 
     private func get(_ urlString: String, token: String) async -> Data? {
@@ -412,6 +451,15 @@ final class AthleteStore {
     struct Cache: Codable {
         var zones: [HRZone]
         var shoes: [Shoe]
+        /// OPTIONAL, AND THAT IS NOT TIDINESS — patch 267.
+        ///
+        /// A synthesised `init(from:)` does not use Swift default values, so a
+        /// non-optional `bikes` would make every `athlete.json` written before
+        /// today fail to decode ENTIRELY — taking the zones, the FTP and the
+        /// shoe history with it. `LegacyFixtures` records that hazard against
+        /// `constants.json`, which has three properties carrying exactly this
+        /// trap.
+        var bikes: [Shoe]?
         var fetched: Date?
         var ftp: Int?
     }
@@ -423,6 +471,9 @@ final class AthleteStore {
         // is corrected without waiting for the next Strava fetch.
         hrZones = Self.separate(c.zones)
         shoes = c.shoes
+        // Absent in every file written before patch 267, which is the whole
+        // reason the column is optional. Empty until the next refresh.
+        bikes = c.bikes ?? []
         lastFetch = c.fetched
         ftp = c.ftp
     }
@@ -440,12 +491,15 @@ final class AthleteStore {
         hrZones = []
         ftp = nil
         shoes = []
+        bikes = []
         lastFetch = nil
         lastError = nil
     }
 
     private func save() {
-        let c = Cache(zones: hrZones, shoes: shoes, fetched: lastFetch, ftp: ftp)
+        let c = Cache(zones: hrZones, shoes: shoes,
+                      bikes: bikes.isEmpty ? nil : bikes,
+                      fetched: lastFetch, ftp: ftp)
         // A bare `JSONEncoder`, as it has always been — `AthleteFile` decodes
         // this file with `.deferredToDate` on the strength of it, and changing
         // the encoder here would break thirteen months of files on disk.

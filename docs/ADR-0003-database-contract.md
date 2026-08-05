@@ -1661,6 +1661,46 @@ from 2001 — `LegacyStore.dates` declares it and `AthleteFile.decoder` depends 
 it. Switching them to `JSONEncoder.sub4` while sweeping would have rewritten
 thirteen months of files into a shape two other files disagree with.
 
+## 12.18 The bikes — patch 267
+
+The import screen has reported **`Naming unknown gear: 407`** since patch 218,
+against four ids: `b6932581` (287 activities), `b13458344` (60), `g15316986`
+(51) and `b10348095` (9).
+
+**Three of them are bikes, and the app has never read them.** Strava's
+DetailedAthlete carries `bikes` beside `shoes`; `AthleteStore.Athlete` decoded
+one of the two. Thirteen months, 356 activities, and the field was in every
+response.
+
+**No data was lost, which is why this went unnoticed.**
+`activity_gear_reference` records the raw external id for every activity
+whether or not it resolves — that table exists precisely so a name the source
+used survives not matching anything here. What was missing was a `gear` row, so
+the id had no name and no distance to aggregate against.
+
+**A separate array rather than a `kind` on `Shoe`.** `Shoe.wear` says 600 km is
+"start thinking about it" and 800 km is "past the range the literature gives".
+Neither means anything for a bike. A shared type with a flag would leave a
+meaningless threshold one `if` away from every caller; two arrays make the
+wrong question unaskable. `allGear` exists for the callers that genuinely only
+need a name for an id — the importer, the verifier, and `gear(id:)`. `shoe(id:)`
+is deliberately left alone, because its callers want a shoe and would be wrong
+to be handed a bike.
+
+**`Cache.bikes` is optional, and that is not tidiness.** A synthesised
+`init(from:)` does not use Swift default values, so a non-optional `bikes` would
+make every `athlete.json` written before today fail to decode *entirely* —
+taking the zones, the FTP and the shoe history with it. `LegacyFixtures` records
+that same hazard against `constants.json`, whose `restByMonth`, `sexCoefficient`
+and `version` are three properties carrying exactly this trap.
+
+**What is left: 51.** `g15316986` is a shoe Strava no longer returns, which is
+what "retired" means at the API. Fixing it needs `GET /gear/{id}` — an endpoint
+this app does not have — so it is patch 268 rather than a network call bolted
+onto a persisted-model change. Those 51 runs are the only ones whose distance
+still counts against no shoe, and shoe wear is the one thing gear is actually
+for.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

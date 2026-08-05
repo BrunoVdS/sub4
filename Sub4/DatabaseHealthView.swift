@@ -557,7 +557,11 @@ struct DatabaseHealthView: View {
                 importReport = try Sub4Import.run(
                     into: db,
                     activities: ActivityStore.shared.activities,
-                    shoes: AthleteStore.shared.shoes,
+                    // ALL GEAR, not just shoes — patch 267. The `gear` table
+                    // holds anything an activity can name, and a bike that is
+                    // not in it is 287 activities naming gear the database does
+                    // not hold.
+                    shoes: AthleteStore.shared.allGear,
                     notes: Array(NotesStore.shared.notes.values),
                     proposals: ProposalStore.shared.records,
                     weather: Array(WeatherStore.shared.byActivity.values),
@@ -785,7 +789,7 @@ struct DatabaseHealthView: View {
             let report = SemanticVerifier.attempt(
                 db,
                 activities: ActivityStore.shared.activities,
-                shoes: AthleteStore.shared.shoes,
+                shoes: AthleteStore.shared.allGear,
                 notes: Array(NotesStore.shared.notes.values),
                 weather: Array(WeatherStore.shared.byActivity.values),
                 zones: AthleteStore.shared.hrZones,

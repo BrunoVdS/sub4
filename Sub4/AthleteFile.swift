@@ -77,6 +77,10 @@ nonisolated struct AthleteFile: Codable, Hashable {
 
     var zones: [Zone]
     var shoes: [Shoe]
+    /// Patch 267. Optional for the same reason as `AthleteStore.Cache.bikes`:
+    /// every file written before today is missing the key, and a synthesised
+    /// decoder does not use default values.
+    var bikes: [Shoe]?
     /// When the athlete profile was last fetched from Strava. Seconds from
     /// 2001 on disk — see `decoder`.
     var fetched: Date?
