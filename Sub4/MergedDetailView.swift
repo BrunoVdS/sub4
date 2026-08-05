@@ -50,6 +50,13 @@ struct MergedDetailView: View {
     /// commutes and something else" with no memory of having been three. This
     /// is what `partsRemoved` counts against.
     @State private var openedAsCommutes = true
+
+    /// Patch 265 — see `ActivityDetailView`. One alert for the card, not one
+    /// per row: three bicycles in a column are three tap targets and one
+    /// outcome, and three alerts racing each other would be worse than the
+    /// silence they replace.
+    @State private var commuteFailure: StoreWriteError?
+    @State private var pendingCommute: (id: String, isCommute: Bool)?
     @State private var athlete = AthleteStore.shared
     @State private var load = LoadStore.shared
 
@@ -127,6 +134,9 @@ struct MergedDetailView: View {
             }
         }
         .tint(.accent4)
+        .storeWriteFailure($commuteFailure, retry: {
+            if let p = pendingCommute { setCommute(p.isCommute, for: p.id) }
+        })
         // Every part jumps the queue, one at a time — `prioritise` is a
         // single-flight call and awaiting it serially is what keeps this from
         // racing the drain.
@@ -260,7 +270,7 @@ struct MergedDetailView: View {
     /// is out, and the footer below says which is which.
     private func commuteToggle(_ p: Activity) -> some View {
         Button {
-            CommuteStore.shared.set(!p.isCommuteRide, for: p.id)
+            setCommute(!p.isCommuteRide, for: p.id)
         } label: {
             Image(systemName: p.isCommuteRide ? "bicycle.circle.fill" : "bicycle.circle")
                 .font(.body)
@@ -268,6 +278,22 @@ struct MergedDetailView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(p.isCommuteRide ? "Commute" : "Not a commute")
+    }
+
+    /// Records one ride's commute decision. Same shape as the activity page,
+    /// and it carries the id as well as the value — this card holds three
+    /// rides, so a retry has to know which one it was repeating.
+    private func setCommute(_ isCommute: Bool, for id: String) {
+        pendingCommute = (id, isCommute)
+        do {
+            try CommuteStore.shared.set(isCommute, for: id)
+            pendingCommute = nil
+        } catch let error as StoreWriteError {
+            commuteFailure = error
+        } catch {
+            commuteFailure = StoreWriteError(store: "commutes.json", stage: .writing,
+                                             reason: String(describing: error))
+        }
     }
 
     /// How many legs this page still lists but the group no longer holds.

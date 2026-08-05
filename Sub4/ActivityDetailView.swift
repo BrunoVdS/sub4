@@ -50,6 +50,16 @@ struct ActivityDetailView: View {
     @Environment(\.dismiss) var dismiss
     /// Patch 252 — the (i) beside the commute switch.
     @State private var showCommuteInfo = false
+
+    /// Patch 265. Non-nil means the last commute change did not reach the disk
+    /// — and the toggle has already snapped back, because the store rolled its
+    /// own memory back and `isCommuteRide` reads it.
+    @State private var commuteFailure: StoreWriteError?
+    /// What to repeat if the athlete taps *Try again*. Held rather than
+    /// recomputed, because by the time the alert is on screen the toggle shows
+    /// the OLD value again and `!isCommuteRide` would ask for the opposite of
+    /// what was wanted.
+    @State private var pendingCommute: Bool?
     @State var store = DetailStore.shared
     // The matcher and the notes store are observed rather than read once: the
     // note card and the match row both have to redraw when they change, and
@@ -260,6 +270,12 @@ struct ActivityDetailView: View {
             }
         }
         .tint(.accent4)
+        // Patch 265. The toggle has already snapped back by the time this
+        // appears — the store rolled its own memory back and `isCommuteRide`
+        // reads it — so this says what did not happen and offers to repeat it.
+        .storeWriteFailure($commuteFailure, retry: {
+            if let pendingCommute { setCommute(pendingCommute) }
+        })
         .task { await store.prioritise(activity.id) }
         // The weather fetch lives HERE and not next to the row that shows it.
         // `weatherRow` renders nothing until the data exists, so a `.task`
@@ -578,7 +594,7 @@ struct ActivityDetailView: View {
                 // the same thing. The bicycle won because it is the one that
                 // has to work in a row of three.
                 Button {
-                    CommuteStore.shared.set(!activity.isCommuteRide, for: activity.id)
+                    setCommute(!activity.isCommuteRide)
                 } label: {
                     Image(systemName: activity.isCommuteRide
                           ? "bicycle.circle.fill" : "bicycle.circle")
@@ -589,6 +605,25 @@ struct ActivityDetailView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(activity.isCommuteRide ? "Commute" : "Not a commute")
             }
+        }
+    }
+
+    /// Records a commute decision, and says so when it does not stick.
+    ///
+    /// The wanted value is held in `pendingCommute` BEFORE the attempt, because
+    /// a retry must repeat the intent rather than invert the current state: by
+    /// the time the alert is on screen the toggle shows the old value again,
+    /// and `!isCommuteRide` would ask for the opposite of what was wanted.
+    private func setCommute(_ isCommute: Bool) {
+        pendingCommute = isCommute
+        do {
+            try CommuteStore.shared.set(isCommute, for: activity.id)
+            pendingCommute = nil
+        } catch let error as StoreWriteError {
+            commuteFailure = error
+        } catch {
+            commuteFailure = StoreWriteError(store: "commutes.json", stage: .writing,
+                                             reason: String(describing: error))
         }
     }
 
@@ -628,8 +663,19 @@ struct ActivityDetailView: View {
                 // is not a commute" are different answers, and only the first
                 // follows the threshold if it ever moves.
                 Button("Forget my answer and use the rule") {
-                    CommuteStore.shared.clear(activity.id)
-                    showCommuteInfo = false
+                    do {
+                        try CommuteStore.shared.clear(activity.id)
+                        // The sheet closes only if the answer was actually
+                        // forgotten. Closing regardless would show the rule's
+                        // verdict on a ride that still carries an override.
+                        showCommuteInfo = false
+                    } catch let error as StoreWriteError {
+                        commuteFailure = error
+                    } catch {
+                        commuteFailure = StoreWriteError(store: "commutes.json",
+                                                         stage: .writing,
+                                                         reason: String(describing: error))
+                    }
                 }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.accent4)

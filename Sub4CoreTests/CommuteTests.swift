@@ -45,8 +45,14 @@ struct CommuteTests {
                  startLon: nil)
     }
 
+    /// Teardown, and the one place in this file where swallowing is right.
+    ///
+    /// Every call site is inside `defer`, which cannot throw, and a failure to
+    /// clean up decisions a test made is not the thing under test. Marked
+    /// `try?` in one place rather than at twelve `defer` sites — the same
+    /// swallow either way, and one of them is reviewable.
     private func forget(_ ids: String...) {
-        ids.forEach { CommuteStore.shared.clear($0) }
+        ids.forEach { try? CommuteStore.shared.clear($0) }
     }
 
     // MARK: The default — pure, and knows only the distance
@@ -67,7 +73,7 @@ struct CommuteTests {
     }
 
     @Test("Only bike rides are commutes")
-    func nothingElseIsACommute() {
+    func nothingElseIsACommute() throws {
         let run = Activity(id: "r1", name: "Morning Run", sportType: "Run",
                            startLocal: "2026-08-04T07:00:00",
                            distance: 3000, movingTime: 900, elapsedTime: 900,
@@ -76,7 +82,7 @@ struct CommuteTests {
                            maxSpeed: nil, deviceWatts: nil, averageWatts: nil,
                            startUTC: nil, startLat: nil, startLon: nil)
         #expect(run.commuteByDistance == false)
-        CommuteStore.shared.set(true, for: "r1")
+        try CommuteStore.shared.set(true, for: "r1")
         defer { forget("r1") }
         // Even with an answer on file. The question is about bike sessions
         // competing with planned rides, and a 3 km run is not one.
@@ -86,10 +92,10 @@ struct CommuteTests {
     // MARK: The override — wins in both directions
 
     @Test("A long ride marked as a commute is a commute")
-    func theAnswerWinsUpwards() {
+    func theAnswerWinsUpwards() throws {
         let r = ride(42, id: "o1")
         #expect(r.isCommuteRide == false, "precondition: the rule says training")
-        CommuteStore.shared.set(true, for: "o1")
+        try CommuteStore.shared.set(true, for: "o1")
         defer { forget("o1") }
         #expect(r.isCommuteRide)
         #expect(r.extraLabel == "Ride · commute")
@@ -97,25 +103,25 @@ struct CommuteTests {
     }
 
     @Test("A short ride marked as training is training")
-    func theAnswerWinsDownwards() {
+    func theAnswerWinsDownwards() throws {
         // The change from patch 250, which kept a distance floor underneath so
         // an unticked Strava box could not promote a 3 km hop. An answer given
         // HERE is the athlete's, not a side-effect of another app's default, so
         // it wins in both directions.
         let r = ride(3.4, id: "o2")
         #expect(r.isCommuteRide, "precondition: the rule says commute")
-        CommuteStore.shared.set(false, for: "o2")
+        try CommuteStore.shared.set(false, for: "o2")
         defer { forget("o2") }
         #expect(r.isCommuteRide == false)
         #expect(r.isPlanEligible)
     }
 
     @Test("Clearing an answer is not the same as answering no")
-    func clearingReturnsItToTheRule() {
+    func clearingReturnsItToTheRule() throws {
         let r = ride(3.4, id: "o3")
-        CommuteStore.shared.set(false, for: "o3")
+        try CommuteStore.shared.set(false, for: "o3")
         #expect(r.isCommuteRide == false)
-        CommuteStore.shared.clear("o3")
+        try CommuteStore.shared.clear("o3")
         // Back to the rule, which for 3.4 km says commute. If `clear` merely
         // wrote `false` this would still read false, and the athlete would have
         // no way back to the default.
@@ -126,7 +132,7 @@ struct CommuteTests {
     @Test("An answer carries the moment it was given")
     func decisionsAreDated() throws {
         let when = Date(timeIntervalSince1970: 1_785_900_000)
-        CommuteStore.shared.set(true, for: "o4", now: when)
+        try CommuteStore.shared.set(true, for: "o4", now: when)
         defer { forget("o4") }
         let d = try #require(CommuteStore.shared.decisions["o4"])
         #expect(d.decided == when)
@@ -134,11 +140,11 @@ struct CommuteTests {
     }
 
     @Test("Only the answers that disagree with the rule are interesting")
-    func overridesAreTheDisagreements() {
+    func overridesAreTheDisagreements() throws {
         let agreeing = ride(3.4, id: "o5")     // rule says commute, answer agrees
         let disagreeing = ride(3.4, id: "o6")  // rule says commute, answer differs
-        CommuteStore.shared.set(true, for: "o5")
-        CommuteStore.shared.set(false, for: "o6")
+        try CommuteStore.shared.set(true, for: "o5")
+        try CommuteStore.shared.set(false, for: "o6")
         defer { forget("o5", "o6") }
 
         let out = CommuteStore.shared.overrides(in: [agreeing, disagreeing])
@@ -183,8 +189,8 @@ struct CommuteTests {
         // The consequence of routing `isPlanEligible` through `isCommuteRide`:
         // the heading is right because the classification is, rather than by
         // luck of the distance.
-        CommuteStore.shared.set(true, for: "m6")
-        CommuteStore.shared.set(true, for: "m7")
+        try CommuteStore.shared.set(true, for: "m6")
+        try CommuteStore.shared.set(true, for: "m7")
         defer { forget("m6", "m7") }
 
         let items = MergedExtra.group([ride(42, id: "m6"), ride(38, id: "m7")])
@@ -217,10 +223,10 @@ struct CommuteTests {
     }
 
     @Test("Marking a long ride a commute retitles its row")
-    func theTitleFollowsTheAnswer() {
+    func theTitleFollowsTheAnswer() throws {
         let r = ride(42, id: "x3")
         #expect(r.extraTitle == "Morning Ride")
-        CommuteStore.shared.set(true, for: "x3")
+        try CommuteStore.shared.set(true, for: "x3")
         defer { forget("x3") }
         #expect(r.extraTitle == "Commute")
     }
@@ -232,7 +238,7 @@ struct CommuteTests {
         // 4 August: three short rides. Mark the middle one as training and it
         // becomes plan-eligible, which is exactly the test `MergedExtra.group`
         // already applies — so it leaves the group with no extra machinery.
-        CommuteStore.shared.set(false, for: "s2")
+        try CommuteStore.shared.set(false, for: "s2")
         defer { forget("s2") }
 
         let items = MergedExtra.group([ride(2.79, id: "s1"),
@@ -251,8 +257,8 @@ struct CommuteTests {
     }
 
     @Test("Taking one of two out leaves no group at all")
-    func aGroupOfOneIsNotAGroup() {
-        CommuteStore.shared.set(false, for: "s5")
+    func aGroupOfOneIsNotAGroup() throws {
+        try CommuteStore.shared.set(false, for: "s5")
         defer { forget("s5") }
 
         let items = MergedExtra.group([ride(2.79, id: "s4"), ride(6.09, id: "s5")])
@@ -264,9 +270,9 @@ struct CommuteTests {
     }
 
     @Test("Every ride taken out means no commutes left")
-    func allPartsCanLeave() {
-        CommuteStore.shared.set(false, for: "s6")
-        CommuteStore.shared.set(false, for: "s7")
+    func allPartsCanLeave() throws {
+        try CommuteStore.shared.set(false, for: "s6")
+        try CommuteStore.shared.set(false, for: "s7")
         defer { forget("s6", "s7") }
 
         let rides = [ride(2.79, id: "s6"), ride(6.09, id: "s7")]
@@ -348,13 +354,13 @@ struct CommuteTests {
         }
         #expect(titles() == ["Commutes 3"])
 
-        CommuteStore.shared.set(false, for: "g12")
+        try CommuteStore.shared.set(false, for: "g12")
         defer { forget("g12") }
         // One out of three: two commutes still merge, and the loner is a single
         // row rather than a group of one.
         #expect(titles() == ["Commutes 2"])
 
-        CommuteStore.shared.set(false, for: "g13")
+        try CommuteStore.shared.set(false, for: "g13")
         defer { forget("g13") }
         #expect(titles() == ["Rides 2"], "the two taken out should group as Rides")
     }

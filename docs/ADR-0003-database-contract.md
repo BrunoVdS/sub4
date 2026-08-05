@@ -1565,6 +1565,53 @@ a lost write there costs a sync rather than a memory, and they follow in the
 rest of D4. `StoreWrite.encode` is the shared piece so that each one is a small
 patch rather than a rewrite.
 
+## 12.17.1 A toggle that fails snaps back — D4 step 2, patch 265
+
+`commutes.json` is the second store the athlete *decides* rather than receives.
+§12.12.3 gave it a toggle so the commute call stopped being Strava's; 265 makes
+that toggle honest about whether the call was recorded.
+
+**The rollback is the visual revert, and that is the whole design.**
+`Activity.isCommuteRide` reads `CommuteStore`, so putting the old answer back
+when the write throws *is* the bicycle icon returning to its previous state.
+Nothing in the view undoes anything. The alternative — a view that catches the
+error and reverses its own state — would be a second opinion about what
+happened, and the two would disagree the first time one of them changed.
+
+**`clear` matters more than it looks.** Forgetting an answer returns a ride to
+the distance rule, so a clear that silently did not happen leaves the athlete
+believing the 10 km threshold governs a ride that still carries an override —
+and the ride would look right, because the override and the rule agree most of
+the time. It only shows up at the edges, which is where the toggle exists for.
+
+**The alert is a modifier now, and `NoteEditorView` keeps its own.** A note is
+text that may exist nowhere else, so its first action is *Copy the text* — an
+escape hatch that only makes sense for prose. A commute decision is one bit the
+athlete can set again by tapping; a threshold is a number he can retype. Those
+share two sentences — what did not happen, and is it worth another go — and
+writing them six times would guarantee six wordings. `storeWriteFailure` also
+owns the rule that *Try again* appears only for a write failure, so no caller
+can offer a retry for an encoding fault.
+
+**265a, the callers that were missed.** `set` and `clear` became throwing and
+`CommuteTests` had eighteen call sites — the app target was swept for callers
+and the test target was not. Same sweep error as §12.9c, one layer over:
+enumerate from the MECHANISM (every caller of a function whose signature
+changed) rather than from the places you happened to be looking. The compiler
+caught it, which is the good case; it is worth recording because the same miss
+against a *warning* would not have been caught at all.
+
+The teardown helper keeps its swallow, deliberately. Every call site is inside
+`defer`, which cannot throw, and a failure to clean up decisions a test made is
+not the thing under test — so it is `try?` in one reviewable place rather than
+at twelve `defer` sites.
+
+**A retry repeats the intent, not the inverse of the current state.** By the
+time the alert is on screen the toggle shows the OLD value again, so
+`!isCommuteRide` would ask for the opposite of what was wanted. The pending
+value is held rather than recomputed. Small, and exactly the kind of thing that
+would have worked in every test and been wrong on the phone.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

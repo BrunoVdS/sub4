@@ -78,6 +78,14 @@ final class CommuteStore {
         load()
     }
 
+    /// A store rooted somewhere else — patch 265, for the tests, exactly as
+    /// `NotesStore(directory:)`. A failable save nobody has watched fail is
+    /// `try?` with more words around it.
+    init(directory: URL) {
+        fileURL = directory.appendingPathComponent("commutes.json")
+        load()
+    }
+
     // MARK: Reading
 
     /// What the athlete said, or nil if he has not said.
@@ -104,20 +112,43 @@ final class CommuteStore {
 
     // MARK: Writing
 
-    func set(_ isCommute: Bool, for activityId: String, now: Date = Date()) {
+    /// THROWS SINCE PATCH 265, and the memory is rolled back when it does.
+    ///
+    /// The rollback is also the visual revert, and that is not a coincidence
+    /// worth relying on twice: `Activity.isCommuteRide` reads this store, so
+    /// putting the old answer back IS the toggle snapping back. Nothing in the
+    /// view has to undo anything, and there is no second opinion about what
+    /// happened that could drift from this one.
+    func set(_ isCommute: Bool, for activityId: String, now: Date = Date()) throws {
+        let previous = decisions[activityId]
         decisions[activityId] = CommuteDecision(activityId: activityId,
                                                 isCommute: isCommute,
                                                 decided: now)
-        save()
+        do {
+            try save()
+        } catch {
+            if let previous { decisions[activityId] = previous }
+            else { decisions.removeValue(forKey: activityId) }
+            throw error
+        }
     }
 
     /// Removes the decision, returning the ride to the distance rule. Distinct
     /// from setting `false`: "I have no opinion" and "this is not a commute"
     /// are different answers and the second one survives a change to the
     /// threshold.
-    func clear(_ activityId: String) {
-        guard decisions.removeValue(forKey: activityId) != nil else { return }
-        save()
+    func clear(_ activityId: String) throws {
+        guard let previous = decisions.removeValue(forKey: activityId) else { return }
+        do {
+            try save()
+        } catch {
+            // Putting it back matters more here than it looks. Forgetting an
+            // answer returns the ride to the distance rule, so a clear that
+            // silently did not happen would leave the athlete believing the
+            // threshold governs a ride it does not.
+            decisions[activityId] = previous
+            throw error
+        }
     }
 
     // MARK: Disk
@@ -128,9 +159,8 @@ final class CommuteStore {
                                                   from: data)) ?? [:]
     }
 
-    private func save() {
-        guard let data = try? JSONEncoder.sub4.encode(decisions) else { return }
-        try? data.write(to: fileURL, options: FileProtection.options)
+    private func save() throws {
+        try StoreWrite.encode(decisions, to: fileURL, store: "commutes.json")
     }
 
     /// Drops everything held in memory WITHOUT writing to disk — the
