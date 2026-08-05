@@ -262,16 +262,168 @@ struct LegacyClassifierTests {
         #expect(condition.isFault)
     }
 
-    // MARK: What 260 deliberately does NOT fix
+    // MARK: Contract item 5 — patch 261
+    //
+    // `aKeyMismatchIsStillInvisible` stood here in 260, asserting that the
+    // outer key won and nothing noticed. It was recorded rather than hidden,
+    // exactly as patch 246 recorded the `athlete.json` obstacle, and this is
+    // the patch that inverts it.
 
-    @Test("A key mismatch still reads clean — 261 is what changes that",
+    @Test("A record filed under one name and claiming another is caught",
           arguments: [LegacyInput.notes, .weather, .commutes,
                       .legacyDetails, .legacyStreams])
-    func aKeyMismatchIsStillInvisible(_ input: LegacyInput) throws {
-        // Contract item 5, and it is NOT this patch. Recorded rather than
-        // hidden, exactly as patch 246 recorded the athlete.json obstacle:
-        // the outer key wins, the embedded id is never consulted, and nothing
-        // notices. 261 adds the quarantine and this assertion inverts.
-        #expect(try classify(.keyMismatch, input) == .readable)
+    func aKeyMismatchIsCaught(_ input: LegacyInput) throws {
+        let condition = try classify(.keyMismatch, input)
+        guard case .identityMismatch(let faults) = condition else {
+            Issue.record("\(input.rawValue) key mismatch read as \(condition)")
+            return
+        }
+        #expect(faults.count == 1)
+        #expect(condition.isFault)
+        // The distinction the quarantine rests on: this file DECODED. Nothing
+        // is broken about it, which is exactly why it is dangerous — a fault
+        // that fails loudly gets fixed, and one that reads cleanly gets
+        // imported.
+        #expect(condition.decoded)
+        #expect(!condition.suggestsRestore)
+    }
+
+    @Test("Both names are carried, and neither is called the right one",
+          arguments: [LegacyInput.notes, .weather, .commutes,
+                      .legacyDetails, .legacyStreams])
+    func neitherNameWins(_ input: LegacyInput) throws {
+        let condition = try classify(.keyMismatch, input)
+        guard case .identityMismatch(let faults) = condition,
+              let fault = faults.first else {
+            Issue.record("\(input.rawValue) key mismatch read as \(condition)")
+            return
+        }
+        // The decision, asserted rather than described. Preferring the outer
+        // key or the embedded id would both be guesses about which half of a
+        // contradiction is true, made by code with no way to know.
+        #expect(fault.filedAs != fault.claims)
+        #expect(!fault.filedAs.isEmpty)
+        #expect(!fault.claims.isEmpty)
+        #expect(fault.line.contains(fault.filedAs))
+        #expect(fault.line.contains(fault.claims))
+    }
+
+    @Test("The field the mismatch was found in is named",
+          arguments: [LegacyInput.notes, .weather, .commutes,
+                      .legacyDetails, .legacyStreams])
+    func theFieldIsNamed(_ input: LegacyInput) throws {
+        let condition = try classify(.keyMismatch, input)
+        guard case .identityMismatch(let faults) = condition,
+              let fault = faults.first else {
+            Issue.record("\(input.rawValue) key mismatch read as \(condition)")
+            return
+        }
+        // notes keys on `sessionUid` and everything else on `activityId` — the
+        // reason `Keying` names the field per store instead of sniffing for
+        // something id-shaped.
+        #expect(fault.field == (input == .notes ? "sessionUid" : "activityId"))
+    }
+
+    @Test("Two records claiming one identity are caught",
+          arguments: [LegacyInput.activities, .proposals])
+    func aDuplicateIsCaught(_ input: LegacyInput) throws {
+        let condition = try classify(.duplicate, input)
+        guard case .duplicateIdentity(let ids) = condition else {
+            Issue.record("\(input.rawValue) duplicate read as \(condition)")
+            return
+        }
+        #expect(ids.count == 1)
+        #expect(condition.isFault)
+        #expect(condition.decoded)
+    }
+
+    @Test("A valid file has no identity fault", arguments: LegacyInput.allCases)
+    func theValidFixtureHasNoIdentityFault(_ input: LegacyInput) throws {
+        // The counterweight. A check that fired on good files would be worse
+        // than no check: everything quarantined is nothing quarantined.
+        #expect(try classify(.valid, input) == .readable)
+    }
+
+    // MARK: The two stores whose name is the file name
+
+    @Test("A per-activity file whose name disagrees with its contents is caught",
+          arguments: [LegacyInput.detail, .streams])
+    func theFileNameIsAnIdentityToo(_ input: LegacyInput) throws {
+        // `details/<id>.json` states the id twice — once in the name, once in
+        // `activityId`. The same double statement as the dictionaries, one
+        // level up, and it has never been checked either.
+        let data = try #require(LegacyDamage.valid.bytes(for: input))
+        let condition = LegacyClassifier.classify(data, as: try store(input),
+                                                  named: "99999999")
+        guard case .identityMismatch(let faults) = condition else {
+            Issue.record("\(input.rawValue) named-file mismatch read as \(condition)")
+            return
+        }
+        #expect(faults.first?.filedAs == "99999999")
+        #expect(faults.first?.claims == "11111111")
+    }
+
+    @Test("A per-activity file whose name agrees is readable",
+          arguments: [LegacyInput.detail, .streams])
+    func theRightFileNameIsClean(_ input: LegacyInput) throws {
+        let data = try #require(LegacyDamage.valid.bytes(for: input))
+        let condition = LegacyClassifier.classify(data, as: try store(input),
+                                                  named: "11111111")
+        #expect(condition == .readable)
+    }
+
+    @Test("Not knowing the file name is not the same as it matching",
+          arguments: [LegacyInput.detail, .streams])
+    func anUnknownNameIsNotAPass(_ input: LegacyInput) throws {
+        // `named: nil` skips the check rather than asserting agreement. There
+        // is no claim to test, which is a different thing from a claim that
+        // holds — and the fixtures in every other test in this file are read
+        // exactly this way.
+        let data = try #require(LegacyDamage.valid.bytes(for: input))
+        #expect(LegacyClassifier.classify(data, as: try store(input)) == .readable)
+    }
+
+    // MARK: What the check must NOT do
+
+    @Test("A record with no id field at all is not a mismatch")
+    func amissingFieldIsNotAContradiction() {
+        // A shape this store held before the field existed. Calling that a
+        // contradiction would quarantine history for being old — and the
+        // whole point of the migration is that thirteen months survive it.
+        let data = Data("""
+            {"w03-tue":{"text":"Legs fine.","created":"2026-08-01T06:12:00Z",\
+            "edited":"2026-08-01T06:12:00Z"}}
+            """.utf8)
+        let condition = LegacyClassifier.identity(of: data, as: .notes, named: nil)
+        #expect(condition == .readable)
+    }
+
+    @Test("Every mismatched record is listed, not just the first")
+    func allFaultsAreNamed() {
+        // A list that stops at one is a list that hides the rest, and the
+        // athlete decides record by record.
+        let data = Data("""
+            {"w99-sun":{"sessionUid":"w03-tue","text":"a",\
+            "created":"2026-08-01T06:12:00Z","edited":"2026-08-01T06:12:00Z"},\
+            "w98-sat":{"sessionUid":"w02-mon","text":"b",\
+            "created":"2026-08-01T06:12:00Z","edited":"2026-08-01T06:12:00Z"}}
+            """.utf8)
+        let condition = LegacyClassifier.identity(of: data, as: .notes, named: nil)
+        guard case .identityMismatch(let faults) = condition else {
+            Issue.record("read as \(condition)")
+            return
+        }
+        #expect(faults.count == 2)
+        // Sorted by the name they are filed under, so the list does not
+        // reshuffle between launches — a dictionary has no order of its own.
+        #expect(faults.map(\.filedAs) == ["w98-sat", "w99-sun"])
+    }
+
+    @Test("The athlete's own files have no identity to disagree with",
+          arguments: [LegacyInput.athlete, .constants])
+    func singleObjectStoresAreExempt(_ input: LegacyInput) throws {
+        // `athlete.json` holds `shoes[].id`, which names a shoe and not a
+        // record. A heuristic hunting for id-shaped keys would have found it.
+        #expect(try classify(.valid, input) == .readable)
     }
 }

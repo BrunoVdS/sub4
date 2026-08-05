@@ -115,6 +115,56 @@ nonisolated enum LegacyStore: String, CaseIterable, Hashable {
         }
     }
 
+    // MARK: Who each record says it is — contract item 5
+
+    /// How a record inside this file names itself, and where the name it is
+    /// FILED under comes from.
+    ///
+    /// THIS IS THE WHOLE OF CONTRACT ITEM 5. Five of these stores are
+    /// dictionaries keyed by an id that is ALSO written inside the record, so
+    /// the file states the same fact twice and nothing has ever checked that
+    /// the two agree. Two are arrays where the id is inside the record only,
+    /// so the failure is not disagreement but repetition. Two are files named
+    /// by an id that is also inside them — the same double statement as the
+    /// dictionaries, one level up, in the file name.
+    ///
+    /// Naming the field per store rather than sniffing for an "id"-ish key is
+    /// deliberate. `notes.json` keys on `sessionUid` and `weather.json` on
+    /// `activityId`; a heuristic that found both would also find
+    /// `AthleteFile.shoes[].id`, which names a shoe and not a record.
+    nonisolated enum Keying: Equatable {
+        /// `{ "<id>": { "<field>": "<id>", … } }` — the outer key and the
+        /// embedded field must agree.
+        case dictionaryKeyedByID(field: String)
+        /// `[ { "<field>": "<id>" }, … ]` — no outer key, so the fault is two
+        /// records claiming one identity.
+        case arrayOfRecords(idField: String)
+        /// `details/<id>.json` — the file NAME carries the id and the record
+        /// carries it too. Checked only when the caller knows the name, which
+        /// is why `classify` takes `named:`.
+        case fileNamedByID(field: String)
+        /// One object that names nothing. `athlete.json` and `constants.json`
+        /// hold the athlete's own figures; there is no identity to disagree
+        /// with, and saying so is worth more than leaving it implied.
+        case singleObject
+    }
+
+    var keying: Keying {
+        switch self {
+        case .notes:         .dictionaryKeyedByID(field: "sessionUid")
+        case .weather,
+             .commutes,
+             .legacyDetails,
+             .legacyStreams: .dictionaryKeyedByID(field: "activityId")
+        case .activities,
+             .proposals:     .arrayOfRecords(idField: "id")
+        case .detail,
+             .streams:       .fileNamedByID(field: "activityId")
+        case .athlete,
+             .constants:     .singleObject
+        }
+    }
+
     /// THE ONLY DECODER THAT MAY READ THIS STORE.
     ///
     /// `.noneStored` gets a bare decoder because there is nothing for a date

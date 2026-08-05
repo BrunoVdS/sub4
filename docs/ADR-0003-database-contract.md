@@ -1351,6 +1351,66 @@ assertion — `aKeyMismatchIsStillInvisible` — which 261 inverts, the same way
 patch 246 recorded the `athlete.json` obstacle thirteen patches before 259
 needed it.
 
+## 12.9d Neither name wins — patch 261, contract item 5
+
+Five of the eleven legacy inputs are dictionaries keyed by an id that is *also*
+written inside each record. The file states the same fact twice, and nothing has
+ever checked that the two agree. Two more are arrays where the id lives inside
+the record only, so the failure is not disagreement but repetition. Two more are
+directories of `<id>.json`, where the file NAME carries the id and the record
+carries it too — the same double statement, one level up, and equally unchecked.
+
+**The decision is that neither name wins.**
+
+The tempting fix is to prefer one. The outer key, because it is what the store
+looks the record up by. Or the embedded id, because it travelled with the
+record. Both are guesses about which half of a contradiction is the true one,
+made by code that has no way to know. A note filed under `w99-sun` saying it
+belongs to `w03-tue` is either *a note attached to the wrong session* or *a
+session renamed with the write half-finished* — and those want opposite repairs.
+
+So the record is held back and both names are reported, and a person decides.
+That costs one entry in a list. Picking wrong costs a note on the wrong day for
+as long as the app lives, silently, and the athlete would have no way to find it
+because nothing ever said anything was odd.
+
+**These two faults are a different kind from the eight in §12.9c.** Everything
+there is a file that will not read. These READ. The bytes are fine, the types
+are fine, and the file is wrong anyway — which is why `LegacyCondition.decoded`
+exists beside `isFault`, and why the quarantine holds records back rather than
+rejecting files. **A fault that fails loudly gets fixed. A fault that decodes
+cleanly gets imported.**
+
+**Three things the check deliberately does not do.**
+
+A record that does not carry the id field *at all* is not a mismatch. It is a
+shape the store held before the field existed, and calling that a contradiction
+would quarantine thirteen months of history for being old — when surviving those
+thirteen months is the entire point of the migration.
+
+The field is named per store rather than sniffed for. `notes.json` keys on
+`sessionUid` and everything else on `activityId`; a heuristic clever enough to
+find both would also find `AthleteFile.shoes[].id`, which names a shoe and not a
+record. `athlete.json` and `constants.json` are declared `.singleObject` — they
+hold the athlete's own figures and have no identity to disagree with.
+
+And `named:` is optional, so a caller that does not know the file name skips the
+check rather than passing it. There being no claim to test is a different thing
+from a claim that holds, and defaulting the second to the first is how a control
+comes to report work it did not do — which this project has now found six times.
+
+**The check runs on the raw JSON, not the decoded values**, because decoding has
+already destroyed the evidence. `[String: Note]` keeps both names, but
+`[Activity]` cannot tell you two rows collided without going back to look, and a
+dictionary decode of a file with a repeated key silently keeps the last one. The
+bytes still have all of it.
+
+**What 261 does not include: the `quarantine` table.** Detection is complete and
+nothing writes a row yet, because nothing walks the disk yet — §12.9c's
+classifier takes bytes, and the reader that fetches them is patch 262. Shipping
+a migration for a table with no writer, plus a screen listing nothing, would be
+one patch pretending to be two.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

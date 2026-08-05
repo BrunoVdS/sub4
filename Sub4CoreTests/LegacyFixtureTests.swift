@@ -169,14 +169,28 @@ struct LegacyFixtureTests {
                       .commutes])
     func aKeyMismatchIsInvisibleToTheDecoder(_ input: LegacyInput) throws {
         let data = try #require(LegacyDamage.keyMismatch.bytes(for: input))
-        // Contract item 5 wants this quarantined. Today it decodes, the outer
-        // key wins, and the embedded id is never consulted. Patch 261 makes
-        // this a quarantine; until then the behaviour is recorded, not hidden.
-        // `LegacyClassifierTests.aKeyMismatchIsStillInvisible` says the same
-        // thing about the classifier, which 260 deliberately left alone.
+        // STILL TRUE AFTER PATCH 261, and deliberately so. The decoder is
+        // blind to identity and always will be: `[String: Note]` is a
+        // dictionary, the outer key is the key, and no `Codable` conformance
+        // is going to compare it against a field inside the value.
+        //
+        // 261 did not change that. It added a check ALONGSIDE the decoder —
+        // `LegacyClassifier.identity` — because the alternative was making
+        // every store's `init(from:)` validate its own container, which is
+        // both impossible for the array stores and the wrong place for a
+        // domain rule.
+        //
+        // So this test keeps its assertion and loses its implication. It no
+        // longer says "nothing notices"; it says "the decoder does not, which
+        // is why something else must". `LegacyClassifierTests.aKeyMismatchIsCaught`
+        // is the something else.
         try decode(input, data)
     }
 
+    /// Same shape as the key-mismatch test above, and the same reading after
+    /// 261: an array decoder cannot refuse a repeated id without knowing what
+    /// an id is, which is a domain fact and not a decoding one.
+    /// `LegacyClassifierTests.aDuplicateIsCaught` is where it is caught.
     @Test("Two rows with one identity decode as two rows",
           arguments: [LegacyInput.activities, .proposals])
     func aDuplicateIsInvisibleToTheDecoder(_ input: LegacyInput) throws {
