@@ -1411,6 +1411,45 @@ classifier takes bytes, and the reader that fetches them is patch 262. Shipping
 a migration for a table with no writer, plus a screen listing nothing, would be
 one patch pretending to be two.
 
+## 12.9e The survey — patch 262
+
+260 built a classifier that takes bytes and 261 taught it about identity. Both
+were exercised entirely against the fixture corpus: eleven strings somebody
+wrote down, and a guess about what real damage looks like. This is where they
+meet thirteen months of actual files, and the honest position before running it
+is that nobody knows what they will say.
+
+**Reading only. Nothing is held back.** A record that fails the identity check
+is reported and still imported, because the `quarantine` table is patch 263.
+That ordering is on purpose: **a table designed before anybody has seen the data
+it holds is a table designed from the fixtures.** It also means this patch
+cannot break an import — it reads files the app already reads, with the same
+decoders, and writes nothing.
+
+**The directories are where `named:` finally has an argument.** `details/` and
+`streams/` are one file per activity, named by the Strava id that is also inside
+the file. 261 built that comparison and had nothing to feed it: every test
+passed `named: nil`, which *skips* the check. Here the file name is real, and if
+667 details each state their id twice, this is the first time anything has
+compared the two.
+
+**One row per store, and the per-file detail underneath.** A directory of 667
+files is not one condition, it is 667 conditions, and the useful summary is "660
+readable, 7 at fault" with the seven named. "details: mismatch" tells nobody
+which activity to open.
+
+**Behind a button, not on open.** Everything else on the health screen loads
+when the sheet appears. This reads every file the app has ever written and
+decodes all of them; doing that silently would make opening the screen the
+expensive thing.
+
+**The identity faults are on the screen and NOT in the diagnostic.** Both
+disputed names are the athlete's own identifiers, and §12.7 promises the
+redacted paste carries none. So the paste gets a count per fault kind and the
+screen gets the names — which is also the right split for what each is for: the
+paste is for asking somebody a question, and the names are for the person who
+has to answer it.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

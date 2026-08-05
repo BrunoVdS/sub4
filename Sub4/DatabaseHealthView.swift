@@ -82,6 +82,16 @@ struct DatabaseHealthView: View {
     @State private var lastRun: MigrationRun?
     @State private var staleRuns: Int = 0
 
+    /// Patch 262 — the legacy survey. Nil until the button is pressed.
+    ///
+    /// NOT run on open, unlike everything else on this screen. It reads every
+    /// file the app has ever written and decodes all of them, which on this
+    /// phone is 667 details and 643 traces. That belongs behind a press, and
+    /// a screen that did it silently every time it opened would make opening
+    /// the screen the expensive thing.
+    @State private var surveying = false
+    @State private var survey: [LegacyReading]?
+
     var body: some View {
         NavigationStack {
             List {
@@ -101,6 +111,11 @@ struct DatabaseHealthView: View {
                     snapshotSection
                     importSection(db)
                     ledgerSection
+                    // AFTER the import and before the benchmark. It is about
+                    // the files the import reads FROM, so it belongs beside
+                    // the import; it is a survey rather than an action, so it
+                    // does not go above it.
+                    legacySection
                     benchmarkSection
                     diagnosticsSection(db)
                 }
@@ -703,6 +718,75 @@ struct DatabaseHealthView: View {
         ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
     }
 
+    // MARK: The legacy survey — patch 262
+
+    /// What is actually on this phone, classified.
+    ///
+    /// Every row here is `LegacyCondition.summary` — prose in the athlete's
+    /// terms, not error domains. The identity faults are the exception that
+    /// earns its detail: they name both disputed names, because the whole
+    /// decision in §12.9d is that the app does not choose between them and a
+    /// person does. A row saying "1 record filed under one name and claiming
+    /// another" without saying WHICH would be the same defect one level up.
+    @ViewBuilder
+    private var legacySection: some View {
+        Section {
+            if surveying {
+                HStack { ProgressView(); Text("Reading…").font(.caption) }
+            } else {
+                Button("Survey the app's files") { runSurvey() }
+            }
+
+            if let survey {
+                ForEach(survey) { reading in
+                    if reading.files.count > 1 {
+                        LabeledContent(reading.store.rawValue,
+                                       value: "\(reading.files.count) files · \(reading.faults.count) at fault")
+                            .font(.caption)
+                    } else {
+                        LabeledContent(reading.store.rawValue,
+                                       value: reading.condition.summary)
+                            .font(.caption)
+                            .foregroundStyle(reading.condition.isFault ? .red : Color.dim)
+                    }
+
+                    // The files at fault, named. A count with nothing behind
+                    // it is a number somebody has to come and ask about.
+                    ForEach(reading.faults) { file in
+                        LabeledContent("  \(file.path)", value: file.condition.summary)
+                            .font(.caption2).foregroundStyle(.red)
+                    }
+                    // And within those, both names of every disputed record.
+                    ForEach(Array(reading.identityFaults.enumerated()), id: \.offset) { _, fault in
+                        Text("    \(fault.line)")
+                            .font(.caption2).foregroundStyle(Color.dim)
+                    }
+                }
+            }
+        } header: {
+            Text("The app's own files")
+        } footer: {
+            Text("Reads every file the app has written and classifies it: "
+                 + "readable, missing, interrupted part way, or holding a "
+                 + "record that is filed under one name and claims another. "
+                 + "Nothing is changed and nothing is held back — this patch "
+                 + "only looks.")
+                .font(.caption2)
+        }
+    }
+
+    private func runSurvey() {
+        surveying = true
+        Task {
+            // Off the main actor would be better and is not available: every
+            // type this decodes is main-actor isolated — §12.9c. A `Task` at
+            // least lets the spinner render before the read begins.
+            let result = LegacyReader.readAll()
+            survey = result
+            surveying = false
+        }
+    }
+
     @ViewBuilder
     private func diagnosticsSection(_ db: Sub4Database) -> some View {
         Section {
@@ -715,9 +799,11 @@ struct DatabaseHealthView: View {
                 Task { await recheck(db) }
             }
         } footer: {
-            Text("The diagnostic is counts, sizes, migration names and SQLite's "
-                 + "own verdicts. No session names, no places, no dates from "
-                 + "your history — it is safe to paste into a message.")
+            Text("The diagnostic is counts, sizes, migration names, SQLite's "
+                 + "own verdicts and — once you have run the survey — how many "
+                 + "of the app's files read cleanly. No session names, no "
+                 + "places, no dates from your history, and no identifiers "
+                 + "from the survey — it is safe to paste into a message.")
                 .font(.caption2)
         }
     }
@@ -906,6 +992,14 @@ struct DatabaseHealthView: View {
         if let r = benchmark.result {
             lines.append("")
             lines.append(contentsOf: r.diagnosticLines)
+        }
+        // Patch 262. COUNTS AND CONDITION NAMES ONLY. The two disputed names in
+        // an identity fault are the athlete's own identifiers, and §12.7
+        // promises this paste carries none — so the screen gets the names and
+        // this gets how many there were.
+        if let survey {
+            lines.append("")
+            lines.append(contentsOf: LegacyReader.diagnosticLines(survey))
         }
         return lines.joined(separator: "\n")
     }
