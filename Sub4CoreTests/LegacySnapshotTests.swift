@@ -342,6 +342,71 @@ struct LegacySnapshotTests {
                     """)
     }
 
+    // MARK: The redacted diagnostic — patch 248
+
+    @Test("The diagnostic names which declared paths are missing")
+    func theDiagnosticNamesTheGaps() throws {
+        let base = try makeBase(files: ["notes.json": "{}"],
+                                directories: ["streams": ["1.json": "aa", "2.json": "bb"]])
+        defer { remove(base) }
+
+        let m = try LegacySnapshot.capture(stamp: "2026-08-05-120000", appVersion: "248",
+                                           base: base, items: items)
+        let text = m.redactedLines.joined(separator: "\n")
+        // The question the five numbers on screen could not answer.
+        #expect(text.contains("weather.json       NOT PRESENT"),
+                "the missing file is not named:\n\(text)")
+        #expect(text.contains("details.json       NOT PRESENT"))
+        #expect(text.contains("notes.json         present"))
+    }
+
+    @Test("A directory is reported as a count, which is the other open question")
+    func theDiagnosticCountsDirectories() throws {
+        let base = try makeBase(files: [:],
+                                directories: ["streams": ["1.json": "a", "2.json": "b", "3.json": "c"]])
+        defer { remove(base) }
+
+        let m = try LegacySnapshot.capture(stamp: "2026-08-05-120000", appVersion: "248",
+                                           base: base, items: items)
+        let text = m.redactedLines.joined(separator: "\n")
+        #expect(text.contains("streams            3 files"),
+                "the directory count is not reported:\n\(text)")
+    }
+
+    @Test("No file inside a directory reaches the diagnostic")
+    func noPathsLeakIntoTheDiagnostic() throws {
+        // `details/18883849470.json` names a Strava activity, and the screen's
+        // own footer promises no dates and no session names from the athlete's
+        // history. Nine hundred activity ids would break that in the most
+        // literal way available, so the rule is asserted rather than intended.
+        let base = try makeBase(files: [:],
+                                directories: ["streams": ["18883849470.json": "a",
+                                                          "11111111.json": "b"]])
+        defer { remove(base) }
+
+        let m = try LegacySnapshot.capture(stamp: "2026-08-05-120000", appVersion: "248",
+                                           base: base, items: items)
+        for line in m.redactedLines {
+            #expect(line.contains("/") == false, "a path reached the paste: \(line)")
+            #expect(line.contains("18883849470") == false,
+                    "an activity id reached the paste: \(line)")
+        }
+    }
+
+    @Test("The diagnostic's totals agree with the manifest's own")
+    func theDiagnosticDoesNotInventNumbers() throws {
+        let base = try makeBase(files: ["notes.json": "{}", "weather.json": "{}"],
+                                directories: ["streams": ["1.json": "a", "2.json": "b"]])
+        defer { remove(base) }
+
+        let m = try LegacySnapshot.capture(stamp: "2026-08-05-120000", appVersion: "248",
+                                           base: base, items: items)
+        let header = try #require(m.redactedLines.dropFirst().first)
+        #expect(header.contains("\(m.copiedCount) of \(m.presentCount) copied"))
+        #expect(header.contains("\(m.missingCount) not present"))
+        #expect(header.contains("\(m.failureCount) failed"))
+    }
+
     @Test("The declared snapshot folder is the one the code writes to")
     @MainActor
     func theNameAgrees() throws {

@@ -783,6 +783,13 @@ struct DatabaseHealthView: View {
         for row in counts where row.rows > 0 {
             lines.append("  \(row.table): \(row.rows)")
         }
+        // Patch 248. The five numbers on screen cannot say WHICH files are
+        // missing or how the directories decompose, and the manifest that can
+        // is inside the app container where nothing may read it.
+        if let m = snapshot {
+            lines.append("")
+            lines.append(contentsOf: m.redactedLines)
+        }
         // The benchmark is the reason this screen gets pasted at all now — the
         // §9 decision is made from these lines. They are counts and durations
         // over synthetic fixtures, so they describe nobody.

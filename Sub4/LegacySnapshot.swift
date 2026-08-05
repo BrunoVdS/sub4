@@ -117,6 +117,68 @@ nonisolated struct SnapshotManifest: Codable, Hashable {
     /// the rows it is derived from.
     var isComplete: Bool { failureCount == 0 && copiedCount == presentCount }
 
+    /// The manifest, folded to one line per DECLARED path, for the redacted
+    /// diagnostic paste — patch 248.
+    ///
+    /// WHY THIS EXISTS. Patch 247 put 1003 rows on the phone and gave the
+    /// screen five numbers to show them with. "Declared but not present: 3"
+    /// could not be turned into WHICH three without reading a file inside the
+    /// app container, and "1003 files" could not be reconciled with 415 traces
+    /// and 420 details in the database. Both questions had plausible answers
+    /// and no way to check one — which is the shape of every wrong belief this
+    /// project has held.
+    ///
+    /// WHY ONLY DECLARED NAMES. `relativePath` for a file inside `details/` is
+    /// `details/18883849470.json`, and that number is a Strava activity — the
+    /// athlete's history. The footer on that screen promises "no session names,
+    /// no places, no dates from your history", and a list of nine hundred
+    /// activity ids breaks that promise in the most literal way available.
+    ///
+    /// So a directory is reported as a count and a size, never as its contents.
+    /// The eleven names that can appear here are fixed strings from
+    /// `DataLifecycle` and describe nobody. `noPathsLeakIntoTheDiagnostic`
+    /// asserts it rather than trusting this comment.
+    var redactedLines: [String] {
+        var lines = ["Snapshot \(id) · taken by patch \(appVersion)",
+                     "  \(copiedCount) of \(presentCount) copied, "
+                     + "\(ByteCountFormatter.string(fromByteCount: Int64(totalBytes), countStyle: .file)), "
+                     + "\(missingCount) not present, \(failureCount) failed"]
+
+        // Grouped by declared path, in the order the manifest holds them, so
+        // two snapshots produce comparable pastes.
+        var order: [String] = []
+        var byDeclared: [String: [SnapshotEntry]] = [:]
+        for e in entries {
+            if byDeclared[e.declared] == nil { order.append(e.declared) }
+            byDeclared[e.declared, default: []].append(e)
+        }
+
+        for name in order {
+            let group = byDeclared[name] ?? []
+            let present = group.filter(\.exists)
+            let failed = group.filter { $0.error != nil }
+            let bytes = present.compactMap(\.bytes).reduce(0, +)
+            let size = ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+            let padded = name.padding(toLength: max(18, name.count), withPad: " ", startingAt: 0)
+
+            let state: String
+            if present.isEmpty {
+                state = "NOT PRESENT"
+            } else if group.count == 1 {
+                state = "present, \(size)"
+            } else {
+                // A directory. The count is the answer to "1003 files, but the
+                // database imported 415 traces" — files with no matching
+                // activity are the exclusion working, and this is where that
+                // becomes checkable instead of arguable.
+                state = "\(present.count) files, \(size)"
+            }
+            lines.append("  \(padded) \(state)"
+                         + (failed.isEmpty ? "" : "  — \(failed.count) FAILED"))
+        }
+        return lines
+    }
+
     var summary: String {
         var parts = ["\(copiedCount) file\(copiedCount == 1 ? "" : "s")",
                      ByteCountFormatter.string(fromByteCount: Int64(totalBytes),
