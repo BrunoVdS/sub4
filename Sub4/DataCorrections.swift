@@ -239,7 +239,16 @@ enum DataCorrections {
     ///
     ///   It contributes no training load either way: no heart rate, and the
     ///   estimated power is refused by `PowerLoad`.
-    static let ignoredActivities: [String: String] = [
+    /// NONISOLATED — patch 258. `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
+    /// puts every member of this enum on the main actor by default, and the
+    /// three importers that read this table are `nonisolated static func`.
+    ///
+    /// The isolation was never doing anything. This is a literal `[String:
+    /// String]` fixed at compile time: nothing mutates it, so there is no race
+    /// for an actor to prevent, and `[String: String]` is `Sendable`, so
+    /// crossing the boundary costs nothing either. It was isolated because the
+    /// build setting isolates everything, not because anyone decided it.
+    nonisolated static let ignoredActivities: [String: String] = [
         "16775873379":
             "18 Dec 2025 swim — 400 m recorded across 45 minutes of moving "
             + "time, 11 of 16 laps logging no distance.",
@@ -261,7 +270,17 @@ enum DataCorrections {
     /// recording would still be offered to the importer, fail to resolve, and
     /// be counted as "with no activity" — which is true, and reads as a gap
     /// rather than as the decision it is.
-    static func isIgnored(id: String) -> Bool {
+    ///
+    /// NONISOLATED — patch 258, and this is the one that has to be. Every
+    /// caller is inside `Sub4Import`, which does its whole write on a database
+    /// queue and is `nonisolated` throughout. Hopping to the main actor to read
+    /// a compile-time dictionary from inside a write is not something to make
+    /// work; it is something to not ask for.
+    ///
+    /// `isIgnored(_ a: Activity)` below stays on the main actor deliberately.
+    /// It takes an `Activity`, its callers are the stores and the views, and
+    /// nothing nonisolated has one to hand.
+    nonisolated static func isIgnored(id: String) -> Bool {
         ignoredActivities[id] != nil
     }
 

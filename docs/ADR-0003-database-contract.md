@@ -1756,6 +1756,24 @@ The same rule would also have caught this at 226, where the header of
 defect into a documented constant. **A number a comment excuses is a number
 nobody will ever question again** — the excuse is what makes it permanent.
 
+**Patch 258, the isolation the same three lines needed.** `DataCorrections` is
+main-actor isolated because `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` isolates
+everything that does not say otherwise, and all three `isIgnored(id:)` calls sit
+in `nonisolated` importers. Three warnings, and 472 then 474 tests passed over
+the top of them — because a warning is not a test failure, and this project's
+build is loud enough that three more lines scroll past.
+
+The table is a compile-time `[String: String]` that nothing mutates. There was
+never a race for an actor to prevent; the isolation was inherited from a build
+setting, not chosen. So both the table and the by-id lookup are `nonisolated`
+now, and `ExcludedRecordingNonisolationTests` — a suite that is deliberately NOT
+`@MainActor` — calls it. That test does not assert a value: it asserts that the
+file still compiles from a nonisolated context, which is the only thing a
+warning-only defect can be held to.
+
+Which is the general shape: **a defect the compiler reports as a warning needs a
+test, because nothing else in the pipeline will ever stop for it.**
+
 ---
 
 ## 12.13 D0 closed — freeze and capture, patch 246

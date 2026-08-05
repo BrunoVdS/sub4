@@ -186,3 +186,38 @@ struct ExcludedRecordingTests {
         #expect(joined.contains("swim"))
     }
 }
+
+/// DELIBERATELY NOT `@MainActor` — patch 258, and that is the entire test.
+///
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` put `DataCorrections` on the
+/// main actor without anyone deciding it should be there, and the three
+/// importers that read it are `nonisolated static func`. That produced three
+/// warnings — two shipped in 256, one in 257 — and 472 then 474 tests passed
+/// over the top of them, because a warning is not a failure and this build is
+/// loud enough that three more lines scroll past.
+///
+/// Nothing below asserts a value that the suite above does not already assert.
+/// What it asserts is that this file still COMPILES: if `isIgnored(id:)` or
+/// `ignoredActivities` goes back to being main-actor isolated, these two
+/// functions stop building, and a build failure is the only thing that stops
+/// for a warning-shaped defect.
+@Suite
+struct ExcludedRecordingNonisolationTests {
+
+    @Test("The by-id lookup is callable without the main actor")
+    func theLookupIsNonisolated() {
+        // The exact call the importers make, from the exact isolation they
+        // make it in.
+        #expect(DataCorrections.isIgnored(id: "18883849470"))
+        #expect(!DataCorrections.isIgnored(id: "99999999"))
+    }
+
+    @Test("The table itself is readable without the main actor")
+    func theTableIsNonisolated() {
+        // `isIgnored(id:)` could have been made nonisolated on its own by
+        // copying the table behind an accessor. It was not: the table is a
+        // compile-time literal that nothing mutates, so there was never a race
+        // for an actor to prevent. This holds that reasoning in place.
+        #expect(DataCorrections.ignoredActivities.count == 2)
+    }
+}
