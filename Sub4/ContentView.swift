@@ -67,15 +67,23 @@ struct ContentView: View {
     /// training rather than as a broken sync. The badge is invisible while the
     /// connection is healthy, which is the whole point — it is an alarm, not a
     /// status display, and it sits on the tab that can fix it.
+    /// PATCH 279 — THE CONDITIONS LIVE IN `AppHealth` NOW, and the reason is
+    /// that this expression and `SettingsView.needsAttention` were two answers
+    /// to one question. 273 added the read journal to that one and not to this
+    /// one, so a store the app could not read lit the row INSIDE Settings and
+    /// not the badge that sends somebody there.
+    ///
+    /// Both were correct in isolation. What was wrong was that there were two.
+    ///
+    /// ONE OR ZERO, NEVER A COUNT. It is an alarm, not a status display — a
+    /// reader with three problems does not need the number three, they need
+    /// this tab.
     private var settingsBadge: Int {
-        // Patch 266 adds the third condition. It is an alarm and not a status
-        // display — the same argument as the two above it — and a store that
-        // cannot be written is exactly the kind of thing that otherwise shows
-        // up as data quietly going missing at the next launch.
-        let healthy = auth.isConnected
-            && activities.lastError == nil
-            && !StoreWriteJournal.shared.hasUnsaved
-        return healthy ? 0 : 1
+        AppHealth.needsAttention(
+            isConnected: auth.isConnected,
+            syncError: activities.lastError,
+            hasUnsavedStore: StoreWriteJournal.shared.hasUnsaved,
+            hasUnreadableStore: StoreReadJournal.shared.hasUnreadable) ? 1 : 0
     }
 
     var body: some View {

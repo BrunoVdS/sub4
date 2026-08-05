@@ -149,6 +149,10 @@ final class NotesStore {
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         fileURL = dir.appendingPathComponent("notes.json")
         load()
+        // SINGLETON ONLY — patch 273. `init(directory:)` deliberately does not
+        // record: a test store writing into the shared journal would leak into
+        // whatever ran next, and this journal's whole job is to be believed.
+        StoreReadJournal.shared.record("notes.json", lastLoad)
         migrateIfNeeded()
     }
 
@@ -245,9 +249,22 @@ final class NotesStore {
 
     // MARK: Disk
 
+    /// What the last read of `notes.json` found — patch 273, §12.20.
+    ///
+    /// The two `try?`s below used to make "there is no file" and "the file is
+    /// there and will not decode" produce the identical state: an empty
+    /// dictionary, no error, nothing anywhere saying which had happened. On
+    /// the store that holds thirteen months of what the athlete thought after
+    /// each session.
+    private(set) var lastLoad: StoreLoad = .absent
+
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        notes = (try? JSONDecoder.sub4.decode([String: Note].self, from: data)) ?? [:]
+        let (value, outcome) = StoreRead.decode([String: Note].self, at: fileURL)
+        // ONLY ON SUCCESS. A failed read leaves whatever was already in memory
+        // rather than replacing it with an empty — which matters on a
+        // re-entrant load and costs nothing on the first one.
+        if let value { notes = value }
+        lastLoad = outcome
     }
 
 

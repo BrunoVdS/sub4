@@ -270,7 +270,10 @@ extension Sub4Import {
     /// Strava's id → the canonical activity, through the alias the activity
     /// loop wrote. The same resolution weather uses, and the reason both of
     /// these run after the activities rather than beside them.
-    private nonisolated static func canonicalActivity(_ d: Database,
+    /// NOT private since patch 272 — `Sub4Import+Authored` needs the same
+    /// resolution for a match decision, and a third copy of a three-line query
+    /// is how three copies become four.
+    nonisolated static func canonicalActivity(_ d: Database,
                                                       externalID: String) throws -> String? {
         try String.fetchOne(d, sql: """
             SELECT activityID FROM activity_alias

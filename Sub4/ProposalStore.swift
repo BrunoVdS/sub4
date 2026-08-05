@@ -61,6 +61,7 @@ final class ProposalStore {
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         fileURL = dir.appendingPathComponent("proposals.json")
         load()
+        StoreReadJournal.shared.record("proposals.json", lastLoad)
         migrateIfNeeded()
     }
 
@@ -141,9 +142,18 @@ final class ProposalStore {
 
     // MARK: Disk
 
+    /// What the last read of `proposals.json` found — patch 273, §12.20.
+    ///
+    /// THE ONE WITH THE MOST TO LOSE. A review costs a call to a model and
+    /// cannot be reproduced by asking Strava again; §12.8.1 is the record of
+    /// what that costs, from the day a reinstall took every past review and
+    /// there was nowhere to get them back from.
+    private(set) var lastLoad: StoreLoad = .absent
+
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        records = (try? JSONDecoder.sub4.decode([Record].self, from: data)) ?? []
+        let (value, outcome) = StoreRead.decode([Record].self, at: fileURL)
+        if let value { records = value }
+        lastLoad = outcome
     }
 
 

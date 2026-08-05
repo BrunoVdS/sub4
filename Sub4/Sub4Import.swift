@@ -88,6 +88,26 @@ nonisolated enum Sub4Import {
         var reviewsImported = 0
         var reviewsUpdated = 0
 
+        // Patch 272 — D4's database half, first of three. The athlete's
+        // match overrides, which have lived in UserDefaults since the app's
+        // first week and had nowhere in the database until now.
+        var matchDecisionsSeen = 0
+        var matchDecisionsImported = 0
+        var matchDecisionsUpdated = 0
+        /// A decision naming a recording the app excludes on purpose — the
+        /// same shape as `weatherIgnored`, and never counted as seen: "seen"
+        /// is work attempted, and this was declined at the door.
+        var matchDecisionsIgnored = 0
+        /// A decision naming an activity the database does not have, and
+        /// nobody knows why.
+        ///
+        /// HELD BACK RATHER THAN WRITTEN WITH A NULL. The column allows NULL
+        /// and it would be the easy thing to write — but NULL already means
+        /// "the athlete said nothing satisfied this session". Reusing it here
+        /// would make the database state something he never said. Anything
+        /// above zero is news, exactly like `weatherUnmatched`.
+        var matchDecisionsUnresolved = 0
+
         // Patch 226. `weatherUnmatched` is NOT a refusal: the schema is
         // correctly declining to hold a reading about an activity that is not
         // here.
@@ -182,6 +202,51 @@ nonisolated enum Sub4Import {
         /// missing shoes are completely different problems, and a number cannot
         /// tell them apart. Naming them is cheap and stops the next answer
         /// being a guess.
+        // Patch 278 — D5 slice 3. What a rule threw away. NEVER pruned:
+        // nothing in the app removes a receipt short of Delete local data,
+        // which removes the database in the same breath.
+        var rejectionsSeen = 0
+        var rejectionsImported = 0
+        var rejectionsUpdated = 0
+
+        // Patch 276 — D5 slice 2. What the app has stopped asking for.
+        // `removed` is this importer pruning its own kinds, which is NOT what
+        // §12.21's reconciliation does: it owns `detail` and `stream`
+        // entirely and gets the complete set every run.
+        var workItemsSeen = 0
+        var workItemsImported = 0
+        var workItemsUpdated = 0
+        var workItemsRemoved = 0
+
+        // Patch 275 — D5 slice 1. Where the sync has got to. `seen` is 0 or
+        // 1 and exists for §12.10's reason: without it, "no position was
+        // offered" and "a position was offered and refused" both render as a
+        // blank row.
+        var syncStateSeen = 0
+        var syncStateImported = 0
+        var syncStateUpdated = 0
+
+        // PATCH 274 — the reconciliation pass. Everything above this line
+        // counts things that arrived; these count things that LEFT, which the
+        // importer had no way to express until now.
+        //
+        // `reconciled` carries the reason rather than a Bool so that "a store
+        // could not be read" and "the caller did not ask" are different words
+        // on the health screen. A single false would have made a forgotten
+        // argument look exactly like the gate doing its job.
+        var reconciled: Reconciliation = .skipped("not attempted")
+        var notesRemoved = 0
+        var matchDecisionsRemoved = 0
+        /// One row, and four more go with it: `review_evidence` and `proposal`
+        /// cascade from `review`, `proposal_change` and `proposal_watch` from
+        /// `proposal`. Counted as reviews because that is the thing the
+        /// athlete deleted.
+        var reviewsRemoved = 0
+
+        var removedTotal: Int {
+            notesRemoved + matchDecisionsRemoved + reviewsRemoved
+        }
+
         var unresolvedGear: [String: Int] = [:]
         var refusals: [Refusal] = []
         var seconds: Double = 0
@@ -267,6 +332,22 @@ nonisolated enum Sub4Import {
                     shoes: [AthleteStore.Shoe],
                     notes: [NotesStore.Note] = [],
                     proposals: [ProposalStore.Record] = [],
+                    matchDecisions: [MatchDecision] = [],
+                    syncState: SyncState? = nil,
+                    workItems: [WorkItem] = [],
+                    rejections: [RejectionReceipt] = [],
+                    // PATCH 274. DEFAULTS TO NOT RECONCILING, and that is the
+                    // safe direction: a forgotten argument leaves rows behind,
+                    // which is the status quo and is visible on the health
+                    // screen. A default that deleted would delete in the one
+                    // call site nobody thought about.
+                    //
+                    // The gate is computed by the CALLER — `Sub4Import` is
+                    // `nonisolated` end to end and `StoreReadJournal` is on
+                    // the main actor. That is the right shape anyway: the
+                    // decision to delete belongs to the screen that knows
+                    // what was read.
+                    reconcile: Reconciliation = .skipped("the caller did not ask"),
                     weather: [ActivityWeather] = [],
                     constants: AthleteConstants? = nil,
                     ftpWatts: Int? = nil,
@@ -280,6 +361,7 @@ nonisolated enum Sub4Import {
 
         let clock = ContinuousClock()
         var report = Report()
+        report.reconciled = reconcile
         let now = iso8601(Date())
 
         // THE LEDGER OPENS BEFORE THE WRITE AND CLOSES AFTER IT — patch 255,
@@ -315,6 +397,14 @@ nonisolated enum Sub4Import {
                 try importNotes(d, notes: notes, now: now, into: &report)
                 try importProposals(d, records: proposals, now: now, into: &report)
 
+                // AFTER THE ACTIVITIES, and here the order is load-bearing
+                // rather than tidy — the same dependency weather has. A
+                // decision names a STRAVA activity id and `match_decision`
+                // references the canonical one, so it resolves through
+                // `activity_alias`, which the activity loop above writes.
+                try importMatchDecisions(d, decisions: matchDecisions,
+                                         now: now, into: &report)
+
                 // AFTER the activities, and here the order is load-bearing
                 // rather than tidy: every reading is resolved through
                 // `activity_alias`, which the activity loop above writes.
@@ -348,6 +438,34 @@ nonisolated enum Sub4Import {
                 // through `activity_alias`, which the activity loop writes.
                 try importRecordings(d, streams: streams, now: now, into: &report)
                 try importDetails(d, details: details, now: now, into: &report)
+
+                // BOOKKEEPING, NOT HISTORY — §8's group 9 header. Position in
+                // the run is free: `sync_state` references `account` and
+                // `source`, both of which exist before the activity loop.
+                try importSyncState(d, state: syncState, now: now, into: &report)
+
+                // Group 9 as well, and it references nothing — `work_queue`
+                // has no foreign keys at all, because the subject of a piece
+                // of work may be an id the database has never held.
+                try importWorkQueue(d, items: workItems, now: now, into: &report)
+
+                // `rejection.sourceID` is a RESTRICTED foreign key and
+                // `accountID` cascades, so both must exist — they do, from the
+                // seed and from `ensureAccount`. It references no ACTIVITY,
+                // deliberately: the receipt outlives the recording.
+                try importRejections(d, receipts: rejections, now: now, into: &report)
+
+                // LAST, AND INSIDE THE SAME WRITE — patch 274.
+                //
+                // Last because everything above has already put the current
+                // records in, so what is left over is genuinely left over.
+                // Inside the write because a throw here must roll the whole
+                // import back rather than leave a half-reconciled database.
+                if reconcile.isRunning {
+                    try reconcileAuthored(d, notes: notes, proposals: proposals,
+                                          matchDecisions: matchDecisions,
+                                          into: &report)
+                }
             }
         }
         report.seconds = seconds(elapsed)

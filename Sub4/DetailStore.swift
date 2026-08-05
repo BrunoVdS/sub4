@@ -41,6 +41,34 @@ final class DetailStore {
     /// coming.
     private var noStreams: Set<String> = []
 
+    /// The two sets as `work_queue` rows — patch 276, D5 slice 2.
+    ///
+    /// A COMPUTED VIEW, and both sets stay private. The importer needs to READ
+    /// what the app has stopped asking for; nothing outside this file has any
+    /// business adding to it, because an id written here is never fetched
+    /// again.
+    ///
+    /// THE STATES ARE NOT THE SAME and that is the whole content of this
+    /// property. `failed` is a 404 — the fetch did not produce the thing it
+    /// went for. `noStreams` is a 200 with nothing in it — the fetch SUCCEEDED
+    /// and the honest answer was that there is no trace. Filing the second as
+    /// a failure would report a fault against 23 activities on this device
+    /// that are simply indoor sessions and manual entries.
+    ///
+    /// Sorted, so the import does not reshuffle rows between runs for no
+    /// reason.
+    var workItems: [WorkItem] {
+        failed.sorted().map {
+            WorkItem(kind: .detail, subjectID: $0, state: .failed,
+                     attempts: 1,
+                     lastError: "the source refused this recording")
+        }
+        + noStreams.sorted().map {
+            WorkItem(kind: .stream, subjectID: $0, state: .done,
+                     attempts: 1, lastError: nil)
+        }
+    }
+
     /// What has landed since the last write. `save()` persists exactly these
     /// and nothing else — the reason it can run in a defer without costing
     /// anything proportional to the history.
@@ -138,6 +166,28 @@ final class DetailStore {
 
     private func needsDetail(_ a: Activity) -> Bool {
         details[a.id] == nil && !failed.contains(a.id)
+    }
+
+    /// Why every activity does or does not have a trace — patch 277.
+    ///
+    /// ONE LINE, because the classifying is pure and lives in
+    /// `TraceCoverageReport`. This supplies the four sets and the threshold;
+    /// it decides nothing, which is what makes the decision testable without
+    /// arranging the athlete's actual files on disk.
+    ///
+    /// `pending` gets its first reader here. `backfillRemaining` has been
+    /// `pending.count` since it was written and nothing has ever shown it —
+    /// §12.23.7 — so until now "never asked" and "queued and not yet reached"
+    /// were indistinguishable from outside this file.
+    @MainActor
+    func traceCoverage() -> TraceCoverage {
+        TraceCoverageReport.classify(
+            activities: ActivityStore.shared.activities,
+            hasTrace: { self.streams[$0] != nil },
+            refused: failed,
+            answeredEmpty: noStreams,
+            queued: Set(pending),
+            minDistance: minStreamDistance)
     }
 
     private func needsStreams(_ a: Activity) -> Bool {

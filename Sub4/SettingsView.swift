@@ -312,9 +312,15 @@ struct SettingsView: View {
     /// Patch 269. What the last rehearsal said, or why it did not run.
     @State private var rehearsalResult: String?
 
+    /// PATCH 279. The same call the tab badge makes, so the pane and the
+    /// badge cannot disagree about what is wrong — which they did between 273
+    /// and 279.
     private var needsAttention: Bool {
-        !auth.isConnected || activities.lastError != nil
-            || StoreWriteJournal.shared.hasUnsaved
+        AppHealth.needsAttention(
+            isConnected: auth.isConnected,
+            syncError: activities.lastError,
+            hasUnsavedStore: StoreWriteJournal.shared.hasUnsaved,
+            hasUnreadableStore: StoreReadJournal.shared.hasUnreadable)
     }
 
     @ViewBuilder
@@ -440,6 +446,27 @@ struct SettingsView: View {
                     }
                 } icon: {
                     Image(systemName: "externaldrive.badge.exclamationmark")
+                }
+                .foregroundStyle(.red)
+            }
+
+            // PATCH 273, and the wording is the whole point. "Not saved" means
+            // the app has more than the disk. This one means the app has LESS
+            // than the disk — a file is there and could not be turned into
+            // records, so a screen that looks empty is not describing an empty
+            // store. Nothing is lost yet, and nothing may be deleted on the
+            // strength of it.
+            ForEach(StoreReadJournal.shared.all) { unread in
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(unread.store) — could not be read")
+                            .font(.caption.weight(.semibold))
+                        Text(unread.line + ". What it holds is not shown, and "
+                             + "nothing has been deleted.")
+                            .font(.caption2).foregroundStyle(Color.dim)
+                    }
+                } icon: {
+                    Image(systemName: "doc.badge.ellipsis")
                 }
                 .foregroundStyle(.red)
             }

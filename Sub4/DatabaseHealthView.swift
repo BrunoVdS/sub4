@@ -356,6 +356,26 @@ struct DatabaseHealthView: View {
                 LabeledContent("Reviews",
                                value: "\(r.reviewsImported) new, \(r.reviewsUpdated) refreshed")
                     .font(.caption)
+                // PATCH 272 — the third thing on this screen that cannot be
+                // re-fetched from anywhere, so it gets a row of its own rather
+                // than being folded into a total it would vanish inside.
+                LabeledContent("Match decisions",
+                               value: "\(r.matchDecisionsImported) new, \(r.matchDecisionsUpdated) refreshed")
+                    .font(.caption)
+                if r.matchDecisionsUnresolved > 0 {
+                    // NEWS, unlike the two greyed rows below it. A decision
+                    // naming an activity that is not here was held back, so
+                    // the athlete's correction is not in the database and
+                    // nothing else on this screen would say so.
+                    LabeledContent("  decision naming a missing activity",
+                                   value: "\(r.matchDecisionsUnresolved)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.matchDecisionsIgnored > 0 {
+                    LabeledContent("  decision on an excluded recording",
+                                   value: "\(r.matchDecisionsIgnored)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
                 LabeledContent("Weather",
                                value: "\(r.weatherImported) new, \(r.weatherUpdated) refreshed")
                     .font(.caption)
@@ -486,6 +506,109 @@ struct DatabaseHealthView: View {
                         .foregroundStyle(Color.dim)
                     }
                 }
+                // PATCH 278. The one row on this screen that describes
+                // recordings the database does not hold and never will — so it
+                // sits with the counts rather than with the activities.
+                LabeledContent("Refused recordings",
+                               value: r.rejectionsSeen == 0
+                               ? "none"
+                               : "\(r.rejectionsImported) new, \(r.rejectionsUpdated) refreshed")
+                    .font(.caption)
+
+                // PATCH 277. THE COUNTER THAT HAD NO DECISION BESIDE IT.
+                //
+                // `activity: 668` and `recording: 645` sit four lines apart in
+                // the table list and nothing accounted for the difference —
+                // finding out what it was took reading `DetailStore`, which is
+                // not a thing a number on a screen should require.
+                //
+                // Every activity lands in exactly one bucket and the buckets
+                // sum to the total, so `unexplained` is the only line worth
+                // watching: it is zero today, and the day it is not is the day
+                // an activity has no trace for a reason nothing here has a
+                // name for.
+                if coverage.missing > 0 {
+                    LabeledContent("Activities with no trace",
+                                   value: "\(coverage.missing) of \(coverage.total)")
+                        .font(.caption)
+                    if coverage.answeredEmpty > 0 {
+                        LabeledContent("  asked, nothing there",
+                                       value: "\(coverage.answeredEmpty)")
+                            .font(.caption2).foregroundStyle(Color.dim)
+                    }
+                    if coverage.refused > 0 {
+                        LabeledContent("  the source refused it",
+                                       value: "\(coverage.refused)")
+                            .font(.caption2).foregroundStyle(Color.dim)
+                    }
+                    if coverage.belowThreshold > 0 {
+                        LabeledContent("  under 500 m, never asked",
+                                       value: "\(coverage.belowThreshold)")
+                            .font(.caption2).foregroundStyle(Color.dim)
+                    }
+                    if coverage.queued > 0 {
+                        LabeledContent("  queued, not yet reached",
+                                       value: "\(coverage.queued)")
+                            .font(.caption2).foregroundStyle(Color.dim)
+                    }
+                    // RED, AND SHOWN EVEN AT ZERO once anything is missing —
+                    // the residual is the whole point of the account, and a
+                    // line that only appears when it is non-zero cannot be
+                    // told apart from a line nobody wired in.
+                    LabeledContent("  unexplained", value: "\(coverage.unexplained)")
+                        .font(.caption2)
+                        .foregroundStyle(coverage.isFullyExplained ? Color.dim : Color.red)
+                }
+
+                // PATCH 276. Named for what it MEANS rather than for its
+                // table: every row is a recording the app has decided not to
+                // ask about again, and "work queue" would suggest something
+                // still waiting to happen.
+                LabeledContent("Stopped asking",
+                               value: r.workItemsSeen == 0
+                               ? "nothing"
+                               : "\(r.workItemsImported) new, \(r.workItemsUpdated) refreshed")
+                    .font(.caption)
+                if r.workItemsRemoved > 0 {
+                    LabeledContent("  no longer skipped",
+                                   value: "\(r.workItemsRemoved)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+
+                // PATCH 275. Its own row rather than a line inside Activities:
+                // this is the only thing on this screen that says WHERE the
+                // sync is, and at D7 it becomes the thing the sync reads.
+                LabeledContent("Sync position",
+                               value: r.syncStateSeen == 0
+                               ? "not offered"
+                               : "\(r.syncStateImported) new, \(r.syncStateUpdated) refreshed")
+                    .font(.caption)
+
+                // PATCH 274. A pass that DELETES has to say so on the same
+                // screen and with the same weight as one that adds — a silent
+                // removal is the defect §12.2 names, from the other side.
+                LabeledContent("Reconciled", value: r.reconciled.line)
+                    .font(.caption)
+                    .foregroundStyle(r.reconciled.isRunning ? Color.primary : Color.red)
+                if r.notesRemoved > 0 {
+                    LabeledContent("  notes removed", value: "\(r.notesRemoved)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.matchDecisionsRemoved > 0 {
+                    LabeledContent("  match decisions removed",
+                                   value: "\(r.matchDecisionsRemoved)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.reviewsRemoved > 0 {
+                    // Named with its consequence. One review takes its
+                    // evidence, its proposal, its changes and its watch items
+                    // with it, and a row saying "1" while five vanish is a
+                    // number that invites the wrong arithmetic.
+                    LabeledContent("  reviews removed, with their proposals",
+                                   value: "\(r.reviewsRemoved)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+
                 // REFUSALS ARE SHOWN, NOT COUNTED AND HIDDEN. A silent
                 // rejection is indistinguishable from a row that was never
                 // there — §12.2.
@@ -549,11 +672,36 @@ struct DatabaseHealthView: View {
         }
     }
 
+    /// Patch 277. Recomputed on every render rather than stored: it is six
+    /// counters over an array the screen already holds, and a cached copy
+    /// would be the thing that goes stale after an import.
+    private var coverage: TraceCoverage { DetailStore.shared.traceCoverage() }
+
     private func runImport(_ db: Sub4Database) {
         importing = true
         importError = nil
         Task {
             do {
+                // PATCH 274 — THE GATE, asked here because this is the only
+                // place the answer is knowable: `Sub4Import` is `nonisolated`
+                // end to end and `StoreReadJournal` is on the main actor.
+                //
+                // Every store the pass deletes on behalf of has to have been
+                // READ. `canReconcile` fails closed on any that never
+                // reported, so wiring a fourth table into the pass and
+                // forgetting to name its store here refuses rather than
+                // deletes.
+                //
+                // A LOCAL WITH A WRITTEN TYPE, not a ternary in the argument
+                // list. Both branches are implicit-member expressions and the
+                // reader of this line should not have to work out what type
+                // they resolve to.
+                let permission: Reconciliation =
+                    StoreReadJournal.shared.canReconcile(
+                        ["notes.json", "proposals.json", Matcher.decisionsKey])
+                    ? .run
+                    : .skipped("a store could not be read")
+
                 importReport = try Sub4Import.run(
                     into: db,
                     activities: ActivityStore.shared.activities,
@@ -564,6 +712,11 @@ struct DatabaseHealthView: View {
                     shoes: AthleteStore.shared.allGear,
                     notes: Array(NotesStore.shared.notes.values),
                     proposals: ProposalStore.shared.records,
+                    matchDecisions: Array(Matcher.shared.decisions.values),
+                    syncState: ActivityStore.shared.syncState,
+                    workItems: DetailStore.shared.workItems,
+                    rejections: ActivityStore.shared.receipts,
+                    reconcile: permission,
                     weather: Array(WeatherStore.shared.byActivity.values),
                     constants: ConstantsStore.shared.c,
                     ftpWatts: AthleteStore.shared.ftp,
@@ -791,6 +944,11 @@ struct DatabaseHealthView: View {
                 activities: ActivityStore.shared.activities,
                 shoes: AthleteStore.shared.allGear,
                 notes: Array(NotesStore.shared.notes.values),
+                proposals: ProposalStore.shared.records,
+                syncState: ActivityStore.shared.syncState,
+                workItems: DetailStore.shared.workItems,
+                rejections: ActivityStore.shared.receipts,
+                matchDecisions: Array(Matcher.shared.decisions.values),
                 weather: Array(WeatherStore.shared.byActivity.values),
                 zones: AthleteStore.shared.hrZones,
                 streams: Array(DetailStore.shared.streams.values),
@@ -1106,6 +1264,11 @@ struct DatabaseHealthView: View {
         // out because a file-system error can carry a container path.
         lines.append("")
         lines.append(contentsOf: StoreWriteJournal.shared.diagnosticLines)
+        // PATCH 273. UNCONDITIONAL, like the line above it and for 266c's
+        // reason: "Unreadable stores: none" in a paste is evidence, and a
+        // line that only appears when something is wrong cannot be
+        // distinguished from a line nobody wired in.
+        lines.append(contentsOf: StoreReadJournal.shared.diagnosticLines)
         return lines.joined(separator: "\n")
     }
 }

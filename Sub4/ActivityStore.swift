@@ -138,6 +138,32 @@ final class ActivityStore {
     /// history to tidy a variable is how the reason for a decision is lost.
     private var cursor: TimeInterval = 0
 
+    /// What `sync_state` should say about this source — patch 275, D5.
+    ///
+    /// A COMPUTED VIEW RATHER THAN AN EXPOSED CURSOR. `cursor` stays private:
+    /// the importer needs to READ where the sync has got to and nothing
+    /// outside this file has any business setting it.
+    ///
+    /// `Sub4Import.sourceID` rather than the literal "strava", because
+    /// `sync_state.sourceID` is a RESTRICTED foreign key — an id the schema
+    /// has not seeded is refused, and two places spelling it separately is how
+    /// that refusal arrives one day with no explanation.
+    ///
+    /// `lastResult` is `lastError` alone. `lastGateNotice` is deliberately
+    /// excluded: §179 separated a deliberate refusal from an outage, and a
+    /// closed gate means the sync did NOT run — which `lastSyncUTC` already
+    /// says by not moving.
+    var syncState: SyncState {
+        SyncState(sourceID: Sub4Import.sourceID,
+                  // Verbatim, via Swift's shortest round-tripping description.
+                  // §8 types the column as opaque text on purpose; formatting
+                  // an epoch into ISO-8601 here would be this app inventing a
+                  // representation for a value it does not own.
+                  cursor: "\(cursor)",
+                  lastSync: lastSync,
+                  lastResult: lastError)
+    }
+
     /// New activities in the last sync whose start time predates `cursor` —
     /// uploaded late, and invisible to the app before patch 249.
     ///
@@ -157,7 +183,22 @@ final class ActivityStore {
     /// Patch 196. Its own key rather than a reused one — the note on the geo
     /// backfill below said that was the rule from now on.
     static let zoneBackfillKey = "strava.zoneBackfill"
-    private static let rejectedKey = "strava.rejectedByRule"
+    /// The retired shape — `[activity id: rendered line]`. Read once by the
+    /// migration in `loadRejections` and then removed. Still named in the
+    /// inventory beside the new key, because a device that has not launched
+    /// this build still holds it.
+    nonisolated static let rejectedKey = "strava.rejectedByRule"
+
+    /// The receipts, as records — patch 278. A `Data` blob, for the reason
+    /// `match.decisions` is one: UserDefaults cannot hold a `Codable` any
+    /// other way, and two parallel keys that must agree is a split brain by
+    /// construction.
+    nonisolated static let rejectionsKey = "strava.rejections"
+
+    /// Asked of the type that WRITES them — the lesson
+    /// `loadThresholdKeysAreCoveredAtTheirSource` exists for, applied at the
+    /// moment a key changes rather than after a delete has missed one.
+    nonisolated static let rejectionKeys = [rejectionsKey, rejectedKey]
 
     private init() {
         let dir = (try? FileManager.default.url(for: .applicationSupportDirectory,
@@ -254,35 +295,69 @@ final class ActivityStore {
     /// is nothing left in the app that remembers it existed. A rule that
     /// silently deletes data is worse than the data it deleted — this is the
     /// receipt, and Settings prints it.
-    private(set) var rejected: [String] = []
+    /// UNCHANGED FOR EVERY READER — patch 278 made this computed rather than
+    /// stored, and `SettingsView` cannot tell. The lines are the same lines;
+    /// what changed is that the app now knows what is inside them.
+    var rejected: [String] { receipts.map(\.label) }
+
+    /// The receipts themselves, as records — patch 278, §12.24.
+    ///
+    /// The rendered line held everything `rejection`'s columns want and none
+    /// of it as a field. Parsing it back would be inventing structure out of
+    /// prose, so the store learned the shape instead.
+    private(set) var receipts: [RejectionReceipt] = []
 
     private func loadRejections() {
-        let map = UserDefaults.standard
+        if let data = UserDefaults.standard.data(forKey: Self.rejectionsKey) {
+            // A blob that will not decode is LEFT WHERE IT IS rather than
+            // overwritten — §12.8.1's rule, and these cannot be re-fetched:
+            // the recording they describe is not in `activities.json` and the
+            // cursor moved past it years ago.
+            receipts = (try? JSONDecoder.sub4.decode([RejectionReceipt].self,
+                                                     from: data)) ?? []
+            return
+        }
+
+        guard UserDefaults.standard.object(forKey: Self.rejectedKey) != nil else { return }
+        let legacy = UserDefaults.standard
             .dictionary(forKey: Self.rejectedKey) as? [String: String] ?? [:]
-        rejected = map.keys.sorted().compactMap { map[$0] }
+        receipts = RejectionReceipt.migrate(legacy)
+        // ONLY IF THE NEW COPY LANDED — patch 278c, the same rule as
+        // `Matcher`. These receipts describe recordings that are not in
+        // `activities.json` and that the cursor moved past years ago: if both
+        // keys go, there is nothing anywhere that remembers them.
+        guard persistRejections() else { return }
+        UserDefaults.standard.removeObject(forKey: Self.rejectedKey)
     }
 
     private func recordRejections(_ candidates: [Activity]) {
-        var map = UserDefaults.standard
-            .dictionary(forKey: Self.rejectedKey) as? [String: String] ?? [:]
-        var changed = false
+        var known = Set(receipts.map(\.activityId))
+        var added = false
         for a in candidates where a.selfContradictoryDistance {
-            if map[a.id] == nil { map[a.id] = Self.rejectionLabel(a); changed = true }
+            guard !known.contains(a.id) else { continue }
+            // A RECEIPT MADE NOW KNOWS EVERYTHING. The activity is in hand
+            // here — it is the only moment it ever will be, because the next
+            // save writes it out of `activities.json` for good.
+            receipts.append(RejectionReceipt(a, rule: .selfContradictoryDistance))
+            known.insert(a.id)
+            added = true
         }
-        guard changed else { return }
-        UserDefaults.standard.set(map, forKey: Self.rejectedKey)
-        rejected = map.keys.sorted().compactMap { map[$0] }
+        guard added else { return }
+        receipts.sort { $0.activityId < $1.activityId }
+        persistRejections()
     }
 
-    /// Everything needed to look the recording up in Strava and see for
-    /// yourself: when, what it was called, and the two figures that disagree.
-    private static func rejectionLabel(_ a: Activity) -> String {
-        let kmh = (a.distance / Double(max(a.movingTime, 1))) * 3.6
-        let maxKmh = (a.maxSpeed ?? 0) * 3.6
-        let mins = a.movingTime / 60, secs = a.movingTime % 60
-        return String(format: "%@ %@ — %.1f km in %d:%02d = %.0f km/h avg, max %.0f",
-                      String(a.startLocal.prefix(10)), a.name,
-                      a.km, mins, secs, kmh, maxKmh)
+    /// Returns whether the blob was written — patch 278c.
+    ///
+    /// No failure to REPORT: `UserDefaults.set` has no API for one, and that
+    /// is unchanged. What the `Bool` buys is the one decision that depends on
+    /// it — the migration must not delete the retired key unless the new one
+    /// is on disk.
+    @discardableResult
+    private func persistRejections() -> Bool {
+        guard let data = try? JSONEncoder.sub4.encode(receipts) else { return false }
+        UserDefaults.standard.set(data, forKey: Self.rejectionsKey)
+        return true
     }
 
     /// Plan start — nothing earlier is ever ingested.
@@ -509,7 +584,10 @@ final class ActivityStore {
     /// app touches the store. Nothing here writes.
     func dropInMemory() {
         activities = []
-        rejected = []
+        // `receipts` since patch 278 — `rejected` is computed from it now.
+        // This line is why 278 did not build: the sweep looked for
+        // `.rejected`, and an assignment has no dot in front of it.
+        receipts = []
         cursor = Self.cutoffEpoch
         lastSync = nil
         lastError = nil

@@ -194,7 +194,7 @@ struct ProgressTabView: View {
         .sheet(isPresented: $showReview) { ReviewView() }
         // Rebuilt only when the inputs change, never per re-render — the
         // builder runs the matcher over four weeks of days.
-        .task(id: "\(notes.count)·\(activities.count)·\(matcher.overrides.count)") {
+        .task(id: "\(notes.count)·\(activities.count)·\(matcher.decisions.count)") {
             review = ReviewBuilder.build()
         }
     }

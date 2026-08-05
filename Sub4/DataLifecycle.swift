@@ -505,8 +505,14 @@ enum DataLifecycle {
                       // one that matters: it keeps date, name, distance and
                       // duration of recordings the app declined, and outlives
                       // the activity it describes.
+                      // `strava.rejections` since patch 278 — the receipts
+                      // as records. The retired key is still named because a
+                      // device that has not launched this build still holds
+                      // it, and a key nobody names is a key Delete local data
+                      // cannot remove.
                       .preferences(["strava.cursor", "strava.lastSync",
-                                    "strava.cutoffUsed", "strava.rejectedByRule",
+                                    "strava.cutoffUsed", "strava.rejections",
+                                    "strava.rejectedByRule",
                                     "strava.geoBackfill", "strava.powerBackfill",
                                     "strava.speedBackfill", "strava.zoneBackfill"])],
             retention: .indefinite,
@@ -558,8 +564,14 @@ enum DataLifecycle {
             purpose: "Reading a slow session correctly — 28° and a headwind is "
                    + "an explanation, not a decline in form.",
             lineage: [.weatherProvider, .strava],
-            storage: [.applicationSupport(.file("weather.json")),
-                      .preferences(["weather.unavailable"])],
+            // PATCH 276. `weather.unavailable` REMOVED from this list, and
+            // that is a correction rather than a change: patch 130 stopped
+            // persisting the failure set, and `WeatherStore.init` deletes the
+            // key on every launch so a phone that ran 128 or 129 is not still
+            // carrying its verdicts. The inventory named it as storage this
+            // app keeps — a falsehood in the one document whose entire job is
+            // to be true about where data lives.
+            storage: [.applicationSupport(.file("weather.json"))],
             retention: .indefinite,
             sharedWith: ["Apple Weather, or Open-Meteo where Apple has no answer"],
             isExportable: true,
@@ -614,7 +626,15 @@ enum DataLifecycle {
             // category of its own because it IS a correction to matching: a ride
             // marked as a commute stops being plan-eligible, which is the same
             // lever the overrides below pull, one step earlier.
-            storage: [.preferences(["match.overrides"]),
+            // ASKED OF THE STORE, like `LoadThresholds` above and for the
+            // reason that test records: this patch CHANGES a key, which is
+            // exactly when a literal here and the code that writes it come
+            // apart. `Matcher.preferenceKeys` holds two — `match.decisions`,
+            // the record shape with the date `match_decision.decidedUTC`
+            // requires, and the retired `match.overrides`, still named because
+            // a device that has not launched this build still holds it and a
+            // key nobody names is a key "Delete local data" cannot remove.
+            storage: [.preferences(Matcher.preferenceKeys),
                       .applicationSupport(.file("commutes.json"))],
             retention: .indefinite,
             sharedWith: [],
@@ -626,10 +646,20 @@ enum DataLifecycle {
             gaps: ["Stored against Strava activity ids, so the decisions must be "
                  + "remapped rather than lost when the source changes "
                  + "(ADR-0002, step 4A M4). True of the commute decisions too.",
-                   "The match overrides are still in UserDefaults rather than in "
-                 + "a transaction (step 3.5.4). `commutes.json` is a file for "
-                 + "the same reason notes are: it is the athlete's, and a new "
-                 + "preference key would be one more thing D5 has to move."],
+                   "The match decisions are still in UserDefaults rather than in "
+                 + "a transaction (step 3.5.4), which is also why they are the "
+                 + "one authored store with no failable save: UserDefaults has "
+                 + "no API to ask whether the write landed. They reach "
+                 + "`match_decision` at import since patch 272; D5 makes the "
+                 + "row the original rather than the copy.",
+                   "Decisions made before patch 272 carry the date of the "
+                 + "migration rather than the date they were made — the old "
+                 + "shape stored no timestamp and nothing else in the app "
+                 + "remembers. `dateIsKnown` records which are which, and "
+                 + "ADR-0003 §12.19.3 records why a plausible date was not "
+                 + "invented instead. Closed by nothing: it is a permanent "
+                 + "fact about a handful of rows, disclosed rather than "
+                 + "fixed."],
             onStravaDisconnect: .keep(why: "you made these corrections. They reference Strava ids and are remapped rather than dropped — step 4A M4")),
 
         DataCategoryEntry(

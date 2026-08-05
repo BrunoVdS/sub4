@@ -1815,6 +1815,681 @@ both already carry.
 first time since the importer was written, and every one of 666 activities
 that names gear resolves to a row.
 
+## 12.19 The match decision — D4's database half, 1 of 3, patch 272
+
+`match_decision`, `correction` and `rejection` have existed since the schema
+was written and nothing has ever written to them. This is the first.
+
+### 12.19.1 The store did not hold what the table needs
+
+`Matcher.overrides` was `[session uid: activity id]` in UserDefaults, with `""`
+for "explicitly nothing". `match_decision.decidedUTC` is NOT NULL, and the
+store had no timestamp anywhere — so this is not an import that was waiting to
+be written, it is a store that had to learn a fact first.
+
+`CommuteStore` reached the same conclusion in patch 251 and its header says so
+in as many words: *"A decision carries its date. Not decoration: the
+`correction` table in ADR-0003 §8 wants provenance for exactly this kind of
+row, and a decision with no timestamp cannot be reconciled against a later
+one."* This is that argument applied to the older of the two stores.
+
+**`""` becomes a real absence.** The empty string existed because a
+`[String: String]` in UserDefaults has nowhere to put one.
+`match_decision.activityID` is nullable, so both sides can now say it properly.
+
+### 12.19.2 It stays in UserDefaults, and that is the decision
+
+The obvious move is to follow `commutes.json` into Application Support. It is
+the wrong move here, and the reason is the ladder: D5 takes what is left in
+UserDefaults into typed rows, D7 makes the database authoritative, D8 removes
+the JSON writers. **A new JSON store two rungs before the JSON stores are
+retired is building something already scheduled for demolition** — and it would
+cost the whole legacy-fixture sweep (`LegacyStore`, `LegacyInput`, the
+classifier, the reader, the snapshot inventory) to carry a file for three
+patches.
+
+**The honest cost, stated rather than skipped.** A `UserDefaults.set` has no
+failure to report, so this is the one authored store with no failable-save
+path. §12.17's rule is that a write with somebody watching must not report
+success it did not have; there is no API to ask UserDefaults whether it
+succeeded, so the rule cannot be applied here and is not pretended at. It
+becomes applicable at D5, in a transaction. `DataLifecycle`'s gap list now says
+this rather than the older, vaguer version.
+
+### 12.19.3 The migration invents a date and admits it
+
+Decisions already on the phone have no timestamp anywhere. The migration stamps
+them with the instant it ran and sets `dateIsKnown` to false.
+
+The alternative was to use the planned session's date, which is *plausible* and
+is a different fact wearing this one's clothes — the session happened on the
+12th; the athlete may have corrected the match in March. This project has
+refused that trade twice before (§12.10.3's provenance column, §12.12.5's
+apportionment) and refuses it again.
+
+`match_decision` has no column for the distinction, so it lives in the store
+and in the import's counters rather than in the table. **That is the right
+place for it**: the table records what was decided, and `dateIsKnown` is a fact
+about our knowledge of the record, not about the decision.
+
+### 12.19.4 Three outcomes, and one of them writes nothing
+
+| What the store holds | What the table gets |
+|---|---|
+| an activity id that resolves | the row, with the canonical id |
+| explicitly nothing | the row, with NULL |
+| an activity id that does not resolve | **no row**, and `matchDecisionsUnresolved` |
+| an activity `DataCorrections` excludes | no row, and `matchDecisionsIgnored` |
+
+The third line is the one worth arguing. Writing it with a NULL is easy and the
+column allows it — but NULL already means *the athlete said nothing satisfied
+this session*, so reusing it would make the database state something he never
+said. A held-back row leaves the database silent and a counter loud, which is
+the trade §12.9d made when neither name could win.
+
+The fourth is patch 257's rule applied to a third store: an override of an
+excluded recording is the exclusion working, and it is never counted as *seen*,
+because "seen" means work attempted.
+
+**The verifier had to learn the same rule.** `expectedDecisions` filters by
+`storeIDs` exactly as weather does — otherwise a device carrying one stale
+override would report a permanent disagreement it could do nothing about, and a
+verifier with a known-benign failure is a verifier nobody reads.
+
+## 12.20 A store that could not be read must not look empty — patch 273
+
+### 12.20.1 What the device showed, and what it proved
+
+Patch 272 landed clean: 15 comparisons, all agreed, `match_decision` correctly
+empty. Then the table counts were read, and `review` still held **1**, with
+`review_evidence` 1, `proposal` 1, `proposal_change` 2, `proposal_watch` 2 —
+the rehearsal record from patch 269, **deleted from `proposals.json` on 5
+August and still in the database**.
+
+The cause is general and was found by grep rather than by guess. Every `DELETE`
+in the six importer files is a *replace-the-children-of-this-parent* delete:
+zones, a review's evidence and proposal, a trace, a detail, an activity's gear
+references. **Nothing anywhere reconciles a record that has disappeared from a
+store.** So:
+
+| the athlete does this | what the database does |
+|---|---|
+| *Back to automatic* on a match | keeps the `match_decision` row. Verifier: expected 0, found 1, **permanently** |
+| deletes a note | keeps the `user_note` row. Same |
+| deletes a review (patch 270) | keeps all five rows, and the verifier does not check reviews at all |
+
+`ReviewDue` reads `ProposalStore` and not the database, so the 24 August date
+is unaffected. What is left is a ghost that will sit beside the first real
+review and look like a second one.
+
+**Patch 270's delete button is the fourth control this project has found
+reporting work it did not do.** It dismisses the sheet, says the review is
+gone, and leaves half the record behind.
+
+### 12.20.2 Why the obvious fix could not be built
+
+The reconciliation pass is four `DELETE … WHERE key NOT IN (…)` statements. It
+was not built, because of what the stores look like when they fail:
+
+```swift
+guard let data = try? Data(contentsOf: fileURL) else { return }
+notes = (try? JSONDecoder.sub4.decode([String: Note].self, from: data)) ?? [:]
+```
+
+Two `try?`s, and **neither can tell "there is no file yet" from "the file is
+there and will not decode"**. Both produce an empty store, with no error, no
+row and no log. A reconciliation pass reading that state would delete every
+note, every review and every match decision from the one copy that was still
+intact — turning a corrupt file into permanent data loss, in the patch whose
+purpose is to make the database trustworthy.
+
+§12.9c already built a classifier that tells those conditions apart. It runs
+from a button on the Database screen and **has never been in the launch path**.
+
+### 12.20.3 Three outcomes, and only one of them is a refusal
+
+`StoreLoad` is `.loaded`, `.absent` or `.unreadable`. `isTrustworthy` is true
+for the first two.
+
+**Absent is not a failure, and saying so is the point.** Every fresh install
+has no `notes.json`; §12.9e found `proposals.json` legitimately missing on the
+real device because no review had ever run. A journal that shouted about those
+would be one the athlete learns to ignore, which is how the entry that mattered
+would be missed.
+
+**A zero-byte file is unreadable, not absent.** That is what an interrupted
+write leaves behind — §12.9c's `truncated` condition at its limit — and calling
+it "you have nothing" is the same mistake in miniature.
+
+### 12.20.4 The gate fails closed
+
+`StoreReadJournal.canReconcile(_:)` requires every named store to have
+*reported* something believable. A store that never recorded an outcome is not
+trustworthy.
+
+That default is the whole design. Treating silence as success would make
+forgetting to wire a store into the journal look exactly like wiring it in
+correctly — and the failure would appear as rows quietly disappearing, months
+later, with the control that did it reporting a clean run.
+
+### 12.20.5 The read journal is not the write journal's mirror
+
+`StoreWriteJournal` says *the app has more than it saved*. Everything it lists
+is re-fetchable, so it is a warning, and a successful write clears it.
+
+This one says *the app has LESS than it holds* — which is the worse of the two
+and previously had no way to be said at all. Nothing clears it during a
+session, because each store reads once at launch; the entry stands until the
+next launch reads the file again.
+
+Only the four AUTHORED stores are instrumented: `notes.json`,
+`proposals.json`, `commutes.json`, `match.decisions`. The fetched stores are
+deliberately left out — they can be asked for again, and 274 reconciles only
+tables the athlete can delete from.
+
+### 12.20.6 A comment that was true for one patch
+
+`Matcher.load` carried *"there is nowhere to report it from here — see the
+header on why this store has no journal"*. Written in 272, false in 273.
+Corrected in place rather than deleted, because the distinction it was reaching
+for survives: this store still has no WRITE journal, since `UserDefaults.set`
+has no failure to report. A read that found something it could not use is a
+different fact, and it has somewhere to go now.
+
+## 12.21 What the athlete deleted — D4's database half, 3 of 3, patch 274
+
+§12.20.1 recorded the finding: the importer is additive-only, and the rehearsal
+record deleted from `proposals.json` was still in the database. This is the
+pass that removes it, and 273 is the reason it can be trusted to.
+
+### 12.21.1 Three tables, and the list is short on purpose
+
+`user_note` and `match_decision` by `planSessionUID`; `review` by `ranUTC`,
+which takes `review_evidence`, `proposal`, `proposal_change` and
+`proposal_watch` with it through foreign keys that already said
+`ON DELETE CASCADE`.
+
+**Nothing fetched is reconciled.** Activities, gear, weather, traces, details,
+the plan and the profile are left alone, because for those an empty store means
+a sync that has not run rather than a decision to remove something — and the
+athlete cannot delete them one at a time in the first place. A pass that read
+"Strava is unreachable" as "the athlete deleted 668 activities" would be the
+worst defect this project has shipped.
+
+### 12.21.2 The gate carries a reason, not a Bool
+
+`Reconciliation` is `.run` or `.skipped(String)`. The health screen prints the
+reason.
+
+A Bool would have made **"a store could not be read"** and **"the caller did
+not ask for it"** the same word — and those are opposite facts. The first is
+the gate working. The second is a bug in the call site, and it would have been
+invisible behind a screen reading *Reconciled: no* for months.
+
+The default is `.skipped("the caller did not ask")`. **A forgotten argument
+leaves rows behind**, which is the status quo, visible on the health screen and
+now caught by the verifier. A default that deleted would delete in the one call
+site nobody thought about.
+
+The gate is computed by the caller: `Sub4Import` is `nonisolated` end to end
+and `StoreReadJournal` is on the main actor. That constraint turns out to be
+the right shape anyway — the decision to delete belongs to the screen that
+knows what was read, not to the code doing the deleting.
+
+### 12.21.3 A held-back decision is not a deletion
+
+The pass keeps by the STORE's uids, not by what the import managed to write.
+A match decision naming an activity that is not here is held back by §12.19.4
+and writes no row — and its uid is still in the store, so the pass leaves the
+existing row alone. Reading "no row was written" as "he deleted it" would let a
+temporarily missing activity silently destroy a correction.
+
+### 12.21.4 Row by row, which is not the obvious SQL
+
+`DELETE … WHERE key NOT IN (…)` is one statement and shorter. It also cannot
+express an empty keep-set without special-casing into `DELETE FROM …` — the
+most dangerous statement in the file, written as a fallthrough — it binds one
+parameter per record against a limit that is a build setting of SQLite rather
+than a promise, and it cannot count what it removed. Fetching the keys and
+deleting by id costs one extra read on tables holding single digits.
+
+### 12.21.5 The verifier should have compared reviews since 263
+
+It has compared notes since the day it was written. It has never compared
+reviews. So on 5 August the rehearsal was deleted from the store, stayed in the
+database, and the next run reported **fourteen comparisons, all agreed,
+verified** — with the one store in this app that cannot be re-fetched being the
+one nothing was checking.
+
+It counts the parent only. The four children are reachable from it and cascade
+with it; counting `proposal_change` would assert the shape of somebody's review
+rather than that the review is there.
+
+**This is the fifth control this project has found reporting work it did not
+do**, and the second in two days: patch 270's delete button dismissed the sheet
+and left half the record behind, and the verifier said everything agreed while
+looking away from the table that disagreed.
+
+## 12.22 Where the sync has got to — D5 slice 1, patch 275
+
+`strava.cursor` and `strava.lastSync` are two preference keys holding the
+position of a sync that has run 668 activities through it. `sync_state` has had
+a row waiting for them since the schema was written.
+
+**Nothing moves.** The keys stay where they are and stay authoritative — D7 is
+where the database starts being read. This copies, exactly as every other
+importer does.
+
+### 12.22.1 The column is opaque, so the epoch goes in verbatim
+
+§8's own comment settles it: *"Strava's cursor is an epoch and Health's is an
+anchor; a column typed to one of them would be a transport shape."*
+
+So the `Double` is rendered by Swift's shortest round-tripping description and
+stored as that string. Reformatting it to ISO-8601 would be more readable and
+would be this app inventing a representation for a value it does not own — plan
+step 3.6.3 asks for *"an exact source timestamp rather than something
+reconstructed"*. `theCursorSurvivesTheRoundTripExactly` is the test that keeps
+it honest.
+
+### 12.22.2 The app's cursor stopped being a cursor in patch 249
+
+Recorded here, where the value is copied, rather than only where it is
+computed.
+
+`ActivityStore.cursor` used to be the query bound: `after=` filtered by START
+date, so any activity uploaded late was skipped **for ever**. 249 made the read
+unconditional. The variable survives as a **high-water mark** — the instrument
+for detecting the very problem it used to cause — so what lands in this column
+is *the latest start we have seen*, not *where the next request begins*.
+
+**The column name predates that change.** It is not renamed, because a
+migration is history; it is explained instead. Anything reading `sync_state` at
+D7 needs to know which of the two it is holding.
+
+### 12.22.3 `lastResult` holds a problem, and NULL means there wasn't one
+
+Writing `"ok"` on success would be inventing a word the app never said in order
+to fill a column. *Whether a sync ran* is `lastSyncUTC`'s job — a non-null
+timestamp with a null result is a clean sync, and both facts stay separable.
+
+**`lastGateNotice` is deliberately excluded.** §179 separated a deliberate
+refusal from an outage because a closed gate is not a broken connection, and a
+closed gate means the sync did not run — which `lastSyncUTC` already says by not
+moving. Folding the two into one column would put the distinction back where
+179 took it out of.
+
+### 12.22.4 The verifier compares the cursor, not the row count
+
+`sync_state` holds exactly one row per source, so a count check would compare 1
+against 1 and agree while the cursor inside it was a week out. **A cursor a week
+out is what D7 would resume from**, and the activities in between would be
+skipped — the 249 defect, arriving a second time through a different door.
+
+So this check is its own layer: it reads the string back and compares it to the
+string the store rendered. `theVerifierCatchesADriftedCursor` proves it can
+fail, which is what makes it agreeing worth anything.
+
+### 12.22.5 What D5 still has
+
+`work_queue` (`detail.failed`, `detail.noStreams`, `weather.unavailable`),
+`content_revision` (the store schema versions and the four backfill flags),
+`rejection` (`strava.rejectedByRule` — prose where the table wants columns, so
+`ActivityStore` needs reshaping exactly as `Matcher` did in §12.19),
+`lifecycle_event` / `lifecycle_line` (export and disconnect receipts, which are
+not in UserDefaults at all and currently persist nowhere), and
+`review_evidence_source`.
+
+**Four preference keys are staying.** `appearance.selected`,
+`discipline.selected`, `volume.unit` and `zones.window` are display settings,
+not data — they describe the reader, not the training. D5 is not "empty
+UserDefaults"; it is "get the DATA out of UserDefaults".
+
+## 12.23 What the app has stopped asking for — D5 slice 2, patch 276
+
+### 12.23.1 Neither set is a retry queue, and that changed the patch
+
+`detail.failed` and `detail.noStreams` look like a retry queue from their names
+and from the table they were headed for. `DetailStore` says otherwise:
+
+- **`failed`** — ids Strava answered **404** for, deleted or private. The
+  declaration's own words: *"Never retried automatically — otherwise a single
+  dead id burns a queue slot on every launch, forever."*
+- **`noStreams`** — 200 with nothing usable, or a 404 on the streams call. A
+  manual entry, or an indoor session with no distance track.
+
+**Both are terminal verdicts, not work waiting to happen.** A transient
+failure — a timeout, a 429, a closed gate — is never persisted at all: it
+returns `.transient` or `.stop` and the id goes back into an in-memory queue
+rebuilt from scratch every launch.
+
+So there is no attempt count to carry and no backoff to preserve. **A note
+earlier in this session said `DetailStore` would need reshaping first, the way
+`Matcher` did in §12.19, and that it would take two patches. It was wrong** —
+written from the key names and the column names before the store was read. One
+patch, no reshape.
+
+### 12.23.2 `noStreams` is `done`, not `failed`
+
+| store | kind | state |
+|---|---|---|
+| `detail.failed` | `detail` | `failed` — the fetch did not produce what it went for |
+| `detail.noStreams` | `stream` | `done` — the fetch SUCCEEDED and there was nothing there |
+
+Filing `noStreams` as a failure would report a fault where the source simply
+had nothing to give. `done` means the queue is finished with the item, which is
+true of both, and the difference between them survives in `state`.
+
+*(This paragraph originally predicted 23 rows. See §12.23.7 — the device wrote
+two.)*
+
+### 12.23.3 `attempts` is 1, and 1 is a floor
+
+An id reaches either set by being asked for at least once — that is the only
+way in. The app has never counted, so 1 is the minimum known to be true rather
+than a number invented to fill a column. Recorded because a reader would
+otherwise take it for a measurement.
+
+### 12.23.4 `createdUTC` is when the database learned, not when the fetch happened
+
+Neither set records a time and nothing else in the app remembers. §12.19.3
+refused to invent a date for a match decision; **this is the case where the
+same trade goes the other way**, and §8's own group 9 header is the licence:
+*"Bookkeeping, not history. Everything here can be thrown away and rebuilt by
+re-syncing."* The column says when the ROW was created, which is exactly what
+is being recorded, and losing the real time costs a re-fetch rather than a
+fact.
+
+### 12.23.5 This importer prunes, and §12.21 refused to
+
+It owns `detail` and `stream` entirely and receives the complete set every run,
+so an id no longer present has genuinely been forgotten — by `resetCache`, or
+by a schema bump clearing the cache. Those rows are deleted.
+
+Safe here for two reasons that did **not** hold for notes:
+
+1. The source is a `UserDefaults` string array with **no decode step**, so
+   "empty" cannot mean "unreadable" the way a corrupt `notes.json` can. The
+   failure mode §12.20 was built to catch does not exist on this path.
+2. The whole table is rebuildable by re-syncing, so the worst case is a
+   re-fetch rather than a loss.
+
+A row with a NULL subject is left alone: this importer claims only rows it
+could have written.
+
+### 12.23.6 A key the inventory claimed and the app deletes
+
+`weather.unavailable` was listed in `DataLifecycle` as preference storage under
+the weather category, and asserted in `everyPreferenceKeyIsCovered` as a key
+the app writes.
+
+**The app has deleted it on every launch since patch 130**, which stopped
+persisting the weather failure set — `WeatherStore.init` removes the key so a
+phone that ran 128 or 129 is not still carrying its verdicts.
+
+Both are corrected. Worth its own subsection because of where it was: the data
+inventory is the one document in this project whose entire job is to be true
+about where data lives, and it named a key this app exists to remove.
+
+### 12.23.7 The device said 2, and the difference is a third state — patch 276a
+
+668 activities, 668 details, **645 traces**. Twenty-three have no trace, and
+§12.23.2 said filing them as failures would report a fault against all
+twenty-three. The first import wrote **two rows**.
+
+**The other 21 were never asked.** `DetailStore.needsStreams` opens with
+`a.distance >= minStreamDistance`, and `minStreamDistance` is 500 m. A strength
+session is 0 m; so is a manually logged swim. Those activities are not in
+`failed` and not in `noStreams` because nothing ever went and looked.
+
+So there are three states and the table holds two:
+
+| | in `work_queue` |
+|---|---|
+| asked, refused (404) | `detail` / `failed` |
+| asked, nothing there | `stream` / `done` |
+| **never asked — under 500 m** | **no row** |
+
+`work_queue`'s states were frozen by migration 2 and cannot be added to. Of the
+four, `done` would claim work happened and `pending` would claim work is
+coming; neither is true. **No row is the honest answer** — but it leaves a gap
+that is real and currently invisible: twenty-one activities have no trace, no
+verdict, and nothing anywhere saying why.
+
+That is a violation of the standard set on 5 August — *"every counter on the
+health screen reads zero or has a decision beside it, so the next entry in any
+of them is news."* `recording: 645` against `activity: 668` is a counter with
+no decision beside it.
+
+**And the number that would explain it has no caller.**
+`DetailStore.backfillRemaining` is `pending.count`, written for a screen that
+was never built. It is the second method found this week that compiled, was
+correct, and did nothing — §12.8.4 recorded the first. Until something shows
+it, "never asked" and "queued and not yet reached" are indistinguishable from
+outside.
+
+**The wider lesson, and it is the same one as §12.23.1.** That section already
+records getting this patch's shape wrong by reading key names instead of the
+store. The correction was written from `DetailStore` — and then a number was
+predicted from arithmetic on two other counters rather than from the code that
+produces it. Reading further would have found the 500 m line: it is nine lines
+below the one that settled the earlier question.
+
+### 12.23.8 The 23 get a decision beside them — patch 277
+
+§12.23.7 recorded a counter with no decision beside it: `activity: 668` and
+`recording: 645`, four lines apart, difference unaccounted for. Finding out
+what the difference was took reading `DetailStore` — which is not a thing a
+number on a screen should require.
+
+**It is an account, not five numbers.** Every activity lands in exactly one
+bucket, in a fixed order, and the buckets sum to the total:
+
+| bucket | why |
+|---|---|
+| has a trace | it is here |
+| the source refused it | 404, `DetailStore.failed` |
+| asked, nothing there | `DetailStore.noStreams` |
+| under 500 m, never asked | `needsStreams` requires `minStreamDistance` |
+| queued, not yet reached | in `pending` |
+| **unexplained** | none of the above |
+
+**The order is the definition.** A trace that arrived outranks every reason it
+might once have been absent — those reasons are stale the moment the data
+lands. A refusal outranks an empty answer, because a 404 stops the detail fetch
+before the stream fetch is reached. The distance rule outranks the queue,
+because an activity under the threshold is never queued at all.
+
+**`unexplained` is the only line worth watching**, and it is why this is an
+account rather than a list. Five counters can each be correct while the set of
+them is missing a case; a residual that has to make the total add up cannot
+hide one. It is zero today. The day it is not is the day an activity has no
+trace for a reason nothing in this app has a name for.
+
+**`pending` gets its first reader.** `backfillRemaining` has been
+`pending.count` since it was written and nothing ever showed it — the second
+method-written-in-anticipation found this week, after §12.8.4's. Until now
+"never asked" and "queued and not yet reached" were indistinguishable from
+outside `DetailStore`, which is exactly the ambiguity that made §12.23.7's
+prediction wrong.
+
+**Pure, so it can be tested.** `DetailStore` is a singleton over the real disk;
+a classifier that read it directly could only be exercised by arranging the
+athlete's actual files. `TraceCoverageReport.classify` takes its inputs, the
+store supplies them in one line, and `theDeviceShapeAddsUp` reproduces the 5
+August device — 645 traces, 2 answered empty, 21 under the threshold — as a
+fixture, so the arithmetic §12.23.7 corrected is checked rather than asserted
+in prose.
+
+## 12.24 What a rule threw away — D5 slice 3, patch 278
+
+`ActivityStore.rejected`'s declaration already said why this table matters: *"A
+rejected activity is not written to activities.json and the cursor moves past
+it, so after one launch there is nothing left in the app that remembers it
+existed. A rule that silently deletes data is worse than the data it deleted —
+this is the receipt, and Settings prints it."*
+
+It was stored as a rendered sentence:
+
+```
+2025-04-12 Evening Ride — 41.3 km in 22:14 = 111 km/h avg, max 19
+```
+
+Every column `rejection` wants is in there, and **none of it is a field**.
+
+### 12.24.1 The store learns the shape; parsing was the wrong answer
+
+Reading the four values back out of that sentence would be inventing structure
+out of prose — and it would work, until a name contained an em dash. So this is
+§12.19's shape again: the STORE gains a record, and the import becomes the easy
+half.
+
+`RejectionReceipt` carries the rule, the instant, the name, the day, the
+distance, the elapsed seconds, and the rendered line kept verbatim.
+
+**`ActivityStore.rejected` is now computed and every reader is unchanged.**
+`SettingsView` prints the same lines it always did; what changed is that the app
+knows what is inside them.
+
+**The receipt is made at the only moment it can be.** `recordRejections` has
+the `Activity` in hand — and that is the last time anything will, because the
+next save writes it out of `activities.json` for good.
+
+### 12.24.2 A migrated receipt says what it does not know
+
+The retired shape stored no timestamp and no fields, so a receipt built from one
+carries `dateIsKnown == false` and NULL for name, day, distance and duration.
+Those four columns are nullable. The two that are not can both be supplied
+honestly:
+
+- **`rule`** — there has only ever been one, `selfContradictoryDistance`, so
+  naming it is a fact rather than a guess. `oneRuleOnly` pins that: a second
+  rule would make this migration wrong, and it cannot be re-run.
+- **`noticedUTC`** — the migration instant, disclosed by `dateIsKnown`.
+
+§12.19.3 refused to invent a plausible date; §12.23.4 accepted one. **This is
+the first case, not the second** — §8 groups `rejection` with the authored
+tables, and it outlives the activity it describes, so it is history rather than
+bookkeeping.
+
+### 12.24.3 It references no activity, and the verifier must not either
+
+`rejection` has foreign keys to `account` and `source` and **none to
+`activity`**, deliberately: the row is about a recording the database refuses to
+hold.
+
+That makes its count check different from weather's and the traces'. Those
+filter by `storeIDs`, because a reading about an absent activity is the schema
+correctly declining. Filtering here would expect **none of them**.
+
+### 12.24.4 Nothing prunes this table, and that was checked rather than assumed
+
+`resetCache()` clears activities, the cursor and the last sync — and not the
+receipts. `dropInMemory()` clears them in memory without writing. Only
+`DataLifecycleCoordinator.deleteEverything` removes the key, and that removes
+the database in the same breath.
+
+So a receipt never disappears from the store while its row survives, and
+§12.21's reconciliation problem does not arise. Recorded because the opposite
+was assumed while this patch was being designed, and reading `resetCache` is
+what settled it — the third time in two patches that a claim was corrected by
+reading the code that produces it.
+
+### 12.24.5 Two lines the sweep missed — patch 278a
+
+Patch 278 did not build. Both failures are rules this document already states,
+and both are worth recording at the point they were broken rather than only at
+the point they were written down.
+
+**1. The sweep pattern was narrower than the sweep.** `rejected` went from a
+stored property to a computed one, so every WRITE to it had to move. The search
+used was `\.rejected\b` — which requires a dot, and `dropInMemory()`'s
+`rejected = []` has none. The rule says *"enumerate every USE of every value
+whose type changed"*; a member-access pattern finds reads and misses
+assignments. **Grep for the bare identifier, then filter.**
+
+Worse: `dropInMemory` had already been read aloud in the same session, while
+establishing that nothing prunes this table. It was looked at for one question
+and not remembered for the other.
+
+**2. `a.km` is main-actor and `a.distance` is not.** `Activity` is a plain
+`struct`, so the type is main-actor by default; its stored properties are
+implicitly nonisolated and its computed ones inherit the isolation unless they
+say otherwise. `dayKey` says `nonisolated` — two lines above `km`, which does
+not.
+
+`rejectionLabel` was a `private static func` on a main-actor class and could
+read `km` freely. Moving it onto a `nonisolated struct` changed that, and
+nothing in the move signalled it. This is §12.17's isolation lesson for the
+fourth time, and the shape is always the same: **code that moves from an
+isolated home to a nonisolated one inherits nothing and must be re-read line by
+line, not just re-indented.**
+
+### 12.24.6 A migration may lose the old shape; it may not lose the data — patch 278c
+
+Both key migrations written in this session — `match.overrides` →
+`match.decisions` in 272, `strava.rejectedByRule` → `strava.rejections` in 278 —
+were written this way:
+
+```swift
+receipts = RejectionReceipt.migrate(legacy)
+persistRejections()                            // silently returns on failure
+UserDefaults.standard.removeObject(legacyKey)  // ...and the old copy is gone
+```
+
+An encode that fails leaves the records in memory for that launch and gone at
+the next, with the only other copy already deleted.
+
+**The reasoning that produced it is the reasoning to distrust.** Both `persist`
+functions carried a comment saying encoding four scalars has no realistic
+failure and there is nowhere to report one to. Both halves are true. Neither is
+a reason to delete the fallback: the cost of keeping a retired key one launch
+longer is a dead preference; the cost of the write not landing is authored data
+with nowhere to come back from — §12.8.1, again.
+
+`persist()` now returns a `Bool` and the migration is guarded on it. Exactly
+one caller reads the value; every other discards it, which is §12.17.2's
+position unchanged.
+
+**Caught before the second one ran.** The match-decision migration had already
+executed on the device with zero entries, so nothing was at risk. The rejection
+migration had not — it was found while writing the instructions to install the
+build that would have run it.
+
+## 12.25 Two answers to one question — patch 279
+
+`ContentView.settingsBadge` and `SettingsView.needsAttention` both answer "is
+something wrong that the athlete can act on". **Patch 273 added
+`StoreReadJournal.hasUnreadable` to the second and not the first.**
+
+So a store the app could not read lit the row **inside** Settings and not the
+badge whose entire job is to send somebody there. The badge's own comment
+argues against that: *"if the token expires and nothing says so, every session
+quietly renders as not-done and it reads as missed training rather than as a
+broken sync. It is an alarm, not a status display, and it sits on the tab that
+can fix it."* A store showing LESS than it holds is exactly that alarm, wired
+to the quieter of the two places.
+
+**A test would not have caught it.** Both expressions were correct in
+isolation; what was wrong was that there were two. So the fix is a shape rather
+than an assertion: one function, two callers, and a fifth condition can no
+longer be added to one and forgotten in the other.
+
+**It takes its inputs rather than reading the singletons.** Two reasons, and
+the first is not stylistic: each caller observes its own `StravaAuth` and
+`ActivityStore`, so reaching for `.shared` inside `AppHealth` would bypass
+SwiftUI's observation and stop the badge updating when the state changed. The
+second is that four `Bool` parameters are testable, and the two `private var`s
+on two `View`s it replaces were not — `AppHealthTests` is the first coverage
+this rule has ever had.
+
+**Found from the device, again, and not from the code.** A red `1` appeared on
+the Settings tab between two imports and cleared on its own — almost certainly
+`activities.lastError` from a sync that failed and then succeeded, which is a
+value held only in memory and recorded nowhere. Looking up what the badge
+actually reads is what surfaced the divergence. The transient itself remains
+untraceable by design; that is a separate gap and is not closed here.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

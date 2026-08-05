@@ -201,6 +201,85 @@ extension Sub4Import {
         }
     }
 
+    // MARK: Match decisions
+
+    /// Where the athlete overrode the matcher — patch 272, ADR-0003 §12.19.
+    ///
+    /// AUTHORED, LIKE THE TWO ABOVE, and that is why it lives in this file
+    /// rather than beside the activities. An override cannot be re-fetched
+    /// from anywhere: it is a judgement about which recording satisfied which
+    /// planned session, made by the only person who was there.
+    ///
+    /// THREE OUTCOMES THAT ARE NOT THE SAME THING:
+    ///
+    ///   named and resolved     the row carries the canonical activity
+    ///   explicitly nothing     the row carries NULL — the athlete said no
+    ///                          recording satisfied this session
+    ///   named and not found    NO ROW, and a counter. See `Report`.
+    nonisolated static func importMatchDecisions(
+        _ d: Database,
+        decisions: [MatchDecision],
+        now: String,
+        into report: inout Report
+    ) throws {
+        for decision in decisions {
+            // BEFORE IT IS COUNTED AS SEEN — patch 257's rule, applied to a
+            // third store. An override of an excluded recording is the
+            // exclusion working, not a gap in the import.
+            if let external = decision.activityId,
+               DataCorrections.isIgnored(id: external) {
+                report.matchDecisionsIgnored += 1
+                continue
+            }
+
+            report.matchDecisionsSeen += 1
+
+            var activityID: String?
+            if let external = decision.activityId {
+                guard let canonical = try canonicalActivity(d, externalID: external) else {
+                    report.matchDecisionsUnresolved += 1
+                    continue
+                }
+                activityID = canonical
+            }
+
+            let existing = try String.fetchOne(d, sql: """
+                SELECT id FROM match_decision
+                WHERE accountID = ? AND planSessionUID = ?
+                """, arguments: [accountID, decision.sessionUid])
+
+            do {
+                try d.inSavepoint {
+                    if let id = existing {
+                        try d.execute(sql: """
+                            UPDATE match_decision
+                            SET activityID = ?, decidedUTC = ?
+                            WHERE id = ?
+                            """, arguments: [activityID,
+                                             iso8601(decision.decided), id])
+                    } else {
+                        try d.execute(sql: """
+                            INSERT INTO match_decision
+                              (id, accountID, planSessionUID, activityID, decidedUTC)
+                            VALUES (?, ?, ?, ?, ?)
+                            """, arguments: [UUID().uuidString, accountID,
+                                             decision.sessionUid, activityID,
+                                             iso8601(decision.decided)])
+                    }
+                    return .commit
+                }
+                if existing != nil { report.matchDecisionsUpdated += 1 }
+                else { report.matchDecisionsImported += 1 }
+            } catch {
+                // The session uid, for the same reason a note's refusal
+                // carries it: that is the handle the athlete has on this.
+                report.refusals.append(
+                    .init(externalID: "match \(decision.sessionUid)",
+                          reason: String(describing: error)))
+            }
+        }
+    }
+
     /// `what` is for reading; `newDetail` is for applying. A skip has no
     /// replacement text, so rendering `newDetail` into a NOT NULL column would
     /// write an empty string into the one field that is supposed to say what

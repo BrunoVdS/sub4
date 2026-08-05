@@ -132,6 +132,11 @@ enum SemanticVerifier {
                        activities: [Activity],
                        shoes: [AthleteStore.Shoe] = [],
                        notes: [NotesStore.Note] = [],
+                       proposals: [ProposalStore.Record] = [],
+                       syncState: SyncState? = nil,
+                       workItems: [WorkItem] = [],
+                       rejections: [RejectionReceipt] = [],
+                       matchDecisions: [MatchDecision] = [],
                        weather: [ActivityWeather] = [],
                        zones: [AthleteStore.HRZone] = [],
                        streams: [ActivityStreams] = [],
@@ -147,8 +152,19 @@ enum SemanticVerifier {
             try db.queue.read { d in
                 checks.append(contentsOf: try countChecks(
                     d, activities: activities, shoes: shoes, notes: notes,
+                    proposals: proposals, workItems: workItems,
+                    rejections: rejections,
+                    matchDecisions: matchDecisions,
                     weather: weather, zones: zones, streams: streams,
                     details: details, storeIDs: storeIDs))
+                // A COUNT WOULD NOT BE ENOUGH HERE, which is why this is a
+                // check of its own rather than a line in `countChecks`.
+                // `sync_state` holds exactly one row per source; comparing 1
+                // against 1 would agree while the cursor inside it was a week
+                // out, and a cursor a week out is what D7 would resume from.
+                if let syncState {
+                    checks.append(try syncStateCheck(d, expected: syncState))
+                }
                 checks.append(try identityCheck(d, storeIDs: storeIDs))
                 checks.append(try fingerprintCheck(d, activities: activities))
                 checks.append(contentsOf: try domainChecks(
@@ -170,13 +186,22 @@ enum SemanticVerifier {
                         activities: [Activity],
                         shoes: [AthleteStore.Shoe] = [],
                         notes: [NotesStore.Note] = [],
+                        proposals: [ProposalStore.Record] = [],
+                        syncState: SyncState? = nil,
+                        workItems: [WorkItem] = [],
+                        rejections: [RejectionReceipt] = [],
+                        matchDecisions: [MatchDecision] = [],
                         weather: [ActivityWeather] = [],
                         zones: [AthleteStore.HRZone] = [],
                         streams: [ActivityStreams] = [],
                         details: [ActivityDetail] = []) -> VerificationReport {
         do {
             return try verify(db, activities: activities, shoes: shoes,
-                              notes: notes, weather: weather, zones: zones,
+                              notes: notes, proposals: proposals,
+                              syncState: syncState, workItems: workItems,
+                              rejections: rejections,
+                              matchDecisions: matchDecisions,
+                              weather: weather, zones: zones,
                               streams: streams, details: details)
         } catch {
             return VerificationReport(checks: [
@@ -185,6 +210,37 @@ enum SemanticVerifier {
                       passed: false, detail: String(describing: error))
             ], seconds: 0)
         }
+    }
+
+    /// The cursor itself, not the number of rows holding one — patch 275.
+    ///
+    /// Compares the STRING both sides use, so this cannot pass by rounding.
+    /// The store renders the `Double` once, in `ActivityStore.syncState`, and
+    /// what lands in the column is that same rendering; if the two ever
+    /// diverged, D7 would resume from a position nothing had checked.
+    private static func syncStateCheck(_ d: Database,
+                                       expected: SyncState) throws -> VerificationCheck {
+        let found = try String.fetchOne(d, sql: """
+            SELECT cursor FROM sync_state WHERE accountID = ? AND sourceID = ?
+            """, arguments: [Sub4Import.accountID, expected.sourceID])
+
+        let agrees = found == expected.cursor
+
+        // THE VALUES GO IN `detail`, NOT IN `expected`/`found` — and that is a
+        // privacy decision, not a formatting one. `diagnosticLines` prints
+        // every check's expected and found into the redacted paste, and this
+        // cursor is the start time of the athlete's most recent activity.
+        // §12.7 promises that paste carries no dates from his history.
+        // `detail` is documented as screen-only for exactly this case.
+        return .init(name: "sync position",
+                     table: "sync_state",
+                     expected: "the store's cursor",
+                     found: agrees ? "the same"
+                          : (found == nil ? "no row" : "a different one"),
+                     passed: agrees,
+                     detail: agrees ? nil
+                           : "store \(expected.cursor ?? "—") · "
+                             + "database \(found ?? "none")")
     }
 
     // MARK: 1 — Counts
@@ -196,6 +252,10 @@ enum SemanticVerifier {
                                     activities: [Activity],
                                     shoes: [AthleteStore.Shoe],
                                     notes: [NotesStore.Note],
+                                    proposals: [ProposalStore.Record],
+                                    workItems: [WorkItem],
+                                    rejections: [RejectionReceipt],
+                                    matchDecisions: [MatchDecision],
                                     weather: [ActivityWeather],
                                     zones: [AthleteStore.HRZone],
                                     streams: [ActivityStreams],
@@ -205,6 +265,17 @@ enum SemanticVerifier {
         // Only records whose activity is in the store are expected. See the
         // header: this is how the exclusions come out right without this file
         // knowing they exist.
+        // PATCH 272, and the subtle one. A decision naming an activity the
+        // store does not have is held back by the importer rather than written
+        // with a NULL — so it must not be expected here either, or every
+        // device carrying a stale override would report a permanent
+        // disagreement the athlete could do nothing about. "Explicitly
+        // nothing" IS expected: it is a row, with a NULL in it.
+        let expectedDecisions = matchDecisions.filter {
+            guard let id = $0.activityId else { return true }
+            return storeIDs.contains(id)
+        }.count
+
         let expectedWeather = weather.filter { storeIDs.contains($0.activityId) }.count
         let keptStreams = streams.filter { storeIDs.contains($0.activityId) }
         let keptDetails = details.filter { storeIDs.contains($0.activityId) }
@@ -231,6 +302,36 @@ enum SemanticVerifier {
                      expected: shoes.count, found: try count(d, "gear")),
             .compare("notes", table: "user_note",
                      expected: notes.count, found: try count(d, "user_note")),
+            .compare("match decisions", table: "match_decision",
+                     expected: expectedDecisions,
+                     found: try count(d, "match_decision")),
+            // PATCH 274, AND IT SHOULD HAVE BEEN HERE SINCE 263.
+            //
+            // The verifier has compared notes since the day it was written and
+            // has never compared reviews — so when the rehearsal record was
+            // deleted from `proposals.json` on 5 August and stayed in the
+            // database, fourteen comparisons agreed and the run was marked
+            // verified. The one store in this app that cannot be re-fetched is
+            // the one nothing was checking.
+            //
+            // COUNTS THE PARENT ONLY. Its four children are reachable from it
+            // and cascade with it; a count of `proposal_change` would be
+            // asserting the shape of somebody's review rather than that the
+            // review is there.
+            .compare("reviews", table: "review",
+                     expected: proposals.count, found: try count(d, "review")),
+            // A COUNT IS ENOUGH HERE, unlike the sync position. Every row is
+            // one id the app will never ask about again, so the number of them
+            // IS the fact — and the importer prunes, so a stale row shows up
+            // as a disagreement rather than being quietly tolerated.
+            .compare("stopped asking", table: "work_queue",
+                     expected: workItems.count, found: try count(d, "work_queue")),
+            // NOT filtered by `storeIDs`, unlike weather and the traces. A
+            // rejection is ABOUT a recording the database deliberately does
+            // not hold — expecting only the ones with an activity would expect
+            // none of them.
+            .compare("refused recordings", table: "rejection",
+                     expected: rejections.count, found: try count(d, "rejection")),
             .compare("weather readings", table: "weather",
                      expected: expectedWeather, found: try count(d, "weather")),
             .compare("traces", table: "recording",

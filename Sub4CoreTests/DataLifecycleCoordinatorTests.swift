@@ -132,7 +132,7 @@ struct DataLifecycleCoordinatorTests {
         let written = [
             // ActivityStore
             "strava.cursor", "strava.lastSync", "strava.cutoffUsed",
-            "strava.rejectedByRule", "strava.geoBackfill",
+            "strava.rejections", "strava.rejectedByRule", "strava.geoBackfill",
             "strava.powerBackfill", "strava.speedBackfill",
             // DetailStore
             "streams.schema", "detail.failed", "detail.noStreams",
@@ -140,12 +140,16 @@ struct DataLifecycleCoordinatorTests {
             "notes.schema", "proposals.schema",
             // HealthStore
             "health.authVersion", "health.authorized",
-            // WeatherStore
-            "weather.unavailable",
+            // WeatherStore writes no preference key. `weather.unavailable`
+            // was listed here until patch 276 and the app has deleted it on
+            // every launch since 130 — so this list asserted coverage of a key
+            // nothing writes, which is the opposite of what the test is for.
             // BackgroundRefresh
             "bg.lastRun", "bg.runCount", "bg.lastResult", "bg.scheduleError",
-            // Matcher
-            "match.overrides",
+            // Matcher — `match.decisions` since patch 272. Both are listed:
+            // the old key still exists on any device that has not launched
+            // this build, and the inventory is what "Delete local data" reads.
+            "match.decisions", "match.overrides",
             // Display
             "appearance.selected", "discipline.selected",
             "volume.unit", "zones.window",

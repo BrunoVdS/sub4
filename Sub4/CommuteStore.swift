@@ -76,6 +76,7 @@ final class CommuteStore {
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         fileURL = dir.appendingPathComponent("commutes.json")
         load()
+        StoreReadJournal.shared.record("commutes.json", lastLoad)
     }
 
     /// A store rooted somewhere else — patch 265, for the tests, exactly as
@@ -153,10 +154,18 @@ final class CommuteStore {
 
     // MARK: Disk
 
+    /// What the last read of `commutes.json` found — patch 273, §12.20.
+    ///
+    /// An unreadable file here reads as "you have not ruled on any ride", so
+    /// every decision silently falls back to `commuteByDistance` — the very
+    /// rule patch 251 exists to override.
+    private(set) var lastLoad: StoreLoad = .absent
+
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        decisions = (try? JSONDecoder.sub4.decode([String: CommuteDecision].self,
-                                                  from: data)) ?? [:]
+        let (value, outcome) = StoreRead.decode([String: CommuteDecision].self,
+                                                at: fileURL)
+        if let value { decisions = value }
+        lastLoad = outcome
     }
 
     private func save() throws {
