@@ -757,13 +757,11 @@ struct SettingsView: View {
             LabeledContent("No Health data", value: missing.joined(separator: ", "))
                 .font(.caption)
         }
-        if health.needsRestingHRGrant {
-            Text("Health access needs asking again — the app now also reads "
-                 + "workouts and swim distance, and iOS only prompts for types "
-                 + "it has never asked about. It never says whether a read was "
-                 + "denied or simply never requested, so try the button; if "
-                 + "something stays empty, check Settings → Privacy & Security "
-                 + "→ Health → Sub4. Steps are unaffected either way.")
+        // PATCH 288. The sentence is `HealthStore.newTypesMessage` now, built
+        // from `typesReadDescribed` rather than written here — the version
+        // written here named two types and was three additions out of date.
+        if health.needsNewTypeGrant {
+            Text(HealthStore.newTypesMessage)
                 .font(.caption).foregroundStyle(.orange)
             Button("Ask for the new Health types") {
                 Task { await health.requestAuthorization() }

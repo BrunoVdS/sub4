@@ -3262,6 +3262,67 @@ Recorded as open rather than assumed either way. It costs one reading of the
 `requestAuthorization()` call sites to settle, and it should be settled before
 a ninth type is ever added.
 
+## 12.34 The banner named the wrong types — patch 288
+
+### 12.34.1 §12.33.5, answered
+
+`authVersion` does have an actuator, and it is a person. Settings shows a
+banner with an *"Ask for the new Health types"* button whenever the stored
+version is behind the current one, and that is how workout routes were granted
+after 286 bumped it to 6.
+
+Nothing re-requests automatically. That is a defensible choice — prompting at
+launch is intrusive — but it means a newly added type stays unread until
+somebody opens Settings and taps. **For a type the app merely diagnoses with,
+that is fine. For one it depends on, it is HK-02's shape again**, and what
+catches it is §12.32.3's before-the-query guard rather than this banner.
+
+### 12.34.2 The defect the reading turned up
+
+The banner said:
+
+> *"Health access needs asking again — the app now also reads **workouts and
+> swim distance**…"*
+
+True at `authVersion` 3. Stale by three additions: heart rate at 4, cycling
+distance at 5, workout routes at 6. **Somebody tapping that button was told
+the wrong reason for tapping it**, in the sentence whose only job is to give
+them a reason.
+
+And the property gating it was still `needsRestingHRGrant`, named when the
+only new type was resting heart rate, with a doc comment describing that one
+case while it gated a general "the request has grown" prompt.
+
+Neither was load-bearing. Both are the same failure as §12.27: **a statement
+that was true when written and became false while nobody was reading it.**
+This one had less protection than most, because it is prose inside a `View`,
+seen once every few months by a person who is not checking it against a list.
+
+### 12.34.3 The fix is a shape
+
+`HealthStore.newTypesMessage` renders `typesReadDescribed` — the list the
+authorisation request is built from, already held to `typesRead` by
+`descriptionMatchesTheRequest`. The same answer as `DataLifecycle.summary`:
+*"computed rather than written, so it cannot fall out of step with the table
+underneath it."*
+
+The test pins the absence of a hand-written list rather than the presence of
+the right one. "Workouts and swim distance" was accurate once; what makes it
+wrong is that it is a fixed list at all, and a test approving a different fixed
+list would guard the wrong thing.
+
+### 12.34.4 It cannot be verified on the device today
+
+The banner shows only while the stored version is behind the current one, and
+version 6 was granted an hour before this patch — so it is correctly hidden,
+and there is nothing to look at. **The test is the verification.** The banner
+is next seen when a ninth type is added, which is precisely the moment nobody
+will re-read it.
+
+Recorded rather than glossed, because "verified on device" has meant something
+specific in this project for eighty patches, and this is a patch where it
+cannot mean it.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

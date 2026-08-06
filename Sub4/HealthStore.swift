@@ -165,13 +165,47 @@ final class HealthStore {
     private static let authVersion = 6
     private static let authVersionKey = "health.authVersion"
 
-    /// True while resting heart rate is not arriving — never asked for, asked
-    /// and denied, or granted with no data in the window. HealthKit cannot tell
-    /// the three apart. Steps keep working meanwhile; this only gates the
-    /// prompt.
-    var needsRestingHRGrant: Bool {
+    /// True when this app reads more Health types than this install has ever
+    /// been asked about — patch 288.
+    ///
+    /// RENAMED FROM `needsRestingHRGrant`, and the old name is the finding.
+    /// It was written when the only new type was resting heart rate, and its
+    /// comment described that one case; four type additions later it was
+    /// gating a general "the request has grown" prompt under a name and a
+    /// description that both said something else.
+    ///
+    /// THIS IS THE ONLY ACTUATOR `authVersion` HAS, and it is a person tapping
+    /// a button. Nothing re-requests on its own — deliberately, because
+    /// prompting at launch is intrusive — which means a newly added type is
+    /// unread until somebody opens Settings and taps. For a diagnostic that is
+    /// fine. For a type the app depends on it is HK-02's shape again, and
+    /// §12.32.3's guard is what catches it rather than this.
+    var needsNewTypeGrant: Bool {
         hasRequestedAuthorization
             && UserDefaults.standard.integer(forKey: Self.authVersionKey) < Self.authVersion
+    }
+
+    /// What the banner says, COMPUTED rather than written — patch 288.
+    ///
+    /// It used to read "the app now also reads workouts and swim distance",
+    /// which was true at `authVersion` 3 and stale by three additions: heart
+    /// rate at 4, cycling distance at 5, workout routes at 6. Somebody tapping
+    /// the button was told the wrong reason for tapping it, in the sentence
+    /// whose only job is to give them one.
+    ///
+    /// The fix is a shape rather than better words. This renders
+    /// `typesReadDescribed`, which is the list the authorisation request is
+    /// built from and is already held to it by `descriptionMatchesTheRequest`.
+    /// Same answer as `DataLifecycle.summary`: a sentence computed from the
+    /// data cannot fall out of step with the data.
+    static var newTypesMessage: String {
+        "Health access needs asking again. This app reads "
+        + "\(typesReadDescribed.count) kinds of Health data — "
+        + typesReadDescribed.joined(separator: ", ").lowercased()
+        + " — and iOS only prompts for types it has never been asked about. It "
+        + "never says whether a read was denied or simply never requested, so "
+        + "try the button; if something stays empty, check Settings → Privacy "
+        + "& Security → Health → Sub4. Steps are unaffected either way."
     }
 
     /// Any single query taking longer than this is treated as failed.

@@ -153,6 +153,43 @@ struct HealthTypeTests {
         }
     }
 
+    // MARK: The re-ask banner — 288
+
+    /// THE STRUCTURAL PIN. The banner named two types while eight were
+    /// requested, and nothing could have noticed: it is prose in a `View`,
+    /// read by a person once every few months at the exact moment they are not
+    /// checking it against a list.
+    ///
+    /// Asserting that every described type appears is trivially true while the
+    /// message renders the list — which is the point. It stops being true the
+    /// moment somebody replaces the rendering with a sentence, and that is the
+    /// failure being prevented.
+    @Test("The re-ask banner names every type the app reads")
+    func theBannerNamesEveryTypeRead() {
+        let message = HealthStore.newTypesMessage
+        for described in HealthStore.typesReadDescribed {
+            #expect(message.localizedCaseInsensitiveContains(described),
+                    "the banner does not mention \(described), but it is requested")
+        }
+    }
+
+    @Test("The banner counts what it lists")
+    func theBannerCountsWhatItLists() {
+        let n = HealthStore.typesReadDescribed.count
+        #expect(HealthStore.newTypesMessage.contains("\(n) kinds"))
+    }
+
+    /// The old text is pinned as ABSENT rather than the new text as present.
+    /// "workouts and swim distance" was accurate once; what makes it wrong is
+    /// that it is a fixed list, and a test that allowed a different fixed list
+    /// would be guarding the wrong thing.
+    @Test("The banner does not carry a hand-written list of types")
+    func theBannerDoesNotHardCodeTypes() {
+        #expect(!HealthStore.newTypesMessage
+                    .localizedCaseInsensitiveContains("now also reads"),
+                "the banner is computed from typesReadDescribed — see ADR-0003 §12.34")
+    }
+
     // MARK: The status model
 
     /// `noData` must not read as a fault. A device with no swims is not broken,
