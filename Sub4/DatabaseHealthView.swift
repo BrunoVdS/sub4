@@ -85,6 +85,9 @@ struct DatabaseHealthView: View {
     /// Patch 263 — the semantic verifier. Nil until the button is pressed,
     /// like the survey below and for the same reason: it reads every row the
     /// migration wrote and every value the stores hold.
+    @State private var readingBackDetail = false
+    @State private var detailTrip: DetailRoundTrip.Report?
+    @State private var detailLoad: DetailLoad?
     @State private var readingBack = false
     @State private var roundTrip: ActivityRoundTrip.Report?
     @State private var roundTripLoad: ActivityLoad?
@@ -125,6 +128,7 @@ struct DatabaseHealthView: View {
                     // order the states go: imported, then verified.
                     verifySection(db)
                 readBackSection(db)
+                detailReadBackSection(db)
                     // AFTER the import and before the benchmark. It is about
                     // the files the import reads FROM, so it belongs beside
                     // the import; it is a survey rather than an action, so it
@@ -1028,6 +1032,68 @@ struct DatabaseHealthView: View {
                  + "one the app is running on. This is the question D6c asks of "
                  + "everything, asked of one table now. Nothing is written.")
                 .font(.caption2)
+        }
+    }
+
+    /// PATCH 291. The same shape as the activity read-back, one level down.
+    @ViewBuilder
+    private func detailReadBackSection(_ db: Sub4Database) -> some View {
+        Section {
+            if readingBackDetail {
+                HStack { ProgressView(); Text("Reading back…").font(.caption) }
+            } else {
+                Button("Read the details back out") { runDetailReadBack(db) }
+            }
+
+            if let load = detailLoad {
+                LabeledContent("The read", value: load.line)
+                    .font(.caption)
+                    .foregroundStyle(load.isTrustworthy ? Color.dim : .red)
+            }
+
+            if let r = detailTrip {
+                LabeledContent("Compared", value: "\(r.compared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Agreed on every field", value: "\(r.agreed)")
+                    .font(.caption)
+                    .foregroundStyle(r.agreed == r.compared ? Color.dim : Color.ink)
+                if !r.missing.isEmpty {
+                    LabeledContent("In the store, not in the database",
+                                   value: "\(r.missing.count)")
+                        .font(.caption).foregroundStyle(.red)
+                }
+                // The tally first — "all on splits[*].averageHR" is one known
+                // cause; a list of ids is an afternoon.
+                ForEach(r.fieldTally.prefix(12), id: \.field) { entry in
+                    LabeledContent("  \(entry.field)", value: "\(entry.count)")
+                        .font(.caption2).foregroundStyle(.red)
+                }
+                if r.fieldTally.count > 12 {
+                    Text("  + \(r.fieldTally.count - 12) more fields")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+            }
+        } header: {
+            Text("Read-back · details")
+        } footer: {
+            Text("The same comparison one level down: splits, laps and best "
+                 + "efforts, matched by index and by name rather than by "
+                 + "position. A heart rate the importer normalised to nothing "
+                 + "is expected to show here — see ADR-0003 §12.37.")
+                .font(.caption2)
+        }
+    }
+
+    private func runDetailReadBack(_ db: Sub4Database) {
+        readingBackDetail = true
+        let store = Array(DetailStore.shared.details.values)
+        Task {
+            let load = ActivityDetailRepository.all(db)
+            detailLoad = load
+            detailTrip = load.details.map {
+                DetailRoundTrip.compare(store: store, database: $0)
+            }
+            readingBackDetail = false
         }
     }
 

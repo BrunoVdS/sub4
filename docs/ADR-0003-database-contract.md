@@ -3438,6 +3438,91 @@ depending.
 `Sub4Launch.migrationFailureBlocksTheApp` stays false, and §12.27's test still
 holds the disconnect rule to it.
 
+## 12.37 The detail reader — D6a, patch 291
+
+Four tables and three nested arrays, against `Activity`'s one table and twenty
+scalars. Designed in `D6A-DETAIL-GROUNDWORK.md` and settled in
+`D6A-DETAIL-DECISIONS.md` **before any code existed**, which is why it is one
+patch — 289's `gearID` trap was found the same way and cost one fix-up rather
+than a week of parity noise.
+
+### 12.37.1 The ordinal is not one thing
+
+All three child tables carry `ordinal`, NOT NULL, `>= 0`, unique per parent.
+Read from `Sub4Import+Recording.swift`:
+
+| table | `ordinal` is |
+|---|---|
+| `activity_split` | `split.index` — a domain value, 1-based |
+| `activity_lap` | `lap.index` — a domain value |
+| `activity_best_effort` | `i` — the array position, 0-based |
+
+So `Split` and `Lap` take their `index` **from** the ordinal; `BestEffort` has
+no index property at all — its identity is `name` — and its ordinal is ordered
+by and then discarded.
+
+Getting this backwards gives splits numbered from zero, or best efforts in
+whatever order SQLite chose. **Neither fails a count comparison**, which is
+§12.16's warning arriving in a place nobody would look for it.
+
+### 12.37.2 Matched by identity, so ordering stopped being a question
+
+The groundwork asked whether the store's arrays are in the order the importer
+enumerated. The answer is not to find out: splits and laps match on `index`,
+best efforts on `name`, and then neither side's order matters.
+
+Three things fell out of that, all improvements. Failure messages name a
+kilometre — `splits[index: 7].movingTime` — rather than an array slot.
+**Missing** and **surplus** separate from **differing**, so a count mismatch is
+not reported as nineteen field disagreements. And the ordering claim shrinks to
+one small thing a single test pins.
+
+### 12.37.3 The date, to the second
+
+`fetched` is the only type change in the mapping. `Sub4Import.iso8601` is
+`.withInternetDateTime` with no fractional seconds, and the store's value was
+itself decoded from a second-precision string — so it round-trips.
+
+`sameSecond` rounds both sides anyway. Not defensive clutter: **the column
+cannot hold a fraction**, so a comparison demanding exactness asks the database
+for something it was never designed to store. The case it protects is a
+`fetched` set from `Date()` in memory and compared before any save.
+
+### 12.37.4 What the read-back found, on the first run
+
+**`fetched`, 320 of 668 — and the comparison was the defect.**
+
+`sameSecond` rounded. `ISO8601DateFormatter` truncates. A store timestamp of
+x.6 was written as x and compared as x+1, so it disagreed with itself; 47.9%
+of timestamps carry a fraction of 0.5 or more, and 320/668 is 47.9%.
+
+**The number was the diagnosis.** Not "some dates differ" — a proportion that
+could only come from one cause. That is the argument for reporting by field
+with counts rather than by row: `fetched 320` is a hypothesis, and it was the
+right one on sight.
+
+Corrected in 291a. The rule it earns: **a comparison has to model what the
+writer did, not what would be tidy.** Truncation is not an approximation of
+rounding, and the two disagree on exactly half the data.
+
+**`laps[*].averageHR`, spread thinly across many lap indices** — the
+`positiveOrNil` normalisation, predicted in §12.37.5 and confirmed. Intended,
+and left alone.
+
+**Four details in the store and not in the database** — the activities synced
+since the last import, the same staleness the activity read-back measures.
+
+### 12.37.5 The loss it reports rather than hides
+
+The importer writes `positiveOrNil(...)` for **both** `split.averageHR` and
+`lap.averageHR` — the groundwork said laps only, which was wrong and is
+corrected here. A stored zero becomes NULL and comes back `nil`.
+
+That is the importer's deliberate normalisation, and this reader **reports it**.
+A reader that invented a zero to make the comparison green would be lying to
+turn a screen a different colour, and the whole value of a read-back is that it
+is believable when it says nothing differs.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,
