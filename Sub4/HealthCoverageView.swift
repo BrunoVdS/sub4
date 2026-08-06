@@ -139,6 +139,21 @@ struct HealthCoverageView: View {
                 LabeledContent("Strava was one of the writers", value: "\(t.stravaWrote)")
                 LabeledContent("Strava was the only writer", value: "\(t.stravaAlone)")
                     .foregroundStyle(t.stravaAlone > 0 ? Color.accent4 : Color.ink)
+                if r.thinness.sessions > 0 {
+                    LabeledContent("  of those, with a route",
+                                   value: r.thinness.routesRead
+                                   ? "\(r.thinness.withRoute)"
+                                   : "not measured")
+                    if !r.thinness.routesRead && !r.routeNote.isEmpty {
+                        Text(r.routeNote)
+                            .font(.caption2).foregroundStyle(Color.accent4)
+                    }
+                    LabeledContent("  with heart-rate samples, not one value",
+                                   value: "\(r.thinness.withVaryingHeartRate)")
+                    LabeledContent("  with a distance", value: "\(r.thinness.withDistance)")
+                    LabeledContent("  with none of the three", value: "\(r.thinness.shells)")
+                        .foregroundStyle(r.thinness.shells > 0 ? Color.accent4 : Color.ink)
+                }
             } header: {
                 Text("Who wrote it")
             } footer: {
@@ -215,6 +230,23 @@ struct HealthCoverageView: View {
             monthsDone += 1
         }
 
+        // THE CENSUS — 285. Only the sessions Strava alone wrote, which is 53
+        // on this device against 711 in the window. `stravaAlone` is the one
+        // definition of that set and the report counts the same property, so
+        // the two cannot come to mean different things.
+        let alone = found.filter(\.stravaAlone)
+        var routeNote = ""
+        if !alone.isEmpty {
+            let census = await health.routes(for: alone)
+            routeNote = census.line
+            if let routed = census.ids {
+                let ids = Set(alone.map(\.id))
+                for i in found.indices where ids.contains(found[i].id) {
+                    found[i].hasRoute = routed.contains(found[i].id)
+                }
+            }
+        }
+
         let outcome: HealthCoverage.Reading
         if let now = health.lastError, now != errorBefore { outcome = .failed(now) }
         else { outcome = .read }
@@ -223,7 +255,8 @@ struct HealthCoverageView: View {
                                       activities: ActivityStore.shared.activities,
                                       months: keys,
                                       reading: outcome,
-                                      generated: AppVersion.stamp)
+                                      generated: AppVersion.stamp,
+                                      routeNote: routeNote)
     }
 
     /// First instant of the month, and the first instant of the next one.

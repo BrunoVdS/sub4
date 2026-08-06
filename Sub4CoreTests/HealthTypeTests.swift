@@ -27,13 +27,13 @@ import HealthKit
 @MainActor
 struct HealthTypeTests {
 
-    /// The seven the app actually reads, named. If this list changes, the
+    /// The eight the app actually reads, named. If this list changes, the
     /// purpose string shown at the permission prompt has to change with it —
     /// that string is the user-facing half of the same claim.
-    @Test("Exactly the seven documented types are requested")
-    func requestedTypesAreTheDocumentedSeven() {
+    @Test("Exactly the eight documented types are requested")
+    func requestedTypesAreTheDocumentedEight() {
         let types = HealthStore.shared.typesRead
-        #expect(types.count == 7, "requesting \(types.count) types, expected 7")
+        #expect(types.count == 8, "requesting \(types.count) types, expected 8")
 
         let identifiers = Set(types.map(\.identifier))
         let expected: Set<String> = [
@@ -43,7 +43,10 @@ struct HealthTypeTests {
             HKQuantityTypeIdentifier.distanceSwimming.rawValue,
             HKQuantityTypeIdentifier.heartRate.rawValue,
             HKQuantityTypeIdentifier.distanceCycling.rawValue,
-            HKObjectType.workoutType().identifier
+            HKObjectType.workoutType().identifier,
+            // Patch 286. Queried by the coverage census since 285 and absent
+            // from this set until now — HK-02, second occurrence.
+            HKSeriesType.workoutRoute().identifier
         ]
         // One literal — `Comment` is ExpressibleByStringInterpolation and has no
         // `+`. See the note in DataLifecycleTests.
@@ -58,6 +61,46 @@ struct HealthTypeTests {
         let ids = HealthStore.shared.typesRead.map(\.identifier)
         #expect(ids.contains(HKQuantityTypeIdentifier.distanceCycling.rawValue),
                 "distanceCycling is read when enriching a ride and must be requested (HK-02)")
+    }
+
+    /// THE SECOND OCCURRENCE OF THE SAME DEFECT, pinned the same way.
+    ///
+    /// Patch 285 added a route query and did not add the type. HealthKit
+    /// answers an unrequested read with an empty result, so the census
+    /// reported nothing and read as a phone with no routes — the identical
+    /// failure the header of this file describes for cycling distance, two
+    /// screens above the query that repeated it.
+    @Test("Workout routes are requested, not just read")
+    func workoutRoutesAreRequested() {
+        let ids = HealthStore.shared.typesRead.map(\.identifier)
+        #expect(ids.contains(HKSeriesType.workoutRoute().identifier),
+                "the coverage census reads routes and must request them (HK-02, 285)")
+    }
+
+    /// A failure has to carry HealthKit's reason, not just the fact of it.
+    /// 286 reported "a route query returned an error" because the helper threw
+    /// the reason away; 286a keeps it, and this is what stops it being thrown
+    /// away again.
+    @Test("A failed census quotes the reason it was given")
+    func aFailedCensusQuotesItsReason() {
+        let line = HealthStore.RouteCensus.failed("the type is not supported").line
+        #expect(line.contains("the type is not supported"))
+    }
+
+    /// The guard that makes the next one of these visible in one run rather
+    /// than in a report nobody can interpret: the census asks `typesRead`
+    /// before it queries, so an unrequested type is a named refusal instead of
+    /// an empty answer.
+    @Test("The census refuses to query a type that was never requested")
+    func theCensusRefusesAnUnrequestedType() {
+        let ids = HealthStore.shared.typesRead.map(\.identifier)
+        let requested = ids.contains(HKSeriesType.workoutRoute().identifier)
+        // With the type present the guard must not fire; this asserts the two
+        // are wired to each other rather than agreeing by accident.
+        #expect(requested, "the guard reads this same list")
+        #expect(HealthStore.RouteCensus.notRequested.line
+                    .localizedCaseInsensitiveContains("never asked permission"),
+                "the refusal has to say what went wrong, not just that it did")
     }
 
     /// The plain-language list is what Settings and the privacy inventory show.
@@ -100,7 +143,7 @@ struct HealthTypeTests {
         // being prevented. If you change the wording, change this list with it
         // and know which type you are dropping.
         let subjects = ["step", "walking", "running", "cycling",
-                        "swim", "workout", "heart rate", "resting"]
+                        "swim", "workout", "route", "heart rate", "resting"]
         #expect(subjects.count >= HealthStore.shared.typesRead.count,
                 "\(subjects.count) subjects for \(HealthStore.shared.typesRead.count) types")
 

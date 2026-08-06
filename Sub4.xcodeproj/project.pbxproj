@@ -357,7 +357,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Sub4/Info.plist;
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Sub4 reads your steps, walking and running distance, cycling and swimming distance, workouts, heart rate and resting heart rate. It uses them to show your full daily movement, to fill in details a recorded session is missing, and to track how your training load is building.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Sub4 reads your steps, walking and running distance, cycling and swimming distance, workouts, workout routes, heart rate and resting heart rate. It uses them to show your full daily movement, to fill in details a recorded session is missing, and to track how your training load is building.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -392,7 +392,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Sub4/Info.plist;
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Sub4 reads your steps, walking and running distance, cycling and swimming distance, workouts, heart rate and resting heart rate. It uses them to show your full daily movement, to fill in details a recorded session is missing, and to track how your training load is building.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Sub4 reads your steps, walking and running distance, cycling and swimming distance, workouts, workout routes, heart rate and resting heart rate. It uses them to show your full daily movement, to fill in details a recorded session is missing, and to track how your training load is building.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

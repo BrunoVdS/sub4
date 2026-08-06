@@ -3007,6 +3007,165 @@ format, not that the display forms agree, not that a caller cannot drift.
 here rather than in a later cleanup is that this defect was invisible for
 exactly as long as that was true.
 
+## 12.31 Are the 53 thin? — patch 285
+
+### 12.31.1 The question left over from M0
+
+53 of 711 Health sessions were written by Strava and by nothing else. §12.28.2
+argued that the exposure is thinness rather than disappearance — an `HKWorkout`
+is Apple's once written — and §12.28.5 then declined to measure it, because a
+route census over all 711 sessions is several hundred queries for a diagnostic.
+
+Over 53 it is 54. The set being bounded is what makes the census affordable,
+and the set is only bounded because the writer breakdown existed first.
+
+### 12.31.2 One of the two measures was already paid for
+
+`make(_:)` was reading `w.statistics(for: .heartRate)?.averageQuantity()`.
+The same object carries `minimumQuantity()` and `maximumQuantity()`, and **a
+summary pushed back by Strava holds one heart-rate value, so its band is
+flat.** A session a watch recorded holds samples, and its band is not.
+
+`averageHeartRate` cannot tell those apart, because both produce a number —
+which is why 282's report showed 87% "with a heart rate" and that figure said
+less than it appeared to. The band costs nothing: same statistics object, two
+more reads.
+
+Routes are the measure that costs. One query per session, and `HKWorkoutRoute`
+carries no reference to its own workout, so `predicateForObjects(from:)` is the
+only correct join. Matching routes to sessions by time would be a second
+matcher against the clock, which is the thing §12.28.4 already refused once.
+
+### 12.31.3 `nil` means nobody asked
+
+`HealthWorkout.hasRoute` is `Bool?`. `false` is a finding; `nil` is the absence
+of one. `Thinness.routesRead` carries the same distinction up to the report,
+and the paste says *"Routes were NOT measured on this run"* rather than
+printing a bare zero.
+
+This is `Reading` from §12.28.3 at field level, and `routes(for:)` returns
+`Set<String>?` for the same reason: handing back `[]` on a denial would let a
+permissions failure read as *"all 53 are shells"* — which is precisely the
+conclusion this census exists to reach honestly or not at all.
+
+### 12.31.4 One definition of the set
+
+`stravaAlone` lives on `HealthWorkout`. The census queries that set and the
+report counts that set, and a copy of the predicate in each place is how the
+two would come to disagree about which sessions they were talking about —
+while both kept reporting confidently.
+
+It is `nonisolated`, and that is a claim rather than tidiness: `HealthCoverage`
+is nonisolated end to end, this target defaults to `MainActor`, and a computed
+property on a plain struct belongs to the main actor unless it says otherwise.
+
+### 12.31.5 A cap that announces itself
+
+`maxRouteCensus` is 250 against a real set of 53. A cap is a promise that a
+diagnostic cannot become a stampede — and one that silently returns a short
+answer is worse than no cap, because the report would read as complete. If it
+ever bites, the count it reports is the count it measured, and the two are
+different numbers on the screen.
+
+### 12.31.6 The scope correction
+
+The eight strength sessions the app holds and Health does not **cannot be
+censused here.** There is no Health record to look at. That was stated as part
+of this patch's job when it was proposed, and it is a session-matching question
+— it belongs to the unfiltered reconcile, alongside the rest of §12.29.4.
+
+Recorded rather than quietly dropped, because a stated scope that shrinks
+without comment is how a plan comes to believe it covered something.
+
+## 12.32 HK-02, a second time — patch 286
+
+### 12.32.1 What happened
+
+Patch 285 added a route census and queried `HKSeriesType.workoutRoute()`. The
+type was not in `HealthStore.typesRead`, so the app had never asked permission
+to read it. **HealthKit answers an unrequested read with an empty result and no
+error**, which is indistinguishable from a phone that has no routes.
+
+This is HK-02 — `distanceCycling` read in one file and absent from the request
+in another — and `HealthTypeTests`' own header describes it in exactly these
+words, two screens above the query that repeated it.
+
+### 12.32.2 The design held, which is the only reason it was noticed
+
+The census returned nothing and the report said **"Routes were NOT measured on
+this run"** rather than "0 of 53 have a route".
+
+That is `hasRoute: Bool?` and `Thinness.routesRead` doing what §12.31.3 built
+them for, on their first live run. With the obvious `[]` in place of the
+optional, this defect would have produced a plausible, quotable, entirely
+fabricated finding — *"none of the 53 has a route"* — and it would have gone
+into the plan as evidence.
+
+**The measurement that did work is the one that mattered anyway.** 0 of 53 have
+a heart-rate band wider than a single value: every session Strava alone wrote
+holds one reading, not samples. 42 carry a distance, 11 carry nothing at all.
+The thinness question is answered whichever way the route census comes back.
+
+### 12.32.3 The guard: refuse to query what was never requested
+
+`typesRead` gains the type, `typesReadDescribed` gains "Workout routes",
+`authVersion` goes to 6 so an install that has already granted the other seven
+is prompted once more, and `HealthTypeTests` pins all three.
+
+But the pin only fires when somebody adds a *type*. It cannot fire when
+somebody adds a *query* — which is what happened here, and what happened in
+HK-02. So `routes(for:)` now asks `typesRead` before it queries and returns
+`.notRequested` when the type is absent.
+
+**That check has to be before the query, not after**, because after the query
+there is nothing to see: an empty result is what success and this failure both
+look like.
+
+### 12.32.4 `Set<String>?` was half an answer
+
+285 returned an optional to distinguish "no finding" from "no routes", which
+was right and insufficient: when it happened, the screen could not say which of
+four causes it was. `RouteCensus` names them — unavailable, never asked, no
+usage description, not requested, failed — and the report carries the sentence
+through to the paste.
+
+The pattern is now three deep and should be recognisable as one thing:
+`StoreLoad` (§12.15) for a file, `Reading` (§12.28.3) for the whole query,
+`RouteCensus` here for one measure inside it. **A diagnostic that cannot say
+why it has no answer will eventually be read as having one.**
+
+### 12.32.5 And then the query itself was the wrong kind — patch 286a
+
+With the type requested and the prompt updated, the census ran and said:
+**"Routes not measured — a route query returned an error."**
+
+`HKWorkoutRoute` is an `HKSeriesType`, and `HKSampleQuery` rejects series
+types; Apple's documented way to read a route is `HKAnchoredObjectQuery`. The
+workout fetch above it is a plain sample query, is correct, and worked — which
+is why only the second of the two failure messages ever appeared.
+
+**The named outcomes are what made this a five-minute diagnosis.** In 285 the
+same defect produced a silent `nil` and an evening of not knowing whether it
+was permissions, the type, the query or the store. In 286 it produced a
+sentence that ruled out three of the four in one reading.
+
+**What it did not produce was HealthKit's own words**, because
+`samples(of:matching:)` returns `[HKSample]?` and discards the error. 286a's
+`series(of:matching:)` returns a `Result` and carries the reason through to the
+screen. The rule from §12.32.4 applies one level further down than it was
+written: a diagnostic that has been handed a reason should not throw it away.
+
+### 12.32.6 The prompt string is a build setting, and stays one
+
+`usageDescriptionNamesEveryTypeRead` reads
+`INFOPLIST_KEY_NSHealthShareUsageDescription` out of the built product and
+holds it to `typesRead`. It lives in the target's build settings, which no
+patch reaches, so this patch ships red until the string names routes.
+
+That is the intended behaviour rather than an inconvenience: PRIV-02 was a
+prompt describing one type while seven were requested, and the only reason it
+cannot recur is that the test refuses to pass until a human changes the string.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

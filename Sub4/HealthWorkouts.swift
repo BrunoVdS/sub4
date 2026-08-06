@@ -79,6 +79,42 @@ struct HealthWorkout: Identifiable, Hashable {
     /// NORMAL case here, not an anomaly — see `dedupe`.
     let sources: [String]
 
+    /// The heart-rate band Health holds, from the same `HKStatistics` object
+    /// the average already came from — so these cost nothing extra.
+    ///
+    /// THE THINNESS TEST — 285. A session Strava pushed back as a summary
+    /// carries ONE heart-rate value, so min equals max. A session a watch
+    /// recorded carries samples, and they do not. `averageHeartRate` cannot
+    /// tell those apart, because both produce a number.
+    let hrMin: Double?
+    let hrMax: Double?
+
+    /// Whether Health holds a route for this session.
+    ///
+    /// `nil` MEANS NOBODY ASKED, which is not the same as "no route" — the
+    /// distinction `HealthCoverage.Reading` makes one level up, at field
+    /// level. Filled only for the sessions the census actually queried.
+    var hasRoute: Bool?
+
+    /// More than one heart-rate value. `nonisolated` because the coverage
+    /// report reads it, and that report is nonisolated end to end.
+    nonisolated var hasVaryingHeartRate: Bool {
+        guard let lo = hrMin, let hi = hrMax else { return false }
+        return hi > lo
+    }
+
+    /// Written into Health by Strava and by nothing else.
+    ///
+    /// ONE DEFINITION, TWO READERS — the coverage report counts these and the
+    /// census queries them, and a copy of this predicate in each place is how
+    /// the two would come to disagree about which sessions they are talking
+    /// about. Case-insensitive: the source name is the writer's own display
+    /// name, seen as "Strava" and "Strava " on this store.
+    nonisolated var stravaAlone: Bool {
+        guard !sources.isEmpty else { return false }
+        return sources.allSatisfy { $0.localizedCaseInsensitiveContains("strava") }
+    }
+
     /// Local minutes past midnight, for the join against
     /// `Activity.startMinuteOfDay`.
     let startMinuteOfDay: Int
@@ -164,6 +200,166 @@ extension HealthStore {
     /// Above this many swims the enrichment stops — the totals stay correct,
     /// the later rows simply fall back to the duration field and say so.
     static var maxSwimEnrich: Int { 80 }
+
+    /// Above this many sessions the route census stops rather than running
+    /// unbounded. It is one query each, and the set it is pointed at — the
+    /// sessions Strava alone wrote — is 53 on this device. A cap is a promise
+    /// that a diagnostic cannot become a stampede; the caller is told when it
+    /// bites rather than being handed a quietly short answer.
+    static var maxRouteCensus: Int { 250 }
+
+    /// Why the route census did or did not happen — patch 286.
+    ///
+    /// 285 returned `Set<String>?`, which was already better than `[]` for
+    /// everything: a bare `nil` said "no finding" without saying why, and when
+    /// it happened on the first live run nobody could tell which of four
+    /// causes it was from the screen. One level up, `HealthCoverage.Reading`
+    /// had already learned this lesson. This is the same answer.
+    nonisolated enum RouteCensus: Equatable, Sendable {
+        case measured(Set<String>)
+        case unavailable
+        case neverAsked
+        case noUsageDescription
+        /// The type is not in `typesRead`. HK-02's shape: HealthKit answers an
+        /// unrequested read with an empty result, so this cannot be detected
+        /// AFTER the query — only before it.
+        case notRequested
+        case failed(String)
+
+        var ids: Set<String>? {
+            if case .measured(let s) = self { return s }
+            return nil
+        }
+
+        var line: String {
+            switch self {
+            case .measured:          "Routes were measured."
+            case .unavailable:       "Routes not measured — HealthKit is not available."
+            case .neverAsked:        "Routes not measured — the Health prompt has never been shown."
+            case .noUsageDescription: "Routes not measured — the build has no Health usage description."
+            case .notRequested:      "Routes not measured — the app never asked permission to read them (HK-02)."
+            case .failed(let why):   "Routes not measured — \(why)"
+            }
+        }
+    }
+
+    /// Which of these sessions Health holds a route for.
+    ///
+    /// IT REFUSES TO QUERY A TYPE IT NEVER REQUESTED. That guard is the whole
+    /// point of this patch: HealthKit answers an unrequested read with an
+    /// empty result and no error, so the only moment the mistake is visible is
+    /// before the query runs. Asking `typesRead` first turns a silent nothing
+    /// into a sentence naming the cause.
+    ///
+    /// One query to fetch the workouts by id, then one per workout for its
+    /// route. `HKWorkoutRoute` has no way to name its own workout, so the
+    /// per-workout predicate is the only correct join — matching routes to
+    /// sessions by time would be a second matcher against the clock.
+    @MainActor
+    func routes(for workouts: [HealthWorkout]) async -> RouteCensus {
+        guard isAvailable else { return .unavailable }
+        guard hasUsageDescription else { return .noUsageDescription }
+        guard hasRequestedAuthorization else { return .neverAsked }
+
+        let routeID = HKSeriesType.workoutRoute().identifier
+        guard typesRead.contains(where: { $0.identifier == routeID }) else {
+            return .notRequested
+        }
+        guard !workouts.isEmpty else { return .measured([]) }
+
+        let wanted = Array(workouts.prefix(Self.maxRouteCensus))
+        let uuids = wanted.compactMap { UUID(uuidString: $0.id) }
+        guard !uuids.isEmpty else { return .measured([]) }
+
+        let byID = NSCompoundPredicate(orPredicateWithSubpredicates:
+            uuids.map { HKQuery.predicateForObject(with: $0) })
+
+        guard let found = await samples(of: .workoutType(), matching: byID) as? [HKWorkout] else {
+            return .failed("Health could not return the sessions to check.")
+        }
+
+        var out: Set<String> = []
+        for w in found {
+            let mine = HKQuery.predicateForObjects(from: w)
+            // `series(of:matching:)`, NOT `samples(of:matching:)` — 286a.
+            // `HKWorkoutRoute` is an `HKSeriesType` and `HKSampleQuery`
+            // rejects series types. 286 used the sample query here and the
+            // census failed on every session; the workout fetch above is a
+            // plain sample query and is correct, which is why only the second
+            // message ever appeared.
+            switch await series(of: HKSeriesType.workoutRoute(), matching: mine) {
+            case .failure(let why):
+                return .failed("the route query failed — \(why.message)")
+            case .success(let routes):
+                if !routes.isEmpty { out.insert(w.uuid.uuidString) }
+            }
+        }
+        return .measured(out)
+    }
+
+    /// One `HKAnchoredObjectQuery`, awaited — the query kind series types
+    /// require.
+    ///
+    /// IT KEEPS THE ERROR. `samples(of:matching:)` returns `[HKSample]?` and
+    /// throws the reason away, which is why 286 could report only "a route
+    /// query returned an error" in my words rather than HealthKit's. A
+    /// diagnostic that has been handed a reason should not discard it —
+    /// §12.32.4, one level further down.
+    ///
+    /// The continuation is guarded because an anchored query's handler can be
+    /// called more than once and resuming twice would trap.
+    /// What HealthKit said, as something `Result` will accept — 286b.
+    ///
+    /// `Result<[HKSample], String>` does not compile: the failure type must
+    /// conform to `Error`. A named error is also better than `any Error` here,
+    /// because it is `Sendable` and therefore crosses the continuation without
+    /// argument — `any Error` is not.
+    nonisolated struct HealthQueryError: Error, Sendable, Equatable {
+        let message: String
+    }
+
+    @MainActor
+    private func series(of type: HKSampleType,
+                        matching predicate: NSPredicate) async -> Result<[HKSample], HealthQueryError> {
+        await withCheckedContinuation { continuation in
+            var resumed = false
+            let q = HKAnchoredObjectQuery(type: type, predicate: predicate,
+                                          anchor: nil,
+                                          limit: HKObjectQueryNoLimit) { _, samples, _, _, error in
+                guard !resumed else { return }
+                resumed = true
+                if let error {
+                    continuation.resume(
+                        returning: .failure(HealthQueryError(
+                            message: error.localizedDescription)))
+                } else {
+                    continuation.resume(returning: .success(samples ?? []))
+                }
+            }
+            healthStore.execute(q)
+        }
+    }
+
+    /// One `HKSampleQuery`, awaited. `nil` on any error, and the continuation
+    /// is guarded because HealthKit calling a handler twice would trap — the
+    /// same guard the statistics queries in `HealthStore` already carry.
+    @MainActor
+    private func samples(of type: HKSampleType,
+                         matching predicate: NSPredicate) async -> [HKSample]? {
+        await withCheckedContinuation { continuation in
+            var resumed = false
+            let q = HKSampleQuery(sampleType: type, predicate: predicate,
+                                  limit: HKObjectQueryNoLimit,
+                                  sortDescriptors: nil) { _, result, _ in
+                guard !resumed else { return }
+                resumed = true
+                continuation.resume(returning: result)
+            }
+            // `healthStore`, not `store` — the latter is private to
+            // HealthStore.swift and this is an extension in another file.
+            healthStore.execute(q)
+        }
+    }
 
     /// Fill `cachedWorkouts`, at most once an hour.
     ///
@@ -367,6 +563,18 @@ extension HealthWorkout {
             // copy written by an app that only stored a total has none.
             averageHeartRate: a.averageHeartRate ?? b.averageHeartRate,
             sources: names,
+            // THE WIDER BAND, and it is the honest answer rather than the
+            // convenient one: if the watch recorded samples and Strava pushed
+            // back a summary of the same session, Health DOES hold varying
+            // heart rate for it. The merged record is what Health knows.
+            hrMin: [a.hrMin, b.hrMin].compactMap { $0 }.min(),
+            hrMax: [a.hrMax, b.hrMax].compactMap { $0 }.max(),
+            // A merged record keeps `base.id`, so a route hanging off the
+            // OTHER copy would not be found by querying this one. Moot for the
+            // census, which only looks at single-source sessions, and written
+            // down because it stops being moot the day something censuses the
+            // merged ones.
+            hasRoute: a.hasRoute ?? b.hasRoute,
             startMinuteOfDay: a.start <= b.start ? a.startMinuteOfDay : b.startMinuteOfDay)
     }
 }
@@ -380,6 +588,12 @@ extension HealthWorkout {
         let cal = Calendar.current
         let comps = cal.dateComponents([.hour, .minute], from: w.startDate)
 
+        // ONE STATISTICS OBJECT, THREE FIGURES — 285. The average was already
+        // being read here; min and max come off the same object for nothing,
+        // and they are what tells a recorded session from a pushed summary.
+        let hr = w.statistics(for: HKQuantityType(.heartRate))
+        let bpm = HKUnit.count().unitDivided(by: .minute())
+
         return HealthWorkout(
             id: w.uuid.uuidString,
             start: w.startDate,
@@ -390,10 +604,11 @@ extension HealthWorkout {
             durationSeconds: Int(w.duration.rounded()),
             activeSeconds: nil,
             distanceM: distance(w, sport: sport),
-            averageHeartRate: w.statistics(for: HKQuantityType(.heartRate))?
-                .averageQuantity()?
-                .doubleValue(for: HKUnit.count().unitDivided(by: .minute())),
+            averageHeartRate: hr?.averageQuantity()?.doubleValue(for: bpm),
             sources: [w.sourceRevision.source.name],
+            hrMin: hr?.minimumQuantity()?.doubleValue(for: bpm),
+            hrMax: hr?.maximumQuantity()?.doubleValue(for: bpm),
+            hasRoute: nil,
             startMinuteOfDay: (comps.hour ?? 0) * 60 + (comps.minute ?? 0))
     }
 

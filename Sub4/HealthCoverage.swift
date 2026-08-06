@@ -154,9 +154,41 @@ nonisolated enum HealthCoverage {
         var daysBoth: Int { days - daysHealthOnly }
     }
 
+    /// What state the sessions Strava alone wrote are actually in — 285.
+    ///
+    /// They do not disappear on a disconnect; an `HKWorkout` is Apple's once
+    /// written. The question is whether they are a training record, and the
+    /// answer is a count rather than an adjective.
+    struct Thinness: Equatable, Sendable {
+        /// FALSE MEANS NOBODY ASKED. Every count below is zero either way, and
+        /// only one of the two zeros is a finding.
+        var routesRead = false
+        var sessions = 0
+        var withRoute = 0
+        var withVaryingHeartRate = 0
+        var withDistance = 0
+        /// No route, no varying heart rate, no distance. As thin as a record
+        /// gets while still being a record.
+        var shells = 0
+
+        var line: String {
+            guard sessions > 0 else { return "No sessions were written by Strava alone." }
+            let route = routesRead ? "\(withRoute) have a route" : "routes not measured"
+            return "\(sessions) written by Strava alone: \(route), "
+                 + "\(withVaryingHeartRate) have heart-rate samples rather than one "
+                 + "value, \(withDistance) have a distance. \(shells) have none of "
+                 + "the three."
+        }
+    }
+
     struct Report: Equatable, Sendable {
         let reading: Reading
         let months: [Month]
+        let thinness: Thinness
+        /// Why the route census did or did not run, in the census's own words.
+        /// Empty when nothing asked. 285 printed "Routes were NOT measured"
+        /// and could not say why, which is half an answer.
+        let routeNote: String
         let generated: String
 
         /// Every field summed. Days are inside months, so summing them is
@@ -247,7 +279,8 @@ nonisolated enum HealthCoverage {
                       activities: [Activity],
                       months keys: [String],
                       reading: Reading,
-                      generated: String) -> Report {
+                      generated: String,
+                      routeNote: String = "") -> Report {
 
         var byMonth: [String: Month] = [:]
         for k in keys { byMonth[k] = Month(month: k) }
@@ -316,8 +349,27 @@ nonisolated enum HealthCoverage {
             byMonth[k] = m
         }
 
+        // COMPUTED FROM THE SAME ARRAY, not passed in. The census fills
+        // `hasRoute` on the workouts before this runs, so there is one place
+        // that decides which sessions are Strava's alone — `stravaAlone` on
+        // the workout itself — and this cannot come to disagree with the
+        // census about which ones it measured.
+        var thin = Thinness()
+        let alone = health.filter { $0.stravaAlone && keys.contains(String($0.dayKey.prefix(7))) }
+        thin.sessions = alone.count
+        thin.routesRead = alone.contains { $0.hasRoute != nil }
+        for w in alone {
+            let route = w.hasRoute == true
+            if route { thin.withRoute += 1 }
+            if w.hasVaryingHeartRate { thin.withVaryingHeartRate += 1 }
+            if w.distanceM != nil { thin.withDistance += 1 }
+            if !route && !w.hasVaryingHeartRate && w.distanceM == nil { thin.shells += 1 }
+        }
+
         return Report(reading: reading,
                       months: keys.compactMap { byMonth[$0] },
+                      thinness: thin,
+                      routeNote: routeNote,
                       generated: generated)
     }
 
@@ -372,9 +424,20 @@ nonisolated enum HealthCoverage {
         }
 
         out.append("")
+        out.append(r.thinness.line)
+        if r.thinness.sessions > 0 && !r.thinness.routesRead {
+            out.append(r.routeNote.isEmpty
+                       ? "Routes were NOT measured on this run — the counts "
+                       + "above say nothing about how many have one."
+                       : r.routeNote + " The counts above say nothing about "
+                       + "how many have one.")
+        }
+
+        out.append("")
         out.append("Days, not sessions: a day on both sides is counted as covered "
-                 + "even if the two sessions on it differ. Routes are not measured "
-                 + "— see HealthCoverage.swift.")
+                 + "even if the two sessions on it differ. Routes are measured "
+                 + "only for the sessions Strava alone wrote — see "
+                 + "HealthCoverage.swift.")
         return out.joined(separator: "\n")
     }
 

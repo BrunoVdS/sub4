@@ -124,8 +124,17 @@ final class HealthStore {
     /// means adding it here, and `HealthTypeTests` asserts the count.
     var typesRead: [HKObjectType] {
         [stepType, walkRunType, restingType,
-         workoutType, swimDistanceType, heartRateType, cyclingDistanceType]
+         workoutType, swimDistanceType, heartRateType, cyclingDistanceType,
+         // Patch 286. Read by the coverage census — and read in 285 WITHOUT
+         // being requested, which is HK-02 with a different type. HealthKit
+         // answers an unrequested read with an empty result, so the census
+         // reported nothing and looked like a phone with no routes.
+         routeType]
     }
+
+    /// The route attached to a workout. `HKSeriesType`, not a quantity: it is
+    /// a series of locations and it is requested as its own object type.
+    private var routeType: HKSeriesType { HKSeriesType.workoutRoute() }
 
     /// The same list in words, for the Settings row, the permission explanation
     /// and the data-lifecycle inventory. The purpose string iOS shows at the
@@ -134,7 +143,8 @@ final class HealthStore {
     /// settings rather than in this file.
     static let typesReadDescribed = [
         "Steps", "Walking and running distance", "Resting heart rate",
-        "Workouts", "Swimming distance", "Heart rate", "Cycling distance"
+        "Workouts", "Swimming distance", "Heart rate", "Cycling distance",
+        "Workout routes"
     ]
 
     /// The workout queries live in HealthWorkouts.swift and need the store and
@@ -149,7 +159,10 @@ final class HealthStore {
     ///
     /// 3 adds workouts and swim distance. 4 adds heart rate. 5 adds cycling
     /// distance, which had been read without ever being asked for (HK-02).
-    private static let authVersion = 5
+    /// 6 adds workout routes, which had been read without ever being asked for
+    /// — the same defect, at patch 285, in the same shape. The prompt will
+    /// appear once more on a device that has already granted the other seven.
+    private static let authVersion = 6
     private static let authVersionKey = "health.authVersion"
 
     /// True while resting heart rate is not arriving — never asked for, asked

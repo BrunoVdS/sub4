@@ -31,7 +31,9 @@ struct HealthCoverageTests {
                          distanceM: Double? = 10_000,
                          hr: Double? = 148,
                          sources: [String] = ["Bruno's Apple Watch"],
-                         minute: Int = 7 * 60) -> HealthWorkout {
+                         minute: Int = 7 * 60,
+                         hrBand: (Double, Double)? = (96, 178),
+                         hasRoute: Bool? = nil) -> HealthWorkout {
         let start = DayKey.date(dayKey) ?? Date(timeIntervalSince1970: 0)
         return HealthWorkout(id: UUID().uuidString,
                              start: start,
@@ -44,7 +46,19 @@ struct HealthCoverageTests {
                              distanceM: distanceM,
                              averageHeartRate: hr,
                              sources: sources,
+                             hrMin: hrBand?.0,
+                             hrMax: hrBand?.1,
+                             hasRoute: hasRoute,
                              startMinuteOfDay: minute)
+    }
+
+    /// A summary pushed back by Strava: one heart-rate value, so the band is
+    /// flat. This is what 285 exists to count.
+    private func pushedSummary(_ dayKey: String,
+                               distanceM: Double? = nil,
+                               hasRoute: Bool? = false) -> HealthWorkout {
+        workout(dayKey, distanceM: distanceM, hr: 141, sources: ["Strava"],
+                hrBand: (141, 141), hasRoute: hasRoute)
     }
 
     private func activity(_ dayKey: String) -> Activity {
@@ -256,6 +270,76 @@ struct HealthCoverageTests {
         let r = build([workout("2025-07-04", sources: [])], [])
         #expect(r.total.stravaWrote == 0)
         #expect(r.total.stravaAlone == 0)
+    }
+
+    // MARK: Thinness of the Strava-alone set — 285
+
+    @Test("A flat heart-rate band is one value, not samples")
+    func aFlatBandIsNotSamples() {
+        let summary = pushedSummary("2025-07-04")
+        let recorded = workout("2025-07-05")
+        #expect(!summary.hasVaryingHeartRate, "141 to 141 is one reading")
+        #expect(recorded.hasVaryingHeartRate)
+    }
+
+    @Test("No heart rate at all is not varying heart rate")
+    func noHeartRateIsNotVarying() {
+        let w = workout("2025-07-04", hr: nil, hrBand: nil)
+        #expect(!w.hasVaryingHeartRate)
+    }
+
+    @Test("Only sessions Strava alone wrote are censused")
+    func onlyStravaAloneIsCensused() {
+        let r = build([pushedSummary("2025-07-04"),
+                       workout("2025-07-05", sources: ["Bruno's Apple Watch", "Strava"]),
+                       workout("2025-07-06")], [])
+        #expect(r.thinness.sessions == 1, "the co-written one is not Strava's alone")
+    }
+
+    /// THE ONE WITH TEETH, and the same shape as the reading guard one level
+    /// up: a census that did not run must not read as a census that found
+    /// nothing.
+    @Test("Routes not asked about never read as routes not found")
+    func routesNotAskedAboutAreNotRoutesNotFound() {
+        let notAsked = build([pushedSummary("2025-07-04", hasRoute: nil)], [])
+        #expect(notAsked.thinness.sessions == 1)
+        #expect(notAsked.thinness.routesRead == false)
+        #expect(notAsked.thinness.withRoute == 0)
+        #expect(notAsked.thinness.line.contains("routes not measured"))
+        // And the paste says so out loud rather than printing a bare zero.
+        #expect(HealthCoverage.text(notAsked).contains("Routes were NOT measured"))
+
+        let asked = build([pushedSummary("2025-07-04", hasRoute: false)], [])
+        #expect(asked.thinness.routesRead)
+        #expect(asked.thinness.withRoute == 0)
+        #expect(!HealthCoverage.text(asked).contains("Routes were NOT measured"))
+    }
+
+    @Test("A shell is a session with none of the three")
+    func aShellHasNoneOfTheThree() {
+        let r = build([pushedSummary("2025-07-04", hasRoute: false)], [])
+        #expect(r.thinness.shells == 1)
+        #expect(r.thinness.withRoute == 0)
+        #expect(r.thinness.withVaryingHeartRate == 0)
+        #expect(r.thinness.withDistance == 0)
+    }
+
+    @Test("A Strava-written session that carries things is not a shell")
+    func aFullSessionIsNotAShell() {
+        let r = build([pushedSummary("2025-07-04", distanceM: 8_400, hasRoute: true)], [])
+        #expect(r.thinness.withRoute == 1)
+        #expect(r.thinness.withDistance == 1)
+        #expect(r.thinness.shells == 0)
+    }
+
+    @Test("Merging keeps the wider heart-rate band")
+    func mergingKeepsTheWiderBand() {
+        let watch = workout("2025-07-04", sources: ["Bruno's Apple Watch"])
+        let pushed = pushedSummary("2025-07-04", distanceM: 10_000)
+        let merged = HealthWorkout.merged(watch, pushed)
+        #expect(merged.hasVaryingHeartRate,
+                "Health does hold samples for this session, from the watch copy")
+        #expect(!merged.stravaAlone, "two writers is not Strava alone")
     }
 
     // MARK: Thinness
