@@ -774,7 +774,7 @@ enum DataLifecycle {
                  + "reads them. When step 3.7 makes it the place the app reads "
                  + "from, a disconnect will have to delete the Strava-derived "
                  + "ROWS and re-key the ones you wrote, rather than removing "
-                 + "the folder — the rule below is only correct while every row "
+                 + "the folder — the disconnect rule is only correct while every row "
                  + "in here also exists in the files above (ADR-0003 §8).",
                    "Not included in an export, and it is now the only place "
                  + "your whole training record sits together. The export writes "

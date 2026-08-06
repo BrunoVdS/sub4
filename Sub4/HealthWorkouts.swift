@@ -108,8 +108,16 @@ extension HealthStore {
     /// Returns [] rather than throwing on any failure — a diagnostic that
     /// crashes is worse than a diagnostic that says "nothing came back", and
     /// the caller cannot tell a denial from an empty store anyway.
+    /// `enrichSwims` added in 282, defaulted so every existing caller is
+    /// unchanged. The coverage report calls this thirteen times — once per
+    /// month, because a single thirteen-month query is one `workoutTimeout`
+    /// away from returning `[]`, which that diagnostic would then have to
+    /// report as "Health answered and has nothing". It counts sessions and
+    /// days and never reads `activeSeconds`, so leaving enrichment on would
+    /// buy several hundred sample queries for a field nobody there looks at.
     @MainActor
-    func workouts(from start: Date, to end: Date) async -> [HealthWorkout] {
+    func workouts(from start: Date, to end: Date,
+                  enrichSwims: Bool = true) async -> [HealthWorkout] {
         guard isAvailable, hasRequestedAuthorization, hasUsageDescription else { return [] }
 
         let raw = await withTaskGroup(of: [HealthWorkout]?.self) { group in
@@ -144,7 +152,8 @@ extension HealthStore {
         // Only swims need the second pass. Capped because this is one query per
         // swim and the window is seven months.
         var enriched = 0
-        for i in out.indices where out[i].sport == .swim && enriched < Self.maxSwimEnrich {
+        for i in out.indices where enrichSwims
+            && out[i].sport == .swim && enriched < Self.maxSwimEnrich {
             out[i].activeSeconds = await swimActiveSeconds(from: out[i].start,
                                                            to: out[i].end)
             enriched += 1

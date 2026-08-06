@@ -2714,6 +2714,241 @@ something does — so it is recorded as a gap against step 3.7 rather than fixed
 here. Closing it means a real `close()` on `Sub4Launch.database`, which is a
 change to a `private(set)` lifecycle and does not belong in a patch about prose.
 
+## 12.28 Does Health hold the history — 4A M0, patch 282
+
+### 12.28.1 The question nobody had asked
+
+ADR-0002 retired Strava and made Apple Health canonical in one decision, and
+its third follow-up says: *"Measure Apple Health coverage back to 1 July 2025
+**before** any purge."* Its consequences say why — *"the watch may not have
+been worn, or workouts may have been written by Strava rather than to it"* —
+and name the bulk-export bridge as the contingency if the answer is thin.
+
+**Nothing has ever measured it.** Every plan written since, including the
+cutover plan and the peer review folded into it, assumes the answer and
+sequences Health ingestion as phase six of ten. It belongs first, because a
+thin answer changes what the database currently holds from *a copy* into *the
+only copy*, and that changes the priority of everything below it.
+
+### 12.28.2 The risk is thinness, not disappearance
+
+"Workouts written by Strava rather than to it" reads as though those sessions
+would vanish on a disconnect. **They will not.** An `HKWorkout` belongs to
+Apple the moment it is written; revoking an API token does not reach into the
+Health store, and deleting the Strava app does not either.
+
+The real exposure is that a session which exists in Health only because Strava
+pushed a summary back carries a start, an end, a duration and often nothing
+else — no route, no heart-rate samples, sometimes no distance. It counts as
+present in every census and is not a training record.
+
+So the report counts what is there **and what state it is in**, and reports the
+writers by name. `HealthWorkout.sources` has carried
+`w.sourceRevision.source.name` since the reconcile screen was built; every
+session has known who wrote it all along and nothing had ever aggregated it.
+
+### 12.28.3 It has to be able to say "I do not know"
+
+`HealthStore.workouts(from:to:)` returns `[]` on a denial, a timeout and a
+genuinely empty store alike, and its own comment says so: *"the caller cannot
+tell a denial from an empty store anyway."* For every other caller that is the
+right trade — a diagnostic that crashes is worse than one that says nothing
+came back.
+
+For this one it is fatal. A report that answers *"Health has nothing"* when the
+truth is *"the query never ran"* would retire Strava on the strength of a
+permissions bug, and the zeros would look exactly like an answer.
+
+`HealthCoverage.Reading` is therefore the first field of the report, with five
+cases — read, unavailable, neverAsked, noUsageDescription, failed — and
+`isTrustworthy` is true for exactly one of them. **This is `StoreLoad` from
+§12.15 wearing different clothes**, and deliberately so: same failure, same
+shape of answer, and the two should be recognisable as the same idea.
+
+`anUntrustworthyReadingNeverReadsAsAnEmptyStore` is the test with teeth. It
+builds a report holding a stored activity and no Health workout — the exact
+shape of a real shortfall — and asserts that the headline is the reading and
+that `text()` stops before the table, so nobody can screenshot an empty grid
+and call it a measurement.
+
+### 12.28.4 Days, not sessions, and the second matcher that was not written
+
+`HealthReconcile.build` already joins the two sides. It is filtered, on both
+sides, to the sessions this app reasons about — and its comments explain a
+real defect that came from filtering only one of them: 156 commute rides
+landed in a bucket meaning *"Strava never received this"* when Strava had
+received all of them.
+
+Coverage is a different question and needs the commutes and the walks. Writing
+a second matcher to answer it would put two joins in this codebase that
+disagree, which is exactly what §12.16 refused for CTL.
+
+**So this compares DAYS.** A day carries a `dayKey` on both sides, needs no
+tolerance rule, no candidate selection and no `used` set, and cannot drift from
+`build` because it is not doing what `build` does. The limit is stated on the
+screen and in the paste rather than left to be discovered: a day present on
+both sides counts as covered even if the two sessions on it are different
+sessions. Where a day disagrees, *Compare with Strava* is the screen that
+inspects it.
+
+### 12.28.5 What is deliberately not measured
+
+**Routes.** `HKWorkoutRoute` is one query per workout, and over thirteen months
+that is several hundred round trips for a diagnostic. Thinness is measured here
+by distance and heart rate, which arrive with the workout and cost nothing. A
+route census is worth doing before the purge and is not this — recorded here
+rather than skipped in silence, because a check the plan implied and did not
+get is the kind of gap that closes itself in a summary.
+
+### 12.28.6 One query per month
+
+`workoutTimeout` is twelve seconds and the window is thirteen months. A single
+query for the lot is one timeout away from `[]`, which is the false negative
+this whole design exists to prevent. A month at a time is bounded, and the
+months are the buckets the report wants anyway.
+
+The trade is stated: dedupe runs per call, so a session starting on the last
+night of a month is deduped within its own month only. Sessions do not span
+months in practice, and the bucket is chosen by start date, so it cannot
+double-count.
+
+`enrichSwims: false` is this patch's one change to `workouts(from:to:)`. The
+parameter is defaulted, so every existing caller is untouched.
+
+### 12.28.7 It states the finding and stops
+
+`headline` is not a verdict. ADR-0002 requires the shortfall — if there is one
+— to be **accepted in writing** rather than discovered at the receipt, so the
+report says how many training days the app holds that Health does not, and how
+many sessions Strava alone wrote, and goes no further. Whether that is
+acceptable is a decision, and decisions are not computed here.
+
+## 12.29 What M0 measured, and the two blind spots in its own report — patch 283
+
+### 12.29.1 The measurement
+
+Run on the device at patch 282, over 2025-07-01 to 2026-08-06:
+
+| | |
+|---|---|
+| Health sessions | **710** across **322** training days |
+| by discipline | 113 run · 404 ride · 54 swim · 8 strength · 131 other |
+| carrying a distance | 557 (78%) |
+| carrying a heart rate | 619 (87%) |
+| the app holds | **668** across **322** days |
+| days in both | **319** |
+| days only in Health | 3 |
+| **days only in the app** | **3** — two in 2026-05, one in 2026-06 |
+| sessions naming Strava as a writer | 102 |
+| **sessions Strava alone wrote** | **53** (7.5%) |
+
+**ADR-0002's central worry does not hold.** July 2025 — the first month of the
+window, and the one the follow-up named — shows Health with 63 sessions across
+28 days against the app's 52 across the same 28. Health has *more*, from the
+start. **The bulk-export bridge comes off the critical path.**
+
+The shortfall is three days, all of them recent. Recorded here as the finding;
+ADR-0002 requires it to be accepted in writing rather than met at the receipt,
+and that acceptance belongs in the cutover plan, not in this file.
+
+### 12.29.2 Blind spot one: the two sides were not counted the same way
+
+The report counted Health by discipline and the app only in total, so the two
+columns could not be compared at all. The fix is one field per discipline on
+the stored side.
+
+**What the comparison shows, once it exists.** From the 283 run, same window:
+
+| discipline | Health | the app | |
+|---|---|---|---|
+| run | 113 | 110 | Health +3 |
+| ride | 405 | 373 | Health +32 |
+| swim | 54 | 52 | Health +2 |
+| **strength** | **8** | **16** | **the app +8** |
+| other | 131 | 118 | Health +13 |
+| tracked (run/ride/swim/strength) | **580** | **551** | Health +29 |
+
+**The ride surplus is almost certainly not loss.** 153 of 711 sessions carry no
+distance at all, and `HealthReconcile.isRelevant(_ w:)` already documents the
+cause in its own comment: the watch's "looks like you are cycling" prompt
+accepted and then abandoned — records of 1:35, 2:59 and 11:27 with nothing
+attached. Health knowing about fragments Strava never received is not a
+shortfall.
+
+**Strength is the finding.** The app has sixteen and Health has eight. That
+fits `HealthWorkouts.swift`'s own note about a strength session logged through
+Hevy reaching Strava with reps, sets and calories and no heart rate.
+
+And it is the one that matters, because **those eight are not among the three
+at-risk days.** They sit on days that also carry a run or a ride, so the day
+counts as covered while the session would be destroyed. §12.28.4's day-level
+limit, producing its first concrete casualty: the shortfall is not "three
+days", it is three days plus an unknown number of sessions on covered days, of
+which eight are visible right now.
+
+### 12.29.2.1 How the wrong number got into this file
+
+The paragraph this replaces read: *"Take those out and Health holds 579 of the
+tracked disciplines against the app's 668 — the app holds more, by tens of
+sessions"*, and built a commute hypothesis on top of it. It compared Health's
+TRACKED count against the app's TOTAL, which carries 118 sessions of its own
+`other`. Health holds more of the tracked disciplines, not fewer.
+
+Worth recording rather than quietly fixing, because it is the same failure as
+§12.27: **a conclusion written into this file from a measurement that did not
+exist yet.** Patch 283 was built precisely because that comparison was
+impossible, and the conclusion was filed anyway, in the document whose whole
+job is to be true. A number in here should be one the reader could have got
+off the screen.
+
+### 12.29.2.2 Two mappings that are allowed to disagree
+
+ The switch is **written out rather than shared** with the
+Health side: `Activity.discipline` and `HealthWorkout.sport` are both
+`Discipline?` today, but they are computed from a Strava `sportType` string and
+an `HKWorkoutActivityType` respectively, and a shared helper would couple two
+mappings that are allowed to disagree. Strength is the case that proves it —
+the two sides already disagree about eight sessions, and they are entitled to.
+
+### 12.29.3 Blind spot two: a number nobody could act on
+
+*"3 training days are in the app and not in Health"* is a finding whose only
+possible next step is opening those three days in the app. The report gave a
+count. **A count sends the reader looking; a date sends them to the session.**
+
+So `Month` carries `datesStoredOnly` and `datesHealthOnly`, and the counts are
+computed from them. That direction matters: the previous version summed
+`daysStoredOnly` in `total` and set it in `build`, which is two places holding
+one fact and one edit away from disagreeing — §12.25's defect in miniature.
+
+**Uncapped in the paste.** A report that says "3 days" and lists two of them
+reads as complete. If it ever runs to hundreds of lines, that is the finding
+rather than a formatting problem. The on-screen list is capped at twenty
+because a list is not a view, and the remainder is stated rather than dropped.
+
+### 12.29.4 What this does not answer, and what does
+
+Session-level agreement. Day coverage at 99% is consistent with dozens of
+sessions differing, and §12.29.2 shows that they do — Health is ahead by 29
+tracked sessions overall while the app is ahead by 8 on strength, and none of
+those 8 appear in the three at-risk days.
+
+That is **D6c shadow parity's** question, and the tool for it already exists:
+`HealthReconcile.build` matches sessions. It is filtered on both sides to the
+ones the app reasons about, and that filter is why it cannot answer this today
+— `isRelevant(_ a:)` admits strength only when the session is plan-eligible,
+and rides only when they are, so the two categories where the sides actually
+differ are the two it declines to look at.
+
+Making that filter a parameter is not a second matcher; it is the same matcher
+with the filter as an argument, so §12.28.4's objection does not apply to it.
+That is the next piece of work, and it belongs before D6c rather than during.
+
+**And the 53.** Whether a session Strava alone wrote carries a route or heart-
+rate samples is still unmeasured. The set is bounded, so the census §12.28.5
+deferred is now 53 queries rather than several hundred. It blocks a purge and
+nothing else.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

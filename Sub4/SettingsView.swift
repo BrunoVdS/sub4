@@ -61,6 +61,7 @@ struct SettingsView: View {
     @State private var showLoadDiagnostics = false
     @State private var showDatabaseHealth = false
     @State private var showHealthReconcile = false
+    @State private var showHealthCoverage = false
     @State private var thresholds = LoadThresholds.shared
     @State private var weather = WeatherStore.shared
     @State private var copiedVolumes = false
@@ -188,6 +189,7 @@ struct SettingsView: View {
         .sheet(isPresented: $showLoadDiagnostics) { LoadDiagnosticView() }
         .sheet(isPresented: $showDatabaseHealth) { DatabaseHealthView() }
         .sheet(isPresented: $showHealthReconcile) { HealthReconcileView() }
+        .sheet(isPresented: $showHealthCoverage) { HealthCoverageView() }
         .sheet(item: $notesCSV) { ShareSheet(items: [$0.url]) }
         // The button is disabled at zero notes, so the only way to reach
         // this is a failed write. Saying "you have no notes" here would be
@@ -1270,6 +1272,13 @@ struct SettingsView: View {
             // two disagree, so the scope of any move onto Health is decided by
             // this athlete's data rather than by what the APIs could do.
             Button("Compare with Strava") { showHealthReconcile = true }
+
+            // 4A M0 — ADR-0002 follow-up 3. Beside "Compare with Strava"
+            // because they are the same question at two scales: that one asks
+            // whether the two sides agree about a session, this one asks
+            // whether Health holds the history at all. The second has to be
+            // answered before any purge and never has been.
+            Button("Health coverage") { showHealthCoverage = true }
                 .disabled(!health.hasRequestedAuthorization)
         }
     }
