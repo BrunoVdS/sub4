@@ -206,6 +206,81 @@ struct ActivityRepositoryTests {
         #expect(other.activities?.isEmpty == true)
     }
 
+    // MARK: The round-trip comparison — 290
+
+    @Test("Identical sides agree on every field")
+    func identicalSidesAgree() {
+        let a = ride()
+        let r = ActivityRoundTrip.compare(store: [a], database: [a])
+        #expect(r.compared == 1)
+        #expect(r.agreed == 1)
+        #expect(r.differences.isEmpty)
+        #expect(r.missing.isEmpty)
+    }
+
+    /// THE POINT OF THE FIELD TALLY. A count of differing activities sends
+    /// somebody through them one at a time; a count by field is usually one
+    /// fix.
+    @Test("A difference names the field, not just the activity")
+    func aDifferenceNamesTheField() {
+        let store = ride()
+        var altered = ride()
+        altered.maxSpeed = 99
+        let r = ActivityRoundTrip.compare(store: [store], database: [altered])
+
+        #expect(r.differences.count == 1)
+        #expect(r.differences.first?.fields == ["maxSpeed"])
+        #expect(r.fieldTally.map(\.field) == ["maxSpeed"])
+        #expect(r.fieldTally.first?.count == 1)
+    }
+
+    @Test("The tally counts a field once per activity that differs on it")
+    func theTallyCountsPerActivity() {
+        var a = ride("1"); a.maxSpeed = 1
+        var b = ride("2"); b.maxSpeed = 2
+        let r = ActivityRoundTrip.compare(store: [ride("1"), ride("2")],
+                                          database: [a, b])
+        #expect(r.fieldTally.first?.field == "maxSpeed")
+        #expect(r.fieldTally.first?.count == 2)
+        #expect(r.agreed == 0)
+    }
+
+    @Test("An activity the database does not have is missing, not different")
+    func missingIsNotDifferent() {
+        let r = ActivityRoundTrip.compare(store: [ride("1"), ride("2")],
+                                          database: [ride("1")])
+        #expect(r.compared == 1, "only the one present can be compared")
+        #expect(r.missing == ["2"])
+        #expect(r.differences.isEmpty)
+    }
+
+    /// The whole comparison is only as good as this list. A field added to
+    /// `Activity` and not to `differingFields` makes it quietly weaker.
+    @Test("Every stored field of an Activity is compared")
+    func everyFieldIsCompared() {
+        let names = Set(ActivityRoundTrip.differingFields(
+            ride(gearId: "a"),
+            Activity(id: "19580875358", name: "x", sportType: "Run",
+                     startLocal: "2020-01-01T00:00:00", distance: 1,
+                     movingTime: 1, elapsedTime: 1, elevationGain: 1,
+                     averageHeartrate: 1, isTrainer: true, maxHeartrate: 1,
+                     gearId: "b", maxSpeed: 1, deviceWatts: false,
+                     averageWatts: 1, startUTC: "2020-01-01T00:00:00Z",
+                     startLat: 1, startLon: 1, timeZoneIdentifier: "UTC",
+                     startOffsetSeconds: 0)))
+
+        // Nineteen: every stored property except `id`, which is the key the
+        // two sides are matched ON and cannot differ.
+        #expect(names.count == 19, "found \(names.count) differing fields")
+        for expected in ["name", "sportType", "startLocal", "startUTC", "distance",
+                         "movingTime", "elapsedTime", "elevationGain",
+                         "averageHeartrate", "maxHeartrate", "isTrainer", "gearId",
+                         "maxSpeed", "deviceWatts", "averageWatts", "startLat",
+                         "startLon", "timeZoneIdentifier", "startOffsetSeconds"] {
+            #expect(names.contains(expected), "\(expected) is not compared")
+        }
+    }
+
     // MARK: Coverage it cannot provide
 
     /// A row with no `sportLabel` cannot become an `Activity` — `sportType` is

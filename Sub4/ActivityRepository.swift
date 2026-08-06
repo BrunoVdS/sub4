@@ -120,6 +120,91 @@ nonisolated enum ActivityLoad: Sendable {
     }
 }
 
+/// The store against the database, one activity at a time — patch 290.
+///
+/// D6c asks this of everything. This asks it of one table, on the real data,
+/// now — because a round trip proven on one synthetic activity says nothing
+/// about 669 real ones with retired shoes, missing sport labels and eight
+/// months of whatever Strava sent.
+///
+/// IT NAMES FIELDS, NOT ROWS. "12 activities differ" sends somebody looking
+/// through 12 activities; "12 differ, all on `maxSpeed`" is a one-line fix and
+/// usually a units mistake. Equal counts hiding changed values is §12.16's
+/// warning, and a count of differences is the same failure one level down.
+nonisolated enum ActivityRoundTrip {
+
+    struct Difference: Sendable, Identifiable {
+        /// The store's id — Strava's.
+        let id: String
+        let fields: [String]
+    }
+
+    struct Report: Sendable {
+        var compared = 0
+        /// In the store and not in the database at all.
+        var missing: [String] = []
+        var differences: [Difference] = []
+
+        var agreed: Int { compared - differences.count }
+
+        /// Every field that differs anywhere, with how often. The line worth
+        /// reading first.
+        var fieldTally: [(field: String, count: Int)] {
+            var counts: [String: Int] = [:]
+            for d in differences { for f in d.fields { counts[f, default: 0] += 1 } }
+            return counts.sorted { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) }
+                .map { (field: $0.key, count: $0.value) }
+        }
+    }
+
+    static func compare(store: [Activity], database: [Activity]) -> Report {
+        var byID: [String: Activity] = [:]
+        for a in database { byID[a.id] = a }
+
+        var report = Report()
+        for s in store {
+            guard let d = byID[s.id] else { report.missing.append(s.id); continue }
+            report.compared += 1
+            let fields = differingFields(s, d)
+            if !fields.isEmpty {
+                report.differences.append(Difference(id: s.id, fields: fields))
+            }
+        }
+        report.missing.sort()
+        return report
+    }
+
+    /// EVERY STORED FIELD, NAMED. Adding one to `Activity` and not to this
+    /// list makes the comparison quietly weaker, which is why the names are
+    /// spelled out rather than derived — there is no reflection here that
+    /// would not also silently skip something.
+    static func differingFields(_ s: Activity, _ d: Activity) -> [String] {
+        var out: [String] = []
+        func check(_ name: String, _ same: Bool) { if !same { out.append(name) } }
+
+        check("name", s.name == d.name)
+        check("sportType", s.sportType == d.sportType)
+        check("startLocal", s.startLocal == d.startLocal)
+        check("startUTC", s.startUTC == d.startUTC)
+        check("distance", s.distance == d.distance)
+        check("movingTime", s.movingTime == d.movingTime)
+        check("elapsedTime", s.elapsedTime == d.elapsedTime)
+        check("elevationGain", s.elevationGain == d.elevationGain)
+        check("averageHeartrate", s.averageHeartrate == d.averageHeartrate)
+        check("maxHeartrate", s.maxHeartrate == d.maxHeartrate)
+        check("isTrainer", s.isTrainer == d.isTrainer)
+        check("gearId", s.gearId == d.gearId)
+        check("maxSpeed", s.maxSpeed == d.maxSpeed)
+        check("deviceWatts", s.deviceWatts == d.deviceWatts)
+        check("averageWatts", s.averageWatts == d.averageWatts)
+        check("startLat", s.startLat == d.startLat)
+        check("startLon", s.startLon == d.startLon)
+        check("timeZoneIdentifier", s.timeZoneIdentifier == d.timeZoneIdentifier)
+        check("startOffsetSeconds", s.startOffsetSeconds == d.startOffsetSeconds)
+        return out
+    }
+}
+
 nonisolated enum ActivityRepository {
 
     /// Every activity this account holds, newest first.

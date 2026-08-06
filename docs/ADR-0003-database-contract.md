@@ -3399,6 +3399,45 @@ Ordering is by `startUTC`, which §4.1 makes authoritative for order —
 `startLocal` is authoritative for BELONGING. Ordering by the wrong one is
 invisible until two sessions fall either side of midnight.
 
+## 12.36 The reader meets the real 669 — patch 290
+
+§12.35 proved the round trip on one synthetic activity. That is worth exactly
+as much as one synthetic activity: it says the column names are right, and
+nothing about 669 real ones with retired shoes, missing sport labels and eight
+months of whatever Strava happened to send.
+
+`ActivityRoundTrip` runs the comparison on the phone, and it is **D6c's first
+real measurement** — deliberately one table, no derived metrics, no CTL.
+
+### 12.36.1 It names fields, not rows
+
+*"12 activities differ"* sends somebody through twelve activities. *"12
+differ, all on `maxSpeed`"* is one fix, and usually a units mistake.
+
+That is §12.16's warning one level down: equal counts can hide changed values,
+and a bare count of differences hides which value. `fieldTally` is the line to
+read first, and the screen puts it above the ids.
+
+### 12.36.2 The field list is written out, not derived
+
+`differingFields` names all nineteen comparable properties by hand. There is
+no reflection in Swift that would enumerate them without also silently
+skipping something, and a comparison that quietly stops covering a field is
+worse than one that does not cover it — the first reports agreement.
+
+`everyFieldIsCompared` holds the count. Add a property to `Activity` and that
+test fails, which is the only moment anybody would think to update this.
+
+### 12.36.3 Why this is not D7 arriving by accident
+
+A reader wired into a screen that SHOWS TRAINING would be. This sits beside
+`SemanticVerifier`, which has read the database for diagnostic purposes since
+3.2. The Database screen is where the app looks at itself, and looking is not
+depending.
+
+`Sub4Launch.migrationFailureBlocksTheApp` stays false, and §12.27's test still
+holds the disconnect rule to it.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

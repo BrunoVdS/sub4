@@ -85,6 +85,9 @@ struct DatabaseHealthView: View {
     /// Patch 263 — the semantic verifier. Nil until the button is pressed,
     /// like the survey below and for the same reason: it reads every row the
     /// migration wrote and every value the stores hold.
+    @State private var readingBack = false
+    @State private var roundTrip: ActivityRoundTrip.Report?
+    @State private var roundTripLoad: ActivityLoad?
     @State private var verifying = false
     @State private var verification: VerificationReport?
 
@@ -121,6 +124,7 @@ struct DatabaseHealthView: View {
                     // moves a run out of `pending`. The screen reads in the
                     // order the states go: imported, then verified.
                     verifySection(db)
+                readBackSection(db)
                     // AFTER the import and before the benchmark. It is about
                     // the files the import reads FROM, so it belongs beside
                     // the import; it is a survey rather than an action, so it
@@ -962,6 +966,81 @@ struct DatabaseHealthView: View {
                  + "few figures the app actually shows. The last import is "
                  + "marked verified only if every comparison agrees.")
                 .font(.caption2)
+        }
+    }
+
+    /// PATCH 290. The reader against the real data.
+    ///
+    /// Beside verification rather than inside it: the verifier compares COUNTS
+    /// and a few figures, this compares one activity to another field by
+    /// field. Equal counts can hide changed values — §12.16 — and this is the
+    /// check that would notice.
+    @ViewBuilder
+    private func readBackSection(_ db: Sub4Database) -> some View {
+        Section {
+            if readingBack {
+                HStack { ProgressView(); Text("Reading back…").font(.caption) }
+            } else {
+                Button("Read the activities back out") { runReadBack(db) }
+            }
+
+            if let load = roundTripLoad {
+                LabeledContent("The read", value: load.line)
+                    .font(.caption)
+                    .foregroundStyle(load.isTrustworthy ? Color.dim : .red)
+            }
+
+            if let r = roundTrip {
+                LabeledContent("Compared", value: "\(r.compared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Agreed on every field", value: "\(r.agreed)")
+                    .font(.caption)
+                    .foregroundStyle(r.agreed == r.compared ? Color.dim : Color.ink)
+
+                if !r.missing.isEmpty {
+                    LabeledContent("In the store, not in the database",
+                                   value: "\(r.missing.count)")
+                        .font(.caption).foregroundStyle(.red)
+                }
+
+                // THE FIELD TALLY FIRST. "12 differ" sends somebody through
+                // twelve activities; "12, all on maxSpeed" is one fix.
+                ForEach(r.fieldTally, id: \.field) { entry in
+                    LabeledContent("  \(entry.field)", value: "\(entry.count)")
+                        .font(.caption2).foregroundStyle(.red)
+                }
+
+                // A few ids to open, and the rest counted rather than dropped.
+                ForEach(r.differences.prefix(5)) { d in
+                    Text("    \(d.id) — \(d.fields.joined(separator: ", "))")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.differences.count > 5 {
+                    Text("    + \(r.differences.count - 5) more")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+            }
+        } header: {
+            Text("Read-back")
+        } footer: {
+            Text("Reads every activity out of the database through "
+                 + "ActivityRepository and compares it, field by field, to the "
+                 + "one the app is running on. This is the question D6c asks of "
+                 + "everything, asked of one table now. Nothing is written.")
+                .font(.caption2)
+        }
+    }
+
+    private func runReadBack(_ db: Sub4Database) {
+        readingBack = true
+        let store = ActivityStore.shared.activities
+        Task {
+            let load = ActivityRepository.all(db)
+            roundTripLoad = load
+            roundTrip = load.activities.map {
+                ActivityRoundTrip.compare(store: store, database: $0)
+            }
+            readingBack = false
         }
     }
 
