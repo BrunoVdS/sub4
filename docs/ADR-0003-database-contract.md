@@ -3523,6 +3523,77 @@ A reader that invented a zero to make the comparison green would be lying to
 turn a screen a different colour, and the whole value of a read-back is that it
 is believable when it says nothing differs.
 
+## 12.38 The recording reader — D6a, patch 292
+
+The last of the three. Split from its comparison the way §12.35 was from
+§12.36 — 645 recordings and 192,954 samples is enough for one patch.
+
+### 12.38.1 A third meaning for `ordinal`
+
+Across four child tables the project now has three conventions:
+
+| table | `ordinal` is |
+|---|---|
+| `activity_split` | `split.index` — a domain value, 1-based |
+| `activity_lap` | `lap.index` — a domain value |
+| `activity_best_effort` | the array position |
+| `recording_sample` | the array position |
+
+`recording_sample` behaves like best efforts: ordered by, then discarded.
+`ActivityStreams` has no per-sample identity at all, so there is nowhere to put
+it and nothing to match on.
+
+`recording_sample` is also the only child table with a **composite primary key**
+— `(recordingID, ordinal)` — and no `id` column.
+
+### 12.38.2 Four renames, and `power` is the one
+
+`speed → speedMS`, `altitude → altitudeM`, `grade → gradePercent`, and
+**`power → watts`**. The last has its own named test because it is the one that
+would be typed straight through and produce a reader that silently drops every
+power trace.
+
+### 12.38.3 One at a time, not all at once
+
+`ids(_:)` then `streams(_:storeID:)`. All 645 recordings materialised together
+is roughly 12 MB of `Double` — survivable and pointless, since the comparison
+builds one, checks it and discards it.
+
+`all(_:)` exists for the tests and says in its own comment that the comparison
+should not use it. `ActivityDetailRepository.all` materialises everything
+because 668 details is nothing; copying that shape here would have been the
+easy wrong answer.
+
+### 12.38.4 The lossy step, named rather than discovered
+
+The importer writes `at(series, i)`:
+
+```swift
+guard let series, i < series.count else { return nil }
+```
+
+`nil` for an absent array **and** `nil` past its end — no padding, no default.
+Two consequences, both irreversible:
+
+1. **A stream shorter than `distanceM`** was stored with trailing NULLs and
+   cannot be told apart on the way back from a full-length stream missing its
+   tail. The reader reconstructs at `distanceM.count` and does not guess at
+   trimming.
+2. **A NULL inside a present stream** becomes `0`. `[Double]?` cannot hold a
+   per-element nil, and zero is already what `ActivityStreams.has(_:)` reads as
+   nothing there — it tests `contains { $0 > 0 }`.
+
+`aShortStreamIsPadded` asserts the loss rather than hiding it, so it is a
+decision somebody made and can find, not a surprise the comparison springs.
+
+### 12.38.5 Absent and all-zero are one bit apart
+
+`series(_:_:)` returns `nil` only when **every** sample is NULL. That single
+rule decides whether `has(.power)` is true, and `has` decides whether a chart
+is drawn at all — so "this ride had no power meter" and "this ride had power
+that read zero" are one bit apart in the database and a whole feature apart in
+the app. `theAbsentStreamStaysAbsent` is the test with teeth for that reason.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,
