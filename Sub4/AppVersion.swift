@@ -34,13 +34,38 @@
 //  Together: `version` says what it is, `patch` says which source is in it, and
 //  `built` says when — with no way for all three to be wrong at once.
 //
+//  THE LETTER FIX-UPS NOW SHOW — patch 284, and it is a correction
+//  ---------------------------------------------------------------
+//  A letter fix-up (272a, 278c, 283a) corrects a numbered patch without being
+//  one. Until now the rule was that a fix-up ships no `AppVersion.swift`, on
+//  the reasoning that it is not a new patch and the number should not move.
+//
+//  That reasoning produced a screen that lied. 283a was installed and the
+//  phone read "Source patch 283" — not wrong, exactly, and not the truth
+//  either. The number this file exists to make trustworthy could not
+//  distinguish a device with the fix-up from a device without it, which is the
+//  same false negative as a stale number and harder to spot, because nothing
+//  looks stale.
+//
+//  So `revision` is a separate constant and letter fix-ups now ship this file
+//  with it set. It is separate rather than folded into `patch` because `patch`
+//  is an `Int` and other code compares it; a letter cannot live in there
+//  without changing what everything else means. `patchLabel` is what anybody
+//  displaying a version should read.
+//
+//  THE RULE, in full:
+//    · a numbered patch ships this file with `patch` bumped and `revision` nil
+//    · a letter fix-up ships this file with `patch` unchanged and `revision`
+//      set to its letter
+//    · every patch of either kind ships this file, without exception
+//
 
 import Foundation
 
 enum AppVersion {
 
-    /// Bumped with every source patch. If this reads lower than the patch you
-    /// just installed, the files did not reach the project folder.
+    /// Bumped with every numbered source patch. If this reads lower than the
+    /// patch you just installed, the files did not reach the project folder.
     ///
     /// THIS FILE SHIPS IN EVERY PATCH ZIP, WITHOUT EXCEPTION. It was left out
     /// of 39 through 44 — six patches that installed correctly while this
@@ -48,7 +73,20 @@ enum AppVersion {
     /// prevent, and it is worse than having no number at all: a stale reading
     /// here normally means nothing landed, so it argues for re-installing
     /// patches that are already in place.
-    static let patch = 283
+    static let patch = 284
+
+    /// The letter fix-up sitting on top of `patch`, or `nil` for a clean
+    /// numbered patch. See the header: 283a was installed while the phone said
+    /// 283, because letter fix-ups used not to ship this file at all.
+    ///
+    /// One lowercase letter. `AppVersionTests` holds it to that, because "a1"
+    /// or "A" would sort and read differently everywhere this is printed.
+    static let revision: String? = nil
+
+    /// "284", or "284a" once a fix-up has landed on it. THE FORM TO DISPLAY —
+    /// `patch` alone cannot tell a device that has the fix-up from one that
+    /// does not.
+    static var patchLabel: String { "\(patch)\(revision ?? "")" }
 
     /// From Xcode's General tab — Version.
     static var marketing: String {
@@ -80,21 +118,21 @@ enum AppVersion {
     #endif
 
     /// "1.0 (3) · patch 10" — the one-line form for a settings row.
-    static var short: String { "\(marketing) (\(build)) · patch \(patch)" }
+    static var short: String { "\(marketing) (\(build)) · patch \(patchLabel)" }
 
     /// Everything, for an export header or a bug report. Deliberately one line
     /// per fact rather than a dense string: this gets pasted into a message and
     /// read by someone who is not looking at the code.
     static var full: String {
         """
-        Sub4 \(marketing) (\(build)) · patch \(patch)
+        Sub4 \(marketing) (\(build)) · patch \(patchLabel)
         Built \(builtLabel) · \(configuration)
         """
     }
 
     /// Compact single-line stamp for the top of a generated file.
     static var stamp: String {
-        "Sub4 \(marketing) (\(build)) · patch \(patch) · built \(builtLabel)"
+        "Sub4 \(marketing) (\(build)) · patch \(patchLabel) · built \(builtLabel)"
     }
 
     private static let dateFormatter: DateFormatter = {

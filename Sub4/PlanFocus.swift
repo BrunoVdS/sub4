@@ -218,7 +218,7 @@ extension PlanStore {
     /// because a week whose long run is written as "90 min" has a lower bound
     /// rather than a distance, and a total built from it should say so.
     var volumeExport: String {
-        var lines = ["Sub4 plan volumes · patch \(AppVersion.patch)",
+        var lines = ["Sub4 plan volumes · patch \(AppVersion.patchLabel)",
                      "uid\tweekNo\tlogged\trunKm\trunExact\tbikeH\tswimKm\tstrength"]
         for w in plan.weeks {
             let v = plannedVolume(week: w)

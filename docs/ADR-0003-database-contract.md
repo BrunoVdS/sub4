@@ -2949,6 +2949,64 @@ rate samples is still unmeasured. The set is bounded, so the census §12.28.5
 deferred is now 53 queries rather than several hundred. It blocks a purge and
 nothing else.
 
+## 12.30 The fix-ups were invisible — patch 284
+
+### 12.30.1 What went wrong, which is not what it looks like
+
+283a was installed. The phone read **Source patch 283**.
+
+Nothing was broken and no number was stale. The rule until now was that a
+letter fix-up ships no `AppVersion.swift`, on the reasoning that a fix-up is
+not a new patch and the number should not move. The reasoning is coherent and
+the result is a screen that cannot answer the question it exists for: **is the
+source on this device the source I think it is?** A device with 283a and a
+device without it read identically.
+
+That is the same false negative as a stale number — the case this file's own
+header describes at length, from patches 39 through 44 — with one difference
+that makes it worse: **a stale number looks stale.** This did not look like
+anything.
+
+### 12.30.2 Why `revision` is a second constant
+
+`patch` is an `Int`, and it is compared. `>= 280` is a legitimate question
+somewhere in this project's future and `"283a" >= "280"` is not the same
+question. Folding a letter into it would change what every comparison means in
+order to fix a display problem.
+
+So the letter lives beside the number, `patchLabel` joins them, and everything
+that prints a version reads the label. `AppVersionTests` walks all four printed
+forms, because the way this returns is a fifth caller reading `patch`
+directly.
+
+### 12.30.3 The rule, in full
+
+- a **numbered** patch ships `AppVersion.swift` with `patch` bumped and
+  `revision` nil
+- a **letter fix-up** ships `AppVersion.swift` with `patch` unchanged and
+  `revision` set to its letter
+- **every** patch of either kind ships the file, without exception
+
+### 12.30.4 It stamps provenance, not just a screen
+
+`AppVersion.patch` was written into four durable places: the snapshot
+manifest, `migration_run.appVersion`, the plan-volume export and the notes CSV
+filename. All four now carry the label.
+
+That is the part worth the patch. A snapshot taken under 283a recorded itself
+as taken under 283 — and a snapshot exists to be the thing you trust when
+something has gone wrong, at which point "which source took this" stops being
+cosmetic.
+
+### 12.30.5 It had no tests, which is why nothing objected
+
+`AppVersion` is the one value on the screen whose entire job is to say which
+source is running, and nothing had ever asserted anything about it — not its
+format, not that the display forms agree, not that a caller cannot drift.
+`AppVersionTests` is the first coverage it has had, and the reason it exists
+here rather than in a later cleanup is that this defect was invisible for
+exactly as long as that was true.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

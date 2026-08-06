@@ -561,7 +561,7 @@ struct SettingsView: View {
         // the title-string form is `init(_:content:)` with Footer == EmptyView.
         Section {
             LabeledContent("App", value: "\(AppVersion.marketing) (\(AppVersion.build))")
-            LabeledContent("Source patch", value: "\(AppVersion.patch)")
+            LabeledContent("Source patch", value: AppVersion.patchLabel)
             LabeledContent("Built", value: AppVersion.builtLabel)
             LabeledContent("Configuration", value: AppVersion.configuration)
 
@@ -588,8 +588,9 @@ struct SettingsView: View {
     private let versionFooter =
         "App is Xcode's Version and Build. Source patch is bumped by every code "
         + "patch — if it reads lower than the patch you just installed, the "
-        + "files did not reach the project folder. Built is read off the binary, "
-        + "so nobody has to remember it."
+        + "files did not reach the project folder. A trailing letter is a "
+        + "fix-up on top of that patch, so 284a is 284 plus a correction. "
+        + "Built is read off the binary, so nobody has to remember it."
 
     // MARK: Training-load constants
     //

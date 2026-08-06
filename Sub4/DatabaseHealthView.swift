@@ -667,7 +667,9 @@ struct DatabaseHealthView: View {
     private func runSnapshot() {
         snapshotting = true
         snapshotError = nil
-        let version = "\(AppVersion.patch)"
+        // `patchLabel` since 284: a snapshot taken under a fix-up should say
+        // so. This string is the manifest's only record of what took it.
+        let version = AppVersion.patchLabel
         // Read here, on the main actor, where the inventory lives. Inside the
         // detached task below it would not be reachable.
         let items = DataLifecycle.appSupportItems
@@ -751,7 +753,7 @@ struct DatabaseHealthView: View {
                     plan: PlanStore.shared.plan,
                     streams: Array(DetailStore.shared.streams.values),
                     details: Array(DetailStore.shared.details.values),
-                    appVersion: "\(AppVersion.patch)",
+                    appVersion: AppVersion.patchLabel,
                     // The link between contract items 3 and 11: a run records
                     // which snapshot of its inputs was taken first, or records
                     // that none was.

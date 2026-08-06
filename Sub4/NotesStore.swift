@@ -386,7 +386,7 @@ final class NotesStore {
     /// Temporary is right: the file is a transport, and the notes themselves
     /// live in notes.json.
     func writeCSV(plan: PlanStore) -> URL? {
-        let name = "sub4-notes-\(Self.stamp.string(from: Date()))-p\(AppVersion.patch).csv"
+        let name = "sub4-notes-\(Self.stamp.string(from: Date()))-p\(AppVersion.patchLabel).csv"
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
         guard let data = csv(plan: plan).data(using: .utf8) else { return nil }
         do {
