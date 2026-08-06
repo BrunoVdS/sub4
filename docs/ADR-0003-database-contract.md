@@ -2949,6 +2949,9 @@ rate samples is still unmeasured. The set is bounded, so the census §12.28.5
 deferred is now 53 queries rather than several hundred. It blocks a purge and
 nothing else.
 
+*Measured at 286b — 5 routes, 0 with heart-rate samples, 9 with nothing at
+all. See §12.33.*
+
 ## 12.30 The fix-ups were invisible — patch 284
 
 ### 12.30.1 What went wrong, which is not what it looks like
@@ -3155,6 +3158,13 @@ sentence that ruled out three of the four in one reading.
 screen. The rule from §12.32.4 applies one level further down than it was
 written: a diagnostic that has been handed a reason should not throw it away.
 
+**And it paid immediately.** 286a did not compile — `Result`'s failure type
+must conform to `Error` and `String` does not — so 286b named the error type.
+The run after that reported *"the route query failed — Authorization not
+determined"*: HealthKit's own words, and a third distinct cause, arrived at in
+one reading rather than a night of guessing. With the route permission granted
+the census completed. **The numbers are in §12.33.**
+
 ### 12.32.6 The prompt string is a build setting, and stays one
 
 `usageDescriptionNamesEveryTypeRead` reads
@@ -3165,6 +3175,92 @@ patch reaches, so this patch ships red until the string names routes.
 That is the intended behaviour rather than an inconvenience: PRIV-02 was a
 prompt describing one type while seven were requested, and the only reason it
 cannot recur is that the test refuses to pass until a human changes the string.
+
+## 12.33 M0, concluded — patch 287
+
+§12.28 built the census, §12.29 named its blind spots, §12.31 measured
+thinness and §12.32 fixed the two defects that stopped the route half working.
+This is the single place the finished numbers live, so that a reader does not
+have to reconstruct them from five sections and two corrections.
+
+### 12.33.1 The measurement
+
+Device, 6 August 2026, window 2025-07-01 → 2026-08-06, patch 286b:
+
+| | Health | the app |
+|---|---|---|
+| sessions | **711** | **669** |
+| training days | **323** | **323** |
+| run / ride / swim / strength / other | 113 / 405 / 54 / 8 / 131 | 110 / 373 / 52 / 16 / 118 |
+| with a distance | 558 | — |
+| with a heart rate | 620 | — |
+
+Days in both **320**. Days only in Health **3** — not a shortfall. Days only in
+the app **3**: 2026-05-23, 2026-05-29, 2026-06-07.
+
+Sessions naming Strava as a writer **102**; **53** written by Strava alone.
+
+### 12.33.2 The thinness of the 53
+
+| | |
+|---|---|
+| with a route | **5** |
+| with heart-rate samples rather than one value | **0** |
+| with a distance | 42 |
+| with none of the three | **9** |
+
+**Not one of the 53 carries heart-rate samples.** 48 carry no route. 9 carry
+no route, no distance and a single heart-rate value.
+
+§12.28.2 argued that the exposure is thinness rather than disappearance, and
+guessed that a pushed summary *"usually carries no route and no heart-rate
+samples"*. The guess was right and is now a count — which is the difference
+between a plausible sentence and something a decision can rest on.
+
+### 12.33.3 What ADR-0002 asked, answered
+
+*"If Apple Health turns out not to hold the history back to July 2025 … then
+some of the record cannot be carried across by the API-free route."*
+
+**It holds it.** July 2025 shows Health ahead of the app — 63 sessions across
+28 days against 52 across the same 28 — from the first week of the window. The
+bulk-export bridge stays recorded as a contingency and comes off the critical
+path.
+
+The shortfall to accept in writing is three days and 53 degraded sessions; it
+is written into `PLAN-cutover-v2.md` §3 rather than here, because a plan is
+where a decision belongs and an ADR is where the reasoning does.
+
+### 12.33.4 What this cost, and the pattern in it
+
+Five patches and two letter fix-ups, of which **three were defects in the
+measuring instrument rather than findings**: an unrequested type (§12.32.1), a
+sample query against a series type (§12.32.5), and a `Result` whose failure
+type did not conform to `Error`.
+
+Every one of them was caught by something built for the purpose:
+
+- the unrequested type by `Bool?` refusing to report absence as zero
+- the wrong query kind by `RouteCensus` naming its own failure
+- the type error by running the suite before ⌘R
+
+**The instrument was wrong three times and never lied once.** That is the
+whole argument for the named-outcome pattern — `StoreLoad`, `Reading`,
+`RouteCensus` — stated as cheaply as it will ever be stateable: with `[]` in
+place of the optional, the first run would have produced *"none of the 53 has
+a route"*, which is quotable, plausible, and false by five.
+
+### 12.33.5 One thing still not established
+
+`authVersion` went 5 → 6 to force a re-request for the route type, and the
+permission was subsequently granted — but **by what path is not recorded.** If
+the app re-requested on its own, the marker has an actuator. If it did not,
+`authVersion` bumps a number that nothing acts on, and the next type added
+will hit the same wall with the same symptom.
+
+Recorded as open rather than assumed either way. It costs one reading of the
+`requestAuthorization()` call sites to settle, and it should be settled before
+a ninth type is ever added.
 
 ## 12.10 The athlete profile, the zones and the resting series
 
