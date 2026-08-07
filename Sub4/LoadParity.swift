@@ -17,14 +17,27 @@
 //
 //  WHAT IS HELD IDENTICAL, AND WHY THAT IS THE HONEST SHAPE
 //  --------------------------------------------------------
-//  Constants, FTP, sRPE and Apple Health's heart rates come from the APP on
-//  both sides. Not because that is convenient — because:
+//  Constants, zones, FTP, sRPE and Apple Health's heart rates come from the APP
+//  on both sides. Not because that is convenient — because:
 //
-//    · the database holds constants, FTP, notes and the plan in tables and has
-//      no repository for any of them. Those are slices 5 and 6, and the
+//    · the database holds constants, FTP, notes and the plan in tables and had
+//      no repository for any of them at 315. Those are slices 5 and 6, and the
 //      groundwork's slice order put this one before its own inputs (§12.58.3).
 //    · Apple Health's heart rate is a cache of somebody else's store. No
 //      database this app writes will ever hold it.
+//
+//  PATCH 317 CHANGED WHAT THAT SENTENCE COSTS, WITHOUT CHANGING THE SHAPE.
+//  `AthleteRepository` now reads the profile, the resting series and the zones
+//  back out and compares them field by field on the Database screen. Three of
+//  the five held inputs — constants, zones and FTP — are therefore VERIFIED to
+//  be the same on both sides rather than merely assumed to be.
+//
+//  They are still taken from the app here, deliberately. Feeding the twin the
+//  database's constants would make a difference in the fitness rows mean
+//  EITHER the trace OR the constants, and the screen could not say which.
+//  Verifying them separately keeps this comparison's single cause and closes
+//  the same gap — which is why `verifiedByReadBack` is printed beside
+//  `heldFromTheApp` rather than replacing it.
 //
 //  So this patch isolates exactly one variable: **what the database's
 //  activities and traces produce.** `heldFromTheApp` is on screen and in the
@@ -120,6 +133,20 @@ enum LoadParity {
     /// therefore what this comparison cannot see. Printed, not implied.
     static let heldFromTheApp =
         "constants, zones, FTP, sRPE and Apple Health"
+
+    /// Of those five, the three the athlete read-back now checks — patch 317.
+    ///
+    /// A SEPARATE STRING RATHER THAN AN EDIT TO THE ONE ABOVE. What this
+    /// comparison holds constant did not change; what is known about those
+    /// constants did. Collapsing the two would lose the distinction between
+    /// "not varied here" and "proven identical", and the second is a claim
+    /// that has to be earned by something on screen.
+    ///
+    /// sRPE and Apple Health are not in it and will not be: sRPE is slice 5,
+    /// and Health's heart rate is a cache of somebody else's store that no
+    /// database this app writes will ever hold.
+    static let verifiedByReadBack =
+        "constants, zones and FTP, by the athlete read-back"
 
     private static func close(_ a: Double, _ b: Double) -> Bool {
         abs(a - b) <= trimpTolerance
@@ -241,6 +268,7 @@ enum LoadParity {
             var lines = [
                 "Load parity: \(daysCompared) days, \(workoutsCompared) sessions",
                 "  held from the app: \(heldFromTheApp)",
+                "  of those, verified: \(verifiedByReadBack)",
                 "  tolerance: \(toleranceLabel)",
                 "  days in the app's series: \(appDays)",
                 "  days in the database's series: \(databaseDays)",

@@ -5709,6 +5709,262 @@ The zone totals are compared **per zone**, not as a total. Two zones can move in
 opposite directions and leave the sum untouched — which is, at last, an actual
 instance of the shape §12.60.1 was wrongly claiming.
 
+## 12.61 The one table group nothing ever read back — patch 317
+
+D6a built three readers. Patch 289 read the activities back and compared
+nineteen fields; 291 did the details, splits and laps; 294 walked roughly 1.5
+million samples of every recording. `athlete_profile`, `resting_month` and
+`hr_zone` got a row count from `SemanticVerifier` and nothing else.
+
+So the least-checked rows in the database are the ones that scale every figure
+in it. `sexCoefficient` is an exponent. The month's resting rate and HR max are
+the two ends of the fraction it is applied to. A single wrong value there does
+not corrupt one row and does not break one screen — it rescales thirteen months
+of training load, quietly, in a direction nobody would question.
+
+`AthleteRepository` reads them back and `AthleteRoundTrip` compares them field
+by field. Six scalars, `ftpWatts`, the resting series month by month, and the
+zones by ordinal.
+
+### 12.61.1 A read-back, not a second input to the twin
+
+The obvious alternative was to feed shadow parity's database-side twin the
+database's own constants instead of the app's, which would have closed the same
+gap inside the machinery that already exists.
+
+It was rejected, and the reason is the one §12.59 was built on. Slice 3 holds
+constants, zones, FTP, sRPE and Apple Health identical on both sides so that a
+difference in the fitness rows has **exactly one cause**: what the database's
+activities and traces produce. Swapping the constants would make a difference
+mean *either* the trace *or* the constants, and the screen could not say which.
+
+Verifying them separately keeps the single cause and closes the same gap. The
+Shadow parity section now prints a second line under "Held from the app" —
+`Of those, verified: constants, zones and FTP, by the athlete read-back` —
+because *held from the app* and *held from the app and never checked* are
+different sentences, and until this patch the screen could only say the second.
+
+`LoadParity.verifiedByReadBack` is a separate string rather than an edit to
+`heldFromTheApp`. What the comparison holds constant did not change; what is
+known about those constants did. Collapsing the two would lose the distinction
+between "not varied here" and "proven identical", and the second is a claim
+that has to be earned by something on screen.
+
+### 12.61.2 The approved-difference list gets its first entry
+
+Groundwork §5 reserved a list for fields that are expected to differ, with the
+reason recorded. It has been empty for twenty-eight patches. `version` is the
+first entry.
+
+`AthleteConstants.version` is bumped only when HR max changes and is read by
+`LoadStore`'s input fingerprint to decide what needs recomputing. It describes
+**the app's cache state, not the athlete**, and there is no sensible column for
+it: a value written into the database on Monday and read back on Tuesday would
+be a second, staler answer to a question the app already answers locally —
+§12.29's problem, arriving through the back door.
+
+The entry is a `struct`, not a string:
+
+```swift
+struct ApprovedDifference: Sendable {
+    let field: String
+    let reason: String
+    let patch: String
+}
+```
+
+An entry nobody can justify is a bug that has been given a hiding place. Making
+the reason and the patch number required fields is the cheapest available way to
+stop the list from growing by accident, and `versionIsApprovedNotIgnored`
+asserts the count is still one — so the next entry costs a deliberate edit to a
+test as well as a line in an array.
+
+The field names are printed on the Database screen unconditionally, dim rather
+than red. An approved difference that only appeared when it fired would be a
+suppression list nobody ever reads.
+
+### 12.61.3 The name that is reconstructed rather than approved away
+
+`hrMaxObservedName` has no column either. The importer resolves the observing
+session to a canonical id and stores that as a foreign key — §12.10's arithmetic
+resolution, refusing to guess when the day, the rounded maximum and the name do
+not pick out exactly one activity.
+
+That made it a candidate for the approved list too. It is not on it. A
+`LEFT JOIN activity` gives the name back, so the reader reconstructs it and the
+comparison checks it.
+
+Two reasons. *"The name is reconstructed and checked"* is a stronger sentence
+than *"the name is expected to differ"*. And a list that starts at one entry
+grows less easily than one that starts at two — the first precedent for what
+belongs on it is set by whichever entries are there on day one.
+
+When the importer genuinely could not resolve the provenance the key is null,
+the name is gone, and that is reported as a real difference.
+`anUnresolvedProvenanceIsADifference` pins it: the join must not swallow a loss
+by returning nothing and calling it agreement.
+
+### 12.61.4 The fourth read-back has no button, and that is the fix for §12.57
+
+The three read-backs above it are behind a press because they cost 669 rows,
+667 details and roughly 1.5 million sample comparisons. This one is one row,
+thirteen months and five zones.
+
+So it runs when the screen opens, and again on every write-through — the same
+`writeThrough.runs` key patch 306 added to the ledger, for the same reason: a
+write that happened while the screen was open would otherwise leave the
+read-back describing the database as it was before it, which is the exact shape
+of the bug that made the background trigger look dead.
+
+This also **dissolves** the `@State` evaporation problem rather than working
+around it. §12.57 found the parity result vanishing when the sheet was
+dismissed, so the diagnostics paste said "not compared since this launch" a
+minute after the comparison passed — true of the `@State` and false about the
+world. The fix there was to move the result into an `@Observable` singleton. A
+check that re-runs itself every time the screen appears needs none of that: the
+paste and the run are the same visit, and there is no state to survive.
+
+That is not a general licence to drop the singleton. It works here because the
+work is free. The moment a read-back costs a press it needs somewhere to live
+that outlasts the sheet.
+
+### 12.61.5 The first read-back to reach the diagnostics paste
+
+The other three cannot. Their differences are named by **activity id**, and
+§12.7 promises this paste carries nothing that describes the athlete.
+
+This one names fields — `sexCoefficient`, `restByMonth[2026-06]`, `zone 3` —
+plus two figures, a heart-rate maximum and an FTP, which describe a body's
+capacity rather than anything the athlete did or where they did it. Eleven
+lines, unconditional, including every zero: §12.54.2, which this screen has now
+learned twice.
+
+### 12.61.6 The test that keeps the other sixteen honest
+
+`compare` names its fields rather than reflecting over them, for §12.35's reason
+— there is no reflection that would not also silently skip something. The cost
+is that adding a property to `AthleteConstants` and not to `compare` makes every
+other test in the file quietly weaker without failing any of them.
+
+`noFieldIsSilentlySkipped` is the one that fails. It takes a `Mirror` of an
+empty `AthleteConstants` and asserts the exact set of eight stored property
+names: six compared as scalars, `restByMonth` compared month by month, `version`
+on the approved list. Nothing else. A ninth field breaks it on the day it is
+added, and the failure message prints the set it found.
+
+Two more negative controls exist because the comparison could have been blind
+in a way no positive test would notice. `aMonthOnlyOnOneSideIsCaught` deletes a
+month from the database: comparing the shared months only would agree perfectly
+about a month one side has never heard of, and a month missing from the database
+is every session in it scored against nothing. `aMissingZoneIsCaught` does the
+same for `hr_zone` — a zone set with a hole is not a smaller problem than no
+zone set, because `zone(forHR:)` answers confidently from it.
+
+### 12.61.7 Two `nonisolated` keywords, and why neither is a workaround
+
+The reader runs inside a database transaction, off the main actor. Two types it
+works with are main-actor isolated by the module default, and both needed a
+keyword.
+
+`AthleteConstants.hrMax` is a **computed** property. SE-0434's rule — that
+`Sendable` *stored* properties of a global-actor-isolated value type are
+implicitly `nonisolated` — is why `Sub4Import+Athlete` has read `hrMaxOverride`
+off the main actor since patch 228 with no keyword at all. A computed property
+is a method and gets no such treatment. The alternative was writing
+`hrMaxOverride ?? hrMaxObserved` at the call site, which is §12.43's defect
+exactly: one rule, two implementations, nothing keeping them in step. It is
+marked `nonisolated`, as `Activity.dayKey` was at 207 and `Activity.discipline`
+at 219.
+
+`AthleteStore.HRZone` is nested in an `@Observable final class` and inherits the
+main actor from it — the same obstacle `AthleteFile` was written to work around
+at 259. This reader constructs one per row. A mirror type was rejected: a mirror
+is right for the shape of a *file* whose store is its only writer, and wrong for
+a three-field immutable value that **both sides of a comparison have to hold**.
+Two declarations of it would be two things to keep in step for no gain, in a
+patch whose entire purpose is catching things that have drifted apart.
+
+Fourth and fifth times this project has paid this tax. The pattern is stable
+enough to state: **a type that a database reader constructs or derives from is a
+type that will need `nonisolated`, and finding out at the call site is the
+normal way to find out.**
+
+#### 12.61.7.1 And the keyword did not reach the extension — 317a
+
+`nonisolated struct HRZone` compiled and produced one warning:
+
+    AthleteStore.swift:118: main actor-isolated property 'name'
+    can not be referenced from a nonisolated context
+
+`HRZone.titled` is `"\(label) \(name)"`. `label` is written in the type's own
+body and became nonisolated with it. `name` is written in
+`extension AthleteStore.HRZone` in `Theme.swift`, which takes the module default
+and stayed on the main actor. **The keyword applies to members written in the
+type's body; it does not reach its extensions.**
+
+That is the identical rule `Sub4Import+Athlete`'s header records for patch 228 —
+`nonisolated enum Sub4Import` did not reach `extension Sub4Import`, and every
+function in that file says the word for that reason. Fifth instance: 207, 219,
+228, and now both ends of 317.
+
+`titled` is marked `@MainActor` rather than `name` being marked `nonisolated`,
+and the boundary is worth stating because it will come up again. The GEOMETRY of
+a zone — `index`, `min`, `max`, `label`, `range`, `contains` — has to be
+readable inside a database transaction, which is the whole reason 317 touched
+this type. `name` and `color` are the EDITORIAL half: five words and five hues
+that exist for surfaces to draw. Nothing off the main actor has ever wanted
+either, and pulling them across to keep one composed string on the cheap side
+would move the boundary for no reason.
+
+**It was a warning, not an error, and that is the part worth noticing.** Patch
+258's finding was three warnings that no test stopped for. This one appeared in
+the same build output as forty errors from an unrelated cause and would have
+been trivially easy to scroll past.
+
+### 12.61.9 Third time: the app was grepped and the tests were not — 317b
+
+317 added one line to `LoadParity.Report.diagnosticLines`. `LoadParityTests`
+asserts that array's LENGTH — `lines.count == 22` — and it failed.
+
+**The check worked exactly as designed.** A line added to the paste and not to
+that number is a line nobody decided to add, and the assertion caught a real
+change on the first run. There is nothing to fix in the test's shape; the number
+moves to 23 and the new line gets an assertion of its own.
+
+What is worth writing down is that this is the **third** instance of one habit:
+
+| | change | grepped | missed |
+|---|---|---|---|
+| 315 | `Outcome.ran` gained a parameter | `app/*.swift` | `tests/` — six call sites |
+| 316 | `ZoneTime` inferred from a filename | nothing | the type was `ZoneTotals` |
+| 317 | `diagnosticLines` gained a line | `app/*.swift` | `tests/` — one count |
+
+315 and 317 are literally the same omission, and 315's entry already says *"I
+grepped `app/*.swift` but not `tests/`"*. Writing the rule down did not change
+the behaviour. So it is restated as a mechanical step rather than an intention:
+
+> **Changing a type's shape means grepping `Sub4CoreTests/` for its name before
+> the zip is built — not after the build fails.** The three shapes that carry
+> assertions elsewhere are: a function's arity, an array's length, and a
+> printed string's content.
+
+The consolation is the same one 315 had: **the failure is in a test, not on the
+phone.** A `diagnosticLines` that silently grew a row would have been discovered
+by nobody. This one cost a fix-up letter and stopped the build.
+
+### 12.61.8 What this does not close
+
+Slice 6 is not done. This reads the athlete tables; the plan, the notes, the
+corrections and the sRPE values are still store-only, and sRPE remains held from
+the app in slice 3 with nothing checking it. Apple Health's heart rate never
+will be checked — it is a cache of somebody else's store, and no database this
+app writes will ever hold it.
+
+`updatedUTC` and `computedUTC` are written and not compared. They are import
+stamps rather than facts about the athlete — §12.10 already records that
+`computedUTC` currently answers "when did this row arrive" — and comparing a
+stamp the store does not keep would be comparing the database against itself.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

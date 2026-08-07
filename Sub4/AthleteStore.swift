@@ -82,7 +82,20 @@ final class AthleteStore {
 
     // MARK: Types
 
-    struct HRZone: Codable, Hashable, Identifiable {
+    /// `nonisolated` — PATCH 317. Nested in an `@Observable final class`
+    /// under `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so this type and its
+    /// conformances inherit the main actor from the store around it — the same
+    /// obstacle `AthleteFile` was written to work around at 259 for
+    /// `AthleteStore.Cache`.
+    ///
+    /// `AthleteRepository` CONSTRUCTS these inside a database read, off the
+    /// main actor. A mirror type was the other option and was rejected: `Cache`
+    /// needed one because it is the shape of a FILE and the store is its only
+    /// writer, while this is a plain value with three immutable Sendable
+    /// fields that both sides of the read-back have to hold. Two declarations
+    /// of it would be two things to keep in step for no gain — and §12.61's
+    /// comparison exists precisely to catch things that have drifted apart.
+    nonisolated struct HRZone: Codable, Hashable, Identifiable {
         let index: Int          // 1…5
         let min: Int
         let max: Int?           // nil = open-ended top zone
@@ -102,7 +115,27 @@ final class AthleteStore {
         /// "Z2 Endurance" — the number and the word together, which is the form
         /// every surface now uses. The number alone is a coordinate you have to
         /// have memorised; the word alone loses the ordering.
-        var titled: String { "\(label) \(name)" }
+        ///
+        /// `@MainActor` — PATCH 317a, and it is the SAME RULE as the note in
+        /// `Sub4Import+Athlete`'s header, arriving from the other direction.
+        /// `nonisolated` on this type reaches the members written in its own
+        /// body; it does NOT reach `extension AthleteStore.HRZone` in
+        /// `Theme.swift`, which takes the module default and is therefore
+        /// main-actor isolated. `name` lives there. So marking the type
+        /// nonisolated at 317 made this one line a nonisolated member reading
+        /// a main-actor one.
+        ///
+        /// Marked rather than dragging `name` out to meet it. The line above
+        /// this type says why the geometry — `index`, `min`, `max`, `label`,
+        /// `range`, `contains` — has to be readable inside a database
+        /// transaction. `name` and `color` are the editorial half: five words
+        /// and five hues that exist for surfaces to draw, and nothing off the
+        /// main actor has ever wanted either. The boundary is real, and this
+        /// is where it falls.
+        ///
+        /// Fifth time this project has been caught by extensions not
+        /// inheriting a type's isolation — 207, 219, 228, 317.
+        @MainActor var titled: String { "\(label) \(name)" }
 
         func contains(_ bpm: Int) -> Bool {
             guard bpm >= min else { return false }

@@ -356,13 +356,22 @@ struct LoadParityTests {
         let store = history()
         let r = compared(series(store), series(try imported(store)))
         let lines = r.diagnosticLines
-        #expect(lines.count == 22, "got \(lines.count)")
+        // 23 AT 317, 22 AT 316. This count is the whole point of the test —
+        // a line added to the paste and not to this number is a line nobody
+        // decided to add — and it is also why this test failed the moment
+        // §12.61 gave the load slice a second limit row. See §12.61.9.
+        #expect(lines.count == 23, "got \(lines.count)")
         #expect(lines.first == "Load parity: 11 days, 3 sessions")
         #expect(lines.contains("  days with a different state: 0"))
         #expect(lines.contains("  sessions scored from a different rung: 0"))
         #expect(lines.contains("  unexplained differences: 0"))
         #expect(lines.contains("  held from the app: \(LoadParity.heldFromTheApp)"),
                 "the limit is printed, not implied")
+        // PATCH 317. "Held from the app" and "held from the app and never
+        // checked" are different sentences, and the paste has to carry both
+        // or a reader cannot tell which one it is looking at.
+        #expect(lines.contains("  of those, verified: \(LoadParity.verifiedByReadBack)"),
+                "what the athlete read-back proves is printed, not implied")
     }
 
     /// A SLICE THAT COULD NOT RUN IS NOT A PASS. `load` is nil when the app's

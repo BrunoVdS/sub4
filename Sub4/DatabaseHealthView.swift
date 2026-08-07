@@ -99,6 +99,19 @@ struct DatabaseHealthView: View {
     /// failing means everything under it is unknown rather than zero.
     @State private var readingBackRecording = false
     @State private var recordingTrip: RecordingRoundTrip.Report?
+
+    /// PATCH 317 — the fourth read-back, and the only one with no button.
+    ///
+    /// The three above are behind a press because they cost 669 rows, 667
+    /// details and roughly 1.5 million sample comparisons. This one is ONE
+    /// ROW, thirteen months and five zones. Running it when the screen opens
+    /// costs nothing measurable, and it dissolves the `@State` evaporation
+    /// §12.57 had to work around for parity rather than working around it
+    /// again: a check that runs itself every time the screen appears can never
+    /// be pasted as "not run since this launch", because the paste and the run
+    /// are the same visit.
+    @State private var athleteLoad: AthleteLoad?
+    @State private var athleteTrip: AthleteRoundTrip.Report?
     @State private var verifying = false
     @State private var verification: VerificationReport?
 
@@ -153,9 +166,17 @@ struct DatabaseHealthView: View {
                     // moves a run out of `pending`. The screen reads in the
                     // order the states go: imported, then verified.
                     verifySection(db)
-                readBackSection(db)
-                detailReadBackSection(db)
-                recordingReadBackSection(db)
+                    readBackSection(db)
+                    detailReadBackSection(db)
+                    recordingReadBackSection(db)
+                    // PATCH 317. The fourth, and the one that closes D6a's
+                    // gap: `athlete_profile`, `resting_month` and `hr_zone`
+                    // were the only imported tables nothing ever read back.
+                    // LAST of the four because it is the smallest and because
+                    // the section under it now depends on it — shadow parity
+                    // holds constants, zones and FTP from the app, and this is
+                    // what turns that from an assumption into a check.
+                    athleteReadBackSection
                     // AFTER the three read-backs, because it asks the question
                     // they cannot: they compare RECORDS, this compares the list
                     // the app would DERIVE from them. The screen reads in the
@@ -190,7 +211,15 @@ struct DatabaseHealthView: View {
             // whatever fired it.
             .onChange(of: writeThrough.runs) {
                 if case .success(let db) = opened {
-                    Task { await reloadLedger(db) }
+                    // AND THE ATHLETE, for 306's reason one row down: a write
+                    // that happened while this screen was open would otherwise
+                    // leave the read-back describing the database as it was
+                    // before it, which is the exact shape of the bug that made
+                    // the run trigger look dead.
+                    Task {
+                        await reloadLedger(db)
+                        await reloadAthlete(db)
+                    }
                 }
             }
 
@@ -1255,6 +1284,127 @@ struct DatabaseHealthView: View {
         }
     }
 
+    /// PATCH 317 — the fourth read-back, D6c slice 6a, ADR-0003 §12.61.
+    ///
+    /// THE ONE TABLE GROUP D6a NEVER READ BACK. 289 through 294 built readers
+    /// for activities, details and recordings and compared every field of
+    /// each. `athlete_profile`, `resting_month` and `hr_zone` got a row count
+    /// from the semantic verifier and nothing else — so the constants that
+    /// scale EVERY training load this app has ever computed were the least
+    /// checked thing in the database.
+    ///
+    /// NO BUTTON, unlike the three above it. See `athleteLoad`.
+    ///
+    /// EVERY ROW UNCONDITIONAL — §12.54.2. A row that vanishes at zero cannot
+    /// be told from a row nobody wired in, and this screen has learned that
+    /// twice already.
+    @ViewBuilder
+    private var athleteReadBackSection: some View {
+        Section {
+            if let load = athleteLoad {
+                LabeledContent("The read", value: load.line)
+                    .font(.caption)
+                    .foregroundStyle(load.isTrustworthy ? Color.dim : .red)
+            } else {
+                HStack { ProgressView(); Text("Reading back…").font(.caption) }
+            }
+
+            if let r = athleteTrip {
+                // THE DENOMINATORS FIRST — groundwork §2.1 case 2. "No
+                // differences" and "nothing was examined" read identically
+                // without them, and `.missing` reaching here produces the
+                // second while looking like the first.
+                LabeledContent("Compared", value: "\(r.totalCompared)")
+                    .font(.caption)
+                    .foregroundStyle(r.lookedAtSomething ? Color.dim : .red)
+                LabeledContent("  profile fields", value: "\(r.fieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("  resting months", value: "\(r.monthsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("  zones", value: "\(r.zonesCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+
+                LabeledContent("Fields that differ", value: "\(r.differences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.differences.isEmpty ? Color.dim : .red)
+                LabeledContent("Months that differ", value: "\(r.monthsDiffering.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.monthsDiffering.isEmpty ? Color.dim : .red)
+                LabeledContent("Zones that differ", value: "\(r.zonesDiffering.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.zonesDiffering.isEmpty ? Color.dim : .red)
+
+                // THE TWO FIGURES THAT SCALE EVERYTHING, printed as both sides
+                // rather than as a verdict. A reader can hold these against the
+                // Settings screen without pressing anything else.
+                LabeledContent("HR max", value: r.hrMaxLine)
+                    .font(.caption)
+                    .foregroundStyle(r.appHRMax == r.databaseHRMax ? Color.dim : .red)
+                LabeledContent("FTP", value: r.ftpLine)
+                    .font(.caption)
+                    .foregroundStyle(r.appFTP == r.databaseFTP ? Color.dim : .red)
+
+                // NAMED, NOT COUNTED. "3 differences" sends somebody through a
+                // profile; "3, all in restByMonth" is a one-line answer.
+                ForEach(r.differences, id: \.self) { field in
+                    Text("    \(field)").font(.caption2).foregroundStyle(.red)
+                }
+                ForEach(r.monthsDiffering.prefix(6), id: \.self) { month in
+                    Text("    restByMonth[\(month)]")
+                        .font(.caption2).foregroundStyle(.red)
+                }
+                if r.monthsDiffering.count > 6 {
+                    Text("    + \(r.monthsDiffering.count - 6) more months")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                ForEach(r.zonesDiffering, id: \.self) { ordinal in
+                    Text("    zone \(ordinal)").font(.caption2).foregroundStyle(.red)
+                }
+
+                // DIM, AND ALWAYS PRESENT. An approved difference that only
+                // showed when it fired would be a suppression list nobody ever
+                // reads. Each entry carries its reason in the source and its
+                // patch number; the screen carries the field name so the list
+                // cannot grow silently.
+                LabeledContent("Approved differences",
+                               value: AthleteRoundTrip.approved.isEmpty
+                                   ? "none"
+                                   : AthleteRoundTrip.approved.map(\.field)
+                                       .joined(separator: ", "))
+                    .font(.caption2).foregroundStyle(Color.dim)
+            }
+        } header: {
+            Text("Read-back · athlete")
+        } footer: {
+            Text("Reads the profile, the resting series and the zones back out "
+                 + "and compares them, field by field, to the ones the app is "
+                 + "running on. These are the least-checked rows in the "
+                 + "database and the denominator of every training-load figure "
+                 + "in it: `sexCoefficient` is an exponent, and a single wrong "
+                 + "figure here rescales thirteen months of history with "
+                 + "nothing visibly broken.\n\n"
+                 + "It runs when this screen opens and after every write, "
+                 + "because it costs one row rather than a press. `version` is "
+                 + "a local counter with no column and is listed as an approved "
+                 + "difference rather than compared — ADR-0003 §12.61.")
+                .font(.caption2)
+        }
+    }
+
+    /// The read off the main actor, the comparison on it — the stores it
+    /// compares against are main-actor singletons and the database read is not
+    /// this screen's to block on, however small it is.
+    private func reloadAthlete(_ db: Sub4Database) async {
+        let load = await Task.detached(priority: .utility) {
+            AthleteRepository.load(db)
+        }.value
+        athleteLoad = load
+        athleteTrip = AthleteRoundTrip.compare(store: ConstantsStore.shared.c,
+                                               storeFTP: AthleteStore.shared.ftp,
+                                               storeZones: AthleteStore.shared.hrZones,
+                                               database: load)
+    }
+
     /// D6c — patch 312, restructured at 313 when slice 2 arrived.
     ///
     /// ONE SECTION, ONE BUTTON, EVERY SLICE. Groundwork §7 left the shape open
@@ -1493,6 +1643,12 @@ struct DatabaseHealthView: View {
                 // THE LIMIT, PRINTED. A comparison that does not say what it
                 // held constant is a comparison whose result cannot be read.
                 LabeledContent("Held from the app", value: LoadParity.heldFromTheApp)
+                    .font(.caption).foregroundStyle(Color.dim)
+                // PATCH 317. "Held from the app" and "held from the app and
+                // never checked" are different sentences, and until the athlete
+                // read-back above existed this screen could only say the
+                // second one.
+                LabeledContent("Of those, verified", value: LoadParity.verifiedByReadBack)
                     .font(.caption).foregroundStyle(Color.dim)
                 LabeledContent("Tolerance", value: LoadParity.toleranceLabel)
                     .font(.caption).foregroundStyle(Color.dim)
@@ -1745,6 +1901,7 @@ struct DatabaseHealthView: View {
             opened = .success(db)
             await recheck(db)
             await reloadLedger(db)
+            await reloadAthlete(db)
             return
         }
         if let message = Sub4Launch.shared.failureMessage {
@@ -1756,6 +1913,7 @@ struct DatabaseHealthView: View {
             opened = .success(db)
             await recheck(db)
             await reloadLedger(db)
+            await reloadAthlete(db)
         } catch {
             opened = .failure(error)
         }
@@ -2031,6 +2189,18 @@ struct DatabaseHealthView: View {
         // this line had on the day it shipped.
         lines.append("")
         lines.append(contentsOf: parity.last.diagnosticLines)
+        // PATCH 317. UNCONDITIONAL, and the first read-back to reach the paste
+        // at all. The other three cannot: their differences are named by
+        // ACTIVITY ID, and §12.7 promises this paste carries none. This one
+        // names FIELDS — `sexCoefficient`, `restByMonth[2026-06]`, `zone 3` —
+        // plus a heart-rate maximum and an FTP, which describe a body's
+        // capacity rather than anything the athlete did or where.
+        lines.append("")
+        if let r = athleteTrip {
+            lines.append(contentsOf: r.diagnosticLines)
+        } else {
+            lines.append("Athlete read-back: \(athleteLoad?.line ?? "not read")")
+        }
 
         return lines.joined(separator: "\n")
     }

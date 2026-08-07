@@ -87,7 +87,23 @@ struct AthleteConstants: Codable, Hashable {
 
     /// The value in force. Override first — it is the only figure a human
     /// asserted rather than the app inferred.
-    var hrMax: Int? { hrMaxOverride ?? hrMaxObserved }
+    ///
+    /// `nonisolated` — PATCH 317, and the fourth time this project has made
+    /// this exact edit: `Activity.dayKey` at 207, `Activity.discipline` at 219,
+    /// `Sub4Import`'s extensions at 228.
+    ///
+    /// SE-0434 makes the STORED properties of a global-actor-isolated value
+    /// type implicitly nonisolated when they are `Sendable`, which is why
+    /// `Sub4Import+Athlete` has been reading `hrMaxOverride` off the main actor
+    /// since 228 without a keyword. A COMPUTED property gets no such
+    /// treatment — it is a method — so `AthleteRepository`, which reads inside
+    /// a database transaction, could not call the one accessor that knows an
+    /// override beats an observation.
+    ///
+    /// The alternative was writing `hrMaxOverride ?? hrMaxObserved` at the call
+    /// site, which is §12.43's defect exactly: a rule with two implementations
+    /// and nothing making them agree.
+    nonisolated var hrMax: Int? { hrMaxOverride ?? hrMaxObserved }
 
     var hrMaxSource: String {
         if hrMaxOverride != nil { return "your value" }
