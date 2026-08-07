@@ -3935,6 +3935,344 @@ have identical `details` counts and describe different situations, and the
 Neither of those is a new bug. Both were true before 295 and unreadable, which
 is §12.40.1's point measured rather than argued.
 
+## 12.41 D6b groundwork, and a number that was computed and thrown away — patch 297
+
+The design work for write-through, done before the code, the way §12.38 was done
+before §12.39. It lives in `docs/D6B-WRITE-THROUGH-GROUNDWORK.md`; this section
+records the two findings that changed the shape of it.
+
+### 12.41.1 The import is already the write-through
+
+`Sub4Import.run` reads as a migration tool and is not one. Its call site hands
+it **every store's entire contents** — activities, gear, notes, proposals, match
+decisions, sync state, work items, rejections, commutes, weather, constants,
+FTP, zones, plan, streams, details — and it writes them in one `db.queue.write`,
+upserting rather than inserting, with a `migration_run` opened and closed around
+it.
+
+Its footer has always said *"Running it twice imports nothing twice"*, and as of
+294–296 that is measured rather than claimed: 668 activities, 668 details, 645
+recordings and 1,403,819 samples compared after a run, every disagreement named.
+
+So D6b is **not** "write seventeen tables". It is "when does the thing that
+already writes them run, and what happens when it fails" — a question about
+triggering and failure, not about SQL.
+
+That matters because the alternative has a measured cost. §12.35.2 found four
+column renames in `activity` alone and a `gearId` that is not `activity.gearID`;
+§12.38.2 found four more in `recording_sample`. Each was a chance to be wrong in
+a way that looks like missing data, and each was caught because a comparison
+existed and was run against the real corpus. Seventeen hand-written incremental
+writers is seventeen fresh chances to take that risk, in code that runs
+unattended and is checked by a button somebody presses when they remember.
+
+### 12.41.2 `Report.seconds` has been computed and discarded for forty patches
+
+`Sub4Import.Report.seconds` is set from a `ContinuousClock` measured around the
+write. Nothing displays it. Nothing stores it — `migration_run` holds
+`startedUTC` and `finishedUTC`, which gives second granularity for an operation
+that may take one.
+
+The whole of D6b's central choice turns on that number. Under two seconds and
+the import can simply run after every sync; over ten and it needs a changed-set
+before it can. The measurement has existed in memory on every import since the
+importer was written, and has been thrown away every time.
+
+This is a quieter cousin of §12.34 and §12.40.5. Those were prose that went
+stale or was never true. This is a **measurement that was taken and not
+surfaced** — which is harder to notice, because nothing is wrong on screen.
+There is simply no row, and an absent row asks no questions.
+
+Patch 297 adds it. One line of code, and it is the only code in the patch,
+because the thresholds it will be read against are written down in the
+groundwork **before** the reading — the same discipline as §12.39.5, which was
+written to be falsifiable and duly got falsified in §12.39.6.
+
+## 12.42 Two things the report could not say — patch 298
+
+Both found by running 297's measurement, neither of them what 297 was looking
+for. Both are the same rule the sixth and seventh time: **a diagnostic that
+cannot say why it has no answer will eventually be read as having one** —
+§12.15, §12.28.3, §12.31.3, §12.32.4, §12.35.
+
+### 12.42.1 A date comparison that does not print the dates
+
+On 7 August the recording read-back reported:
+
+    fetched                     1
+      17463863070 — fetched differs
+
+An import thirty seconds later reported **`Traces: 4 new, 0 replaced, 645
+unchanged`**. The importer's rule for a trace is string equality on the
+timestamp — `iso8601(store.fetched) == recording.fetchedUTC`, one row read, no
+samples — and it found that row unchanged. A second read-back after the import
+still reported the difference.
+
+So the importer and the reader compared the same column on the same row and
+disagreed, and **neither said enough to decide which was wrong.** "fetched
+differs" is a true sentence that supports no next step.
+
+This is §12.40's lesson one field down. There the tally fragmented and buried
+the cause; here it collapsed to a single word and dropped it. Both are summaries
+that cost the reader the thing they needed, and both were written by somebody
+who already knew the answer at the time.
+
+The detail line now carries both values:
+
+    fetched: store 2026-08-05T09:12:33Z, database 2026-08-05T09:12:34Z
+
+The **field name stays `fetched`** — §12.39.2's rule holds, the values go in the
+detail where they are already unique per record.
+
+#### 12.42.1.1 And a sentinel that was hiding a third case
+
+`RecordingRepository.build` ended in `?? .distantPast`, written inline at 292.
+
+A `fetchedUTC` the reader cannot parse therefore became a date in the year 1,
+which the comparison reported as `fetched` — *the database disagrees about when
+this was fetched* — when what happened was *the reader could not read the
+column.* A reader defect wearing a data difference's clothes, and one of the two
+live candidates for the row above.
+
+It is now `RecordingRepository.unreadableDate`, named, and the comparison tests
+for it **before** comparing values and reports `fetched unreadable`. A sentinel
+rather than an optional because `ActivityStreams.fetched` is not optional and
+should not become so to serve a reader; the model belongs to the app, and this
+is the reader's problem to name.
+
+Which of the two the 7 August row actually is will be on screen at the next run.
+Recorded here as an open question rather than a conclusion — §12.29.2.1.
+
+### 12.42.2 A shortfall that was a decision
+
+The same run reported **1 recording and 1 detail "in the store, not in the
+database"**, in red, immediately after an import that had just written
+everything it was willing to write.
+
+`DataCorrections.ignoredActivities` refuses two sessions — a swim recording 400
+m across 45 minutes, and a Romanian ride with 8.04 days of elapsed time.
+`Sub4Import` declines their traces and details at the door (§256). `DetailStore`
+keys by Strava id and never sees an `Activity`, so it keeps them.
+
+The store therefore holds records the database will **never** hold, by design,
+for ever. Counting them as missing produces a red row that is permanently
+correct — which is a row that stops being read, and takes the real ones with it
+when they arrive.
+
+`missing` and `excluded` are now separate, and `excluded` is dim rather than
+red, because it is a decision and not a shortfall.
+
+#### 12.42.2.1 It also made D6b's exit gate unmeetable
+
+`D6B-WRITE-THROUGH-GROUNDWORK.md` §5.5 proposed the gate as *the three
+read-backs report 0 / 0 / 0 store-only records after a sync nobody triggered by
+hand.* Written the same morning, and unreachable: two of those numbers can never
+be zero while the exclusions exist.
+
+A gate that cannot be met is worse than no gate, because it gets quietly dropped
+rather than argued with. Amended in the same patch that made the distinction
+visible — the gate is now **`missing` at zero**, with `excluded` shown beside it
+and free to be non-zero.
+
+### 12.42.3 What 297 actually measured, since it is worth writing down
+
+**0.361 s**, and the reading needs care: it is the STEADY-STATE cost.
+
+`Sub4Import+Recording` skips a trace whose stored `fetchedUTC` matches the
+store's, so the run wrote 1,200 sample rows rather than 193,000 — `4 new, 0
+replaced, 645 unchanged`. The expensive tables already have a changed-set, keyed
+on the timestamp. The cheap ones (668 activities, 580 weather readings, 15
+resting months) are re-upserted every time and cost nothing.
+
+That settles §4.3's first row: **fire the import after every sync.** It also
+retires most of §4.3's third row — the changed-set that would have been needed
+already exists where it matters.
+
+**The cold path is not measured.** After `resetCache()` or on a fresh install,
+645 traces are all new and that is ~193,000 inserts, plausibly two orders of
+magnitude slower. It does not change the decision, because `resetCache` is
+deliberate and rare, but it is written down as unmeasured rather than assumed.
+
+## 12.43 Do not reimplement the writer. Call it. — patch 299
+
+Four lines of code, three versions, three patches, and the third one is the
+lesson.
+
+### 12.43.1 What 298 put on the screen
+
+    17463863070 — fetched: store    2026-08-04T17:58:58Z,
+                           database 2026-08-04T17:58:58Z
+
+**The two dates render identically and the comparison called them different.**
+
+That is a proof, and it does not depend on knowing why. `Sub4Import.iso8601` is
+the function that wrote `fetchedUTC`. If two instants produce the same output
+from it, the database cannot tell them apart, and a comparison that does is
+disagreeing with the writer rather than reporting on the data.
+
+It also explains the contradiction §12.42.1 recorded: the importer said `0
+replaced` about this row, because the importer's rule for an unchanged trace is
+`iso8601(store.fetched) == recording.fetchedUTC` — string equality on the
+writer's own output. **The importer was right. It had been right all along.**
+
+### 12.43.2 The three versions
+
+| patch | rule | `fetched` differing |
+|---|---|---|
+| 291 | `.rounded()` | **320 of 668** |
+| 291a | `floor()` | **1 of 668**, and 1 of 645 recordings |
+| 299 | `Sub4Import.iso8601(a) == Sub4Import.iso8601(b)` | expected 0 — see §12.43.5 |
+
+291's note, written at the fix, said:
+
+> **A comparison has to model what the writer did, not what would be tidy.**
+> Truncation is not an approximation of rounding.
+
+Correct, and one word short. **Flooring is still a model of the writer.** It was
+a much better model — 320 down to 1 — and a better model is still a second
+implementation of something that already exists, which means it can differ from
+the original, which means eventually it will.
+
+The general form, and it cost three patches:
+
+> **When a comparison and a writer must agree, do not reimplement the writer.
+> Call it.**
+
+### 12.43.3 What is proven and what is inferred
+
+Kept apart on purpose — §12.29.2.1 is in this file because a conclusion was once
+written from a measurement that did not exist.
+
+**Proven.** `floor` on a `TimeInterval` and `ISO8601DateFormatter` do not agree
+on every instant. The screen is the evidence: two dates, one rendering, one
+disagreement.
+
+**Inferred, and not needed for the fix.** The likely mechanism is an instant a
+hair below a second boundary, where Foundation's calendar arithmetic and a
+`Double` floor land on different sides. The store holds this trace's `fetched`
+as a decoded JSON number, which is exactly where such a value comes from.
+
+The fix does not rest on the inference. Calling the writer is correct whatever
+the mechanism, and if the count does not go to zero the inference was wrong and
+the finding is still real.
+
+### 12.43.4 Why the tests did not catch it, twice
+
+Every test of `sameSecond` from 291 onward checked **chosen pairs of dates
+against a chosen rule**: a fraction of 0.6 compares equal, two seconds apart do
+not. Each version passed its own tests and disagreed with the writer on real
+data.
+
+The property was never the pairs. It is:
+
+> **A date must agree with what the database holds for it.** For every date.
+
+`aDateAlwaysAgreesWithItsStoredForm` asserts exactly that — round-trip a date
+through the writer and the parser and require agreement — across a spread of
+fractions including boundary-adjacent ones. It would have failed at 291 and at
+291a. `itAgreesWithTheImporter` pins the other half by spelling out the
+importer's rule and requiring the two to reach the same verdict.
+
+This is §12.16's warning in a new place. Equal counts hide changed values; here,
+passing cases hid a wrong rule. **A test that checks the examples you thought of
+cannot check the rule.**
+
+### 12.43.5 The prediction
+
+Stated so it can be falsified, the way §12.39.5 was:
+
+**The next recording read-back reports `fetched 0`, and the next detail
+read-back reports 12 differing rather than 13** — the `fetched` row leaving the
+detail tally with the eleven `laps[*].averageHR` and one `splits[*].averageHR`
+still there, because those are the importer's intended `positiveOrNil`
+normalisation and nothing in this patch touches them.
+
+If either number is different, the inference in §12.43.3 was wrong and there is
+a second cause. The measurement goes in §12.43.6, after the run.
+
+### 12.43.6 The measurement: it held
+
+Run on 7 August at 12:02, patch 299 on the device:
+
+| | before 299 | after |
+|---|---|---|
+| recordings | 648 of 649, `fetched 1` | **649 of 649** |
+| details | 659 of 672, 13 differing | **660 of 672, 12 differing** |
+| activities | 672 of 672 | 672 of 672 |
+
+`fetched` is gone from both tallies. The detail tally is exactly
+`laps[*].averageHR 11 · 30 elements` and `splits[*].averageHR 1` — eleven plus
+one is twelve — and every one of those is the importer's `positiveOrNil`
+normalisation, which is intended and documented at §12.37.5. **1,412,819 samples
+compared, no disagreement.**
+
+§12.43.5 predicted `fetched 0` and twelve differing details with those two rows
+untouched. It held, to the number.
+
+Worth writing down beside §12.39.6, where the other prediction was falsified:
+**both outcomes were useful and neither was embarrassing.** The point of writing
+a prediction down is not to be right. It is that a measurement taken against a
+written prediction cannot be quietly reinterpreted to fit whatever it turns out
+to be, which is the failure §12.29.2.1 exists to record.
+
+The inference in §12.43.3 stands: `floor` and `ISO8601DateFormatter` disagree
+somewhere, and the only comparison that cannot disagree with a writer is the one
+that calls it.
+
+## 12.44 D6a, closed
+
+Ten patches, 289 through 299. Three readers, three comparisons, and four defects
+found in the comparisons themselves rather than in the data.
+
+### 12.44.1 The final state
+
+| | in the database | compared | agreed | store-only |
+|---|---|---|---|---|
+| activities | 672 | 672 | **672** | 0 |
+| details | 672 | 672 | **660** | 0 + 1 excluded |
+| recordings | 649 | 649 | **649** | 0 + 1 excluded |
+
+1,412,819 samples walked. The only residue in the entire corpus is twelve
+details carrying the importer's deliberate `positiveOrNil` normalisation on a
+zero heart rate, and two records the app refuses on purpose.
+
+**The database holds what the app holds.** That is what D6a set out to
+establish, and it is now a measurement rather than a belief.
+
+### 12.44.2 Three numbers that took the whole rung to reach zero
+
+    fetched differing      320  →  1  →  0        291, 291a, 299
+    detail tally rows       25  →  3  →  2        295, 298
+    store-only records   4/5/5  →  0/0/0          one import
+
+None of the three was a defect in the data. All three were defects in what the
+diagnostic could say about the data, and all three were invisible until the
+comparison ran against the real corpus rather than fixtures — §12.36's argument,
+now with four more instances behind it.
+
+### 12.44.3 What it does not say
+
+It compares the database to `ActivityStore` and `DetailStore`. It does not
+compare either to Strava. That is D6c, it always was, and nothing in this rung
+should be read as evidence about it.
+
+### 12.44.4 What D6b inherits
+
+Three read-back rows that now report zero. Their job changes from discovery to
+regression: after write-through lands they should read zero for ever without
+anybody pressing anything, and any other number is news.
+
+The pattern they establish is the one D6b should extend rather than reinvent:
+
+- an outcome type that cannot return `[]` for a failed read — six instances now
+- stable field names, so a tally groups (§12.39.2, §12.40)
+- a denominator on the screen, so a green result reads as a result rather than
+  as an absence (`samplesWalked`, §12.39.6.1)
+- absent-on-purpose kept apart from absent (§12.42.2)
+- and, when a comparison must agree with a writer, **call the writer** (§12.43)
+
+
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

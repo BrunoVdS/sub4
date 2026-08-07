@@ -145,6 +145,25 @@ nonisolated enum RecordingRepository {
         }
     }
 
+    /// WHAT `build` USES WHEN `fetchedUTC` CANNOT BE PARSED — patch 298.
+    ///
+    /// It was `?? .distantPast` written inline, which is a sentinel either way.
+    /// The difference is that an inline one is invisible to everything
+    /// downstream: the comparison saw a date in the year 1 and reported
+    /// `fetched` differing, which reads as *the database disagrees about when
+    /// this was fetched* when what happened is *the reader could not read the
+    /// column at all.*
+    ///
+    /// Named, so `RecordingRoundTrip` can tell those apart and say which. Sixth
+    /// instance of the rule this project keeps rediscovering: **a diagnostic
+    /// that cannot say why it has no answer will eventually be read as having
+    /// one** — §12.15, §12.28.3, §12.32.4, §12.31.3, §12.35.
+    ///
+    /// A sentinel rather than an optional because `ActivityStreams.fetched` is
+    /// not optional and should not become so to serve a reader. The model is
+    /// the app's; this is the reader's problem to name.
+    static let unreadableDate = Date.distantPast
+
     /// One recording, by the id the STORE uses.
     static func streams(_ db: Sub4Database, storeID: String,
                         accountID: String = Sub4Import.accountID,
@@ -213,7 +232,11 @@ nonisolated enum RecordingRepository {
             power: series(rows, "watts"),
             latitude: series(rows, "latitude"),
             longitude: series(rows, "longitude"),
-            fetched: ActivityDetailRepository.parseUTC(head["fetchedUTC"]) ?? .distantPast)
+            // NAMED, not `.distantPast` — 298. The same value either
+            // way; only one of them tells `RecordingRoundTrip` what it is
+            // looking at. See `unreadableDate`.
+            fetched: ActivityDetailRepository.parseUTC(head["fetchedUTC"])
+                     ?? unreadableDate)
     }
 
     /// ALL NULL MEANS THE ARRAY WAS ABSENT. Anything else is an array of the
@@ -331,8 +354,13 @@ nonisolated enum RecordingRoundTrip {
         var readFailure: String?
         var compared = 0
         /// In the store and not in the database at all.
+        /// In the store and not in the database, and nobody meant that.
         var missing: [String] = []
+        /// In the store and not in the database ON PURPOSE — patch 298.
+        /// See the guard in `compare`.
+        var excluded: [String] = []
         var unreadable: [Unreadable] = []
+
         var differences: [Difference] = []
         var walked: [String: Int] = [:]
         var differing: [String: Int] = [:]
@@ -399,9 +427,26 @@ nonisolated enum RecordingRoundTrip {
                 continue
             }
             guard let back = load.recordings?.first else {
-                report.missing.append(s.activityId)
+                // ABSENT ON PURPOSE IS NOT ABSENT — patch 298.
+                //
+                // `DataCorrections.ignoredActivities` holds two sessions the
+                // app refuses, and `Sub4Import` declines their traces at the
+                // door (§256). `DetailStore` keys by Strava id and never sees
+                // an `Activity`, so it keeps them — which means the store will
+                // ALWAYS hold recordings the database does not, and the count
+                // can never reach zero.
+                //
+                // Reported as a shortfall, that is a red row that is correct
+                // for ever and therefore stops being read. It also made the
+                // D6b exit gate in the groundwork unmeetable as written.
+                if DataCorrections.isIgnored(id: s.activityId) {
+                    report.excluded.append(s.activityId)
+                } else {
+                    report.missing.append(s.activityId)
+                }
                 continue
             }
+
 
             report.compared += 1
             let c = compareOne(s, back, declared: declared[s.activityId])
@@ -444,10 +489,26 @@ nonisolated enum RecordingRoundTrip {
         // Before the gate: a timestamp is comparable whatever the lengths do.
         // Truncated to the second, because the writer truncates — 291a, and
         // that correction cost 320 phantom differences to find.
-        if !DetailRoundTrip.sameSecond(s.fetched, d.fetched) {
+        // THREE OUTCOMES, NOT TWO — patch 298, and the third one is why.
+        //
+        // The run on 7 August reported `17463863070 — fetched differs`, and the
+        // import immediately afterwards reported `0 replaced`. The importer
+        // compares `iso8601(store.fetched)` to the stored string and called it
+        // unchanged; this comparison called it different. One of them was
+        // wrong and neither said enough to tell which.
+        //
+        // "fetched differs" was the defect. A date comparison that does not
+        // print the two dates cannot be acted on — the same lesson as §12.40,
+        // one field down. §12.42.
+        if d.fetched == RecordingRepository.unreadableDate {
+            c.fields.append("fetched unreadable")
+            c.detail.append("the database's fetchedUTC could not be parsed")
+        } else if !DetailRoundTrip.sameSecond(s.fetched, d.fetched) {
             c.fields.append("fetched")
-            c.detail.append("fetched differs")
+            c.detail.append("fetched: store \(Sub4Import.iso8601(s.fetched)), "
+                            + "database \(Sub4Import.iso8601(d.fetched))")
         }
+
 
         // The header against the table. Rows lost after the insert look
         // exactly like a short array unless this is asked separately.

@@ -403,3 +403,126 @@ struct DetailTallyTests {
     }
 }
 
+// MARK: -
+
+/// Absent on purpose, one level up — patch 298, ADR-0003 §12.42.2.
+@Suite
+@MainActor
+struct DetailExclusionTests {
+
+    private func detail(_ id: String) -> ActivityDetail {
+        ActivityDetail(activityId: id, calories: 812,
+                       splits: [], bestEfforts: [], laps: [],
+                       fetched: Date(timeIntervalSince1970: 1_785_000_000))
+    }
+
+    @Test("A deliberately excluded detail is excluded, not missing")
+    func excludedIsNotMissing() throws {
+        let ignored = try #require(DataCorrections.ignoredActivities.keys.sorted().first)
+        let r = DetailRoundTrip.compare(store: [detail(ignored), detail("99999999999")],
+                                        database: [])
+        #expect(r.excluded == [ignored])
+        #expect(r.missing == ["99999999999"])
+        #expect(r.compared == 0)
+    }
+
+    /// The distinction only exists on the way in. A detail the database HAS is
+    /// compared like any other, exclusion or not — the store and the database
+    /// disagreeing about a row they both hold is news either way.
+    @Test("An excluded detail the database does have is still compared")
+    func excludedButPresentIsCompared() throws {
+        let ignored = try #require(DataCorrections.ignoredActivities.keys.sorted().first)
+        let d = detail(ignored)
+        let r = DetailRoundTrip.compare(store: [d], database: [d])
+        #expect(r.compared == 1)
+        #expect(r.excluded.isEmpty)
+        #expect(r.agreed == 1)
+    }
+
+    @Test("Both lists are sorted, so the screen does not reshuffle")
+    func bothListsAreSorted() throws {
+        let r = DetailRoundTrip.compare(store: [detail("3"), detail("1"), detail("2")],
+                                        database: [])
+        #expect(r.missing == ["1", "2", "3"])
+    }
+}
+
+// MARK: -
+
+/// The invariant that three versions of `sameSecond` did not hold — patch 299,
+/// ADR-0003 §12.43.
+///
+/// `aDateAlwaysAgreesWithItsStoredForm` is the whole patch. Every earlier test
+/// of this function checked chosen pairs of dates against a chosen rule, and
+/// each version passed its own tests while disagreeing with the writer on real
+/// data — 320 details at 291, one recording and one detail at 291a.
+///
+/// The property is not "these two dates compare thus". It is **a date must
+/// agree with what the database holds for it**, for every date, and that is the
+/// thing a hand-chosen pair cannot express.
+@Suite
+@MainActor
+struct StoredDateTests {
+
+    /// Around a real value from the device — `2026-08-04T17:58:58Z`, which is
+    /// the recording that survived 291a.
+    private let base = 1_786_139_938.0
+
+    /// THE ONE WITH TEETH, and it is a property rather than a case.
+    @Test("A date always agrees with its own stored form")
+    func aDateAlwaysAgreesWithItsStoredForm() throws {
+        for delta in [-0.999_999, -0.5, -0.001, -0.000_001, -0.000_000_01,
+                      0.0,
+                      0.000_000_01, 0.001, 0.4, 0.5, 0.6, 0.999, 0.999_999] {
+            let d = Date(timeIntervalSince1970: base + delta)
+            let stored = Sub4Import.iso8601(d)
+            let back = try #require(ActivityDetailRepository.parseUTC(stored),
+                                    "the writer's output must be parseable")
+            let why = "delta \(delta) stored as \(stored)"
+            #expect(DetailRoundTrip.sameSecond(d, back), "\(why)")
+        }
+    }
+
+    /// The other half. A comparison that returns true for everything holds the
+    /// property above trivially and is worthless.
+    @Test("Dates a whole second apart still differ")
+    func awholeSecondStillDiffers() {
+        let a = Date(timeIntervalSince1970: base)
+        for delta in [-2.0, -1.0, 1.0, 2.0, 60.0, 86_400.0] {
+            #expect(!DetailRoundTrip.sameSecond(a, a.addingTimeInterval(delta)),
+                    "\(delta)")
+        }
+    }
+
+    /// 291's original finding, kept as a case because the number 320 is worth
+    /// remembering: a fraction of 0.5 or more must not round up.
+    @Test("A fraction is dropped, not rounded")
+    func aFractionIsDropped() {
+        let a = Date(timeIntervalSince1970: base)
+        #expect(DetailRoundTrip.sameSecond(a.addingTimeInterval(0.6), a))
+        #expect(DetailRoundTrip.sameSecond(a.addingTimeInterval(0.999), a))
+        #expect(DetailRoundTrip.sameSecond(a, a.addingTimeInterval(0.3)))
+    }
+
+    /// It agrees with the importer BY CONSTRUCTION, and that is the point of
+    /// 299 rather than a happy consequence: `Sub4Import+Recording` decides a
+    /// trace is unchanged with `iso8601(store.fetched) == recording.fetchedUTC`,
+    /// and this now runs the same comparison.
+    @Test("It agrees with the rule the importer uses to skip a trace")
+    func itAgreesWithTheImporter() throws {
+        for delta in [-0.000_000_01, 0.0, 0.4, 0.6, 0.999] {
+            let d = Date(timeIntervalSince1970: base + delta)
+            let stored = Sub4Import.iso8601(d)
+            let back = try #require(ActivityDetailRepository.parseUTC(stored))
+
+            // The importer's test, spelled out.
+            let importerSaysUnchanged = Sub4Import.iso8601(d) == stored
+            #expect(importerSaysUnchanged, "\(stored)")
+            #expect(DetailRoundTrip.sameSecond(d, back) == importerSaysUnchanged,
+                    "the reader and the importer must never disagree")
+        }
+    }
+}
+
+
+

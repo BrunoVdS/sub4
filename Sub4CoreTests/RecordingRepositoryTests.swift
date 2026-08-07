@@ -440,3 +440,99 @@ struct RecordingRoundTripTests {
     }
 }
 
+// MARK: -
+
+/// What the report could not say — patch 298, ADR-0003 §12.42.
+///
+/// `aFetchedDifferenceSaysBothDates` is the one with teeth, and it is a test
+/// about a string again. On 7 August the screen said `17463863070 — fetched
+/// differs` and the import thirty seconds later said `0 replaced`. The importer
+/// compared the same field and called it unchanged. One of them was wrong and
+/// the report did not carry enough to tell which — which is the whole failure,
+/// because the report exists to be the thing that tells you.
+@Suite
+@MainActor
+struct RecordingReportHonestyTests {
+
+    private let storeID = "19580875358"
+
+    private func streams(_ id: String, fetched: Date) -> ActivityStreams {
+        ActivityStreams(activityId: id, distanceM: [0, 500, 1000],
+                        heartRate: [120, 131, 145],
+                        speed: nil, altitude: nil, grade: nil,
+                        power: nil, latitude: nil, longitude: nil,
+                        fetched: fetched)
+    }
+
+    // MARK: The date
+
+    /// THE ONE WITH TEETH.
+    @Test("A fetched difference says both dates, not that there is one")
+    func aFetchedDifferenceSaysBothDates() {
+        let base = Date(timeIntervalSince1970: 1_785_000_000)
+        let s = streams("1", fetched: base)
+        let d = streams("1", fetched: base.addingTimeInterval(90))
+
+        let c = RecordingRoundTrip.compareOne(s, d)
+        #expect(c.fields == ["fetched"], "the tally key stays stable — §12.39.2")
+        #expect(c.line.contains(Sub4Import.iso8601(base)),
+                "the store's value is printed")
+        #expect(c.line.contains(Sub4Import.iso8601(base.addingTimeInterval(90))),
+                "and the database's, so the two can be compared by eye")
+    }
+
+    /// A COLUMN THAT COULD NOT BE READ IS NOT A DISAGREEMENT ABOUT ITS VALUE.
+    /// `build` writes `unreadableDate` when `parseUTC` fails, and before 298
+    /// that arrived as an ordinary `fetched` difference — a reader defect
+    /// wearing a data difference's clothes.
+    @Test("An unparseable timestamp is named as unparseable")
+    func anUnreadableDateIsItsOwnAnswer() {
+        let s = streams("1", fetched: Date(timeIntervalSince1970: 1_785_000_000))
+        let d = streams("1", fetched: RecordingRepository.unreadableDate)
+
+        let c = RecordingRoundTrip.compareOne(s, d)
+        #expect(c.fields == ["fetched unreadable"])
+        #expect(!c.fields.contains("fetched"),
+                "the two must never arrive under the same key")
+        #expect(c.line.contains("could not be parsed"))
+    }
+
+    @Test("Matching dates say nothing at all")
+    func agreementIsSilent() {
+        let base = Date(timeIntervalSince1970: 1_785_000_000)
+        let c = RecordingRoundTrip.compareOne(streams("1", fetched: base),
+                                              streams("1", fetched: base))
+        #expect(c.agrees)
+    }
+
+    // MARK: Absent on purpose
+
+    /// `DataCorrections` refuses two sessions; `Sub4Import` declines their
+    /// traces; `DetailStore` keeps them because it keys by Strava id. So the
+    /// store permanently holds recordings the database will never have, and
+    /// counting those as missing is a red row that is correct for ever.
+    @Test("A deliberately excluded recording is excluded, not missing")
+    func excludedIsNotMissing() throws {
+        let db = try Sub4Database.inMemory()
+        let ignored = try #require(DataCorrections.ignoredActivities.keys.sorted().first)
+        let base = Date(timeIntervalSince1970: 1_785_000_000)
+
+        let r = RecordingRoundTrip.compare(db, store: [
+            streams(ignored, fetched: base),
+            streams("99999999999", fetched: base),
+        ])
+        #expect(r.excluded == [ignored])
+        #expect(r.missing == ["99999999999"],
+                "a recording nobody excluded is still a shortfall")
+    }
+
+    @Test("Nothing excluded is an empty list, not a zero")
+    func noExclusionsIsEmpty() throws {
+        let db = try Sub4Database.inMemory()
+        let r = RecordingRoundTrip.compare(db, store: [])
+        #expect(r.excluded.isEmpty)
+        #expect(r.missing.isEmpty)
+    }
+}
+
+

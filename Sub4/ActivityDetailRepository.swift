@@ -243,9 +243,16 @@ nonisolated enum DetailRoundTrip {
 
     struct Report: Sendable {
         var compared = 0
-        /// In the store and not in the database at all.
+        /// In the store and not in the database, and nobody meant that.
         var missing: [String] = []
+        /// In the store and not in the database ON PURPOSE — patch 298.
+        /// `DataCorrections` refuses two sessions and the importer declines
+        /// their details at the door, while `DetailStore` keeps them because it
+        /// keys by Strava id and never sees an `Activity`. A permanent, correct
+        /// red row is a row that stops being read.
+        var excluded: [String] = []
         var differences: [Difference] = []
+
 
         var agreed: Int { compared - differences.count }
 
@@ -332,8 +339,15 @@ nonisolated enum DetailRoundTrip {
         var report = Report()
         for s in store {
             guard let d = byID[s.activityId] else {
-                report.missing.append(s.activityId); continue
+                // Absent on purpose is not absent — patch 298, §12.42.2.
+                if DataCorrections.isIgnored(id: s.activityId) {
+                    report.excluded.append(s.activityId)
+                } else {
+                    report.missing.append(s.activityId)
+                }
+                continue
             }
+
             report.compared += 1
             let fields = differingFields(s, d)
             if !fields.isEmpty {
@@ -341,26 +355,53 @@ nonisolated enum DetailRoundTrip {
             }
         }
         report.missing.sort()
+        report.excluded.sort()
         return report
     }
 
-    /// SECOND PRECISION, TRUNCATED — 291a, and the correction is the finding.
+    /// THE WRITER'S OWN FUNCTION, not a model of it — 299, and this is the
+    /// third version of four lines of code. The history is the point.
     ///
-    /// This used `.rounded()`, and the read-back reported `fetched` differing
-    /// on 320 of 668 details. 47.9% — which is how many timestamps carry a
-    /// fractional second of 0.5 or more.
+    /// **291: `.rounded()`.** The read-back reported `fetched` differing on
+    /// **320 of 668** details. 47.9%, which is how many timestamps carry a
+    /// fractional second of 0.5 or more — the proportion was the diagnosis.
+    /// `ISO8601DateFormatter` with `.withInternetDateTime` drops the fraction
+    /// rather than rounding it, so a store value of x.6 was written as x and
+    /// compared as x+1, and disagreed with itself.
     ///
-    /// `ISO8601DateFormatter` with `.withInternetDateTime` DROPS the fraction;
-    /// it does not round it. So a store timestamp of x.6 was written as x and
-    /// compared as x+1, and disagreed with itself. The reader was right, the
-    /// database was right, and the comparison manufactured 320 differences
-    /// that were not differences.
+    /// **291a: `floor()`.** 320 became **1**, and the note written at the time
+    /// said *"a comparison has to model what the writer did, not what would be
+    /// tidy."* Correct, and it stopped one word short. Flooring is still a
+    /// MODEL of the writer.
     ///
-    /// **A comparison has to model what the writer did, not what would be
-    /// tidy.** Truncation is not an approximation of rounding.
+    /// **298 made the last one legible** by printing both values, and the
+    /// screen said:
+    ///
+    ///     17463863070 — fetched: store 2026-08-04T17:58:58Z,
+    ///                   database 2026-08-04T17:58:58Z
+    ///
+    /// The two dates render identically and the comparison called them
+    /// different. That is proof — whatever the mechanism — that `floor` on a
+    /// `TimeInterval` and Foundation's calendar arithmetic do not agree on
+    /// every instant, and one of them is the one that actually wrote the row.
+    ///
+    /// **299: call the writer.** `Sub4Import.iso8601` is the function that
+    /// produced `fetchedUTC`. Comparing its output cannot drift from it,
+    /// because it is not an approximation of the writer — it IS the writer.
+    /// It is also exactly what `Sub4Import+Recording` does when it decides a
+    /// trace is unchanged, which is why the importer said `0 replaced` about
+    /// the same row this reported as a difference. The importer was right.
+    ///
+    /// The name still holds: the database is second-precision by construction,
+    /// and this asks whether two instants land on the same stored second.
+    ///
+    /// **The general form, and it has cost three patches to learn:** when a
+    /// comparison and a writer must agree, do not reimplement the writer.
+    /// Call it.
     static func sameSecond(_ a: Date, _ b: Date) -> Bool {
-        floor(a.timeIntervalSince1970) == floor(b.timeIntervalSince1970)
+        Sub4Import.iso8601(a) == Sub4Import.iso8601(b)
     }
+
 
     static func differingFields(_ s: ActivityDetail, _ d: ActivityDetail) -> [String] {
         var out: [String] = []

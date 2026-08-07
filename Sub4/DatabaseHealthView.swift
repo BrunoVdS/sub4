@@ -648,6 +648,17 @@ struct DatabaseHealthView: View {
                         .font(.caption2).foregroundStyle(Color.dim)
                 }
 
+                // PATCH 297. Computed since the importer existed, from a
+                // ContinuousClock around the write, and displayed nowhere —
+                // so the one number D6b's design turns on has been taken and
+                // thrown away on every run. §12.41.2.
+                //
+                // Three decimals because the interesting question is whether
+                // this is under two seconds, and "1 s" cannot answer it.
+                LabeledContent("Took",
+                               value: String(format: "%.3f s", r.seconds))
+                    .font(.caption).foregroundStyle(Color.dim)
+
                 // REFUSALS ARE SHOWN, NOT COUNTED AND HIDDEN. A silent
                 // rejection is indistinguishable from a row that was never
                 // there — §12.2.
@@ -1068,6 +1079,12 @@ struct DatabaseHealthView: View {
                                    value: "\(r.missing.count)")
                         .font(.caption).foregroundStyle(.red)
                 }
+                // Patch 298 — see the recording section. Dim, because it is a
+                // decision rather than a shortfall.
+                if !r.excluded.isEmpty {
+                    LabeledContent("Excluded on purpose", value: "\(r.excluded.count)")
+                        .font(.caption).foregroundStyle(Color.dim)
+                }
                 // The tally first, and this comment was RIGHT before the code
                 // was — "all on splits[*].averageHR" is what it always meant to
                 // say, and until 295 the tally could not say it. §12.40.
@@ -1141,6 +1158,14 @@ struct DatabaseHealthView: View {
                         LabeledContent("In the store, not in the database",
                                        value: "\(r.missing.count)")
                             .font(.caption).foregroundStyle(.red)
+                    }
+                    // DIM, NOT RED — patch 298. These are the sessions
+                    // DataCorrections refuses; the store keeps their traces and
+                    // the database declines them, permanently and on purpose.
+                    // A red row that is correct for ever stops being read.
+                    if !r.excluded.isEmpty {
+                        LabeledContent("Excluded on purpose", value: "\(r.excluded.count)")
+                            .font(.caption).foregroundStyle(Color.dim)
                     }
                     if !r.unreadable.isEmpty {
                         LabeledContent("Could not be read", value: "\(r.unreadable.count)")
