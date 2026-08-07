@@ -168,6 +168,35 @@ enum BackgroundRefresh {
 
         let found = ActivityStore.shared.count - before
         record(found: found, cancelled: Task.isCancelled, manual: manual)
+
+        // THE WRITE-THROUGH THIS PATH NEVER HAD — patch 307, §12.51.
+        //
+        // `Sub4App`'s header has said since 215 that a background wake runs
+        // this WITHOUT building the scene, so anything needing the database has
+        // to open it itself, and that "nothing does today; 3.3.3 will have to."
+        // This is that.
+        //
+        // Until now a background refresh could pull new activities into
+        // `activities.json` and leave the database untouched until the next
+        // time somebody opened and closed the app. That was the largest
+        // staleness window left in D6b.
+        //
+        // NOT IF CANCELLED. A cancelled task means iOS is about to kill us;
+        // starting a third of a second of SQLite then buys an interrupted
+        // `running` row instead of a write. The foreground catch-up takes it,
+        // which is what "late rather than lost" is for.
+        guard !Task.isCancelled else { return }
+
+        // IDEMPOTENT, AND THE ONLY WAY TO GET A CONNECTION HERE. With the scene
+        // built this is a no-op and hands back the launch's own database; on a
+        // process woken for the task there is no other, and this opens it
+        // properly — migration included — rather than a second queue on the
+        // same file.
+        await Sub4Launch.shared.begin()
+        await DatabaseWriteThrough.shared.run(
+            reason: manual ? "a refresh asked for in Settings"
+                           : "a background refresh from iOS")
+
     }
 
     private static func record(found: Int, cancelled: Bool, manual: Bool) {

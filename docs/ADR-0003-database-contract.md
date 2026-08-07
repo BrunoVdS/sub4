@@ -4760,6 +4760,90 @@ added later inherits it.
 cheaper one updates and the expensive one does not, and the disagreement reads
 as the system being broken rather than the screen being behind.
 
+## 12.51 The path that wrote to the stores and not to the database — patch 307
+
+D6b's last staleness window, and it was named in a code comment two hundred
+patches before it mattered.
+
+### 12.51.1 What `Sub4App` predicted
+
+From patch 215's header, unchanged since:
+
+> **NOTE FOR BACKGROUND REFRESH:** it does NOT go through `RootView`. A
+> background wake runs `BackgroundRefresh.run()` without building the scene, so
+> anything it eventually needs from the database has to open it itself. Nothing
+> does today; 3.3.3 will have to.
+
+This is that. A `BGAppRefreshTask` fetches new activities from Strava, writes
+`activities.json` and up to three details — and until now left the database
+untouched until somebody next opened and closed the app.
+
+Everything else in D6b fires from the scene. This is the one path that changes
+the stores with no scene to fire from, which is exactly why it was the last one
+left and the easiest to forget.
+
+### 12.51.2 `Sub4Launch.begin()`, not a second connection
+
+The obvious move is `try Sub4Database.open()`. It is wrong: with the scene alive
+that is a second `DatabaseQueue` on one SQLite file, and §12 already records
+what that costs — *"the first symptom of that is a busy timeout on a screen
+nobody suspects."*
+
+`Sub4Launch.begin()` is idempotent, opens off the main actor, and runs the
+migration. With the scene built it is a no-op that hands back the launch's own
+connection; on a process woken for the task there is no other connection and
+this creates the right one. **The gate that already exists is the answer, and
+reaching for a new one would have introduced the defect the old one prevents.**
+
+### 12.51.3 A race this patch creates, written down as created
+
+`begin()` had exactly one caller until now, and one caller cannot race itself.
+Its guard is followed by a suspension point:
+
+```swift
+guard case .opening = state else { return }
+let outcome = await Task.detached { … }.value      // ← both callers get here
+```
+
+With a second caller, two could pass the guard and both open a queue on the same
+file. `begin()` now holds the in-flight `Task`, so a second caller **awaits the
+first and gets the same database** rather than starting its own — or returning
+early to find `database` still nil, which would have been the lazy fix and would
+have made the background write-through report `.noDatabase` for no reason.
+
+Reachable rather than observed. It needs a scene construction and a background
+wake in the same instant, which is unlikely and not impossible. Recorded as a
+race **created by this patch**, because the alternative is a future reader
+finding a defensive `Task` handle with no explanation and deciding it is
+superstition.
+
+### 12.51.4 What it does not do, on purpose
+
+**It does not run when the task was cancelled.** A cancelled `BGAppRefreshTask`
+means iOS is about to stop us; starting a third of a second of SQLite then buys
+an interrupted `running` row rather than a write. The foreground catch-up takes
+it, which is the whole point of §12.50's second trigger.
+
+**It does not reconcile**, like every automatic run — §12.46.3.
+
+**It costs about half a second** of a roughly thirty-second budget: the
+migration check on an existing install is a few milliseconds, the import is
+0.33 s, and constructing the stores that have not been touched yet in a woken
+process is a handful of file reads. Repeated overruns make iOS schedule the app
+less often, so this is worth stating as a measurement to take rather than an
+assumption to keep: **the background refresh's own timing is not instrumented,
+and this patch does not change that.**
+
+### 12.51.5 No new tests, said rather than padded
+
+`BGAppRefreshTask`, the scene lifecycle and `Sub4Database.open()`'s real file
+are all outside the suite. Second patch in three with nothing to add, and the
+honest note is better than a test that exercises something adjacent and reads
+like coverage.
+
+The verification is the ledger: a row whose reason came from a background
+refresh, appearing without the app having been opened.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

@@ -79,30 +79,53 @@ final class Sub4Launch {
         return nil
     }
 
+    /// Held while the open is in flight, so a second caller waits for the
+    /// first rather than starting its own — patch 307.
+    ///
+    /// `begin()` had exactly one caller until 307, and one caller cannot race
+    /// itself. `BackgroundRefresh.run()` is the second, and the guard below has
+    /// a suspension point after it: two callers could both pass `case .opening`
+    /// and both open a `DatabaseQueue` on the same file, which is the one thing
+    /// `DatabaseHealthView.load()` is careful not to do.
+    ///
+    /// Reachable rather than observed. Writing it down as a race that 307
+    /// CREATED, not one that has happened.
+    private var opening: Task<Void, Never>?
+
     /// Idempotent: `RootView`'s `.task` can be re-entered when the scene is
     /// rebuilt, and re-migrating on every scene change would be wasted work at
     /// best and a second connection at worst.
     func begin() async {
+        // A second caller waits for the first and gets the same database,
+        // rather than returning early to find `database` still nil.
+        if let opening { return await opening.value }
         guard case .opening = state else { return }
 
-        // OFF THE MAIN ACTOR. On an existing install this is a few
-        // milliseconds — `DatabaseMigrator` reads `grdb_migrations` and finds
-        // nothing to do. On a fresh install it creates thirty-one tables and
-        // their indexes. Neither belongs on the thread that draws the first
-        // frame, and the second one is measurably not free.
-        let outcome = await Task.detached(priority: .userInitiated) { () -> Outcome in
-            do { return .opened(try Sub4Database.open()) }
-            catch { return .threw(String(describing: error)) }
-        }.value
+        let work = Task { @MainActor in
+            // OFF THE MAIN ACTOR. On an existing install this is a few
+            // milliseconds — `DatabaseMigrator` reads `grdb_migrations` and
+            // finds nothing to do. On a fresh install it creates thirty-one
+            // tables and their indexes. Neither belongs on the thread that
+            // draws the first frame, and the second one is measurably not free.
+            let outcome = await Task.detached(priority: .userInitiated) { () -> Outcome in
+                do { return .opened(try Sub4Database.open()) }
+                catch { return .threw(String(describing: error)) }
+            }.value
 
-        switch outcome {
-        case .opened(let db):
-            database = db
-            state = .ready
-        case .threw(let message):
-            state = .failed(message)
+            switch outcome {
+            case .opened(let db):
+                self.database = db
+                self.state = .ready
+            case .threw(let message):
+                self.state = .failed(message)
+            }
         }
+        // Assigned with no suspension point between, so on the main actor this
+        // and the line above are one step and a second caller cannot slip in.
+        opening = work
+        await work.value
     }
+
 
     private enum Outcome: Sendable {
         case opened(Sub4Database)
