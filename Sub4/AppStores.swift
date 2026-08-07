@@ -133,10 +133,20 @@ extension Sub4Import {
     ///
     /// EVERY FIELD FORWARDED EXPLICITLY. This is the one place the mapping
     /// exists, and it is the place to look when a table stops being written.
+    ///
+    /// `trigger` IS REQUIRED, AND IT IS THE ONLY REQUIRED ONE — patch 311.
+    ///
+    /// Every production import in this app comes through this overload, and the
+    /// granular signature below it defaults `trigger` to nil for the fifty test
+    /// call sites that have no answer. Required here means the two call sites
+    /// that DO have one cannot forget it — which is the same argument this
+    /// file's header makes about defaulted parameters, applied to the parameter
+    /// that says who caused the run.
     nonisolated static func run(into db: Sub4Database,
                                 stores s: AppStores,
                                 appVersion: String = "unknown",
-                                snapshotID: String? = nil) throws -> Report {
+                                snapshotID: String? = nil,
+                                trigger: MigrationRunTrigger) throws -> Report {
         try run(into: db,
                 activities: s.activities,
                 shoes: s.gear,
@@ -156,7 +166,8 @@ extension Sub4Import {
                 streams: s.streams,
                 details: s.details,
                 appVersion: appVersion,
-                snapshotID: snapshotID)
+                snapshotID: snapshotID,
+                trigger: trigger)
     }
 }
 

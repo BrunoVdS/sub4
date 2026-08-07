@@ -93,7 +93,8 @@ struct AppStoresTests {
         s.details = [detail()]
         s.streams = [stream()]
 
-        let r = try Sub4Import.run(into: db, stores: s, appVersion: "301-test")
+        let r = try Sub4Import.run(into: db, stores: s, appVersion: "301-test",
+                                   trigger: .manual)
         #expect(r.activitiesSeen == 1)
         #expect(r.activitiesInserted == 1)
         #expect(r.refusals.isEmpty)
@@ -116,14 +117,15 @@ struct AppStoresTests {
         var asked = AppStores()
         asked.activities = [ride()]
         asked.reconcile = .run
-        #expect(try Sub4Import.run(into: db, stores: asked).reconciled == .run)
+        #expect(try Sub4Import.run(into: db, stores: asked, trigger: .manual)
+                    .reconciled == .run)
 
         let other = try Sub4Database.inMemory()
         var declined = AppStores()
         declined.activities = [ride()]
         declined.reconcile = .skipped("a store could not be read")
-        #expect(try Sub4Import.run(into: other, stores: declined).reconciled
-                    == .skipped("a store could not be read"))
+        #expect(try Sub4Import.run(into: other, stores: declined, trigger: .manual)
+                    .reconciled == .skipped("a store could not be read"))
     }
 
     /// The verifier reads a subset on purpose — it has no checks for the plan,
@@ -134,10 +136,25 @@ struct AppStoresTests {
         let db = try Sub4Database.inMemory()
         var s = AppStores()
         s.activities = [ride()]
-        _ = try Sub4Import.run(into: db, stores: s)
+        _ = try Sub4Import.run(into: db, stores: s, trigger: .manual)
 
         let report = SemanticVerifier.attempt(db, stores: s)
         #expect(!report.checks.isEmpty, "it looked at something")
+    }
+
+    /// PATCH 311. The overload is the ONE door every production import comes
+    /// through, and `trigger` is required there for that reason — the two call
+    /// sites that know who caused the run cannot forget to say. This pins that
+    /// it lands, so a required parameter that went nowhere would be visible.
+    @Test("The trigger handed to the overload reaches the ledger row")
+    func theTriggerIsForwarded() throws {
+        let db = try Sub4Database.inMemory()
+        var s = AppStores()
+        s.activities = [ride()]
+        _ = try Sub4Import.run(into: db, stores: s, appVersion: "311-test",
+                               trigger: .backgroundRefresh)
+        let run = try #require(try MigrationLedger.latest(db))
+        #expect(run.triggeredBy == .backgroundRefresh)
     }
 
     // MARK: The gate's own list

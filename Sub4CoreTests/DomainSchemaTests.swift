@@ -134,6 +134,21 @@ struct DomainVocabularyTests {
                 "got \(Sub4Migrations.migrationRunStates)")
     }
 
+    @Test("The trigger vocabulary lists exactly the ways a run can start")
+    func migrationRunTriggersMatch() {
+        // Patch 311, and the same rule as the five states above it. The
+        // migration body freezes four literals in a CHECK; this is what makes
+        // adding a fifth a red build and a new migration rather than an edit to
+        // history.
+        //
+        // It is also what `MigrationLedger.row` depends on: an unknown string
+        // in that column would read back as nil and print as "not recorded",
+        // which is only safe because the CHECK makes it impossible to store.
+        #expect(Set(Sub4Migrations.migrationRunTriggers)
+                == Set(MigrationRunTrigger.allCases.map(\.rawValue)),
+                "got \(Sub4Migrations.migrationRunTriggers)")
+    }
+
     @Test("The weather provider constraint lists exactly the providers in use")
     func weatherProvidersMatch() {
         #expect(Set(Sub4Migrations.domainWeatherProviders)

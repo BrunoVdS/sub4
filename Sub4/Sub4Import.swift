@@ -368,7 +368,19 @@ nonisolated enum Sub4Import {
                     streams: [ActivityStreams] = [],
                     details: [ActivityDetail] = [],
                     appVersion: String = "unknown",
-                    snapshotID: String? = nil) throws -> Report {
+                    snapshotID: String? = nil,
+                    // WHO CAUSED THIS RUN — patch 311, groundwork §5.4.
+                    //
+                    // Defaulted to nil HERE and required on the `AppStores`
+                    // overload every production caller goes through. That is
+                    // the split on purpose: the two call sites that can answer
+                    // must, and the several dozen test call sites that have no
+                    // answer are left alone.
+                    //
+                    // A nil is stored as NULL and reads back as "not recorded",
+                    // which is what the 45 rows written before this patch
+                    // honestly are.
+                    trigger: MigrationRunTrigger? = nil) throws -> Report {
 
         let clock = ContinuousClock()
         var report = Report()
@@ -381,7 +393,8 @@ nonisolated enum Sub4Import {
         // the import's own `write` would be rolled back by the very throw it
         // was recording, leaving the run reading `running` for ever.
         let runID = try MigrationLedger.open(db, appVersion: appVersion,
-                                             snapshotID: snapshotID, now: now)
+                                             snapshotID: snapshotID,
+                                             trigger: trigger, now: now)
         report.runID = runID
 
         do {

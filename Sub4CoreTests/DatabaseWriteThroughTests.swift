@@ -52,7 +52,8 @@ struct DatabaseWriteThroughTests {
         asked.reconcile = .run
 
         let outcome = DatabaseWriteThrough.writeThrough(db, stores: asked,
-                                                        appVersion: "302-test")
+                                                        appVersion: "302-test",
+                                                        trigger: .backgrounded)
         guard case .wrote(let report, _) = outcome else {
             Issue.record("expected a write, got \(outcome)"); return
         }
@@ -68,7 +69,8 @@ struct DatabaseWriteThroughTests {
     func itWrites() throws {
         let db = try Sub4Database.inMemory()
         let outcome = DatabaseWriteThrough.writeThrough(db, stores: stores([ride()]),
-                                                        appVersion: "302-test")
+                                                        appVersion: "302-test",
+                                                        trigger: .backgrounded)
         guard case .wrote(let report, let at) = outcome else {
             Issue.record("expected a write, got \(outcome)"); return
         }
@@ -87,8 +89,11 @@ struct DatabaseWriteThroughTests {
     func twiceIsFree() throws {
         let db = try Sub4Database.inMemory()
         let s = stores([ride()])
-        _ = DatabaseWriteThrough.writeThrough(db, stores: s, appVersion: "302-test")
-        let second = DatabaseWriteThrough.writeThrough(db, stores: s, appVersion: "302-test")
+        _ = DatabaseWriteThrough.writeThrough(db, stores: s, appVersion: "302-test",
+                                              trigger: .backgrounded)
+        let second = DatabaseWriteThrough.writeThrough(db, stores: s,
+                                                       appVersion: "302-test",
+                                                       trigger: .foregrounded)
 
         guard case .wrote(let report, _) = second else {
             Issue.record("expected a write, got \(second)"); return
@@ -102,7 +107,8 @@ struct DatabaseWriteThroughTests {
     func emptyIsNotAFailure() throws {
         let db = try Sub4Database.inMemory()
         let outcome = DatabaseWriteThrough.writeThrough(db, stores: AppStores(),
-                                                        appVersion: "302-test")
+                                                        appVersion: "302-test",
+                                                        trigger: .backgrounded)
         guard case .wrote(let report, _) = outcome else {
             Issue.record("expected a write, got \(outcome)"); return
         }
@@ -152,7 +158,8 @@ struct DatabaseWriteThroughTests {
         let db = try Sub4Database.inMemory()
         _ = DatabaseWriteThrough.writeThrough(db, stores: stores([ride()]),
                                               appVersion: "303-test",
-                                              snapshotID: "2026-08-05-202320")
+                                              snapshotID: "2026-08-05-202320",
+                                              trigger: .backgrounded)
         let run = try #require(try MigrationLedger.latest(db))
         #expect(run.snapshotID == "2026-08-05-202320")
         #expect(run.appVersion == "303-test")
@@ -165,9 +172,28 @@ struct DatabaseWriteThroughTests {
     func noSnapshotStaysNone() throws {
         let db = try Sub4Database.inMemory()
         _ = DatabaseWriteThrough.writeThrough(db, stores: stores([ride()]),
-                                              appVersion: "303-test")
+                                              appVersion: "303-test",
+                                              trigger: .backgrounded)
         let run = try #require(try MigrationLedger.latest(db))
         #expect(run.snapshotID == nil)
+    }
+
+    /// WHAT STARTED IT REACHES THE ROW — patch 311.
+    ///
+    /// Until 303 an automatic run could be told from a manual one BY ACCIDENT:
+    /// it passed no snapshot id. 303 fixed a real defect and removed the only
+    /// distinction the table had, so `migration_run: 45` in the diagnostics
+    /// paste was forty-five rows nobody could sort. The trigger is a column
+    /// now, and this is the wiring that fills it.
+    @Test("A write-through records what started it")
+    func theTriggerReachesTheLedger() throws {
+        let db = try Sub4Database.inMemory()
+        _ = DatabaseWriteThrough.writeThrough(db, stores: stores([ride()]),
+                                              appVersion: "311-test",
+                                              trigger: .foregrounded)
+        let run = try #require(try MigrationLedger.latest(db))
+        #expect(run.triggeredBy == .foregrounded)
+        #expect(run.triggerLabel == "coming back to the app")
     }
 
     /// Every run reaches the ledger, so the ledger — not the in-memory counter
@@ -176,8 +202,10 @@ struct DatabaseWriteThroughTests {
     func everyRunIsRecorded() throws {
         let db = try Sub4Database.inMemory()
         let s = stores([ride()])
-        _ = DatabaseWriteThrough.writeThrough(db, stores: s, appVersion: "303-test")
-        _ = DatabaseWriteThrough.writeThrough(db, stores: s, appVersion: "303-test")
+        _ = DatabaseWriteThrough.writeThrough(db, stores: s, appVersion: "303-test",
+                                              trigger: .backgrounded)
+        _ = DatabaseWriteThrough.writeThrough(db, stores: s, appVersion: "303-test",
+                                              trigger: .foregrounded)
         #expect(try MigrationLedger.all(db).count == 2)
     }
 }

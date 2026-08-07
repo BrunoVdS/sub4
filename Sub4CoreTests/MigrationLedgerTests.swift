@@ -2,7 +2,9 @@
 //  MigrationLedgerTests.swift
 //  Sub4CoreTests
 //
-//  The import ledger — patch 255, migration contract item 11.
+//  The import ledger — patch 255, migration contract item 11; extended at
+//  patch 311 for the trigger column, the retention rule and a defect in
+//  `stale`. ADR-0003 §12.15, §12.55.
 //
 //  The acceptance criteria, verbatim from the plan: "an import that throws
 //  leaves `failed`, not `running`; two imports produce two rows; the state
@@ -13,6 +15,19 @@
 //  three transactions rather than sharing the import's, and a test that only
 //  checked the happy path would pass against the version of this code that gets
 //  it wrong.
+//
+//  WHAT 311 ADDS, AND WHY EACH ONE IS HERE
+//  ---------------------------------------
+//  `anInterruptedRunIsFoundBeyondThePage` is the one with teeth. `stale` used
+//  to filter `all(db, limit: 100)`, so an interrupted run older than about a
+//  day was invisible and the screen said "Interrupted runs: 0" with complete
+//  confidence. That is §12.15's shape — a diagnostic that cannot say why it has
+//  no answer gets read as having one — and the test builds a table big enough
+//  for the old implementation to fail on.
+//
+//  The prune tests are all about what is NOT deleted. A prune that removes too
+//  little grows a table; a prune that removes too much destroys the only record
+//  that the app was killed mid-write. Only one of those is recoverable.
 //
 
 import Testing
@@ -29,6 +44,30 @@ struct MigrationLedgerTests {
 
     private let t0 = "2026-08-05T10:00:00Z"
     private let t1 = "2026-08-05T10:00:12Z"
+
+    /// A finished run, at a stated time, with a stated trigger. Every prune and
+    /// census test below is built from this, because the thing under test is
+    /// which rows survive rather than how they were made.
+    @discardableResult
+    private func closedRun(_ d: Sub4Database,
+                           at: String,
+                           trigger: MigrationRunTrigger?,
+                           state: MigrationRunState = .pending) throws -> String {
+        let id = try MigrationLedger.open(d, appVersion: "311-test",
+                                          snapshotID: nil, trigger: trigger, now: at)
+        if state.isFinished {
+            try MigrationLedger.finish(d, id: id, state: state, note: nil, now: at)
+        }
+        return id
+    }
+
+    /// "2026-08-05T10:00:00Z" for n = 0, one minute apart after that. Text
+    /// order and chronological order are the same thing here, which is the
+    /// property the whole table relies on.
+    private func stamp(_ n: Int) -> String {
+        let base = Date(timeIntervalSince1970: 1_785_924_000)
+        return Sub4Import.iso8601(base.addingTimeInterval(Double(n) * 60))
+    }
 
     // MARK: Opening and closing
 
@@ -191,6 +230,199 @@ struct MigrationLedgerTests {
         }
     }
 
+    // MARK: The trigger column — patch 311
+
+    @Test("A trigger the vocabulary does not have is rejected")
+    func anUnknownTriggerIsRefused() throws {
+        let d = try db()
+        #expect(throws: (any Error).self) {
+            try d.queue.write { db in
+                try db.execute(sql: """
+                    INSERT INTO migration_run
+                      (id, startedUTC, finishedUTC, state, appVersion, triggeredBy)
+                    VALUES ('x', ?, NULL, 'running', '311', 'somebody')
+                    """, arguments: [t0])
+            }
+        }
+    }
+
+    /// The 45 rows written before this patch have no answer, and the column has
+    /// to admit that. A NOT NULL with a default would have meant choosing a
+    /// value for them, and a guessed `backgrounded` is indistinguishable from a
+    /// recorded one — §12.15.
+    @Test("A run with no recorded trigger is stored and says so")
+    func anUnrecordedTriggerIsAllowed() throws {
+        let d = try db()
+        _ = try MigrationLedger.open(d, appVersion: "311", snapshotID: nil, now: t0)
+        let run = try #require(try MigrationLedger.latest(d))
+        #expect(run.triggeredBy == nil)
+        #expect(run.triggerLabel == MigrationRunTrigger.unrecordedLabel)
+        #expect(run.line.contains("trigger not recorded"))
+    }
+
+    @Test("Every trigger the enum has can be stored and read back")
+    func everyTriggerIsStorable() throws {
+        for t in MigrationRunTrigger.allCases {
+            let other = try db()
+            let id = try MigrationLedger.open(other, appVersion: "311",
+                                              snapshotID: nil, trigger: t, now: t0)
+            let run = try #require(try MigrationLedger.latest(other))
+            #expect(run.id == id)
+            #expect(run.triggeredBy == t)
+            #expect(run.line.contains(t.rawValue))
+        }
+    }
+
+    /// The wiring, through the real importer rather than the ledger directly —
+    /// the same argument `theImporterClosesItsOwnRun` makes. A trigger that
+    /// reached `open` but not the row would be a column that is always NULL.
+    @Test("The importer carries the trigger it was handed into the row")
+    func theImporterRecordsTheTrigger() throws {
+        let d = try db()
+        _ = try Sub4Import.run(into: d, activities: [], shoes: [],
+                               appVersion: "311", trigger: .backgroundRefresh)
+        let run = try #require(try MigrationLedger.latest(d))
+        #expect(run.triggeredBy == .backgroundRefresh)
+        #expect(run.triggerLabel == "a background refresh")
+    }
+
+    // MARK: Retention — what is kept
+
+    /// The list is written out rather than derived, so that adding a case is a
+    /// decision. This asserts it is the right list TODAY; when it fails, the
+    /// question to answer is whether the new trigger's successful runs are
+    /// disposable, not how to make the test green.
+    @Test("Prunable means every automatic trigger, and only those")
+    func prunableIsEveryAutomaticTrigger() {
+        let prunable = Set(MigrationLedger.prunableTriggers.map(\.rawValue))
+        let automatic = Set(MigrationRunTrigger.allCases.map(\.rawValue))
+            .subtracting([MigrationRunTrigger.manual.rawValue])
+        #expect(prunable == automatic)
+    }
+
+    @Test("Below the keep count nothing is removed")
+    func aSmallLedgerIsLeftAlone() throws {
+        let d = try db()
+        for n in 0 ..< 5 { try closedRun(d, at: stamp(n), trigger: .backgrounded) }
+        // Hoisted into locals rather than written inline in `#expect` — the
+        // macro decomposes into a `rethrows` call and an inline `try` inside
+        // one has been a compile error in this project before.
+        let removed = try MigrationLedger.prune(d, keeping: 10)
+        let left = try MigrationLedger.all(d, limit: 100)
+        #expect(removed == 0)
+        #expect(left.count == 5)
+    }
+
+    @Test("Beyond the keep count the oldest automatic runs go, newest stay")
+    func theOldestAutomaticRunsAreTrimmed() throws {
+        let d = try db()
+        var ids: [String] = []
+        for n in 0 ..< 8 {
+            ids.append(try closedRun(d, at: stamp(n), trigger: .backgrounded))
+        }
+        let removed = try MigrationLedger.prune(d, keeping: 3)
+        #expect(removed == 5)
+
+        let left = try MigrationLedger.all(d, limit: 100).map(\.id)
+        #expect(left.count == 3)
+        #expect(Set(left) == Set(ids.suffix(3)), "the newest three survive")
+    }
+
+    /// THE IMPORTANT HALF. Everything below is a row a prune must not touch,
+    /// and each one is a different reason.
+    @Test("A prune never removes a manual run")
+    func manualRunsSurvive() throws {
+        let d = try db()
+        let mine = try closedRun(d, at: stamp(0), trigger: .manual)
+        for n in 1 ..< 6 { try closedRun(d, at: stamp(n), trigger: .backgrounded) }
+        _ = try MigrationLedger.prune(d, keeping: 1)
+        let left = try MigrationLedger.all(d, limit: 100).map(\.id)
+        #expect(left.contains(mine), "the athlete did that one on purpose")
+        #expect(left.count == 2, "one manual and the newest automatic")
+    }
+
+    @Test("A prune never removes a failed run")
+    func failedRunsSurvive() throws {
+        let d = try db()
+        let broke = try closedRun(d, at: stamp(0), trigger: .backgrounded, state: .failed)
+        for n in 1 ..< 6 { try closedRun(d, at: stamp(n), trigger: .backgrounded) }
+        _ = try MigrationLedger.prune(d, keeping: 1)
+        let left = try MigrationLedger.all(d, limit: 100).map(\.id)
+        #expect(left.contains(broke),
+                "a failure is the reason anybody reads this table")
+    }
+
+    @Test("A prune never removes an interrupted run")
+    func interruptedRunsSurvive() throws {
+        let d = try db()
+        let killed = try MigrationLedger.open(d, appVersion: "311", snapshotID: nil,
+                                              trigger: .backgrounded, now: stamp(0))
+        for n in 1 ..< 6 { try closedRun(d, at: stamp(n), trigger: .backgrounded) }
+        _ = try MigrationLedger.prune(d, keeping: 1)
+        let left = try MigrationLedger.all(d, limit: 100).map(\.id)
+        #expect(left.contains(killed),
+                "the only evidence the app was killed mid-write")
+    }
+
+    @Test("A prune never removes a verified or activated run")
+    func checkedRunsSurvive() throws {
+        let d = try db()
+        let checked = try closedRun(d, at: stamp(0), trigger: .backgrounded,
+                                    state: .verified)
+        let live = try closedRun(d, at: stamp(1), trigger: .foregrounded,
+                                 state: .activated)
+        for n in 2 ..< 8 { try closedRun(d, at: stamp(n), trigger: .backgrounded) }
+        _ = try MigrationLedger.prune(d, keeping: 1)
+        let left = try MigrationLedger.all(d, limit: 100).map(\.id)
+        #expect(left.contains(checked))
+        #expect(left.contains(live), "D7 decides on the strength of these")
+    }
+
+    /// The 45 rows from before this patch cannot be identified as automatic, so
+    /// they are not treated as if they were. Bounded and one-time.
+    @Test("A prune never removes a run whose trigger was not recorded")
+    func unrecordedRunsSurvive() throws {
+        let d = try db()
+        let old = try closedRun(d, at: stamp(0), trigger: nil)
+        for n in 1 ..< 6 { try closedRun(d, at: stamp(n), trigger: .backgrounded) }
+        _ = try MigrationLedger.prune(d, keeping: 1)
+        let left = try MigrationLedger.all(d, limit: 100).map(\.id)
+        #expect(left.contains(old))
+    }
+
+    /// THE PRUNE HAPPENS WITH NOBODY PRESSING ANYTHING. It rides inside
+    /// `open`'s own transaction, so the table cannot grow past its shape even
+    /// if every run after this one throws.
+    ///
+    /// Runs the real number rather than a convenient one: five past
+    /// `keepAutomaticRuns`, so the trim is the production trim and not a
+    /// parameter a test chose.
+    @Test("Opening a run trims the ledger on the way in")
+    func openingPrunes() throws {
+        let d = try db()
+        let overshoot = MigrationLedger.keepAutomaticRuns + 5
+        var ids: [String] = []
+        for n in 0 ..< overshoot {
+            ids.append(try closedRun(d, at: stamp(n), trigger: .backgrounded))
+        }
+
+        let left = try MigrationLedger.all(d, limit: 1_000).map(\.id)
+        // The newest one was `pending` only after the last prune ran, so the
+        // steady state is the keep count plus that row.
+        #expect(left.count == MigrationLedger.keepAutomaticRuns + 1,
+                "got \(left.count) of \(overshoot)")
+        #expect(left.contains(ids[overshoot - 1]), "the newest run is still there")
+        #expect(!left.contains(ids[0]), "the oldest automatic run went")
+
+        // And a row is never in its own doomed set — it is `running` when the
+        // prune beside it runs.
+        let fresh = try MigrationLedger.open(d, appVersion: "311", snapshotID: nil,
+                                             trigger: .backgrounded,
+                                             now: stamp(overshoot))
+        let after = try MigrationLedger.all(d, limit: 1_000).map(\.id)
+        #expect(after.contains(fresh))
+    }
+
     // MARK: Interrupted runs
 
     @Test("A run left open is reported, not repaired")
@@ -207,9 +439,71 @@ struct MigrationLedgerTests {
         #expect(after.state == .running)
     }
 
+    /// THE ONE WITH TEETH — patch 311.
+    ///
+    /// `stale` used to read `all(db, limit: 100)` and filter it. At 255 that was
+    /// the whole table. At D6b, two rows per app switch, it is about a day — so
+    /// an interrupted run from two days ago was invisible and the screen said
+    /// "Interrupted runs: 0" with complete confidence.
+    ///
+    /// 150 newer rows, all `manual` so the prune cannot remove them, and one
+    /// interrupted run underneath. The old implementation returns nothing here.
+    @Test("An interrupted run is found however far down the table it is")
+    func anInterruptedRunIsFoundBeyondThePage() throws {
+        let d = try db()
+        let killed = try MigrationLedger.open(d, appVersion: "311", snapshotID: nil,
+                                              trigger: .backgrounded, now: stamp(0))
+        for n in 1 ... 150 { try closedRun(d, at: stamp(n), trigger: .manual) }
+
+        let stale = try MigrationLedger.stale(d)
+        #expect(stale.count == 1, "a count taken from a page is not a count of the table")
+        #expect(stale.first?.id == killed)
+    }
+
+    // MARK: The census
+
+    /// Every trigger named every time, including at zero, with `total` as the
+    /// denominator. §12.54.2 and §12.54.3 — a bare zero is noise, a missing
+    /// zero is nothing at all, and a count beside its denominator is evidence.
+    @Test("The census names every trigger even when it has none")
+    func theCensusSpeaksAtZero() throws {
+        let d = try db()
+        let c = try MigrationLedger.census(d)
+        #expect(c.total == 0)
+        for t in MigrationRunTrigger.allCases {
+            #expect(c.diagnosticLines.contains { $0.contains(t.rawValue) },
+                    "\(t.rawValue) missing from an empty census")
+        }
+        #expect(c.diagnosticLines.first == "Import ledger: 0 rows")
+    }
+
+    @Test("The census counts what is there, by trigger")
+    func theCensusCounts() throws {
+        let d = try db()
+        try closedRun(d, at: stamp(0), trigger: .manual)
+        try closedRun(d, at: stamp(1), trigger: .backgrounded)
+        try closedRun(d, at: stamp(2), trigger: .backgrounded)
+        try closedRun(d, at: stamp(3), trigger: nil)
+        _ = try MigrationLedger.open(d, appVersion: "311", snapshotID: nil,
+                                     trigger: .foregrounded, now: stamp(4))
+
+        let c = try MigrationLedger.census(d)
+        #expect(c.total == 5)
+        #expect(c.byTrigger["manual"] == 1)
+        #expect(c.byTrigger["backgrounded"] == 2)
+        #expect(c.byTrigger["foregrounded"] == 1)
+        #expect(c.byTrigger["backgroundRefresh"] == nil)
+        #expect(c.unrecorded == 1)
+        #expect(c.interrupted == 1, "the foregrounded one is still open")
+        #expect(c.diagnosticLines.contains("  backgroundRefresh: 0"))
+    }
+
+    // MARK: The migration itself
+
     @Test("The migration is declared as well as registered")
     func theMigrationIsDeclared() {
         #expect(Sub4Migrations.all.contains(Sub4Migrations.migrationRun))
+        #expect(Sub4Migrations.all.contains(Sub4Migrations.runTrigger))
         // The invariant from patch 236: identifiers must sort into run order.
         #expect(Sub4Migrations.all == Sub4Migrations.all.sorted())
     }

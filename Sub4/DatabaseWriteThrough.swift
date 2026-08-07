@@ -135,7 +135,8 @@ final class DatabaseWriteThrough {
         }
 
         Task {
-            await run(reason: "the app went to the background")
+            await run(reason: "the app went to the background",
+                      trigger: .backgrounded)
             releaseAssertion()
         }
     }
@@ -154,7 +155,8 @@ final class DatabaseWriteThrough {
     func runOnReturn() {
         guard wentToBackground else { return }
         wentToBackground = false
-        Task { await run(reason: "the app came back to the foreground") }
+        Task { await run(reason: "the app came back to the foreground",
+                         trigger: .foregrounded) }
     }
 
     private func releaseAssertion() {
@@ -164,7 +166,18 @@ final class DatabaseWriteThrough {
         assertion = .invalid
     }
 
-    func run(reason: String) async {
+    /// TWO PARAMETERS FOR ONE EVENT, ON PURPOSE — patch 311.
+    ///
+    /// `trigger` is a stored value from a frozen four-word vocabulary that a
+    /// query groups by. `reason` is a sentence a person reads in the unsaved-
+    /// stores list when a write fails, and it distinguishes things the
+    /// vocabulary deliberately does not — the Database screen's button from
+    /// Settings' button, both of which are `manual`.
+    ///
+    /// Collapsing them would mean either the journal losing that detail or the
+    /// vocabulary growing a fifth case meaning "manual, but from the other
+    /// button". §12.39.2: a field name that carries detail is not a field name.
+    func run(reason: String, trigger: MigrationRunTrigger) async {
         if isRunning { runAgainWhenDone = true; return }
 
         guard let db = Sub4Launch.shared.database else {
@@ -200,7 +213,8 @@ final class DatabaseWriteThrough {
                 // File I/O, so it belongs inside this closure and not on the
                 // main actor that called it.
                 Self.writeThrough(db, stores: stores, appVersion: version,
-                                  snapshotID: LegacySnapshot.latest()?.id)
+                                  snapshotID: LegacySnapshot.latest()?.id,
+                                  trigger: trigger)
             }.value
             last = outcome
             runs += 1
@@ -213,7 +227,8 @@ final class DatabaseWriteThrough {
     nonisolated static func writeThrough(_ db: Sub4Database,
                                          stores: AppStores,
                                          appVersion: String,
-                                         snapshotID: String? = nil) -> Outcome {
+                                         snapshotID: String? = nil,
+                                         trigger: MigrationRunTrigger) -> Outcome {
         var s = stores
         // See the header. Set HERE rather than at the call site so it cannot be
         // forgotten by a future trigger.
@@ -223,7 +238,8 @@ final class DatabaseWriteThrough {
         do {
             return .wrote(try Sub4Import.run(into: db, stores: s,
                                              appVersion: appVersion,
-                                             snapshotID: snapshotID), atUTC: at)
+                                             snapshotID: snapshotID,
+                                             trigger: trigger), atUTC: at)
         } catch {
             return .failed(String(describing: error), atUTC: at)
         }

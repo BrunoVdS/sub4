@@ -4844,6 +4844,349 @@ like coverage.
 The verification is the ledger: a row whose reason came from a background
 refresh, appearing without the app having been opened.
 
+## 12.52 D6c groundwork, and a conclusion that changes what success looks like — patch 308
+
+Documentation only. The design work for shadow parity, done before the code, and
+it lives in `docs/D6C-SHADOW-PARITY-GROUNDWORK.md`. This section records the two
+findings that shaped it.
+
+### 12.52.1 The first comparison is expected to find nothing
+
+D6a proved the two sides hold the same 672 activities with every field agreeing.
+`ActivityStore`'s five derivation rules — `isKept`, `dedup`, the `startLocal`
+sort, the day index, the zones — are **pure functions of `[Activity]`**.
+
+Same input, same function, same output. So if both sides pass through the same
+rules, the first parity comparison reports zero differences **by construction**,
+and finds nothing because there is nothing left to find.
+
+That is not a reason to skip it. It is a reason to be honest about what it is
+for:
+
+> D6c's value is not finding data differences — D6a ruled those out. It is
+> building the mechanism that feeds the app from the database and proving it
+> produces identical output, because that mechanism is what D7 switches onto.
+
+Recorded because the alternative is running the rung, seeing green, and reading
+it as evidence of something it never tested.
+
+### 12.52.2 So the comparison has to be able to fail
+
+A check whose answer is always "0 differences" is indistinguishable from a check
+that is broken, and D7 gets flipped on the strength of it.
+
+This project has the instrument already and it was built for exactly this
+reason. The recording read-back reports 649 of 649 agreeing, and what makes that
+readable as a **result** rather than an **absence** is the 1,412,819 comparisons
+underneath it — §12.39.6.1.
+
+So every D6c diagnostic carries a denominator, and — the harder half — a
+**negative control**: some way to see the comparison report a difference known
+to exist. Which control is open (groundwork §2.1) and is named there as the most
+important unanswered question in the rung.
+
+### 12.52.3 Extract the rules; do not reimplement them
+
+The five rules are `private` to `ActivityStore`. A twin that reimplemented them
+would be §12.43's mistake again — a second implementation of something that
+already exists, which will eventually disagree with it.
+
+There the disagreement was loud: 320 phantom `fetched` differences, visible on
+the first run. **Here it would be silent** — two plausible activity lists
+differing on one dedup survivor, with nothing able to say which is right.
+
+`dedup` is the sharp edge. It sorts ascending by `startLocal`, then keeps
+whichever of a near-duplicate pair has more moving time. Both halves are
+order-dependent, so a reimplementation that got the sort direction wrong would
+produce a *different survivor* from the same input — one activity, quietly
+different, in a list of 672.
+
+So the first patch of the rung is not a comparison at all. It extracts the rules
+into one value both sides call, `ActivityStore` adopts it with no behaviour
+change, and the existing 828 tests are the proof. Same move as 301, and for the
+same reason: **before you can compare two things, one of them has to exist in a
+comparable form.**
+
+## 12.53 Both doors, the same rules — patch 309
+
+Found by writing D6c's groundwork, which is what groundwork is for.
+
+### 12.53.1 One rule was extended to both doors and two were not
+
+`ActivityStore` has two ways in: `ingest`, from the network, and `load`, from
+`activities.json`. They did different things.
+
+    ingest:  activities = dedup(...).sorted { $0.startLocal > $1.startLocal }
+    load:    activities = decoded.filter { Self.isKept($0) }
+
+Patch 123 made `isKept` run at both, and its comment says exactly why:
+`DataCorrections.ignoredActivities` changes, and a row already on disk *"would
+have walked straight past a rule added after it was cached."*
+
+**That argument applies to `dedup` and the sort with equal force, and was never
+extended to them.** `duplicateWindowMinutes` and `duplicateDistanceTolerance`
+are the same kind of tunable as the cutoff — and the cutoff has already moved
+once, from 15 June to 1 January, as `MatchRules`' own comment records.
+
+So the day either duplicate constant changes, cached pairs keep the old outcome
+until the next sync, and nothing says so. Latent rather than live: nothing sets
+those at runtime, and the file was written from an array that was already
+deduped and sorted, so reading it back gives the same list.
+
+### 12.53.2 It blocks D6c, which is why it is being fixed now rather than later
+
+A shadow copy has to reproduce what the store holds. Until now **what the store
+holds depended on which door it came through** — filtered after a launch,
+filtered *and* deduped *and* sorted after a sync.
+
+A twin cannot match a moving target. §4 of the D6c groundwork extracts these
+rules into one value both sides call; that extraction is meaningless while the
+rules are applied inconsistently on the side being copied.
+
+### 12.53.3 Measured rather than assumed
+
+"It should change nothing" was the prediction, and a prediction with no
+instrument behind it is an assumption.
+
+`loadCollapsedDuplicates` and `loadArrivedUnsorted` say what the load path
+actually had to correct, and Settings prints them — **only when non-zero**,
+because a permanent "0" row is a row that stops being read (§12.42.2).
+
+They are separate numbers because they are separate faults: one says the cached
+rows held a pair the current rule folds together, the other says something wrote
+the file out of order. In memory rather than persisted, because they describe
+this launch's file and the current file already answers the question.
+
+§12.41.2 records what happens to a measurement nobody displays: `Report.seconds`
+was computed and thrown away for forty patches, and it was the number D6b's
+design turned on. `lateArrivals` in this same file is the next one — computed at
+every ingest since patch 45 and displayed nowhere. Not this patch's job, named
+here so it is not lost.
+
+### 12.53.4 What the risk actually is
+
+The change is one line of behaviour on a path that runs at every launch, on a
+device with 672 activities and no backup of the in-memory list.
+
+It is safe in the direction that matters: `dedup` and the sort are pure, they
+cannot lose an activity the current rules would keep, and `activities.json` is
+not rewritten by `load` — so a wrong outcome is corrected by the next launch
+rather than persisted. The three read-backs are the check, and they compare
+against the database, which the load path does not touch.
+
+## 12.54 The rules as a value, and a rule I had just written down — patch 310
+
+D6c step 2. It moves three private methods into one type and closes a hole 309
+opened while fixing a different one.
+
+### 12.54.1 Three rules decide what the list IS
+
+`ActivityStore` holds activities; what is in that list is decided by three
+rules — which are kept, which pairs are one session uploaded twice, and what
+order they are in. They lived as `private` methods on the store, which is
+exactly the arrangement that let the two entrances drift apart for two hundred
+patches (§12.53).
+
+309 made both doors agree by writing the rules out twice. 310 makes disagreement
+**unavailable**: `ActivityRoster.settle` is one call and both entrances make it.
+
+That matters beyond tidiness. D6c compares what the app *computes* from two
+sources, so the database side has to produce the same list from the same rules —
+and a second implementation of a rule that already exists is the mistake §12.43
+cost three patches to learn. **When two things must agree, do not reimplement.
+Call.**
+
+`settlingTwiceChangesNothing` pins idempotence, which is what makes it safe to
+call from both doors and from a twin that may be fed either side's output.
+
+### 12.54.2 A rule this file already contained, broken four hours after it was quoted
+
+309 shipped its two counters *hidden when zero*, reasoning from §12.42.2 that a
+permanently-correct row trains a reader to ignore it.
+
+Then the device showed neither row, and the honest reading was: **that means
+zero, or it means nobody wired them in, and a screenshot cannot tell.**
+
+§12.42.2 is about a permanent **alarm**. I applied it to a permanent **count**,
+and they are not the same thing. The distinction was already written down twice
+in this project, in the diagnostics paste:
+
+> *Patch 266c.* A section that simply vanished when nothing was wrong would be
+> indistinguishable from a check that never ran.
+>
+> *Patch 273.* A line that only appears when something is wrong cannot be
+> distinguished from a line nobody wired in.
+
+Both about the same screen. Both written before 309. **A count beside its
+denominator is evidence; a bare zero is noise; a missing zero is nothing at
+all** — which is precisely why `samplesWalked` exists (§12.39.6.1), four days
+earlier, in a patch of the same week.
+
+So the fix is not "show a red 0". It is one always-present row stating the
+positive with its denominator:
+
+    Activities loaded    672 · 0 collapsed · in order
+
+Absent now means broken. Present with zeros means checked and clean.
+
+#### 12.54.2.1 What still cannot be proved, and what was done instead
+
+Nothing here proves the pixel drew. This project has no UI tests and adding a
+framework for one row would be the wrong trade.
+
+Three things are done instead, each with its honest limit:
+
+| | proves | does not prove |
+|---|---|---|
+| `Result` carries the counts, tested | the number is produced | that anything displays it |
+| the row is unconditional | absence is now a symptom | that it rendered |
+| the counts join the redacted paste | the value exists even at zero | that the paste was read |
+
+The realistic failure being designed against is not *wrong*, it is
+**indistinguishable from fine** — the same shape as `?? .distantPast`
+(§12.42.1.1), where a fallback made a reader defect wear a data difference's
+clothes.
+
+### 12.54.3 `Result.offered` is the denominator, and it is the point
+
+`dropped`, `collapsed` and `arrivedOutOfOrder` are all differences. `offered` is
+how many were looked at.
+
+Without it, "0 collapsed" and "nothing was examined" read identically — which is
+§12.39.6.1's argument arriving one layer up. `nothingToCorrectStillSpeaks` is
+the test for the boring case, and it is the case that runs on the device every
+single day.
+
+### 12.54.4 `arrivedOutOfOrder` means nothing at one of the two doors
+
+`ingest` settles a dictionary's values, and a dictionary has no order to be out
+of. `load` reads a file something wrote deliberately, and there it is a real
+fact about the writer.
+
+Both doors call the same function; only one reads that field, and `Result`'s
+own comment says which and why. The alternative — two entry points differing by
+one returned value — is how §12.53 started.
+
+## 12.55 Who started this run — patch 311
+
+`migration_run: 45` in the diagnostics paste. Forty-five ledger rows after three
+days of D6b, and no way to tell which were a person pressing a button and which
+were the app writing through on its own.
+
+### 12.55.1 The distinction existed, and it was never a column
+
+Until patch 303 the two could be told apart **by accident**: an automatic run
+passed no snapshot id, so a NULL in `snapshotID` meant "not a manual import".
+
+303 fixed a real defect — an automatic run does have a snapshot preceding it, and
+recording it is accurate rather than convenient (§12.47) — and in doing so
+removed the only distinction the table had. Nothing was wrong with 303.
+
+> **A side effect is not a record.** A fact you can only read by knowing which
+> other fact happens to be absent is a fact you will lose the first time
+> somebody fixes the absence.
+
+That is the same shape as §12.42.1.1's `?? .distantPast` and §12.15's whole
+family, arriving from a new direction: not a diagnostic that cannot say why it
+has no answer, but an answer that was only ever a coincidence.
+
+### 12.55.2 A table whose own comment stopped being true
+
+`Sub4Migrations+MigrationRun.swift` says, in the body of the migration:
+
+> The only query this table has: newest first. **Small forever — one row per
+> import** — but the index costs nothing…
+
+True for two hundred patches. False the day D6b landed: a background/foreground
+cycle writes **two** rows on its own (§12.49.3), and `BackgroundRefresh` adds
+more. Forty-five in three days, growing, with no upper bound anywhere.
+
+So retention, and the argument is entirely about what it does **not** remove:
+
+| kept forever | why |
+|---|---|
+| `manual` | the athlete did it on purpose |
+| `failed` | the reason anybody opens this table |
+| `running` | the only evidence the app was killed mid-write |
+| `verified`, `activated` | D7 decides on the strength of these |
+| trigger not recorded | the 45 cannot be identified as automatic |
+
+Only *successful automatic* runs are trimmed, beyond the newest 200 — a few
+weeks at two per app switch.
+
+`prunableTriggers` is **written out rather than derived**. `allCases.filter { $0
+!= .manual }` is the obvious expression and it fails in the wrong direction: a
+trigger added later would be swept into the prune by default. Written out, a
+forgotten trigger makes the table grow — visible in the census — and an included
+one destroys evidence, which is visible nowhere. **Between a leak and a
+shredder, pick the leak.** `prunableIsEveryAutomaticTrigger` asserts the two
+agree today, so adding a case is a decision somebody makes rather than one that
+gets made for them.
+
+### 12.55.3 The defect found while reading, which is the point of reading
+
+```swift
+static func stale(_ db: Sub4Database) throws -> [MigrationRun] {
+    try all(db, limit: 100).filter { $0.state == .running }
+}
+```
+
+It asks for the newest hundred rows and then looks for interrupted ones among
+them. At patch 255, when this table held one row per import, a hundred was the
+whole table. At D6b it is **about a day** — so an interrupted run from two days
+ago was already invisible, and the screen said `Interrupted runs: 0` with
+complete confidence.
+
+> **A count taken from a page is not a count of the table.**
+
+Nothing about the old code looks wrong. It broke because a number that was a
+generous over-estimate became a tight limit, without a line changing.
+`anInterruptedRunIsFoundBeyondThePage` builds 151 rows over one interrupted run,
+which is the size the old implementation fails at.
+
+### 12.55.4 Two rows and a tally, all unconditional
+
+§12.54.2 was written down four hours before this patch, and this screen had two
+live instances of the thing it describes:
+
+- **Interrupted runs** was `if staleRuns > 0`. Combined with §12.55.3, that row
+  had two ways to be absent — nothing wrong, or something wrong two days down
+  the table — and a screenshot could not tell them apart.
+- **Started by** would have been the same the moment it was written as
+  `if let t = r.triggeredBy`, because NULL is what the 45 existing rows hold.
+
+Both are unconditional. A NULL prints `not recorded (before patch 311)`, which
+is the truth about those rows and is why the column is nullable at all: a NOT
+NULL with a default would have meant guessing a value for them, and a guessed
+`backgrounded` is indistinguishable from a recorded one.
+
+The paste gains a census that names **every** trigger every time, at zero, with
+the row total as its denominator — §12.54.3's argument arriving one screen over.
+`migration_run: 45` is what a number without a breakdown looks like.
+
+### 12.55.5 Four values, not five, and the reason it is not tidiness
+
+Three buttons produce a manual run: Import and Write through now on the Database
+screen, and Run the task now in Settings. All three are `manual`.
+
+`DatabaseWriteThrough.run` therefore takes **both** a `trigger` and a `reason`,
+which looks redundant and is not. The trigger is a stored value from a frozen
+vocabulary that a query groups by; the reason is a sentence a person reads in
+the unsaved-stores list when a write fails, and it distinguishes things the
+vocabulary deliberately does not. Collapsing them costs either the journal's
+detail or a fifth enum case meaning "manual, but from the other button" —
+§12.39.2, where a field name that carries detail stops being a field name.
+
+### 12.55.6 `trigger` is required in exactly one place
+
+The `AppStores` overload — the single door every production import comes through
+(§12.45). The granular signature under it defaults to nil, so the several dozen
+test call sites that have no answer are untouched, and the two call sites that
+do have one cannot forget.
+
+Which is §12.45's own argument about defaulted parameters, pointed at the
+parameter that says who caused the run.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

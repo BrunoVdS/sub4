@@ -195,7 +195,12 @@ enum BackgroundRefresh {
         await Sub4Launch.shared.begin()
         await DatabaseWriteThrough.shared.run(
             reason: manual ? "a refresh asked for in Settings"
-                           : "a background refresh from iOS")
+                           : "a background refresh from iOS",
+            // ONE CODE PATH, TWO ANSWERS TO "WHO STARTED THIS" — patch 311.
+            // A refresh the athlete asked for in Settings is a person pressing
+            // a button; one iOS scheduled is not, and the whole point of the
+            // column is that the ledger can tell them apart afterwards.
+            trigger: manual ? .manual : .backgroundRefresh)
 
     }
 

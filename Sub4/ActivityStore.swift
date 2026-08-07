@@ -171,6 +171,29 @@ final class ActivityStore {
     /// this patch a late arrival is normal and handled, not a fault. The number
     /// is worth seeing once, to confirm the recovery, and is then just evidence
     /// that the sync works.
+    /// WHAT THE LOAD PATH DID, AND WHAT IT COST — patch 310, §12.54.
+    ///
+    /// Nil until `load` has read a file. Nil is not zero: a device with no
+    /// `activities.json` yet and a device whose file held nothing are different
+    /// answers, and the summary below says which.
+    ///
+    /// In memory, cleared on relaunch, and that is right — it describes THIS
+    /// launch's file, and the current file already answers the question.
+    private(set) var loadRoster: ActivityRoster.Result?
+
+    /// One row's worth, always sayable. See §12.54.2: 309 showed these numbers
+    /// only when non-zero, which made a working counter and an unwired one look
+    /// identical — the exact thing 266c and 273 wrote down about the paste.
+    var loadSummary: String {
+        loadRoster?.summary ?? "no cached file read"
+    }
+
+    /// For the redacted paste, unconditional.
+    var loadDiagnosticLines: [String] {
+        loadRoster?.diagnosticLines ?? ["Activity roster: no cached file read"]
+    }
+
+
     private(set) var lateArrivals: Int = 0
 
     private let fileURL: URL
@@ -475,7 +498,8 @@ final class ActivityStore {
 
         recordRejections(incoming)
         for a in incoming {
-            if byID[a.id] == nil, epoch(of: a) < highWater, Self.isKept(a) { late += 1 }
+            if byID[a.id] == nil, epoch(of: a) < highWater,
+               ActivityRoster.isKept(a) { late += 1 }
             // Advance for everything we have SEEN, kept or not. A rejected
             // activity is still processed; leaving the cursor behind it would
             // re-fetch it on every sync for ever.
@@ -493,64 +517,33 @@ final class ActivityStore {
             //
             // The freshly fetched version is the authority on whether a row
             // belongs at all, so a rejection deletes whatever is under that id.
-            guard Self.isKept(a) else { byID.removeValue(forKey: a.id); continue }
+            guard ActivityRoster.isKept(a) else {
+                byID.removeValue(forKey: a.id); continue
+            }
             byID[a.id] = a
         }
 
-        activities = dedup(Array(byID.values)).sorted { $0.startLocal > $1.startLocal }
+        // The same call `load` makes. Its counts are ignored here: a
+        // dictionary's values have no order to be out of. §12.54.4.
+        activities = ActivityRoster.settle(Array(byID.values)).activities
         lateArrivals = late
         UserDefaults.standard.set(cursor, forKey: cursorKey)
         save()
     }
 
-    /// THE ONE GATE, APPLIED WHEREVER AN ACTIVITY ARRIVES
-    /// ---------------------------------------------------
-    /// Two doors lead into `activities`: the network, through `ingest`, and
-    /// activities.json, through `load`. The filter used to live in `ingest`
-    /// only, which was fine while it was made of constants that never changed
-    /// after a row was written — but `DataCorrections.ignoredActivities` does
-    /// change, and a row already on disk would have walked straight past a rule
-    /// added after it was cached. Applying the same predicate on load means a
-    /// new entry takes effect on the next launch instead of needing a re-sync.
-    ///
-    /// Everything after the cutoff is kept — walks, commutes, the kayak. Only
-    /// *matching* is filtered (`Activity.isPlanEligible`), so total movement
-    /// volume stays honest.
-    private static func isKept(_ a: Activity) -> Bool {
-        guard a.dayKey >= MatchRules.cutoffDayKey else { return false }
-        guard a.movingTime >= MatchRules.minAnyActivitySeconds else { return false }
-        // Named, with the reason, in DataCorrections — and reported in
-        // Settings, because a recording the app throws away without saying so
-        // is indistinguishable from one it failed to fetch.
-        guard !DataCorrections.isIgnored(a) else { return false }
-        // The rule, not a list. See `Activity.selfContradictoryDistance` for the
-        // three rides that produced it and why the threshold is 1.5×.
-        guard !a.selfContradictoryDistance else { return false }
-        return true
-    }
+    /// Moved to `ActivityRoster` at 310, along with `dedup` and the sort. Both
+    /// of this store's entrances call `ActivityRoster.settle` now, so the rules
+    /// cannot drift apart again — and D6c's database side calls the same one
+    /// rather than reimplementing it. §12.54.
+
 
     /// Same sport, starting within a few minutes, similar distance → one session
     /// recorded by two devices. Keep the longer recording.
-    private func dedup(_ input: [Activity]) -> [Activity] {
-        var kept: [Activity] = []
-        for a in input.sorted(by: { $0.startLocal < $1.startLocal }) {
-            if let i = kept.firstIndex(where: { isDuplicate($0, a) }) {
-                if a.movingTime > kept[i].movingTime { kept[i] = a }
-            } else {
-                kept.append(a)
-            }
-        }
-        return kept
-    }
+    /// `dedup` and `isDuplicate` moved to `ActivityRoster` at 310. They were
+    /// `private` until 309 and static-but-here at 309; they belong with
+    /// `isKept`, because the three of them together are what decides what the
+    /// activity list is.
 
-    private func isDuplicate(_ a: Activity, _ b: Activity) -> Bool {
-        guard a.sportType == b.sportType, a.dayKey == b.dayKey else { return false }
-        guard abs(a.startMinuteOfDay - b.startMinuteOfDay)
-                <= MatchRules.duplicateWindowMinutes else { return false }
-        let bigger = max(a.distance, b.distance)
-        guard bigger > 0 else { return true }
-        return abs(a.distance - b.distance) / bigger <= MatchRules.duplicateDistanceTolerance
-    }
 
     private func epoch(of a: Activity) -> TimeInterval {
         (DayKey.date(a.dayKey) ?? Date()).timeIntervalSince1970
@@ -563,15 +556,25 @@ final class ActivityStore {
         guard let data = try? Data(contentsOf: fileURL) else { return }
         let decoded = (try? JSONDecoder().decode([Activity].self, from: data)) ?? []
         recordRejections(decoded)
-        // `{ Self.isKept($0) }` and not `Self.isKept`. The predicate reads
-        // MatchRules and DataCorrections, which are MainActor-isolated like
-        // everything else in this target, and handing it to `filter` as a
-        // function VALUE strips that isolation — "call to main actor-isolated
-        // static method in a synchronous nonisolated context". A closure
-        // literal written here inherits the isolation of the method it sits in,
-        // so the same call is fine spelled out.
-        activities = decoded.filter { Self.isKept($0) }
+
+        // ONE CALL, AND THE OTHER DOOR MAKES THE SAME ONE — patch 310.
+        //
+        // 309 made both doors apply the same rules by writing them out twice.
+        // This makes it structural rather than remembered, which matters
+        // because D6c needs the database side to produce the same list from the
+        // same rules, and two implementations of one rule is the mistake §12.43
+        // cost three patches to learn.
+        //
+        // `loadRoster` stays nil if the file is not there — the guard above
+        // returns first. That is the difference between "no cached file" and
+        // "a cached file holding nothing", and it is the sixth instance of
+        // §12.15's shape on this screen.
+        let settled = ActivityRoster.settle(decoded)
+        loadRoster = settled
+        activities = settled.activities
     }
+
+
 
 
     /// Drops everything held in memory WITHOUT writing to disk.

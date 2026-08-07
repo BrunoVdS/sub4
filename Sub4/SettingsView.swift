@@ -935,7 +935,31 @@ struct SettingsView: View {
         // A recording the app throws away without saying so is indistinguishable
         // from one it failed to fetch, and the second is a bug. This row is what
         // makes the difference visible.
+        // ALWAYS PRESENT, INCLUDING ITS ZEROS — patch 310, §12.54.2.
+        //
+        // 309 showed these numbers only when non-zero, on the reasoning that a
+        // permanent "0" row stops being read (§12.42.2). That reasoning is
+        // about a permanent ALARM, and I applied it to a permanent COUNT.
+        //
+        // The difference matters: an absent row and an unwired row look
+        // identical, which is the exact sentence 266c wrote about the
+        // diagnostics paste and 273 repeated — *a line that only appears when
+        // something is wrong cannot be distinguished from a line nobody wired
+        // in.* Four hours later I did the opposite here.
+        //
+        // A count beside its denominator is evidence, not noise. That is what
+        // `samplesWalked` does for the recording read-back.
+        LabeledContent("Activities loaded", value: activities.loadSummary)
+        if let r = activities.loadRoster, r.collapsed > 0 || r.arrivedOutOfOrder {
+            Text("The cached file needed correcting on load. Duplicates are "
+                 + "pairs the current rule folds into one; out of order means "
+                 + "something wrote activities.json unsorted, which nothing in "
+                 + "the app should do. The file is rewritten on the next sync.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+
         if !DataCorrections.ignoredActivities.isEmpty {
+
             LabeledContent("Ignored recordings",
                            value: "\(DataCorrections.ignoredActivities.count)")
             ForEach(DataCorrections.ignoredReasons, id: \.self) { reason in

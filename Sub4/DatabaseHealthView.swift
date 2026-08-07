@@ -81,6 +81,9 @@ struct DatabaseHealthView: View {
     /// Patch 255 — the import ledger. Read on open and after every import.
     @State private var lastRun: MigrationRun?
     @State private var staleRuns: Int = 0
+    /// Patch 311. The whole table, tallied by what started each run — the
+    /// answer `migration_run: 45` could not give.
+    @State private var ledgerCensus: LedgerCensus?
 
     /// Patch 263 — the semantic verifier. Nil until the button is pressed,
     /// like the survey below and for the same reason: it reads every row the
@@ -785,10 +788,17 @@ struct DatabaseHealthView: View {
                     into: db,
                     stores: AppStores.current(),
                     appVersion: AppVersion.patchLabel,
+                    // Patch 311. The button on this screen is a person, and so
+                    // is the one below it, and so is Run the task now in
+                    // Settings. All three are `manual`, because the question
+                    // the column answers is whether somebody caused the run —
+                    // which button it was lives in the failure journal's
+                    // reason, where it is a sentence rather than a value.
                     // The link between contract items 3 and 11: a run records
                     // which snapshot of its inputs was taken first, or records
                     // that none was.
-                    snapshotID: snapshot?.id)
+                    snapshotID: snapshot?.id,
+                    trigger: .manual)
                 await recheck(db)
                 await reloadLedger(db)
             } catch {
@@ -1461,7 +1471,8 @@ struct DatabaseHealthView: View {
             } else {
                 Button("Write through now") {
                     Task {
-                        await writeThrough.run(reason: "asked for on this screen")
+                        await writeThrough.run(reason: "asked for on this screen",
+                                               trigger: .manual)
                         // THE LEDGER IS THE DURABLE ANSWER — patch 303, and 302
                         // left it stale.
                         //
@@ -1544,6 +1555,14 @@ struct DatabaseHealthView: View {
                 }
                 LabeledContent("By", value: "patch \(r.appVersion)")
                     .font(.caption).foregroundStyle(Color.dim)
+                // ALWAYS PRESENT — patch 311, and §12.54.2 is four hours old.
+                // A row that vanished when the trigger was NULL would be
+                // indistinguishable from a row nobody wired in; a NULL says
+                // "not recorded (before patch 311)", which is the truth about
+                // the 45 rows this patch found.
+                LabeledContent("Started by", value: r.triggerLabel)
+                    .font(.caption)
+                    .foregroundStyle(r.triggeredBy == nil ? Color.secondary : Color.dim)
                 LabeledContent("Snapshot", value: r.snapshotID ?? "none taken")
                     .font(.caption)
                     .foregroundStyle(r.snapshotID == nil ? Color.red : Color.dim)
@@ -1551,13 +1570,17 @@ struct DatabaseHealthView: View {
                     Text(n).font(.caption2).foregroundStyle(Color.dim)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                if staleRuns > 0 {
-                    // Not repaired automatically — see `MigrationLedger.stale`.
-                    // Rewriting these would destroy the only evidence the app
-                    // was killed while writing.
-                    LabeledContent("Interrupted runs", value: "\(staleRuns)")
-                        .font(.caption).foregroundStyle(.red)
-                }
+                // UNCONDITIONAL AT 311, and it was hidden-when-zero before.
+                //
+                // That is exactly what §12.54.2 was written about yesterday —
+                // and worse here, because `stale` was ALSO reading only the
+                // newest hundred rows, so the row could have been absent while
+                // an interrupted run sat two days down the table. Two ways to
+                // show nothing, one of them wrong, and no way to tell from a
+                // screenshot.
+                LabeledContent("Interrupted runs", value: "\(staleRuns)")
+                    .font(.caption)
+                    .foregroundStyle(staleRuns > 0 ? Color.red : Color.dim)
             } else {
                 Text("No import has been recorded. Nothing in this database can "
                      + "be called verified until one has.")
@@ -1567,21 +1590,43 @@ struct DatabaseHealthView: View {
         } header: {
             Text("Import ledger")
         } footer: {
-            Text("One row per import. A run reaches \"imported, not verified\" "
-                 + "when the write commits; the verifier that can move it to "
-                 + "\"verified\" is the next step, and until it exists nothing "
-                 + "may switch its reads to this database.")
+            // "One row per import" is what this said until 311, and it
+            // is the sentence the migration's own body still carries. It
+            // stopped being true the day the write-through landed.
+            Text("A run reaches \"imported, not verified\" when the write "
+                 + "commits; the verifier that can move it to \"verified\" is "
+                 + "the next step, and until it exists nothing may switch its "
+                 + "reads to this database.\n\n"
+                 + "Most rows are not you. Leaving the app, coming back, and a "
+                 + "background refresh each write one, so the ledger keeps the "
+                 + "newest 200 of those and discards older ones. Runs you "
+                 + "started, runs that failed, and runs that were interrupted "
+                 + "are kept for good — an interrupted run is the only "
+                 + "evidence the app was killed while writing.")
         }
     }
 
+    /// What one read of the ledger produces. A named type rather than a tuple
+    /// because it grew a third member at 311 and because the old version threw
+    /// all three away when `latest` returned nothing — an empty ledger is a
+    /// real answer ("0 rows"), not a reason to stop counting.
+    private nonisolated struct LedgerRead: Sendable {
+        var run: MigrationRun?
+        var stale = 0
+        var census: LedgerCensus?
+    }
+
     private func reloadLedger(_ db: Sub4Database) async {
-        let read: (run: MigrationRun?, stale: Int)? = await Task.detached(priority: .utility) {
-            guard let latest = try? MigrationLedger.latest(db) else { return nil }
-            let stale = (try? MigrationLedger.stale(db).count) ?? 0
-            return (latest, stale)
+        let read = await Task.detached(priority: .utility) { () -> LedgerRead in
+            var r = LedgerRead()
+            r.run = try? MigrationLedger.latest(db)
+            r.stale = (try? MigrationLedger.stale(db).count) ?? 0
+            r.census = try? MigrationLedger.census(db)
+            return r
         }.value
-        lastRun = read?.run
-        staleRuns = read?.stale ?? 0
+        lastRun = read.run
+        staleRuns = read.stale
+        ledgerCensus = read.census
     }
 
     private func recheck(_ db: Sub4Database) async {
@@ -1621,10 +1666,17 @@ struct DatabaseHealthView: View {
         }
         // Patch 255. `MigrationRun.line` is counts and timestamps of the import
         // itself — nothing from the athlete's history — so it is safe here.
-        if let r = lastRun {
-            lines.append("")
-            lines.append("Last import: \(r.line)")
-            if staleRuns > 0 { lines.append("Interrupted runs: \(staleRuns)") }
+        // PATCH 311, AND EVERY LINE OF IT IS UNCONDITIONAL. `migration_run: 45`
+        // in the table counts above is what made this patch necessary, and a
+        // tally that only appeared when something was wrong would repeat
+        // §12.54.2 in the same week it was written down.
+        lines.append("")
+        lines.append("Last import: \(lastRun?.line ?? "no import has been recorded")")
+        lines.append("Interrupted runs: \(staleRuns)")
+        if let c = ledgerCensus {
+            lines.append(contentsOf: c.diagnosticLines)
+        } else {
+            lines.append("Import ledger: could not be counted")
         }
         // The benchmark is the reason this screen gets pasted at all now — the
         // §9 decision is made from these lines. They are counts and durations
@@ -1662,6 +1714,12 @@ struct DatabaseHealthView: View {
         // line that only appears when something is wrong cannot be
         // distinguished from a line nobody wired in.
         lines.append(contentsOf: StoreReadJournal.shared.diagnosticLines)
+        // PATCH 310. UNCONDITIONAL, for 266c's reason, which 309 briefly
+        // forgot on the Settings screen — see §12.54.2. This is also the only
+        // place the roster's numbers appear when they are all zero, which is
+        // what makes "0 collapsed" evidence rather than an absence.
+        lines.append(contentsOf: ActivityStore.shared.loadDiagnosticLines)
+
         return lines.joined(separator: "\n")
     }
 }
