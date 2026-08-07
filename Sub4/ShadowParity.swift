@@ -227,6 +227,11 @@ final class ShadowParity {
                                       to: DayKey.key(),
                                       byDay: ActivityRoster.byDay(twin),
                                       inputs: inputs)
-        return LoadParity.compare(app: LoadStore.shared.days, database: theirs)
+        // THE ZONES ARE HELD FROM THE APP, like the constants — patch 316.
+        // `hr_zone` is in the database and has no reader yet, and bucketing
+        // both sides with the same boundaries is what makes a difference in
+        // the zone rows mean the trace rather than the boundaries.
+        return LoadParity.compare(app: LoadStore.shared.days, database: theirs,
+                                  zones: AthleteStore.shared.hrZones)
     }
 }

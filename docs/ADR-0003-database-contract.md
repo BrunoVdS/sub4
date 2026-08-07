@@ -5609,6 +5609,106 @@ zip and arrives by the same `cp` that has never once failed. A step that can be
 skipped without symptom is a step that will be, and adding a check to it only
 moves the silence.
 
+## 12.60 The shape under the number, and an argument that was wrong — patch 316
+
+315 compared each session's rung and its TRIMP. It did not compare
+`WorkoutLoad.hrSeconds`, the seconds-per-heart-rate histogram that is the whole
+input to the Time-in-zone card. This adds it.
+
+### 12.60.1 The reason given for adding it was false
+
+The argument was: *TRIMP is a scalar integral, the histogram is the distribution
+under it, and two different distributions can integrate to the same number —
+§12.16's warning one level deeper.*
+
+It reads well. It is wrong, and checking the arithmetic is what said so. Both
+quantities come from **one walk over one set of bins**:
+
+    TRIMP     = Σ (dt / 60) × f(bpm)
+    histogram = Σ dt,  keyed by round(bpm)
+
+Same bins, same skip rules, same guards. **The histogram determines the TRIMP.**
+Move a minute from 140 bpm to 160 and the integral moves 2.3% — hundreds of
+times the tolerance — because `f` is exponential in the heart-rate fraction.
+Every case the first argument described was already caught by 315, and the test
+written for it would have passed while proving nothing.
+
+> **Do not reason by analogy about two numbers without checking whether one
+> determines the other.**
+
+That is §12.43's cousin. §12.43 says do not reimplement a rule; this says do not
+inherit a rule's *justification* for a pair of quantities that do not have the
+same relationship. The analogy to §12.16 was structurally identical and
+factually empty.
+
+Recorded here rather than quietly corrected, because the wrong version survived
+being written down, read back, and half-implemented before anybody multiplied
+anything out.
+
+#### 12.60.1.1 And then the same mistake, one line lower — 316a
+
+The zone roll-up was written as `ZoneTime.build`. `ZoneTime.swift` is the FILE;
+the type inside it is `ZoneTotals`. The signature had been read out of the
+source; the enclosing type was inferred from the filename.
+
+Same failure as the paragraph above it, at a smaller scale: a fact taken from
+something that *resembled* the source rather than from the source. Both mistakes
+in this patch are the same mistake — one caught by multiplying two numbers out,
+one caught by a type-checker in four seconds.
+
+The cheap one is the one worth noticing. `ProgressTabView` calls
+`ZoneTotals.build(days:zones:window:)` and has done for patches; one grep for
+the existing caller would have settled it, and the caller is the thing this
+patch is trying to agree with.
+
+### 12.60.2 What is actually left, and it is one line wide
+
+The integral uses the **exact** heart rate; the histogram **rounds** it to an
+integer.
+
+So a trace differing by two hundredths of a beat on one bin moves that bin into
+the next bucket while moving the TRIMP by about 0.0015 — below the 0.01
+tolerance §12.59 sets. If the bucket sits on a zone boundary, a minute of the
+athlete's year crosses zones, the Time-in-zone card moves, and every figure 315
+compares still agrees.
+
+`aRoundingDifferenceMovesAZone` builds precisely that: one bin of sixty, 149.49
+against 149.51, with Z2 ending at 149 and Z3 starting at 150. It asserts the
+rung agrees, the load agrees, and the histogram does not — which is the whole
+claim of this patch stated as a test rather than as a paragraph.
+
+### 12.60.3 The larger reason, which survived the correction
+
+Until now the Time-in-zone card was covered by **inference**: the TRIMP agrees,
+therefore the histogram must.
+
+That inference is sound today and only because both figures come from one walk.
+It breaks the day the trace rung gains a second path, or the day
+`streamHistogram`'s guards drift from `streamTrimp`'s — and it breaks
+**silently**, because nothing anywhere asserts the two stay coupled.
+
+Replacing an inference with a measurement is what this whole rung is for. A
+comparison that never fires is cheap; an inference that stops holding without
+saying so is what §12.15 has been about for fifty sections.
+
+### 12.60.4 Two denominators that were nearly wrong
+
+`hrBucketsCompared` counts one entry per distinct heart rate per session — the
+deepest denominator in the project, and `samplesWalked` (§12.39.6.1) arriving a
+fourth time.
+
+It is deliberately **not** in `lookedAtSomething`. A history with no traces at
+all is a phone with no chest strap, which is a legitimate state, and requiring
+buckets would make this screen call it broken. The count is printed instead, so
+a reader can see whether the distribution half looked at anything —
+`noTracesIsNotAFailure` pins that a bucket count of zero is still a pass, and
+`untracedSessionsAreCounted` pins that both sides agree about what the card had
+to leave out.
+
+The zone totals are compared **per zone**, not as a total. Two zones can move in
+opposite directions and leave the sum untouched — which is, at last, an actual
+instance of the shape §12.60.1 was wrongly claiming.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

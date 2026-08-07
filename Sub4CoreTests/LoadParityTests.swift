@@ -51,6 +51,34 @@ struct LoadParityTests {
                           ftp: nil, powerFactor: nil, streams: streams)
     }
 
+    /// Five zones against the same 185/48. Held identical on both sides — see
+    /// `LoadParity`'s header on why the boundaries must not be a variable.
+    private let zones: [AthleteStore.HRZone] = [
+        .init(index: 1, min: 0, max: 129),
+        .init(index: 2, min: 130, max: 148),
+        .init(index: 3, min: 149, max: 157),
+        .init(index: 4, min: 158, max: 166),
+        .init(index: 5, min: 167, max: nil)]
+
+    /// Z2 ends at 149 and Z3 starts at 150, so the integer boundary the
+    /// histogram rounds to is also a zone boundary. That is the only place the
+    /// histogram and the integral come apart — see
+    /// `aRoundingDifferenceMovesAZone`.
+    private let boundaryZones: [AthleteStore.HRZone] = [
+        .init(index: 1, min: 0, max: 129),
+        .init(index: 2, min: 130, max: 149),
+        .init(index: 3, min: 150, max: 157),
+        .init(index: 4, min: 158, max: 166),
+        .init(index: 5, min: 167, max: nil)]
+
+    /// Every comparison names its own `today`. A test that reads the machine's
+    /// clock passes on the machine that wrote it — §12.48.5.
+    private func compared(_ app: [DailyLoad],
+                          _ database: [DailyLoad]) -> LoadParity.Report {
+        LoadParity.compare(app: app, database: database,
+                           zones: zones, today: "2026-04-30")
+    }
+
     private func history() -> [Activity] {
         [ride("c", on: "2026-04-23"), ride("b", on: "2026-04-22"),
          ride("a", on: "2026-04-21")]
@@ -81,16 +109,23 @@ struct LoadParityTests {
     /// the speed is solved for rather than guessed. A trace that misses either
     /// check is silently demoted to the session average, which would make this
     /// file's central test pass for the wrong reason.
+    ///
+    /// `overriding` replaces the heart rate on named bins. Used by
+    /// `aRoundingDifferenceMovesAZone` to shift ONE bin by two hundredths of a
+    /// beat — enough to cross an integer boundary in the histogram and not
+    /// enough to move the TRIMP past its tolerance.
     private func trace(_ id: String, samples: Int = 60, hr: Double = 150,
+                       overriding: [Int: Double] = [:],
                        totalM: Double = 24_300,
                        seconds: Double = 3_600) -> ActivityStreams {
         let n = Double(samples)
         // `streamTrimp` bins by `total / (count - 0.5)` and sums `binWidth / v`.
         let speed = n * (totalM / (n - 0.5)) / seconds
         let distance = (0 ..< samples).map { Double($0) * (totalM / (n - 1)) }
+        let rates = (0 ..< samples).map { overriding[$0] ?? hr }
         return ActivityStreams(activityId: id,
                                distanceM: distance,
-                               heartRate: Array(repeating: hr, count: samples),
+                               heartRate: rates,
                                speed: Array(repeating: speed, count: samples),
                                altitude: nil, grade: nil, power: nil,
                                latitude: nil, longitude: nil,
@@ -104,7 +139,7 @@ struct LoadParityTests {
         let store = history()
         let twin = try imported(store)
 
-        let r = LoadParity.compare(app: series(store), database: series(twin))
+        let r = compared(series(store), series(twin))
         #expect(r.appDays == r.databaseDays)
         #expect(r.daysCompared == 11, "the denominator")
         #expect(r.workoutsCompared == 3, "the deep denominator")
@@ -123,7 +158,7 @@ struct LoadParityTests {
     /// describe no training at all.
     @Test("Comparing nothing is not agreement")
     func nothingComparedIsNotAgreement() {
-        let empty = LoadParity.compare(app: [], database: [])
+        let empty = compared([], [])
         #expect(empty.unexplained == 0, "nothing disagreed")
         #expect(!empty.lookedAtSomething)
         #expect(!empty.isHealthy)
@@ -133,7 +168,7 @@ struct LoadParityTests {
     /// The second half of that guard, and the one a day count alone would miss.
     @Test("A series of nothing but rest days is not a pass")
     func restDaysAloneAreNotAPass() {
-        let r = LoadParity.compare(app: series([]), database: series([]))
+        let r = compared(series([]), series([]))
         #expect(r.daysCompared == 11, "eleven days were walked")
         #expect(r.workoutsCompared == 0, "and no training was in them")
         #expect(!r.lookedAtSomething)
@@ -157,7 +192,7 @@ struct LoadParityTests {
         let withTrace = series(store, streams: ["a": trace("a")])
         let without = series(twin)
 
-        let r = LoadParity.compare(app: withTrace, database: without)
+        let r = compared(withTrace, without)
         #expect(r.workoutsWithDifferentSource == ["a"],
                 "got \(r.workoutsWithDifferentSource)")
         #expect(r.appTraces == 1, "the app really did score one from a trace")
@@ -174,12 +209,88 @@ struct LoadParityTests {
         let store = history()
         let twin = try imported(store)
         let t = ["a": trace("a")]
-        let r = LoadParity.compare(app: series(store, streams: t),
-                                   database: series(twin, streams: t))
+        let r = compared(series(store, streams: t), series(twin, streams: t))
         #expect(r.workoutsWithDifferentSource.isEmpty)
         #expect(r.workoutsWithDifferentFigure.isEmpty)
         #expect(r.appTraces == r.databaseTraces)
         #expect(r.appTraces == 1, "and it really did score from one")
+        #expect(r.isHealthy)
+    }
+
+    // MARK: THE SHAPE UNDER THE NUMBER — patch 316
+
+    /// THE ONE 316 EXISTS FOR, and it is narrow on purpose.
+    ///
+    /// The histogram DETERMINES the TRIMP — same walk, same bins — so a
+    /// redistribution large enough to see moves both, and 315 already caught
+    /// those. The one place they come apart is that the integral uses the exact
+    /// heart rate and the histogram ROUNDS it.
+    ///
+    /// One bin of sixty, moved from 149.49 to 149.51. The bucket crosses from
+    /// 149 to 150; the TRIMP moves about 0.0015, under the 0.01 tolerance. With
+    /// Z2 ending at 149 and Z3 starting at 150, a minute of the athlete's year
+    /// changes zone and every figure 315 compares still agrees.
+    @Test("A rounding difference too small to move the load still moves a zone")
+    func aRoundingDifferenceMovesAZone() throws {
+        let store = history()
+        let twin = try imported(store)
+        let below = trace("a", overriding: [0: 149.49])
+        let above = trace("a", overriding: [0: 149.51])
+
+        let r = LoadParity.compare(app: series(store, streams: ["a": below]),
+                                   database: series(twin, streams: ["a": above]),
+                                   zones: boundaryZones, today: "2026-04-30")
+
+        #expect(r.workoutsWithDifferentSource.isEmpty, "the same rung")
+        #expect(r.workoutsWithDifferentFigure.isEmpty,
+                "and the load agrees, within tolerance — this is 315's blind spot")
+        #expect(r.hrBucketsCompared == 2,
+                "the union of both sides' heart rates — 149 and 150")
+        #expect(r.workoutsWithDifferentHistogram == ["a"],
+                "got \(r.workoutsWithDifferentHistogram)")
+        #expect(r.zonesDiffering.count == 2, "a minute crossed from Z2 to Z3")
+        #expect(!r.isHealthy)
+    }
+
+    /// The same trace on both sides walks its buckets and finds nothing. The
+    /// bucket count is what makes that a result rather than an absence.
+    @Test("The same distribution is walked and agrees")
+    func theSameShapeIsWalked() throws {
+        let store = history()
+        let twin = try imported(store)
+        let t = ["a": trace("a")]
+        let r = compared(series(store, streams: t), series(twin, streams: t))
+        #expect(r.hrBucketsCompared == 1, "one heart rate, one bucket")
+        #expect(r.workoutsWithDifferentHistogram.isEmpty)
+        #expect(r.zonesDiffering.isEmpty)
+        #expect(r.zoneTracedApp == 1)
+        #expect(r.zoneTracedDatabase == 1)
+        #expect(r.isHealthy)
+    }
+
+    /// A session the card leaves out is a figure on the card, so it is
+    /// compared. Both sides here score from the session average, so neither
+    /// carries a distribution and both count it as left out.
+    @Test("Sessions the zone card leaves out are counted on both sides")
+    func untracedSessionsAreCounted() throws {
+        let store = history()
+        let twin = try imported(store)
+        let r = compared(series(store), series(twin))
+        #expect(r.zoneUntracedApp == 3, "three sessions, none with a trace")
+        #expect(r.zoneUntracedDatabase == 3)
+        #expect(r.hrBucketsCompared == 0, "and nothing to walk")
+        #expect(r.isHealthy, "agreeing about having no distributions is agreement")
+    }
+
+    /// A history with no traces at all is a phone with no strap, not a broken
+    /// comparison — so `lookedAtSomething` deliberately does not require
+    /// buckets. The count is printed instead.
+    @Test("No traces anywhere is a legitimate state")
+    func noTracesIsNotAFailure() throws {
+        let store = history()
+        let r = compared(series(store), series(try imported(store)))
+        #expect(r.hrBucketsCompared == 0)
+        #expect(r.lookedAtSomething, "days and sessions were compared")
         #expect(r.isHealthy)
     }
 
@@ -191,7 +302,7 @@ struct LoadParityTests {
     func aGapAgainstARestIsReported() throws {
         // The database has a session nothing can score; the app has nothing.
         let twin = try imported(history() + [ride("x", on: "2026-04-25", hr: nil)])
-        let r = LoadParity.compare(app: series(history()), database: series(twin))
+        let r = compared(series(history()), series(twin))
         #expect(r.daysWithDifferentState == ["2026-04-25"])
         #expect(r.daysWithDifferentLoad.isEmpty,
                 "both carry zero — the state is the only difference")
@@ -204,7 +315,7 @@ struct LoadParityTests {
         var store = history()
         store[2] = ride("a", on: "2026-04-21", movingTime: 7_200)
 
-        let r = LoadParity.compare(app: series(store), database: series(twin))
+        let r = compared(series(store), series(twin))
         #expect(r.daysWithDifferentLoad == ["2026-04-21"])
         #expect(r.workoutsWithDifferentFigure == ["a"])
         #expect(r.workoutsWithDifferentSource.isEmpty, "the same rung, a different number")
@@ -220,7 +331,7 @@ struct LoadParityTests {
         var store = history()
         store[2] = ride("a", on: "2026-04-21", movingTime: 7_200)
 
-        let r = LoadParity.compare(app: series(store), database: series(twin))
+        let r = compared(series(store), series(twin))
         #expect(r.pointsWithDifferentFitness > 0, "got \(r.pointsWithDifferentFitness)")
         #expect(r.pointsCompared == 11, "the denominator beside it")
         #expect((r.appFitness ?? 0) > (r.databaseFitness ?? 0),
@@ -232,7 +343,7 @@ struct LoadParityTests {
         let short = LoadSeries.build(from: "2026-04-20", to: "2026-04-25",
                                      byDay: ActivityRoster.byDay(history()),
                                      inputs: inputs())
-        let r = LoadParity.compare(app: series(history()), database: short)
+        let r = compared(series(history()), short)
         #expect(r.appDays != r.databaseDays)
         #expect(r.unexplained > 0, "a shorter twin is not a clean twin")
         #expect(!r.isHealthy)
@@ -243,10 +354,9 @@ struct LoadParityTests {
     @Test("Every line is there when everything agrees")
     func everyLineIsThereWhenEverythingAgrees() throws {
         let store = history()
-        let r = LoadParity.compare(app: series(store),
-                                   database: series(try imported(store)))
+        let r = compared(series(store), series(try imported(store)))
         let lines = r.diagnosticLines
-        #expect(lines.count == 16, "got \(lines.count)")
+        #expect(lines.count == 22, "got \(lines.count)")
         #expect(lines.first == "Load parity: 11 days, 3 sessions")
         #expect(lines.contains("  days with a different state: 0"))
         #expect(lines.contains("  sessions scored from a different rung: 0"))

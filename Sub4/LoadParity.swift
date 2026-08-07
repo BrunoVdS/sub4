@@ -47,6 +47,47 @@
 //  That is also what makes this a comparison with a real way to fail, which
 //  groundwork §2.1 demands of every one of them.
 //
+//  THE HISTOGRAM, AND A CORRECTION TO WHY — patch 316
+//  --------------------------------------------------
+//  `WorkoutLoad.hrSeconds` is seconds per heart rate, and it is the whole input
+//  to `ZoneTotals` — the Time-in-zone card. 315 did not compare it.
+//
+//  THE ARGUMENT FOR ADDING IT WAS WRONG THE FIRST TIME, and the wrong version
+//  is worth keeping because it is a shape this project keeps meeting. It was:
+//  *TRIMP is an integral, the histogram is the distribution under it, and two
+//  distributions can integrate to the same number.* That reads like §12.16 and
+//  it is false here. Both come from ONE walk over ONE set of bins:
+//
+//      TRIMP     = Σ (dt/60) × f(bpm)
+//      histogram = Σ dt,  keyed by round(bpm)
+//
+//  The histogram DETERMINES the TRIMP. Move a minute from 140 bpm to 160 and
+//  the integral moves 2.3% — hundreds of times the tolerance — because `f` is
+//  exponential. 315 would already have caught every case the first argument
+//  described.
+//
+//  **Do not reason by analogy about two numbers without checking whether one
+//  determines the other.** §12.43's cousin.
+//
+//  WHAT IS ACTUALLY LEFT, AND IT IS NARROW
+//  ---------------------------------------
+//  One gap: the integral uses the EXACT heart rate and the histogram ROUNDS it.
+//  A trace differing by two hundredths of a bpm on one bin moves that bin into
+//  the next bucket while moving TRIMP by about 0.0015 — under the tolerance. If
+//  the bucket sits on a zone boundary, a minute crosses zones and the card
+//  moves while every figure in 315 agrees. `aRoundingDifferenceMovesAZone`
+//  builds exactly that.
+//
+//  AND ONE THING THAT IS NOT NARROW: until now the Time-in-zone card was
+//  covered by INFERENCE — the TRIMP agrees, so the histogram must. That holds
+//  only while both come from one walk. It breaks silently the day the trace
+//  rung gains a second path or the two guards drift apart, and an inference
+//  that breaks silently is the thing this file exists to replace with a number.
+//
+//  THE ZONES ARE HELD FROM THE APP, like the constants. `hr_zone` is in the
+//  database and has no reader yet, and bucketing both sides with the SAME zones
+//  is what makes a difference here mean the trace rather than the boundaries.
+//
 //  A TOLERANCE, FOR THE REASON §12.57.3 GIVES
 //  ------------------------------------------
 //  TRIMP is a sum of doubles. A hundredth of a TRIMP is four decimal places
@@ -67,13 +108,18 @@ enum LoadParity {
     /// Four decimal places below anything displayed.
     static let trimpTolerance = 0.01
 
+    /// One hundredth of a second, per heart rate. `hrSeconds` is a sum of
+    /// `binWidth / speed` terms, so it carries the same summation residue the
+    /// TRIMP does and gets the same treatment.
+    static let secondTolerance = 0.01
+
     /// On screen, so the threshold is a number rather than a hidden `==`.
-    static let toleranceLabel = "0.01 TRIMP"
+    static let toleranceLabel = "0.01 TRIMP · 0.01 s"
 
     /// What both sides take from the app rather than from the database, and
     /// therefore what this comparison cannot see. Printed, not implied.
     static let heldFromTheApp =
-        "constants, FTP, sRPE and Apple Health"
+        "constants, zones, FTP, sRPE and Apple Health"
 
     private static func close(_ a: Double, _ b: Double) -> Bool {
         abs(a - b) <= trimpTolerance
@@ -111,6 +157,31 @@ enum LoadParity {
         let workoutsWithDifferentSource: [String]
         let workoutsWithDifferentFigure: [String]
 
+        // The shape under the number — patch 316.
+
+        /// Heart-rate buckets walked across every session that carried a
+        /// histogram on both sides. The DEEPEST denominator this project has:
+        /// one entry per distinct bpm per session, so a year of traces is tens
+        /// of thousands of comparisons. `samplesWalked` (§12.39.6.1) three
+        /// slices later.
+        let hrBucketsCompared: Int
+        /// Sessions whose distribution differs while the integral may not.
+        let workoutsWithDifferentHistogram: [String]
+
+        // Time in zone, summed over the whole history from those histograms.
+
+        /// Seconds per zone, app against database. Compared per zone rather
+        /// than as a total, because two zones can move in opposite directions
+        /// and leave the total untouched.
+        let zonesCompared: Int
+        let zonesDiffering: [Int]
+        /// Sessions the card counts and sessions it has to leave out. Both are
+        /// on the card, so both are compared.
+        let zoneTracedApp: Int
+        let zoneTracedDatabase: Int
+        let zoneUntracedApp: Int
+        let zoneUntracedDatabase: Int
+
         // The curve
 
         let pointsCompared: Int
@@ -124,12 +195,20 @@ enum LoadParity {
             daysWithDifferentState.count + daysWithDifferentLoad.count
             + workoutsWithDifferentSource.count + workoutsWithDifferentFigure.count
             + pointsWithDifferentFitness
+            + workoutsWithDifferentHistogram.count + zonesDiffering.count
+            + (zoneTracedApp == zoneTracedDatabase ? 0 : 1)
+            + (zoneUntracedApp == zoneUntracedDatabase ? 0 : 1)
             + (appDays == databaseDays ? 0 : 1)
         }
 
         /// Zero days compared to zero days agrees perfectly and proves nothing.
         /// `workoutsCompared` is in here too: a series of four hundred rest
         /// days would satisfy the first test and describe no training at all.
+        /// `hrBucketsCompared` is deliberately NOT in here. A history with no
+        /// traces at all is a legitimate state — a phone with no strap — and
+        /// requiring buckets would make this screen call that broken. The
+        /// bucket count is printed instead, so a reader can see whether the
+        /// distribution half looked at anything.
         var lookedAtSomething: Bool { daysCompared > 0 && workoutsCompared > 0 }
 
         var isHealthy: Bool { lookedAtSomething && unexplained == 0 }
@@ -173,6 +252,13 @@ enum LoadParity {
                 + "\(workoutsWithDifferentSource.count)",
                 "  sessions with a different figure: "
                 + "\(workoutsWithDifferentFigure.count)",
+                "  heart-rate buckets compared: \(hrBucketsCompared)",
+                "  sessions with a different distribution: "
+                + "\(workoutsWithDifferentHistogram.count)",
+                "  zones compared: \(zonesCompared)",
+                "  zones that disagree: \(zonesDiffering.count)",
+                "  sessions in the zone card: \(zoneTracedApp) vs \(zoneTracedDatabase)",
+                "  sessions it left out: \(zoneUntracedApp) vs \(zoneUntracedDatabase)",
                 "  curve points compared: \(pointsCompared)",
                 "  curve points that disagree: \(pointsWithDifferentFitness)",
                 "  fitness: \(fitnessLine)",
@@ -198,7 +284,13 @@ enum LoadParity {
     ///
     /// STATIC AND TAKING ITS INPUTS, like the other two slices, so a test can
     /// build the two sides from genuinely different places.
-    static func compare(app: [DailyLoad], database: [DailyLoad]) -> Report {
+    /// `zones` and `today` are handed in and used for BOTH sides. Bucketing
+    /// with the same boundaries is what makes a difference in the zone rows
+    /// mean the trace rather than the zone edit, and passing `today` keeps a
+    /// test off the machine's clock (§12.48.5).
+    static func compare(app: [DailyLoad], database: [DailyLoad],
+                        zones: [AthleteStore.HRZone] = [],
+                        today: String = DayKey.key()) -> Report {
 
         // `uniquingKeysWith` rather than `uniqueKeysWithValues`. The walk
         // cannot produce a duplicate day, and a dictionary initialiser that
@@ -213,6 +305,8 @@ enum LoadParity {
         var differentLoad: [String] = []
         var differentSource: [String] = []
         var differentFigure: [String] = []
+        var differentHistogram: [String] = []
+        var buckets = 0
         var workouts = 0
 
         for day in shared {
@@ -233,7 +327,45 @@ enum LoadParity {
                 // number, which nothing has ever tested for.
                 if w.source != t.source { differentSource.append(w.activityId) }
                 else if !close(w.trimp, t.trimp) { differentFigure.append(w.activityId) }
+
+                // THE SHAPE, NOT THE INTEGRAL — patch 316. Compared over the
+                // UNION of both sides' heart rates, so a bucket present on one
+                // side only is a difference rather than something quietly not
+                // walked.
+                //
+                // Only where both sides carry a distribution: a session that
+                // moved rung has already been reported once, and its missing
+                // histogram is that same fault seen again.
+                if w.hasZoneDistribution, t.hasZoneDistribution {
+                    var histogramDiffers = false
+                    for bpm in Set(w.hrSeconds.keys).union(t.hrSeconds.keys) {
+                        buckets += 1
+                        if abs((w.hrSeconds[bpm] ?? 0) - (t.hrSeconds[bpm] ?? 0))
+                            > secondTolerance {
+                            histogramDiffers = true
+                        }
+                    }
+                    if histogramDiffers { differentHistogram.append(w.activityId) }
+                }
             }
+        }
+
+        // TIME IN ZONE, over the whole history, from the histograms above.
+        //
+        // ONE FUNCTION, CALLED TWICE — `ZoneTotals.build` is the call
+        // `ProgressTabView` makes, so this compares what is on the card rather
+        // than something adjacent to it. `.all` because a 30-day window would
+        // leave twelve months unexamined, which is §12.57.2's mistake.
+        //
+        // 316a: this named the FILE rather than the type. ZoneTime.swift holds
+        // `ZoneTotals`. A signature was read and its enclosing type inferred
+        // from the filename — §12.60.1's lesson, one line lower down.
+        let myZones = ZoneTotals.build(days: app, zones: zones, window: .all, today: today)
+        let theirZones = ZoneTotals.build(days: database, zones: zones,
+                                        window: .all, today: today)
+        let zoneKeys = Set(myZones.seconds.keys).union(theirZones.seconds.keys).sorted()
+        let zonesDiffering = zoneKeys.filter {
+            abs((myZones.seconds[$0] ?? 0) - (theirZones.seconds[$0] ?? 0)) > secondTolerance
         }
 
         // THE CURVE, over the whole series rather than only its last point. A
@@ -258,6 +390,14 @@ enum LoadParity {
             daysWithDifferentLoad: differentLoad,
             workoutsWithDifferentSource: differentSource.sorted(),
             workoutsWithDifferentFigure: differentFigure.sorted(),
+            hrBucketsCompared: buckets,
+            workoutsWithDifferentHistogram: differentHistogram.sorted(),
+            zonesCompared: zoneKeys.count,
+            zonesDiffering: zonesDiffering,
+            zoneTracedApp: myZones.traced,
+            zoneTracedDatabase: theirZones.traced,
+            zoneUntracedApp: myZones.untraced,
+            zoneUntracedDatabase: theirZones.untraced,
             pointsCompared: min(appPoints.count, dbPoints.count),
             pointsWithDifferentFitness: pointsDiffering,
             appFitness: appPoints.last?.ctl,

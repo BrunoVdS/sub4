@@ -1454,6 +1454,33 @@ struct DatabaseHealthView: View {
                     .foregroundStyle(l.workoutsWithDifferentFigure.isEmpty
                                      ? Color.dim : .red)
 
+                // THE SHAPE UNDER THE NUMBER — patch 316. TRIMP is an
+                // integral; this is the distribution it integrates. Two
+                // different distributions produce the same TRIMP, and the
+                // distribution is what the Time-in-zone card draws.
+                LabeledContent("Heart-rate buckets compared",
+                               value: "\(l.hrBucketsCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Sessions with a different distribution",
+                               value: "\(l.workoutsWithDifferentHistogram.count)")
+                    .font(.caption)
+                    .foregroundStyle(l.workoutsWithDifferentHistogram.isEmpty
+                                     ? Color.dim : .red)
+                LabeledContent("Zones that disagree",
+                               value: "\(l.zonesDiffering.count) of \(l.zonesCompared)")
+                    .font(.caption)
+                    .foregroundStyle(l.zonesDiffering.isEmpty ? Color.dim : .red)
+                LabeledContent("Sessions in the zone card",
+                               value: "\(l.zoneTracedApp) vs \(l.zoneTracedDatabase)")
+                    .font(.caption)
+                    .foregroundStyle(l.zoneTracedApp == l.zoneTracedDatabase
+                                     ? Color.dim : .red)
+                LabeledContent("Sessions it left out",
+                               value: "\(l.zoneUntracedApp) vs \(l.zoneUntracedDatabase)")
+                    .font(.caption)
+                    .foregroundStyle(l.zoneUntracedApp == l.zoneUntracedDatabase
+                                     ? Color.dim : .red)
+
                 LabeledContent("Curve points that disagree",
                                value: "\(l.pointsWithDifferentFitness) of \(l.pointsCompared)")
                     .font(.caption)
@@ -1495,12 +1522,17 @@ struct DatabaseHealthView: View {
                  + "what automatic write-throughs not reconciling looks like. "
                  + "There is no approved-difference list yet, so every other "
                  + "number above zero is real.\n\n"
-                 + "The fitness comparison holds the constants, the FTP, your "
-                 + "session RPEs and Apple Health identical on both sides — "
-                 + "the database has no reader for them yet, and Health it "
-                 + "will never have. So it answers one question: do the "
-                 + "database's activities and traces produce the same load. "
-                 + "See ADR-0003 §12.56, §12.57 and §12.59.")
+                 + "The fitness comparison holds the constants, your zones, "
+                 + "the FTP, your session RPEs and Apple Health identical on "
+                 + "both sides — the database has no reader for them yet, and "
+                 + "Health it will never have. So it answers one question: do "
+                 + "the database's activities and traces produce the same "
+                 + "load, and the same shape underneath it.\n\n"
+                 + "A training load is an integral over the heart-rate trace. "
+                 + "The distribution it integrates is what the Time-in-zone "
+                 + "card draws, and two different distributions can add up to "
+                 + "the same load — so both are compared. See ADR-0003 "
+                 + "§12.56, §12.57, §12.59 and §12.60.")
                 .font(.caption2)
         }
     }
