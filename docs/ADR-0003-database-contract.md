@@ -3594,6 +3594,347 @@ is drawn at all — so "this ride had no power meter" and "this ride had power
 that read zero" are one bit apart in the database and a whole feature apart in
 the app. `theAbsentStreamStaysAbsent` is the test with teeth for that reason.
 
+## 12.39 The recording round trip — D6a's last comparison, patch 294
+
+Patch 292 built the reader and proved it against fixtures. This runs it against
+645 real recordings and 192,954 real samples, and it is the last of the three
+read-backs D6a set out to build.
+
+Three comparisons, three shapes, and the differences between them are the
+interesting part:
+
+| | compares | matched by | reports |
+|---|---|---|---|
+| 290 activities | 19 scalar fields | store id | field, per activity |
+| 291 details | 8 scalars + 3 arrays | `index` and `name` | field, per element |
+| 294 recordings | 8 parallel arrays | array position | **stream, and a band** |
+
+### 12.39.1 Three numbers, not two
+
+Every other comparison in this project has two sides. This one has three:
+
+    the store's array length          ActivityStreams.distanceM.count
+    what the importer said it wrote   recording.sampleCount
+    what the table actually holds     rows in recording_sample
+
+The middle one exists because the importer already wrote it — `INSERT INTO
+recording (…, sampleCount, …) VALUES (…, s.count, …)` — and reading it costs one
+row per recording and no samples at all.
+
+It earns its place by separating two failures that are otherwise identical. An
+array that arrived from Strava shorter than the distance axis, and rows that
+went missing from `recording_sample` after they were written, are both "the
+lengths disagree" with two numbers. With three they are `sampleCount` and
+`sampleCount vs rows`, and one of them is a data question while the other is a
+database question.
+
+This is the same argument as §12.35.4's `skipped`: a diagnostic that cannot say
+which of two things happened will eventually be read as having said one.
+
+### 12.39.2 A field name that carries a count is not a field name
+
+The whole value of the previous two read-backs was the **tally**. `fetched 320
+of 668` was a diagnosis on sight — 47.9% is the fraction of timestamps with a
+fractional second of 0.5 or more, and the proportion named the bug (§12.37.4).
+A list of 320 activity ids would have named nothing.
+
+A tally groups by field name. So the name has to be the *same string* on every
+recording that has the problem. The obvious field name here —
+`heartRate[3 of 1204]` — is unique per recording, which turns the tally back
+into a list with extra steps.
+
+So the counts were moved out of the name and into two other places:
+
+- **`fields`** carries stable names: `heartRate`, `sampleCount`,
+  `power missing from the database`, `heartRate length`.
+- **`detail`** carries the same finding with its numbers, printed for the
+  handful of ids the screen shows.
+- **`sampleTally`** adds the bands up across the whole run, per stream.
+
+Which gives the screen two tallies rather than one, and they answer different
+questions. `fieldTally` says how WIDE — *twelve recordings differ on heart
+rate*. `sampleTally` says how DEEP — *ninety-one samples out of 186,204*.
+Twelve recordings each off by one sample and twelve recordings off by three
+hundred are the same number in the first tally and nothing alike in the second.
+
+`theFieldNameIsStableAcrossRecordings` is the test with teeth, and it is a test
+about a string.
+
+### 12.39.3 The gate before the walk
+
+If the two lengths disagree, the per-sample walk is **skipped** for that
+recording.
+
+One sample missing near the start shifts every later sample by one position,
+and a positional walk would report roughly three hundred differences on a single
+defect — enough for one bad recording to bury everything else the run found.
+The groundwork decided this before any of it was written (`D6A-RECORDING-
+GROUNDWORK.md` §4), which is the point of writing groundwork.
+
+The date is checked *before* the gate rather than behind it: a timestamp is
+comparable whatever the lengths do, and losing it to an unrelated length
+mismatch would be a second silent gap of exactly the kind §12.35.4 exists to
+prevent.
+
+### 12.39.4 Off the main actor, and why only this one
+
+The activity and detail read-backs run their comparison inside a `Task` on the
+main actor, which is fine: 668 structs against one query each.
+
+This one is 645 read transactions and roughly 1.5 million `Double` comparisons.
+On the main actor that is a screen frozen for as long as it takes, and **a
+diagnostic that looks like a hang is a diagnostic nobody presses twice.** So
+`compareOffMain` hands the whole run to `Task.detached`.
+
+It is safe rather than lucky: `Sub4Database` is `Sendable` and holds a GRDB
+`DatabaseQueue`, which serialises its own access, and `ActivityStreams` is a
+`nonisolated` value type whose stored properties are all `Sendable`. The type
+work that patches 219, 230, 237 and 245 did is what makes this a one-line
+change instead of a refactor.
+
+### 12.39.5 What it is expected to find, stated as a prediction
+
+Written before the device run, and labelled as a prediction on purpose —
+§12.29.2.1 records what happens when a conclusion gets written into this file
+from a measurement that did not exist yet.
+
+The expectation is **`heartRate length` on some number of recordings**: a stream
+that Strava returned shorter than the distance axis is written with trailing
+NULLs, read back as zeros at full length, and its original length is not
+recoverable (§12.38.4). `aShortStreamIsPadded` has pinned that loss since 292;
+what is not known is how many recordings carry it, and that number is the whole
+reason to run this.
+
+Anything else — a `sampleCount vs rows`, a differing `distanceM` — is not
+expected and would be a real finding.
+
+The measurement is below, and it did not go the way this section said it would.
+
+### 12.39.6 What it found, and the prediction was wrong
+
+Run on 7 August, patch 295 on the device:
+
+    The read                    645 recordings in the database.
+    Compared                    645
+    Agreed on every sample      644
+    Samples walked          1,403,819
+    In the store, not in db       5
+      fetched                     1
+        17463863070 — fetched differs
+
+**No `heartRate length`. Not one.** No `sampleCount`, no `sampleCount vs rows`,
+no differing `distanceM`. 1.4 million sample comparisons across 645 recordings,
+and the only disagreement in the whole set is a single timestamp.
+
+§12.39.5 predicted the short-stream padding loss would appear on some number of
+recordings and said the number was the reason to run this. The number is zero.
+
+**Possible and unobserved is not the same as impossible**, and the distinction
+is the finding. The schema genuinely cannot recover the length of a stream
+shorter than `distanceM` — §12.38.4 is right and `aShortStreamIsPadded` proves
+the mechanism. What this says is that Strava's payloads, after the resampler has
+had them, never contain one. The loss is a latent hazard rather than active
+damage, and it stays pinned by test because "does not happen today" is a
+property of the data and not of the code.
+
+#### 12.39.6.1 `samplesWalked` is the number that makes the rest believable
+
+A comparison reporting near-total agreement is the one to distrust, and this
+report was built with that in mind: `walked` accumulates **only** in the
+equal-length branch of the walk. If the length gate had been quietly swallowing
+recordings — the exact failure a gate invites — `samplesWalked` would have
+collapsed toward zero while `agreed` stayed at 645 and looked like success.
+
+It didn't, and the arithmetic is checkable from the screen:
+
+    1,403,819 ÷ 645          = 2,176 comparisons per recording
+      192,954 ÷ 645          =   299.2 samples each      ← targetSamples = 300
+    1,403,819 ÷ 192,954      =     7.28 streams per sample position, of 8
+
+Five streams are effectively always present (`distanceM`, `heartRate`, `speed`,
+`altitude`, `grade`); the remaining 2.28 comes from `latitude`/`longitude` on
+outdoor sessions and `power` on the few rides that carry a meter. The ratio is
+not a claim about power coverage — indoor sessions have no GPS and the two
+effects are not separable from this number alone — it is a cross-check that the
+walk did the work it says it did.
+
+**A diagnostic that can only report agreement has not been tested.** This one
+carries its own denominator, which is what lets a green result be read as a
+result rather than as an absence.
+
+#### 12.39.6.2 The one that differs
+
+`17463863070` differs on `fetched`, and the detail read-back shows exactly one
+`fetched` too. Almost certainly a re-fetch after the last import moved the
+store's timestamp — not a comparison defect, and 291a taking that column from
+320 of 668 down to 1 is the evidence for the distinction.
+
+Recorded rather than chased. One in 645 that resolves on the next import is not
+worth a patch; it is worth knowing it is one and not three hundred.
+
+#### 12.39.6.3 D6a is answered
+
+| | compared | agreed | residue |
+|---|---|---|---|
+| activities (290) | 668 | 668 | — |
+| details (291) | 668 | 655 | 13 — `positiveOrNil`, intended, + 1 `fetched` |
+| recordings (294) | 645 | 644 | 1 `fetched` |
+
+Every table, every level, against the real corpus rather than fixtures. The
+question D6a set out to ask — *does the database hold what the app holds* — is
+answered yes.
+
+Two things it does **not** answer, stated so nobody reads the table for more
+than it says. It compares the database to `ActivityStore` and `DetailStore`, not
+to Strava; that is D6c's job and always was. And the store-only counts — 4
+activities, 5 details, 5 recordings — are not a defect in any reader. They are
+the last import going stale, they grow every day, and they are D6b's.
+
+
+
+## 12.40 The tally that could not be read — patch 295
+
+Patch 294 landed and the two older read-backs re-ran on the device. The detail
+report looked like this:
+
+    The read                              668 details.
+    Compared                              668
+    Agreed on every field                 655
+    In the store, not in the database       5
+      laps[index: 12].averageHR             3
+      laps[index: 2].averageHR              3
+      laps[index: 20].averageHR             2
+      laps[index: 28].averageHR             2
+      laps[index: 42].averageHR             2
+      fetched                               1
+      laps[index: 10].averageHR             1
+      laps[index: 14].averageHR             1
+      laps[index: 16].averageHR             1
+      laps[index: 18].averageHR             1
+      laps[index: 1].averageHR              1
+      laps[index: 22].averageHR             1
+      + 13 more fields
+
+Thirteen details differ. One cause. **Twenty-five tally rows**, twelve of them
+shown and the rest behind a cut-off.
+
+Also on that run, and worth recording separately: **`fetched` is 1, not 320.**
+291a's truncation fix is confirmed against the real 668. And the activity
+read-back is still 668 compared, 668 agreed, with four in the store and not in
+the database — five at the detail level, which means one activity reached the
+database while its detail row did not. That gap is D6b's, not this patch's.
+
+### 12.40.1 Every key was correct
+
+Nothing in that list is wrong. `laps[index: 12].averageHR` differs on three
+details, and saying so is accurate.
+
+The report is still useless. A reader sees twenty-five findings and an unknown
+number more, when what happened is one known normalisation — the importer's
+`positiveOrNil` on a zero heart rate, §12.37.5 — touching about thirty laps
+across thirteen details. The screen cannot say that, and the shape of the list
+actively argues against it: twenty-five differently-named rows read as
+twenty-five different problems.
+
+**A correct summary that cannot be read is worse than a missing one.** A missing
+summary sends somebody to the data. This one sends them to the wrong conclusion
+and gives them twelve rows of evidence for it.
+
+### 12.40.2 The same defect, four patches apart, found in the wrong order
+
+§12.39.2 designed the recording report around exactly this: a field name
+carrying an element identity is unique per record, and a tally of unique keys is
+a list with extra steps. That was written for 294 **while 291's report already
+had the disease**, and I did not look.
+
+The reason is worth naming: 291's tally was *tested*, and every test passed. The
+tests asserted that `differingFields` names the right element — which it does,
+and should. Nothing tested what a hundred of those names look like stacked in a
+list, because that is not a property of one comparison. It only appears at real
+scale, on a screen, which is the argument §12.36 makes for running these against
+the actual 668 rather than fixtures.
+
+### 12.40.3 Collapse for grouping, keep for opening
+
+`tallyKey` rewrites the element identity to `*` **for grouping only**:
+
+    laps[index: 12].averageHR   →  laps[*].averageHR
+    bestEfforts[1k].seconds     →  bestEfforts[*].seconds
+    splits missing 12           →  splits missing
+
+`Difference.fields` is untouched. §12.37.2 chose identity over position so a
+reader could open the lap, and that has to survive a fix to the layer above it —
+so the section now prints the first five ids with their precise field names
+underneath the tally. Collapsing a summary that leads nowhere is a dead end
+dressed as a tidy one.
+
+### 12.40.4 Wide and deep, again
+
+Each row now carries two numbers: `details` (how many details carry this field
+at all) and `elements` (how many splits, laps or efforts inside them do).
+
+Thirteen details each with one bad lap, and thirteen details with forty bad laps
+between them, are the same first number and nothing alike in the second. This is
+the same split §12.39.2 built into the recording report as `fieldTally` and
+`sampleTally`; here both fit in one row because the denominators are small.
+
+The list above becomes one line:
+
+    laps[*].averageHR      13 · ~30 elements
+    fetched                 1
+
+### 12.40.5 The comment was right before the code was
+
+The view already said it:
+
+    // The tally first — "all on splits[*].averageHR" is one known
+    // cause; a list of ids is an afternoon.
+
+Written at 291, describing the output as though `[*]` were what the tally
+produced. It never was. §12.34 records that prose in a `View` goes stale
+silently; this is the sharper version — prose that was **never true**, sitting
+directly above the code that failed to make it true, and reading as
+documentation of working behaviour for four patches.
+
+The comment is kept and amended rather than deleted, because the record of
+having believed it is the useful part.
+
+### 12.40.6 What the collapse produced
+
+Same run, 7 August. Twenty-five rows and a cut-off became three rows and no
+cut-off:
+
+    laps[*].averageHR      11 · 30 elements
+    fetched                 1
+    splits[*].averageHR     1
+
+    19592747211 — laps[index: 2].averageHR, laps[index: 4].averageHR,
+                  laps[index: 6].averageHR, laps[index: 8].averageHR + 13
+    17014853339 — laps[index: 1].averageHR
+    17749640513 — laps[index: 20].averageHR
+    18056328970 — laps[index: 50].averageHR
+    18660794652 — laps[index: 28].averageHR
+    + 8 more
+
+11 + 1 + 1 = 13, and 668 − 655 = 13. Every differing detail carries exactly one
+kind of field; if any carried two the tally would sum above the difference
+count, which is a cheap consistency check worth knowing is available.
+
+**`splits[*].averageHR` existed and could not be seen.** One detail, one field,
+sitting behind "+ 13 more fields" since 291. The collapse did not find a new
+defect — it made a four-patch-old one visible. That is the concrete cost of a
+tally that fragments: not wrong rows, but true rows pushed off the bottom by
+duplicates of a single cause.
+
+**The distribution is the other thing one number could not say.** `19592747211`
+alone accounts for 17 of the 30 laps; the other ten details share the remaining
+13. Eleven details each with one bad lap and eleven with thirty between them
+have identical `details` counts and describe different situations, and the
+`elements` column is the whole reason that is legible here.
+
+Neither of those is a new bug. Both were true before 295 and unreadable, which
+is §12.40.1's point measured rather than argued.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

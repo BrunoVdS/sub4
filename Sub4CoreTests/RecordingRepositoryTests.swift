@@ -198,3 +198,245 @@ struct RecordingRepositoryTests {
         #expect(other.recordings?.isEmpty == true)
     }
 }
+
+// MARK: -
+
+/// The recording comparison — patch 294, ADR-0003 §12.39.
+///
+/// `theFieldNameIsStableAcrossRecordings` is the one with teeth. The tally is
+/// the whole point of a read-back — `fetched 320 of 668` was a diagnosis on
+/// sight — and a tally groups by field name. Put the count IN the name and
+/// every recording gets its own key, the tally becomes a list, and the screen
+/// goes back to being a list of ids somebody has to open one at a time.
+@Suite
+@MainActor
+struct RecordingRoundTripTests {
+
+    /// `day` so two recordings in one test are two DIFFERENT sessions. Two
+    /// activities at the same instant is a matcher question, and this suite is
+    /// not asking one.
+    private func activity(_ id: String, day: Int = 28) -> Activity {
+        Activity(id: id, name: "Evening Ride", sportType: "Ride",
+                 startLocal: "2026-07-\(day)T18:02:00", distance: 24_300,
+                 movingTime: 3_240, elapsedTime: 3_600,
+                 elevationGain: 142, averageHeartrate: 131, isTrainer: false,
+                 maxHeartrate: 168, gearId: nil, maxSpeed: 12.4,
+                 deviceWatts: true, averageWatts: 168,
+                 startUTC: "2026-07-\(day)T16:02:00Z", startLat: 51.21, startLon: 4.41,
+                 timeZoneIdentifier: "Europe/Brussels", startOffsetSeconds: 7200)
+    }
+
+    private func streams(_ id: String,
+                         distanceM: [Double] = [0, 500, 1000],
+                         heartRate: [Double]? = [120, 131, 145],
+                         power: [Double]? = nil,
+                         fetched: Date = Date(timeIntervalSince1970: 1_785_000_000))
+    -> ActivityStreams {
+        ActivityStreams(activityId: id,
+                        distanceM: distanceM,
+                        heartRate: heartRate,
+                        speed: [3.1, 3.4, 3.3],
+                        altitude: [12, 14, 11],
+                        grade: [0, 1.2, -0.4],
+                        power: power,
+                        latitude: nil, longitude: nil,
+                        fetched: fetched)
+    }
+
+    private func imported(_ s: [ActivityStreams]) throws -> Sub4Database {
+        let db = try Sub4Database.inMemory()
+        let activities = s.enumerated().map { i, x in activity(x.activityId, day: 10 + i) }
+        _ = try Sub4Import.run(into: db, activities: activities,
+                               shoes: [], streams: s)
+        return db
+    }
+
+    // MARK: The whole run, against the importer
+
+    @Test("A recording that went in unchanged agrees on every sample")
+    func theRealRoundTripAgrees() throws {
+        let one = streams("19580875358")
+        let db = try imported([one])
+        let r = RecordingRoundTrip.compare(db, store: [one])
+
+        #expect(r.isTrustworthy)
+        #expect(r.databaseCount == 1)
+        #expect(r.compared == 1)
+        #expect(r.agreed == 1)
+        #expect(r.differences.isEmpty)
+        #expect(r.missing.isEmpty)
+        #expect(r.samplesWalked == 3 * 5, "distance, heart rate, speed, altitude, grade")
+    }
+
+    /// THE ONE WITH TEETH. Two recordings, the same defect, different ids —
+    /// and it has to land under ONE key or the tally is a list.
+    @Test("The field name is stable across recordings, so the tally adds up")
+    func theFieldNameIsStableAcrossRecordings() throws {
+        let a = streams("1"), b = streams("2")
+        let db = try imported([a, b])
+        try db.queue.write { d in
+            try d.execute(sql: "UPDATE recording_sample SET heartRate = 999 WHERE ordinal = 0")
+        }
+
+        let r = RecordingRoundTrip.compare(db, store: [a, b])
+        #expect(r.compared == 2)
+        #expect(r.agreed == 0)
+
+        #expect(r.fieldTally.map(\.field) == ["heartRate"],
+                "one key, not one per recording")
+        #expect(r.fieldTally.map(\.count) == [2])
+
+        // How WIDE and how DEEP are different numbers, and both are here.
+        #expect(r.sampleTally.map(\.stream) == ["heartRate"])
+        #expect(r.sampleTally.map(\.differing) == [2])
+        #expect(r.sampleTally.map(\.walked) == [6], "3 samples × 2 recordings")
+
+        // The count lives in the printed line, where it is unique on purpose.
+        #expect(r.differences.allSatisfy { $0.detail.contains("heartRate[1 of 3]") })
+    }
+
+    @Test("A recording the database does not have is missing, not different")
+    func missingIsNotDifferent() throws {
+        let there = streams("1")
+        let db = try imported([there])
+        let absent = streams("2")
+
+        let r = RecordingRoundTrip.compare(db, store: [there, absent])
+        #expect(r.compared == 1)
+        #expect(r.missing == ["2"])
+        #expect(r.differences.isEmpty)
+    }
+
+    /// §12.39.1's third number. Deleting a sample leaves the header claiming a
+    /// count the table no longer has — a different defect from an array that
+    /// arrived short, and indistinguishable from it without `sampleCount`.
+    @Test("Rows lost after the header was written are named as that")
+    func rowsLostAfterTheHeaderAreNamed() throws {
+        let one = streams("19580875358")
+        let db = try imported([one])
+        try db.queue.write { d in
+            try d.execute(sql: "DELETE FROM recording_sample WHERE ordinal = 2")
+        }
+
+        let r = RecordingRoundTrip.compare(db, store: [one])
+        let fields = try #require(r.differences.first?.fields)
+        #expect(fields.contains("sampleCount vs rows"),
+                "the header says 3 and the table holds 2")
+        #expect(fields.contains("sampleCount"),
+                "and the store says 3 as well")
+        #expect(!fields.contains("heartRate"),
+                "the walk is skipped — one lost row must not report as three")
+    }
+
+    /// §12.38.4, now measured rather than asserted in isolation. A stream
+    /// shorter than the distance axis is padded on the way in and cannot be
+    /// unpadded on the way out.
+    @Test("A short stream comes back as a length difference, not as zeros")
+    func theShortStreamShowsAsALength() throws {
+        let short = streams("19580875358", heartRate: [120, 131])
+        let db = try imported([short])
+
+        let r = RecordingRoundTrip.compare(db, store: [short])
+        #expect(r.compared == 1)
+        #expect(r.fieldTally.map(\.field) == ["heartRate length"])
+        #expect(r.differences.first?.detail
+                    .contains("heartRate: 2 in the store, 3 in the database") == true)
+        #expect(r.sampleTally.isEmpty,
+                "a length mismatch has no denominator, so it contributes no band")
+    }
+
+    @Test("The declared counts are what the importer wrote")
+    func declaredCountsAreWhatWasWritten() throws {
+        let db = try imported([streams("1"), streams("2", distanceM: [0, 100])])
+        guard case .success(let counts) = RecordingRepository.declaredCounts(db) else {
+            Issue.record("declaredCounts failed"); return
+        }
+        #expect(counts == ["1": 3, "2": 2])
+    }
+
+    // MARK: One recording, without a database
+
+    @Test("Identical sides agree")
+    func identicalSidesAgree() {
+        let s = streams("1")
+        #expect(RecordingRoundTrip.compareOne(s, s).agrees)
+    }
+
+    /// The gate. One sample missing near the start shifts every later one.
+    @Test("The length gate stops the walk")
+    func theLengthGateStopsTheWalk() {
+        let s = streams("1")
+        let d = streams("1", distanceM: [0, 500, 1000, 1500],
+                        heartRate: [9, 9, 9, 9])
+        let c = RecordingRoundTrip.compareOne(s, d)
+        #expect(c.fields == ["sampleCount"])
+        #expect(c.walked.isEmpty, "nothing was walked, so nothing claims to have been")
+        #expect(c.line.contains("3 samples in the store, 4 in the database"))
+    }
+
+    /// §12.38.5. Absent and all-zero are one bit apart in the database and a
+    /// whole feature apart in the app, so they get different names.
+    @Test("A stream present on one side only is a stream, not a sample")
+    func presenceIsNotASample() {
+        let withPower = streams("1", power: [180, 220, 195])
+        let without = streams("1", power: nil)
+
+        let lost = RecordingRoundTrip.compareOne(withPower, without)
+        #expect(lost.fields == ["power missing from the database"])
+        #expect(lost.differing["power"] == nil, "no samples differed — there are none")
+
+        let gained = RecordingRoundTrip.compareOne(without, withPower)
+        #expect(gained.fields == ["power surplus in the database"])
+    }
+
+    /// 291a's lesson, carried across: the writer truncates, so the comparison
+    /// truncates. Rounding here cost 320 phantom differences on the details.
+    @Test("The fetched date is compared to the truncated second")
+    func fetchedIsTruncated() {
+        let base = Date(timeIntervalSince1970: 1_785_000_000)
+        let s = streams("1", fetched: base)
+        let d = streams("1", fetched: base.addingTimeInterval(0.6))
+        #expect(RecordingRoundTrip.compareOne(s, d).agrees,
+                "a fraction of a second cannot reach the column")
+
+        let later = streams("1", fetched: base.addingTimeInterval(2))
+        #expect(RecordingRoundTrip.compareOne(s, later).fields == ["fetched"])
+    }
+
+    /// A timestamp is comparable whatever the lengths do, so it is checked
+    /// before the gate rather than lost behind it.
+    @Test("A date difference survives a length difference")
+    func theDateIsCheckedBeforeTheGate() {
+        let base = Date(timeIntervalSince1970: 1_785_000_000)
+        let s = streams("1", fetched: base)
+        let d = streams("1", distanceM: [0, 500], heartRate: [120, 131],
+                        fetched: base.addingTimeInterval(90))
+        let c = RecordingRoundTrip.compareOne(s, d)
+        #expect(c.fields.contains("fetched"))
+        #expect(c.fields.contains("sampleCount"))
+    }
+
+    // MARK: The report's own honesty
+
+    /// The first read is the id read, and if it fails everything under it is
+    /// unknown rather than zero — the fifth instance of §12.15's shape.
+    @Test("A failed read is not a comparison of nothing")
+    func aFailedReadIsNotZero() {
+        var r = RecordingRoundTrip.Report()
+        r.readFailure = "the file is locked"
+        #expect(!r.isTrustworthy)
+        #expect(r.databaseCount == nil, "not 0 — nobody counted")
+        #expect(r.line.contains("could not be read"))
+    }
+
+    @Test("An empty database is a trustworthy zero")
+    func emptyIsTrustworthy() throws {
+        let db = try Sub4Database.inMemory()
+        let r = RecordingRoundTrip.compare(db, store: [])
+        #expect(r.isTrustworthy)
+        #expect(r.databaseCount == 0)
+        #expect(r.line == "0 recordings in the database.")
+        #expect(r.compared == 0)
+    }
+}
+

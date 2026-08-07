@@ -35,6 +35,7 @@ struct Activity: Codable, Identifiable, Hashable {
     /// ESTIMATE for rides without one, in the same field, and treating that as
     /// a measurement would put invented numbers into the load model. Optional
     /// so that activities cached before patch 27 still decode.
+    ///
     var deviceWatts: Bool?
     var averageWatts: Double?
 

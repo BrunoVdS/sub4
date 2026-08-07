@@ -246,3 +246,160 @@ struct ActivityDetailRepositoryTests {
         #expect(!DetailRoundTrip.sameSecond(base.addingTimeInterval(1), base))
     }
 }
+
+// MARK: -
+
+/// The tally, after the first real run — patch 295, ADR-0003 §12.40.
+///
+/// `oneCauseIsOneRow` is the one with teeth, and it is a test about grouping
+/// rather than about data. Thirteen details differed on the device for a single
+/// known reason and the tally printed twenty-five keys with a "+ 13 more
+/// fields" cut-off underneath. Every one of those keys was correct. The tally
+/// was still useless, which is the whole point: a correct summary that cannot
+/// be read is a summary that will be ignored, and then trusted when it is
+/// finally read wrong.
+@Suite
+@MainActor
+struct DetailTallyTests {
+
+    private func lap(_ index: Int, hr: Double?) -> ActivityDetail.Lap {
+        .init(index: index, distanceM: 1000, movingTime: 300, averageHR: hr)
+    }
+
+    private func detail(_ id: String,
+                        laps: [ActivityDetail.Lap] = [],
+                        splits: [ActivityDetail.Split] = [],
+                        efforts: [ActivityDetail.BestEffort] = [],
+                        calories: Double? = 812) -> ActivityDetail {
+        ActivityDetail(activityId: id, calories: calories,
+                       splits: splits, bestEfforts: efforts, laps: laps,
+                       fetched: Date(timeIntervalSince1970: 1_785_000_000))
+    }
+
+    // MARK: The key
+
+    @Test("The tally key drops the element identity and keeps the field")
+    func theTallyKeyCollapses() {
+        #expect(DetailRoundTrip.tallyKey("laps[index: 12].averageHR")
+                    == "laps[*].averageHR")
+        #expect(DetailRoundTrip.tallyKey("splits[index: 3].movingTime")
+                    == "splits[*].movingTime")
+        #expect(DetailRoundTrip.tallyKey("bestEfforts[1k].seconds")
+                    == "bestEfforts[*].seconds")
+        #expect(DetailRoundTrip.tallyKey("splits missing 12") == "splits missing")
+        #expect(DetailRoundTrip.tallyKey("bestEfforts surplus 1500m")
+                    == "bestEfforts surplus")
+    }
+
+    /// A scalar has no element identity to drop, and must come through whole.
+    /// `fetched` collapsing to something else would have hidden 291a.
+    @Test("A scalar field is its own key")
+    func aScalarIsUnchanged() {
+        for name in ["calories", "fetched", "polyline", "descriptionText"] {
+            #expect(DetailRoundTrip.tallyKey(name) == name)
+        }
+    }
+
+    // MARK: The tally
+
+    /// THE ONE WITH TEETH. One cause, many laps, two details — one row.
+    @Test("One cause across many laps is one tally row, not many")
+    func oneCauseIsOneRow() {
+        let storeA = detail("a", laps: [lap(1, hr: 140), lap(2, hr: 141), lap(3, hr: 142)])
+        let dbA = detail("a", laps: [lap(1, hr: nil), lap(2, hr: nil), lap(3, hr: nil)])
+        let storeB = detail("b", laps: [lap(1, hr: 150), lap(2, hr: 151)])
+        let dbB = detail("b", laps: [lap(1, hr: nil), lap(2, hr: nil)])
+
+        let r = DetailRoundTrip.compare(store: [storeA, storeB],
+                                        database: [dbA, dbB])
+        #expect(r.compared == 2)
+        #expect(r.agreed == 0)
+
+        #expect(r.fieldTally.map(\.field) == ["laps[*].averageHR"],
+                "one cause, one row — not five")
+        #expect(r.fieldTally.map(\.details) == [2], "two details carry it")
+        #expect(r.fieldTally.map(\.elements) == [5], "across five laps")
+    }
+
+    /// Wide and deep are different questions and the row answers both. Two
+    /// details off by one lap each, and one detail off by four, are the same
+    /// `details` and nothing alike.
+    @Test("Details and elements are counted separately")
+    func detailsAndElementsAreDifferentNumbers() {
+        let store = detail("a", laps: [lap(1, hr: 140), lap(2, hr: 141),
+                                       lap(3, hr: 142), lap(4, hr: 143)])
+        let db = detail("a", laps: [lap(1, hr: nil), lap(2, hr: nil),
+                                    lap(3, hr: nil), lap(4, hr: nil)])
+        let r = DetailRoundTrip.compare(store: [store], database: [db])
+        #expect(r.fieldTally.map(\.details) == [1])
+        #expect(r.fieldTally.map(\.elements) == [4])
+    }
+
+    /// The tally collapses; the difference does not. §12.37.2 chose identity
+    /// over position so a reader could open the lap, and that has to survive
+    /// the fix to the thing above it.
+    @Test("The difference keeps the index the tally drops")
+    func theDifferenceKeepsTheIndex() {
+        let store = detail("a", laps: [lap(7, hr: 140)])
+        let db = detail("a", laps: [lap(7, hr: nil)])
+        let r = DetailRoundTrip.compare(store: [store], database: [db])
+        #expect(r.differences.first?.fields == ["laps[index: 7].averageHR"])
+        #expect(r.fieldTally.map(\.field) == ["laps[*].averageHR"])
+    }
+
+    /// Two genuinely different causes must stay two rows. A collapse that
+    /// merged everything would read even more cleanly and say nothing.
+    @Test("Different fields stay different rows")
+    func differentFieldsStayApart() {
+        let store = detail("a", laps: [lap(1, hr: 140)], calories: 812)
+        let db = detail("a", laps: [lap(1, hr: nil)], calories: 900)
+        let r = DetailRoundTrip.compare(store: [store], database: [db])
+        #expect(Set(r.fieldTally.map(\.field))
+                    == ["laps[*].averageHR", "calories"])
+    }
+
+    /// Missing and surplus carry a count in the name too, and it is the same
+    /// problem: twelve missing splits should not be twelve rows.
+    @Test("Missing and surplus collapse, and stay distinct from each other")
+    func missingAndSurplusCollapse() {
+        let store = detail("a", splits: [
+            .init(index: 1, distanceM: 1000, movingTime: 300, elapsedTime: 310,
+                  elevationDiff: 0, averageHR: 140),
+            .init(index: 2, distanceM: 1000, movingTime: 300, elapsedTime: 310,
+                  elevationDiff: 0, averageHR: 141)])
+        let db = detail("a", splits: [
+            .init(index: 8, distanceM: 1000, movingTime: 300, elapsedTime: 310,
+                  elevationDiff: 0, averageHR: 140),
+            .init(index: 9, distanceM: 1000, movingTime: 300, elapsedTime: 310,
+                  elevationDiff: 0, averageHR: 141)])
+        let r = DetailRoundTrip.compare(store: [store], database: [db])
+        let keys = Set(r.fieldTally.map(\.field))
+        #expect(keys == ["splits missing", "splits surplus"])
+        #expect(r.fieldTally.allSatisfy { $0.elements == 2 })
+        #expect(r.fieldTally.allSatisfy { $0.details == 1 })
+    }
+
+    @Test("Nothing differing is an empty tally, not a zero row")
+    func agreementIsAnEmptyTally() {
+        let d = detail("a", laps: [lap(1, hr: 140)])
+        let r = DetailRoundTrip.compare(store: [d], database: [d])
+        #expect(r.agreed == 1)
+        #expect(r.fieldTally.isEmpty)
+    }
+
+    /// Ordered by how many details carry it, so the biggest cause is first —
+    /// which is what makes the top row readable without scrolling.
+    @Test("The biggest cause is first")
+    func orderedByReach() {
+        let store = [detail("a", laps: [lap(1, hr: 140)], calories: 812),
+                     detail("b", laps: [lap(1, hr: 150)], calories: 812),
+                     detail("c", laps: [lap(1, hr: 160)], calories: 812)]
+        let db = [detail("a", laps: [lap(1, hr: nil)], calories: 812),
+                  detail("b", laps: [lap(1, hr: nil)], calories: 812),
+                  detail("c", laps: [lap(1, hr: 160)], calories: 900)]
+        let r = DetailRoundTrip.compare(store: store, database: db)
+        #expect(r.fieldTally.map(\.field) == ["laps[*].averageHR", "calories"])
+        #expect(r.fieldTally.map(\.details) == [2, 1])
+    }
+}
+

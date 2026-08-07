@@ -91,6 +91,11 @@ struct DatabaseHealthView: View {
     @State private var readingBack = false
     @State private var roundTrip: ActivityRoundTrip.Report?
     @State private var roundTripLoad: ActivityLoad?
+    /// Patch 294. No separate load state: this comparison does its own reading
+    /// and the report carries the read's own outcome, because the id read
+    /// failing means everything under it is unknown rather than zero.
+    @State private var readingBackRecording = false
+    @State private var recordingTrip: RecordingRoundTrip.Report?
     @State private var verifying = false
     @State private var verification: VerificationReport?
 
@@ -129,6 +134,7 @@ struct DatabaseHealthView: View {
                     verifySection(db)
                 readBackSection(db)
                 detailReadBackSection(db)
+                recordingReadBackSection(db)
                     // AFTER the import and before the benchmark. It is about
                     // the files the import reads FROM, so it belongs beside
                     // the import; it is a survey rather than an action, so it
@@ -1062,16 +1068,32 @@ struct DatabaseHealthView: View {
                                    value: "\(r.missing.count)")
                         .font(.caption).foregroundStyle(.red)
                 }
-                // The tally first — "all on splits[*].averageHR" is one known
-                // cause; a list of ids is an afternoon.
+                // The tally first, and this comment was RIGHT before the code
+                // was — "all on splits[*].averageHR" is what it always meant to
+                // say, and until 295 the tally could not say it. §12.40.
                 ForEach(r.fieldTally.prefix(12), id: \.field) { entry in
-                    LabeledContent("  \(entry.field)", value: "\(entry.count)")
+                    LabeledContent("  \(entry.field)",
+                                   value: entry.elements == entry.details
+                                       ? "\(entry.details)"
+                                       : "\(entry.details) · \(entry.elements) elements")
                         .font(.caption2).foregroundStyle(.red)
                 }
                 if r.fieldTally.count > 12 {
                     Text("  + \(r.fieldTally.count - 12) more fields")
                         .font(.caption2).foregroundStyle(Color.dim)
                 }
+                // AND THE IDS. Collapsing the tally moved the lap index out of
+                // it, so it has to arrive here or it is gone from the screen —
+                // a summary that leaves nothing to open is a dead end.
+                ForEach(r.differences.prefix(5)) { d in
+                    Text("    \(d.id) — \(fieldSummary(d.fields))")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.differences.count > 5 {
+                    Text("    + \(r.differences.count - 5) more")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+
             }
         } header: {
             Text("Read-back · details")
@@ -1079,9 +1101,110 @@ struct DatabaseHealthView: View {
             Text("The same comparison one level down: splits, laps and best "
                  + "efforts, matched by index and by name rather than by "
                  + "position. A heart rate the importer normalised to nothing "
-                 + "is expected to show here — see ADR-0003 §12.37.")
+                 + "is expected to show here, as one row rather than one per "
+                 + "lap — see ADR-0003 §12.37 and §12.40.")
                 .font(.caption2)
         }
+    }
+
+    /// PATCH 294. The third read-back, and the only one that walks samples.
+    ///
+    /// The tally is in TWO parts here and one part on the other two screens.
+    /// "12 recordings differ on heartRate" is a different question from "91
+    /// samples out of 186,204 differ on heartRate" — the first says how wide
+    /// the problem is, the second says how deep — and one number cannot answer
+    /// both. §12.39.2.
+    @ViewBuilder
+    private func recordingReadBackSection(_ db: Sub4Database) -> some View {
+        Section {
+            if readingBackRecording {
+                HStack { ProgressView(); Text("Walking samples…").font(.caption) }
+            } else {
+                Button("Read the recordings back out") { runRecordingReadBack(db) }
+            }
+
+            if let r = recordingTrip {
+                LabeledContent("The read", value: r.line)
+                    .font(.caption)
+                    .foregroundStyle(r.isTrustworthy ? Color.dim : .red)
+
+                if r.isTrustworthy {
+                    LabeledContent("Compared", value: "\(r.compared)")
+                        .font(.caption).foregroundStyle(Color.dim)
+                    LabeledContent("Agreed on every sample", value: "\(r.agreed)")
+                        .font(.caption)
+                        .foregroundStyle(r.agreed == r.compared ? Color.dim : Color.ink)
+                    LabeledContent("Samples walked", value: "\(r.samplesWalked)")
+                        .font(.caption).foregroundStyle(Color.dim)
+
+                    if !r.missing.isEmpty {
+                        LabeledContent("In the store, not in the database",
+                                       value: "\(r.missing.count)")
+                            .font(.caption).foregroundStyle(.red)
+                    }
+                    if !r.unreadable.isEmpty {
+                        LabeledContent("Could not be read", value: "\(r.unreadable.count)")
+                            .font(.caption).foregroundStyle(.red)
+                    }
+
+                    // How WIDE — recordings, by field.
+                    ForEach(r.fieldTally.prefix(12), id: \.field) { entry in
+                        LabeledContent("  \(entry.field)", value: "\(entry.count)")
+                            .font(.caption2).foregroundStyle(.red)
+                    }
+                    if r.fieldTally.count > 12 {
+                        Text("  + \(r.fieldTally.count - 12) more fields")
+                            .font(.caption2).foregroundStyle(Color.dim)
+                    }
+
+                    // How DEEP — samples, by stream.
+                    ForEach(r.sampleTally, id: \.stream) { entry in
+                        LabeledContent("  \(entry.stream) samples",
+                                       value: "\(entry.differing) of \(entry.walked)")
+                            .font(.caption2).foregroundStyle(.red)
+                    }
+
+                    ForEach(r.differences.prefix(5)) { d in
+                        Text("    \(d.id) — \(d.detail)")
+                            .font(.caption2).foregroundStyle(Color.dim)
+                    }
+                    if r.differences.count > 5 {
+                        Text("    + \(r.differences.count - 5) more")
+                            .font(.caption2).foregroundStyle(Color.dim)
+                    }
+                }
+            }
+        } header: {
+            Text("Read-back · recordings")
+        } footer: {
+            Text("Every sample of every stream, compared one recording at a "
+                 + "time. A recording whose lengths disagree is reported as a "
+                 + "length and not walked, so one missing sample cannot report "
+                 + "as three hundred. A stream that was shorter than the "
+                 + "distance axis comes back padded with zeros and its "
+                 + "original length is gone — that is a real loss and it is "
+                 + "expected to show here. See ADR-0003 §12.39.")
+                .font(.caption2)
+        }
+    }
+
+    private func runRecordingReadBack(_ db: Sub4Database) {
+        readingBackRecording = true
+        let store = Array(DetailStore.shared.streams.values)
+        Task {
+            // OFF the main actor, unlike the two above — 645 read transactions
+            // and ~1.5 million comparisons. See `compareOffMain`.
+            recordingTrip = await RecordingRoundTrip.compareOffMain(db, store: store)
+            readingBackRecording = false
+        }
+    }
+
+    /// The precise names, trimmed. `laps[*].averageHR` in the tally says WHAT;
+    /// this says which laps, on the ids it prints, so the collapsed row still
+    /// leads somewhere.
+    private func fieldSummary(_ fields: [String]) -> String {
+        let shown = fields.prefix(4).joined(separator: ", ")
+        return fields.count > 4 ? shown + " + \(fields.count - 4)" : shown
     }
 
     private func runDetailReadBack(_ db: Sub4Database) {

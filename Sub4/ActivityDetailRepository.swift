@@ -249,12 +249,80 @@ nonisolated enum DetailRoundTrip {
 
         var agreed: Int { compared - differences.count }
 
-        var fieldTally: [(field: String, count: Int)] {
-            var counts: [String: Int] = [:]
-            for d in differences { for f in d.fields { counts[f, default: 0] += 1 } }
-            return counts.sorted { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) }
-                .map { (field: $0.key, count: $0.value) }
+        /// TWO NUMBERS PER ROW — patch 295, and the second one is new.
+        ///
+        /// `details` is how many DETAILS carry this field at all; `elements` is
+        /// how many splits, laps or efforts inside them do. Thirteen details
+        /// each with one bad lap and thirteen details with forty bad laps
+        /// between them are the same first number and nothing alike in the
+        /// second — the same wide-versus-deep split §12.39.2 built into the
+        /// recording report.
+        ///
+        /// Grouped by `tallyKey`, so one cause is one row. See its comment for
+        /// what that run actually looked like without it.
+        var fieldTally: [(field: String, details: Int, elements: Int)] {
+            var details: [String: Int] = [:]
+            var elements: [String: Int] = [:]
+            for d in differences {
+                var seen: Set<String> = []
+                for f in d.fields {
+                    let key = DetailRoundTrip.tallyKey(f)
+                    elements[key, default: 0] += 1
+                    if seen.insert(key).inserted { details[key, default: 0] += 1 }
+                }
+            }
+            return details.map { (field: $0.key,
+                                  details: $0.value,
+                                  elements: elements[$0.key] ?? 0) }
+                .sorted { a, b in
+                    if a.details != b.details { return a.details > b.details }
+                    if a.elements != b.elements { return a.elements > b.elements }
+                    return a.field < b.field
+                }
         }
+
+    }
+
+    /// THE TALLY KEY — patch 295, ADR-0003 §12.40.
+    ///
+    /// `differingFields` names an element precisely on purpose:
+    /// `laps[index: 12].averageHR` is a lap somebody can open, and §12.37.2
+    /// chose identity over position exactly so it would be. That precision is
+    /// right on the difference and wrong on the tally.
+    ///
+    /// The first real run showed why. Thirteen details differed, one cause —
+    /// the importer's `positiveOrNil` on a zero heart rate — and the tally had
+    /// twenty-five keys, because every lap index is its own key. The screen
+    /// truncated at twelve and printed "+ 13 more fields", so a single known
+    /// normalisation arrived looking like twenty-five unrelated problems with
+    /// an unknown number hidden behind a cut-off.
+    ///
+    /// This is the same defect §12.39.2 designed the recording report AROUND,
+    /// found in the report written four patches earlier. The fix is to collapse
+    /// the element identity **for grouping only**: `laps[*].averageHR`, one
+    /// row, count thirteen. The precise name stays on `Difference.fields`,
+    /// where it still leads to a lap.
+    ///
+    /// Rules, matching exactly what `differingFields` emits:
+    ///
+    ///     laps[index: 12].averageHR   →  laps[*].averageHR
+    ///     bestEfforts[1k].seconds     →  bestEfforts[*].seconds
+    ///     splits missing 12           →  splits missing
+    ///     bestEfforts surplus 1500m   →  bestEfforts surplus
+    ///     calories                    →  calories
+    static func tallyKey(_ field: String) -> String {
+        if let open = field.firstIndex(of: "["),
+           let close = field.firstIndex(of: "]"),
+           open < close {
+            return String(field[..<open]) + "[*]"
+                + String(field[field.index(after: close)...])
+        }
+        for word in [" missing ", " surplus "] {
+            if let r = field.range(of: word) {
+                return String(field[..<r.lowerBound]) + String(word.dropLast())
+            }
+        }
+        return field
     }
 
     static func compare(store: [ActivityDetail], database: [ActivityDetail]) -> Report {

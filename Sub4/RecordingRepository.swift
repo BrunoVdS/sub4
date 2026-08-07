@@ -119,6 +119,32 @@ nonisolated enum RecordingRepository {
         }
     }
 
+    /// What the IMPORTER said it wrote, per store id — `recording.sampleCount`.
+    ///
+    /// PATCH 294. One row per recording and no samples, which makes it cheap
+    /// enough to read before the walk. It is the third number in §12.39.1: an
+    /// array that arrived short and rows that vanished after they were written
+    /// are the same length mismatch without it, and different defects with it.
+    static func declaredCounts(_ db: Sub4Database,
+                               accountID: String = Sub4Import.accountID,
+                               sourceID: String = Sub4Import.sourceID)
+    -> Result<[String: Int], RepositoryError> {
+        do {
+            return .success(try db.queue.read { d in
+                var out: [String: Int] = [:]
+                for row in try Row.fetchAll(d, sql: headSQL,
+                                            arguments: [sourceID, sourceID, accountID]) {
+                    guard let id: String = row["storeID"] else { continue }
+                    let declared: Int = row["sampleCount"] ?? 0
+                    out[id] = declared
+                }
+                return out
+            })
+        } catch {
+            return .failure(RepositoryError(message: String(describing: error)))
+        }
+    }
+
     /// One recording, by the id the STORE uses.
     static func streams(_ db: Sub4Database, storeID: String,
                         accountID: String = Sub4Import.accountID,
@@ -219,3 +245,275 @@ nonisolated enum RecordingRepository {
         WHERE rec.sourceID = ? AND a.accountID = ?
         """
 }
+
+/// The recording comparison — D6a's last, patch 294, ADR-0003 §12.39.
+///
+/// SPLIT FROM ITS READER, like 290 was from 289. 292 built the reader and
+/// proved it against fixtures; this runs it against 645 real recordings and
+/// 192,954 real samples.
+///
+/// THREE NUMBERS, NOT TWO
+/// ----------------------
+/// Every other comparison in this project has two sides. This one has three:
+///
+///   the store's array length        `ActivityStreams.distanceM.count`
+///   what the importer said it wrote `recording.sampleCount`
+///   what the table actually holds   rows in `recording_sample`
+///
+/// The second exists because the importer wrote it, it costs one row per
+/// recording to read, and it separates two failures that otherwise look
+/// identical: an array that arrived short, and rows that went missing after
+/// they were written. A comparison with only two numbers would report both as
+/// "the lengths disagree" and leave somebody to work out which.
+///
+/// THE GATE BEFORE THE WALK
+/// ------------------------
+/// If the lengths disagree the per-sample walk is SKIPPED for that recording.
+/// One sample missing near the start shifts every later one, and the walk would
+/// report ~300 differences on a single defect — enough to bury everything else
+/// the run found under one recording's noise. The groundwork decided this
+/// before any of it was written (§4).
+///
+/// A FIELD NAME THAT CARRIES A COUNT IS NOT A FIELD NAME
+/// -----------------------------------------------------
+/// The whole value of the last two read-backs was the tally: `fetched 320 of
+/// 668` was a diagnosis on sight. A tally groups by field name, so the name has
+/// to be the SAME string on every recording that has the problem. `heartRate[3
+/// of 1204]` is unique per recording, and a tally of unique keys is just a list
+/// with extra steps.
+///
+/// So `fields` carries stable names — `heartRate`, `sampleCount`, `power
+/// missing from the database` — and the counts live in two places instead:
+/// `detail`, for the handful of ids the screen prints, and `sampleTally`, which
+/// adds the bands up across the whole run.
+nonisolated enum RecordingRoundTrip {
+
+    /// The eight streams in the order a report should read them. `distanceM`
+    /// is first because it is the only one that cannot be absent.
+    static let streamNames = ["distanceM", "heartRate", "speed", "altitude",
+                              "grade", "power", "latitude", "longitude"]
+
+    struct Difference: Sendable, Identifiable {
+        /// The store's activity id — Strava's.
+        let id: String
+        /// STABLE names, so the tally aggregates. See the header.
+        let fields: [String]
+        /// The same findings with their numbers, for the few ids printed.
+        let detail: String
+    }
+
+    /// A recording whose read FAILED — not one the database does not have.
+    /// Kept apart from `missing` for the same reason `RecordingLoad` exists.
+    struct Unreadable: Sendable, Identifiable {
+        let id: String
+        let why: String
+    }
+
+    /// What one recording's comparison produced, before it is folded into the
+    /// report. Separate so it can be tested without a database.
+    struct Comparison: Sendable {
+        var fields: [String] = []
+        var detail: [String] = []
+        /// Samples walked and samples that disagreed, per stream. Only streams
+        /// that were actually walked appear — a length mismatch contributes a
+        /// field and no denominator, because there isn't one.
+        var walked: [String: Int] = [:]
+        var differing: [String: Int] = [:]
+
+        var agrees: Bool { fields.isEmpty }
+        var line: String { detail.joined(separator: "; ") }
+    }
+
+    struct Report: Sendable {
+        /// How many recordings the database holds. Nil when the id read failed
+        /// — which is not zero, and must not be reachable as zero.
+        var databaseCount: Int?
+        var readFailure: String?
+        var compared = 0
+        /// In the store and not in the database at all.
+        var missing: [String] = []
+        var unreadable: [Unreadable] = []
+        var differences: [Difference] = []
+        var walked: [String: Int] = [:]
+        var differing: [String: Int] = [:]
+
+        var agreed: Int { compared - differences.count }
+        var isTrustworthy: Bool { readFailure == nil }
+
+        var line: String {
+            if let why = readFailure {
+                return "The database could not be read — \(why)"
+            }
+            let n = databaseCount ?? 0
+            return unreadable.isEmpty
+                ? "\(n) recordings in the database."
+                : "\(n) recordings in the database; \(unreadable.count) could not be read."
+        }
+
+        /// Recordings differing, by field. Same shape as the other two reports.
+        var fieldTally: [(field: String, count: Int)] {
+            var counts: [String: Int] = [:]
+            for d in differences { for f in d.fields { counts[f, default: 0] += 1 } }
+            return counts.sorted { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) }
+                .map { (field: $0.key, count: $0.value) }
+        }
+
+        /// SAMPLES differing, by stream, across everything walked. The band —
+        /// "91 of 186,204" — is the finding a per-recording count cannot give.
+        var sampleTally: [(stream: String, differing: Int, walked: Int)] {
+            RecordingRoundTrip.streamNames.compactMap { name in
+                let d = differing[name] ?? 0
+                guard d > 0 else { return nil }
+                return (stream: name, differing: d, walked: walked[name] ?? 0)
+            }
+        }
+
+        var samplesWalked: Int { walked.values.reduce(0, +) }
+    }
+
+    // MARK: The run
+
+    /// ONE AT A TIME. The store side is already in memory; the database side is
+    /// built, checked and dropped per recording, so 192,954 samples are never
+    /// all resident at once. That is the entire reason `ids` and
+    /// `streams(_:storeID:)` exist — see this file's header.
+    static func compare(_ db: Sub4Database, store: [ActivityStreams]) -> Report {
+        var report = Report()
+
+        let declared: [String: Int]
+        switch RecordingRepository.declaredCounts(db) {
+        case .failure(let e):
+            // The FIRST read failed, so nothing below it can be trusted. A
+            // report of "0 compared" here would read as "nothing to compare".
+            report.readFailure = e.message
+            return report
+        case .success(let counts):
+            declared = counts
+        }
+        report.databaseCount = declared.count
+
+        for s in store.sorted(by: { $0.activityId < $1.activityId }) {
+            let load = RecordingRepository.streams(db, storeID: s.activityId)
+            guard load.isTrustworthy else {
+                report.unreadable.append(Unreadable(id: s.activityId, why: load.line))
+                continue
+            }
+            guard let back = load.recordings?.first else {
+                report.missing.append(s.activityId)
+                continue
+            }
+
+            report.compared += 1
+            let c = compareOne(s, back, declared: declared[s.activityId])
+            for (k, v) in c.walked { report.walked[k, default: 0] += v }
+            for (k, v) in c.differing { report.differing[k, default: 0] += v }
+            if !c.agrees {
+                report.differences.append(Difference(id: s.activityId,
+                                                     fields: c.fields,
+                                                     detail: c.line))
+            }
+        }
+        return report
+    }
+
+    /// OFF THE MAIN ACTOR, unlike the other two read-backs, and the difference
+    /// is size rather than taste. The activity and detail comparisons are 668
+    /// structs against one query each. This is 645 read transactions and about
+    /// 1.5 million `Double` comparisons, which on the main actor is a frozen
+    /// screen for as long as it takes — and a diagnostic that looks like a
+    /// hang is a diagnostic nobody presses twice.
+    ///
+    /// Safe because `Sub4Database` is `Sendable` (it holds a GRDB
+    /// `DatabaseQueue`, which serialises its own access) and `ActivityStreams`
+    /// is a `nonisolated` value type.
+    static func compareOffMain(_ db: Sub4Database,
+                               store: [ActivityStreams]) async -> Report {
+        await Task.detached(priority: .userInitiated) {
+            compare(db, store: store)
+        }.value
+    }
+
+    // MARK: One recording
+
+    /// `declared` is `recording.sampleCount` — what the importer recorded it
+    /// wrote — or nil when the caller has not read it.
+    static func compareOne(_ s: ActivityStreams, _ d: ActivityStreams,
+                           declared: Int? = nil) -> Comparison {
+        var c = Comparison()
+
+        // Before the gate: a timestamp is comparable whatever the lengths do.
+        // Truncated to the second, because the writer truncates — 291a, and
+        // that correction cost 320 phantom differences to find.
+        if !DetailRoundTrip.sameSecond(s.fetched, d.fetched) {
+            c.fields.append("fetched")
+            c.detail.append("fetched differs")
+        }
+
+        // The header against the table. Rows lost after the insert look
+        // exactly like a short array unless this is asked separately.
+        if let declared, declared != d.count {
+            c.fields.append("sampleCount vs rows")
+            c.detail.append("recording.sampleCount says \(declared), "
+                            + "the table holds \(d.count)")
+        }
+
+        // THE GATE. Past here the walk would compare sample i to sample i of a
+        // different recording length and report noise — see the header.
+        guard s.count == d.count else {
+            c.fields.append("sampleCount")
+            c.detail.append("\(s.count) samples in the store, \(d.count) in the database")
+            return c
+        }
+
+        walkSamples("distanceM", s.distanceM, d.distanceM, &c)
+        walk("heartRate", s.heartRate, d.heartRate, &c)
+        walk("speed", s.speed, d.speed, &c)
+        walk("altitude", s.altitude, d.altitude, &c)
+        walk("grade", s.grade, d.grade, &c)
+        walk("power", s.power, d.power, &c)
+        walk("latitude", s.latitude, d.latitude, &c)
+        walk("longitude", s.longitude, d.longitude, &c)
+        return c
+    }
+
+    /// Present on one side and absent on the other is NOT a differing sample —
+    /// it is a differing stream, and §12.38.5 is why it gets its own name:
+    /// `has(_:)` decides whether a chart is drawn at all.
+    private static func walk(_ name: String, _ s: [Double]?, _ d: [Double]?,
+                             _ c: inout Comparison) {
+        switch (s, d) {
+        case (nil, nil):
+            return
+        case (nil, .some(let y)):
+            c.fields.append("\(name) surplus in the database")
+            c.detail.append("\(name): absent in the store, \(y.count) in the database")
+        case (.some(let x), nil):
+            c.fields.append("\(name) missing from the database")
+            c.detail.append("\(name): \(x.count) in the store, absent in the database")
+        case (.some(let x), .some(let y)):
+            walkSamples(name, x, y, &c)
+        }
+    }
+
+    private static func walkSamples(_ name: String, _ x: [Double], _ y: [Double],
+                                    _ c: inout Comparison) {
+        // The short-stream loss lands here: the importer pads to
+        // `distanceM.count` with NULL, the reader reads NULL as zero, and the
+        // original length is not recoverable — §12.38.4. Reported as a length,
+        // which is what it is, rather than as N differing samples.
+        guard x.count == y.count else {
+            c.fields.append("\(name) length")
+            c.detail.append("\(name): \(x.count) in the store, \(y.count) in the database")
+            return
+        }
+        var differing = 0
+        for i in 0..<x.count where x[i] != y[i] { differing += 1 }
+        c.walked[name] = x.count
+        if differing > 0 {
+            c.differing[name] = differing
+            c.fields.append(name)
+            c.detail.append("\(name)[\(differing) of \(x.count)]")
+        }
+    }
+}
+
