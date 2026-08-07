@@ -34,6 +34,17 @@
 //  This is a deliberate departure from the source spec's schema, which assumes
 //  a server and a remote source of truth. Ours is local.
 //
+//  THE WALK ITSELF LIVES IN `LoadSeries` — patch 314
+//  -------------------------------------------------
+//  This class still decides WHAT to feed the series: it reads the stores,
+//  measures the power factor, maps sRPE through the plan and the matcher, and
+//  asks Apple Health for the heart rates Strava does not have. `LoadSeries`
+//  takes all of that as arguments and walks the days.
+//
+//  The split is not tidiness. D6c slice 3 builds the same series from the
+//  database's activities and traces with every other input held identical, and
+//  that is only possible if the walk has no hidden inputs. §12.58.
+//
 
 import Foundation
 import Observation
@@ -144,62 +155,51 @@ final class LoadStore {
             }
         }
 
-        var out: [DailyLoad] = []
-        var key = MatchRules.cutoffDayKey
-        let today = DayKey.key()
-        var guardCount = 0
-
-        while key <= today, guardCount < 3_000 {
-            guardCount += 1
-
-            let eligible = store.activities(on: key).filter(\.isLoadEligible)
-            let hrRest = constants.hrRest(on: key)
-
-            var loads: [WorkoutLoad] = []
-            for a in eligible {
-                loads.append(LoadEngine.load(for: a,
-                                             streams: details.streams(for: a.id),
-                                             hrMax: constants.hrMax,
-                                             hrRest: hrRest,
-                                             w: w,
-                                             srpe: srpeByActivity[a.id],
-                                             ftp: ftp,
-                                             powerFactor: powerFactor,
-                                             healthAverageHR: HealthStore.shared
-                                                 .healthMatch(for: a)?.averageHeartRate))
+        // APPLE HEALTH'S HEART RATES, GATHERED UP FRONT — patch 314.
+        //
+        // `healthMatch` used to be called inside the day walk. It is called
+        // over the same set — load-eligible activities only — and the result
+        // is handed in, because `LoadSeries` must have no hidden inputs for a
+        // twin to be possible at all.
+        //
+        // THE ONE INPUT NO DATABASE WILL EVER HOLD. It is a cache of Apple
+        // Health, not of anything this app writes, which is why slice 3 holds
+        // it identical on both sides rather than pretending it could vary.
+        var health: [String: Double] = [:]
+        for a in store.activities where a.isLoadEligible {
+            if let hr = HealthStore.shared.healthMatch(for: a)?.averageHeartRate {
+                health[a.id] = hr
             }
-
-            let scored = loads.filter(\.isScored)
-            let state: DayState
-            if loads.isEmpty            { state = .rest }
-            else if scored.isEmpty      { state = .gap }
-            else if scored.count == loads.count { state = .measured }
-            else                        { state = .partial }
-
-            out.append(DailyLoad(dayKey: key,
-                                 load: scored.reduce(0) { $0 + $1.trimp },
-                                 state: state,
-                                 workouts: loads))
-
-            // Fail closed. An unparseable key used to leave `key` unchanged,
-            // which appended the same day three thousand times before the
-            // counter stopped it — duplicate ForEach ids, a day counted three
-            // thousand times in every total.
-            guard let next = Self.nextDay(key), next > key else { break }
-            key = next
         }
+
+        // THE WALK MOVED OUT — patch 314, ADR-0003 §12.58.
+        //
+        // Four hundred days over a four-rung scoring engine, reading eight
+        // singletons as it went. D6c slice 3 needs the same series built from
+        // the database's activities and traces, and a second implementation of
+        // this is the mistake §12.43 cost three patches to learn.
+        //
+        // `ActivityRoster.byDay` rather than `store.activities(on:)`, and they
+        // are the same thing: the store's own index is built by that function
+        // (§12.56.2). Building it again here costs one grouping of ~670 rows
+        // per rebuild and buys a `build` with nothing hidden in it.
+        let out = LoadSeries.build(
+            from: MatchRules.cutoffDayKey,
+            to: DayKey.key(),
+            byDay: ActivityRoster.byDay(store.activities),
+            inputs: LoadSeries.Inputs(hrMax: constants.hrMax,
+                                      hrRest: { constants.hrRest(on: $0) },
+                                      w: w,
+                                      ftp: ftp,
+                                      powerFactor: powerFactor,
+                                      srpe: srpeByActivity,
+                                      healthAverageHR: health,
+                                      streams: details.streams))
         days = out
         // One assignment site for all three, so the two derived series cannot
         // describe a different day list from the one they were built from.
         pmc = PMCSummary(points: PMC.build(out))
         monotony = Monotony.series(pmc.points)
-    }
-
-    private static func nextDay(_ key: String) -> String? {
-        guard let d = DayKey.date(key),
-              let n = Calendar(identifier: .iso8601)
-                  .date(byAdding: .day, value: 1, to: d) else { return nil }
-        return DayKey.key(n)
     }
 
     // MARK: Reading

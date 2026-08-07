@@ -5286,6 +5286,117 @@ through, and the moment a list exists it starts attracting entries. It gets
 built in the slice that has one. Until then the screen says so in as many words:
 every number above zero is real.
 
+## 12.57 The numbers derived from the list — patch 313
+
+D6c slice 2. Slice 1 proved both sides derive the same list; this compares what
+the app computes from it.
+
+### 12.57.1 Three figures, and each sees something the others cannot
+
+| | what it is | what only it can catch |
+|---|---|---|
+| `DayDistance.of` | one day's distance | a day that stops being a distance |
+| `recordedByWeek` | training + commute, per week, per discipline, per unit | a week that moved between units |
+| `VolumeSeries.mix` | the whole history in six bands | a ride that changed band |
+
+The first is the interesting one. Patch 249 made `DayDistance` **refuse to add
+kilometres across sports** — a day with a ride and a swim is reported in
+minutes, because minutes add and kilometres do not. So the answer is not a
+number, it is one of three shapes, and a day that changes shape is a difference
+that **every field comparison in this project would call agreement**: every
+field on every activity still matches.
+
+That is the argument for comparing derivations rather than records, made
+concrete. §12.16 warned that equal counts can hide changed values; this is one
+layer further out — equal *values* hiding a changed answer.
+
+### 12.57.2 The window was the problem, and the fix is the 312 move again
+
+`VolumeSeries.weeks` bucketed only the 26 weeks it draws. Comparing what it
+returns would have reported a clean half year and said nothing about the eight
+months before it — a denominator of 26 where the honest one is 58, and no line
+on screen saying which.
+
+So the twelve lines that bucket recorded activities became
+`VolumeSeries.recordedByWeek`: no clock in it, keyed by the Monday's day-key,
+covering everything. `weeks()` reads its window out of that.
+
+**This is the third time in four patches.** `byDay` at 312, `isKept` and `dedup`
+at 310, this now. The pattern is the same each time: a rule written where its
+only caller lived, and a second caller arriving that must not reimplement it.
+Worth naming as a rule rather than three incidents:
+
+> **A derivation with one caller looks like part of that caller. It stops being
+> that the moment something else must agree with it.**
+
+`theWeekBucketingIsUnmoved` is the test the extraction owes, because four charts
+read `weeks()`. It asserts the drawn figures are what the shared function
+produced, which is the half a refactor can get wrong silently.
+
+`recordedByWeek` returns an **empty dictionary** for a discipline with nothing
+recorded, not a row of zeros. Absent means "this sport does not appear in this
+history"; a zero would mean "it appears and did nothing", and only one of those
+is true of somebody who has never swum. §12.15's shape, in a dictionary.
+
+### 12.57.3 A tolerance, and why it is on screen
+
+Both sides sum the same doubles from lists `settle` put in the same order, so
+exact equality should hold today.
+
+**Should is not a mechanism** — §12.49 cost a patch to learn that sentence. One
+reordering anywhere upstream and `==` starts reporting 1e-15 as a data
+difference. The first time a gate cries wolf is the last time anybody reads it,
+and this project has spent five patches on diagnostics that could not be
+believed.
+
+So: **one metre, one second.** Below that a difference is how two identical sums
+ended in a different last bit; above it, it is data.
+
+Two things about it are deliberate. It is **printed on screen beside the
+verdict**, because a threshold nobody can see is a threshold nobody can argue
+with — and a hidden `==` with a fudge factor is exactly the shape of the
+diagnostics this file keeps having to correct. And it applies **only to
+doubles**: `DayDistance.minutes` and `.none(minutes:)` are `Int`, the
+discipline is compared exactly, and the *case* is compared exactly. A tolerance
+on an integer would be an invitation.
+
+`theToleranceIsNotAWildcard` pins both ends: half a millimetre passes, ten
+metres does not. An untested tolerance is a hole nobody has measured.
+
+### 12.57.4 One section, one button — groundwork §7, answered
+
+§7 left the shape open until there was more than one comparison to lay out.
+There are two, and they need the **same** 672-row read and the **same**
+`settle`. Two buttons would do that work twice, and — the real argument —
+somebody who pressed one and not the other would get an answer that looked
+complete and was half.
+
+So `ShadowParity` runs both and holds the result, and `ActivityParity` and
+`VolumeParity` become pure comparisons: two `[Activity]` in, a `Report` out, no
+database, no store, no clock. That is what lets their tests build the two sides
+from genuinely different places, and slice 3 inherits it.
+
+### 12.57.5 The result used to evaporate, and the paste said so
+
+312 held the result in `@State` on the sheet. Pressing Done discarded it, so the
+diagnostics paste — the thing read later by somebody who was not there — said
+*"Not compared since this launch"* one minute after the comparison passed.
+
+The line was **true of the `@State` and false about the world**. Not a wrong
+number; a right number about the wrong subject, which is harder to spot and is
+why it survived a screenshot and a paste in the same minute.
+
+It lives on a singleton now, like `DatabaseWriteThrough` since 302, and survives
+dismissal within a launch. **Not persisted** — the question is "does the
+database agree with the app right now", and a stored answer from three launches
+ago would be a second answer to a question the current data already settles
+(§12.29).
+
+Only parity moved. The three read-backs and the survey keep their `@State` and
+the same trap; changing five things to fix one is how a slice patch stops being
+checkable, which is patch 274's rule about not mixing a permissions change into
+a mechanical extraction.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,
