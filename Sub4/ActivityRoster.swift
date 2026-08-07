@@ -105,6 +105,28 @@ enum ActivityRoster {
                       arrivedOutOfOrder: outOfOrder)
     }
 
+    // MARK: The day index
+
+    /// THE DAY BUCKETS — patch 168, moved here at 312.
+    ///
+    /// It was one line in `ActivityStore`'s `didSet`, which was the right place
+    /// while there was one caller. D6c's twin needs the same buckets built from
+    /// the database, and **one line copied twice is still two implementations**
+    /// — §12.43, the same argument that moved `isKept` and `dedup` here at 310.
+    ///
+    /// `Dictionary(grouping:)` PRESERVES ENCOUNTER ORDER, so each day's bucket
+    /// inherits the newest-first order of the list it is given. Patch 168's
+    /// comment says callers depend on that, which means the property is part of
+    /// what this function promises rather than an accident of the standard
+    /// library — and it is why the parity comparison checks each day's SEQUENCE
+    /// rather than each day's set.
+    ///
+    /// Takes a list rather than a `Result`, because the store's `didSet` also
+    /// fires on `activities = []`, where no `Result` exists.
+    static func byDay(_ activities: [Activity]) -> [String: [Activity]] {
+        Dictionary(grouping: activities, by: \.dayKey)
+    }
+
     // MARK: The three rules
 
     /// THE ONE GATE, APPLIED WHEREVER AN ACTIVITY ARRIVES — patch 123, moved

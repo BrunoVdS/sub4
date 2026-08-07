@@ -5187,6 +5187,105 @@ do have one cannot forget.
 Which is §12.45's own argument about defaulted parameters, pointed at the
 parameter that says who caused the run.
 
+## 12.56 The twin, and the first comparison — patch 312
+
+D6c slice 1. 309 and 310 built the half nobody could see: one implementation of
+the three rules, called by both of the store's doors. This builds the other half
+— the same list, derived from the database — and compares them.
+
+### 12.56.1 A different question from the three above it
+
+The read-backs ask *do both sides hold the same records?* Answered at D6a: 672
+activities, 672 details, 649 recordings, 1,412,819 samples, every field compared
+by name.
+
+This asks *would the app produce the same list?* Between the rows and the list
+stand five rules, and it is the derived list that every screen actually reads.
+Equal records do not imply equal derivation.
+
+So it compares only what D6a cannot see: identity as a **set after the rules**,
+**order**, **day membership**, and the **zones**. It re-checks no fields. A
+second comparison of the same nineteen fields would eventually disagree with the
+first, and then neither could be believed.
+
+### 12.56.2 Three patches to make one sentence true
+
+> There is one implementation of every rule in this comparison.
+
+- **309** made both store doors apply the same rules, by writing them out twice.
+- **310** made disagreement unavailable: `ActivityRoster.settle`, one call.
+- **312** moves `byDay` — one line from a `didSet` — and builds the twin.
+
+`byDay` is the smallest of the three and the clearest illustration. It is
+`Dictionary(grouping: activities, by: \.dayKey)`, and copying it into the twin
+would have looked free. It is not free, because it carries a promise: encounter
+order is preserved, and patch 168's comment says callers depend on that. **One
+line copied twice is still two implementations**, and the second copy would have
+agreed only while both sides happened to keep sorting the same way.
+
+`DayZones.from` needed no move — it was already a `nonisolated` pure function
+with an `Equatable` result, which is what a rule looks like when it was written
+in the right place the first time.
+
+### 12.56.3 A row the rules refuse is not a difference
+
+The twin drops what the store would drop, so an activity the database is
+carrying that the app no longer wants appears as `databaseDropped` — **not** as
+`databaseOnly`.
+
+That distinction matters more than it looks. §12.46.3 owned a cost when
+write-through landed: automatic runs do not reconcile, so a record deleted in
+the app stays in the database until somebody presses Import. Until now nothing
+counted them. `databaseDropped` is the first instrument for that gap, and it is
+deliberately **not red** — a number there is the known behaviour of an automatic
+run, not a fault.
+
+### 12.56.4 Making a zero believable
+
+Groundwork §2.1: the first comparison will almost certainly report zero
+differences, because D6a ruled out data differences and both sides now share the
+rules. **A check whose answer is always "no differences" cannot be told from a
+check that is broken**, and D7 would be flipped on the strength of it.
+
+Three answers, each with its limit:
+
+| | proves | does not prove |
+|---|---|---|
+| `ActivityParityTests` — seven planted differences | the comparison reports what it is given | that the device's data is right |
+| `common` beside every count | a dead read cannot look like agreement | that the read was complete |
+| both sides built from different places | they are not the same object | it, at runtime — this is read, not checked |
+
+`nothingComparedIsNotAgreement` is the one with teeth. Zero compared against
+zero agrees perfectly, `unexplained` is honestly 0, and `lookedAtSomething` is
+what refuses to let that read as a pass. Without it the healthiest-looking
+screen in the app would be the one where the read died.
+
+Every planted difference is built through the real `Sub4Import` and read back
+through the real `ActivityRepository`, then perturbed on the store side. There
+is no runtime answer to "both sides are secretly the same object"; constructing
+them from different places, and saying so, is the whole of it.
+
+### 12.56.5 Order is compared over the common ids only
+
+A single missing activity shifts every position after it. Comparing the raw
+sequences would report one absence as four hundred order differences — the same
+mistake §12.39 had to fix for sample lengths, where one short stream reported as
+three hundred differing samples.
+
+So identity is settled first, and order is compared over what both sides have.
+`orderCompared` is printed beside `orderDiffered` for the reason every number on
+this screen now is.
+
+### 12.56.6 No approved-difference list, and that is a decision
+
+Groundwork §5 defines one. Both its entries are about details and recordings;
+for activities the expected count is zero.
+
+An empty suppression list shipped now would be a gate nothing has passed
+through, and the moment a list exists it starts attracting entries. It gets
+built in the slice that has one. Until then the screen says so in as many words:
+every number above zero is real.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

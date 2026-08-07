@@ -59,7 +59,15 @@ final class ActivityStore {
     /// stale, because it is not separately maintained.
     private(set) var activities: [Activity] = [] {
         didSet {
-            byDay = Dictionary(grouping: activities, by: \.dayKey)
+            // MOVED TO `ActivityRoster` AT 312, and it is one line, and that is
+            // the point. D6c's twin needs the same buckets built from the
+            // database — **one line copied twice is still two implementations**
+            // (§12.43), and this one carries a promise a copy would not:
+            // `Dictionary(grouping:)` preserves encounter order, which patch
+            // 168's comment below says callers depend on.
+            byDay = ActivityRoster.byDay(activities)
+            // `DayZones.from` was already a shared pure function, so the twin
+            // calls this one. Nothing to move.
             dayZones = DayZones.from(activities: activities)
         }
     }

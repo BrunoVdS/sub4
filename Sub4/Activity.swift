@@ -37,6 +37,7 @@ struct Activity: Codable, Identifiable, Hashable {
     /// so that activities cached before patch 27 still decode.
     ///
     var deviceWatts: Bool?
+    
     var averageWatts: Double?
 
     // MARK: Where and when it actually happened
