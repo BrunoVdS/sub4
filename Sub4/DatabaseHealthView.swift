@@ -161,6 +161,21 @@ struct DatabaseHealthView: View {
                 }
             }
             .task { await load() }
+            // THE LEDGER FOLLOWS EVERY RUN, not just the button — patch 306.
+            //
+            // 303 reloaded it after a press. An AUTOMATIC run while this screen
+            // is open left it showing whatever was current when the screen
+            // opened, which is what made the trigger look dead during testing:
+            // `Last run` moved and the row under it did not.
+            //
+            // Keyed on `runs`, which changes exactly once per completed run
+            // whatever fired it.
+            .onChange(of: writeThrough.runs) {
+                if case .success(let db) = opened {
+                    Task { await reloadLedger(db) }
+                }
+            }
+
         }
     }
 

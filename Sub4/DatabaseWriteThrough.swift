@@ -52,6 +52,7 @@
 //
 
 import Foundation
+import UIKit
 
 @MainActor
 @Observable
@@ -84,6 +85,84 @@ final class DatabaseWriteThrough {
     private var runAgainWhenDone = false
 
     // MARK: Running
+
+    /// The assertion held while a backgrounding run finishes. `.invalid` when
+    /// none — see `runOnBackgrounding`.
+    private var assertion: UIBackgroundTaskIdentifier = .invalid
+
+    /// Set on the way out, cleared by `runOnReturn`. This is the fact 305's
+    /// `previous == .background` was reaching for and could not see — see
+    /// `runOnReturn`.
+    private var wentToBackground = false
+
+    /// THE TRIGGER, WITH THE TIME TO FINISH — patch 305.
+
+    ///
+    /// Synchronous on purpose. 302 called `Task { await run(…) }` straight from
+    /// the scene-phase change; that task suspends at its first `await` and has
+    /// no claim on the process, so iOS is free to suspend the app before it
+    /// ever resumes. It usually completed, because the run is a third of a
+    /// second. **Usually is not a mechanism.**
+    ///
+    /// `beginBackgroundTask` is taken here, BEFORE any suspension point, which
+    /// is the only ordering that works: an assertion requested after the first
+    /// `await` is an assertion requested from code that may never run.
+    ///
+    /// The expiration handler is UIKit's promise that it will tell us before it
+    /// kills us. If it fires, the run is abandoned mid-flight and leaves a
+    /// `running` row the ledger already reports as an interrupted run — which
+    /// is the honest outcome and is why that row exists.
+    func runOnBackgrounding() {
+        // BEFORE the assertion, and before the early return below. A declined
+        // assertion is exactly the case the catch-up exists for, so the flag
+        // must be set even when nothing is attempted here.
+        wentToBackground = true
+
+        guard assertion == .invalid else { return }
+
+
+        assertion = UIApplication.shared
+            .beginBackgroundTask(withName: "sub4.write-through") { [weak self] in
+                // Documented to arrive on the main thread. `assumeIsolated`
+                // rather than a new `Task`, because scheduling work at
+                // expiration is scheduling work that will not run.
+                MainActor.assumeIsolated { self?.releaseAssertion() }
+            }
+        guard assertion != .invalid else {
+            // iOS declined. Not an error and not a failure to write — nothing
+            // was attempted, and the catch-up on the way back will do it.
+            return
+        }
+
+        Task {
+            await run(reason: "the app went to the background")
+            releaseAssertion()
+        }
+    }
+
+    /// The catch-up, on the way back in.
+    ///
+    /// GUARDED ON HAVING BEEN AWAY, not on the phase transition. `.active`
+    /// arrives from `.inactive` every time — after a notification banner, after
+    /// Control Centre, after a glance at the app switcher — and running a
+    /// write-through on each of those would be several a minute for nothing.
+    ///
+    /// This is where the guarantee lives. The backgrounding run is best-effort
+    /// however good the assertion is; this one happens with the app awake and
+    /// unhurried, which is what makes "a missed run is late rather than lost"
+    /// a property rather than a hope. §12.50.
+    func runOnReturn() {
+        guard wentToBackground else { return }
+        wentToBackground = false
+        Task { await run(reason: "the app came back to the foreground") }
+    }
+
+    private func releaseAssertion() {
+
+        guard assertion != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(assertion)
+        assertion = .invalid
+    }
 
     func run(reason: String) async {
         if isRunning { runAgainWhenDone = true; return }

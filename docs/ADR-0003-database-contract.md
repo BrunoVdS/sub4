@@ -4614,6 +4614,152 @@ Every test names its zone and its `now` explicitly. A date-formatter test that
 reads the machine's own settings passes on the machine that wrote it and proves
 nothing.
 
+## 12.49 Usually is not a mechanism — patch 305
+
+302's trigger was:
+
+```swift
+if phase == .background {
+    Task { await DatabaseWriteThrough.shared.run(reason: "…") }
+}
+```
+
+It probably worked most of the time, and that is the problem with it.
+
+### 12.49.1 What is actually wrong
+
+An unstructured `Task` started at `.background` **suspends at its first `await`
+and has no claim on the process.** iOS may suspend the app before it resumes.
+The run itself is then handed to `Task.detached(priority: .utility)`, which is
+precisely the class of work the system drops first when it is winding an app
+down.
+
+So the design was: *ask for a third of a second of work at the exact moment the
+system has decided to stop giving us any, and hope the window is wide enough.*
+Against a 0.33 s run it usually is.
+
+**Usually is not a mechanism.** A trigger that works most of the time produces a
+database that is usually current, and "usually current" is indistinguishable
+from "current" until the day it matters — which is the same shape as every
+diagnostic this file has had to correct.
+
+Recorded plainly because it was mine, and because §12.46.2.1 argued the trigger
+was sound on the grounds that a missed run is *late rather than lost*. That
+argument is correct and it was doing work it could not do: it justifies having
+**few** triggers, not having an **unreliable** one. Nothing in it says the app
+will ever get around to the late run.
+
+### 12.49.2 The fix is an ordering, not a bigger hammer
+
+`beginBackgroundTask` is requested **synchronously in the scene-phase callback,
+before any suspension point.** That ordering is the whole of it: an assertion
+requested after the first `await` is an assertion requested from code that may
+never run.
+
+The expiration handler is UIKit's promise to warn before killing. If it fires,
+the run is abandoned mid-write and leaves a `running` row that the ledger
+already reports as an interrupted run — the honest outcome, and the reason
+§12.46.2.1's "degrades into the state it was built to report" was the right
+instinct even while the mechanism under it was not.
+
+If iOS declines the assertion outright, nothing is attempted. That is not a
+failed write and is not recorded as one.
+
+### 12.49.3 And a second trigger, which is where the guarantee lives
+
+**Returning to the foreground.** That is the moment the app definitely has time,
+and it is what turns *late rather than lost* from an argument into a property.
+
+Gated on `previous == .background`, because Control Centre and notification
+banners produce `.inactive` — returning from a banner would otherwise fire a run
+every time one appeared.
+
+A background/foreground cycle therefore does **two** runs, and the redundancy is
+deliberate rather than tolerated: the first is best-effort and the second is
+certain, each costs 0.33 s, and the import has been idempotent since long before
+anything depended on it. The observable signature is useful too —
+`Runs since launch` rising by two per cycle is what a working pair looks like.
+
+### 12.49.4 The gap this does not close, named rather than left
+
+**`BackgroundRefresh.run()` mutates the stores and never writes through.**
+
+It is a `BGAppRefreshTask`: it fetches activities from Strava, writes
+`activities.json` and up to three details, and runs **without the scene being
+built** — `Sub4App`'s own comment says so. So `Sub4Launch.shared.database` is
+nil there, and a write-through from it would have to open its own connection,
+which is the one thing `DatabaseHealthView` is careful not to do.
+
+Today that is survivable: the next foreground `.active` catch-up picks up
+whatever the background refresh wrote. It is the largest remaining staleness
+window in D6b and it belongs to its own patch, alongside groundwork §5.4's
+`trigger` column.
+
+## 12.50 A transition that does not happen — patch 306
+
+305 added a catch-up trigger gated like this:
+
+```swift
+if previous == .background, phase == .active { … }
+```
+
+**SwiftUI never delivers that transition.** Going out is
+`.active → .inactive → .background`. Coming back is
+`.background → .inactive → .active`. At the step where `phase` is `.active`,
+`previous` is *always* `.inactive`.
+
+So the condition could not be true, and the catch-up — the half of 305 that was
+supposed to turn *late rather than lost* from an argument into a property —
+never fired once.
+
+### 12.50.1 What the device said, and what it took to read it
+
+The test was: note `Runs since launch`, go to the home screen, come back. It
+should have been **up by two**; it was up by one.
+
+That reading was only possible because 305 wrote down what each number would
+mean *before* the run — two is the pair working, one is the assertion declined,
+zero is the wrong hook entirely. Without that, "1" is a number you can talk
+yourself into.
+
+It turned out to be a fourth case the list did not have: the backgrounding run
+fired and the catch-up was unreachable. Worth noting that the written
+predictions were still what made the result diagnosable — they narrowed it to
+*one of the two did not run*, which is what sent me to the transition sequence
+rather than to the assertion.
+
+### 12.50.2 The fix is state, not a better predicate
+
+`previous == .background` was trying to observe a fact — *we have been away* —
+through a mechanism that cannot express it. The fact now lives where it is used:
+`runOnBackgrounding` sets a flag, `runOnReturn` consumes it.
+
+Set **before** the assertion is requested, and before the early return if one is
+already held. A declined assertion is precisely the case the catch-up exists
+for, so the flag must be set even when nothing is attempted on the way out.
+
+`.inactive` stays a no-op in both directions. Firing on every `.active` would
+mean a write-through after every notification banner, every Control Centre pull,
+every glance at the app switcher — several a minute, for nothing.
+
+### 12.50.3 The other reason this was hard to see
+
+While the Database screen was open, an automatic run moved `Last run` and left
+the Import ledger showing whatever was current when the screen opened.
+
+303 fixed exactly this for the button and no further. An automatic run has no
+call site to hang a reload on, so it kept the stale row — and the stale row is
+what made a working trigger look dead, for the second time in four patches.
+
+The screen now reloads the ledger whenever `runs` changes, whatever fired the
+run. Keyed on the counter rather than on any particular trigger, so a trigger
+added later inherits it.
+
+**This is the third appearance of the same shape in this session** — §12.34,
+§12.47.1, and now here. A screen holding two views of one event, where the
+cheaper one updates and the expensive one does not, and the disagreement reads
+as the system being broken rather than the screen being behind.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

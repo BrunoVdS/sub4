@@ -144,28 +144,39 @@ struct ContentView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            // Ask for the next background wake on the way out. Submitting again
-            // replaces the pending request rather than stacking a second one,
-            // so this is safe to call on every backgrounding.
-            if phase == .background {
+            switch phase {
+            case .background:
+                // Ask for the next background wake on the way out. Submitting
+                // again replaces the pending request rather than stacking a
+                // second one, so this is safe to call on every backgrounding.
                 BackgroundRefresh.schedule()
-                // PATCH 302 — D6b. The one automatic trigger, deliberately.
+                DatabaseWriteThrough.shared.runOnBackgrounding()
+
+            case .active:
+                // THE CATCH-UP, AND 305 GATED IT ON A TRANSITION THAT DOES NOT
+                // HAPPEN — patch 306.
                 //
-                // A whole-world run costs 0.325 s and copies everything, so a
-                // missed trigger is LATE rather than a gap — which is why one
-                // trigger is enough to start with, and why no dirty flag is
-                // tracked. §12.46.
+                // 305 wrote `if previous == .background, phase == .active`.
+                // SwiftUI does not deliver that transition. Going out is
+                // `.active → .inactive → .background`; coming back is
+                // `.background → .inactive → .active`. At the step where
+                // `phase` is `.active`, `previous` is ALWAYS `.inactive`, so
+                // the condition could never be true and the catch-up never
+                // fired once. §12.50.
                 //
-                // The task may not finish if iOS suspends us first. That is
-                // survivable: an interrupted run leaves a `running` row the
-                // ledger already reports as "Interrupted runs", and the next
-                // background does the work again.
-                Task {
-                    await DatabaseWriteThrough.shared
-                        .run(reason: "the app went to the background")
-                }
+                // The state now lives where it is used: `runOnReturn` runs only
+                // if `runOnBackgrounding` has been called since, which is the
+                // fact the gate was reaching for.
+                DatabaseWriteThrough.shared.runOnReturn()
+
+            default:
+                // `.inactive` is a banner, Control Centre, or the app switcher
+                // on the way past. Nothing to do in either direction.
+                break
             }
         }
+
+
     }
 }
 
