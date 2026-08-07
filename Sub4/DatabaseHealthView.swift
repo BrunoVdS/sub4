@@ -734,50 +734,23 @@ struct DatabaseHealthView: View {
         importError = nil
         Task {
             do {
-                // PATCH 274 — THE GATE, asked here because this is the only
-                // place the answer is knowable: `Sub4Import` is `nonisolated`
-                // end to end and `StoreReadJournal` is on the main actor.
+                // ONE VALUE, GATHERED IN ONE PLACE — patch 301, §12.45.
                 //
-                // Every store the pass deletes on behalf of has to have been
-                // READ. `canReconcile` fails closed on any that never
-                // reported, so wiring a fourth table into the pass and
-                // forgetting to name its store here refuses rather than
-                // deletes.
+                // This used to be twenty hand-written arguments, and the
+                // verifier forty lines below repeated thirteen of them.
+                // `Sub4Import.run` defaults eighteen of its parameters, so a
+                // forgotten one is not a compile error — it is a table that
+                // silently stops being imported, which a read-back would then
+                // report as data missing from the database.
                 //
-                // A LOCAL WITH A WRITTEN TYPE, not a ternary in the argument
-                // list. Both branches are implicit-member expressions and the
-                // reader of this line should not have to work out what type
-                // they resolve to.
-                let permission: Reconciliation =
-                    StoreReadJournal.shared.canReconcile(
-                        ["notes.json", "proposals.json", "commutes.json",
-                         Matcher.decisionsKey])
-                    ? .run
-                    : .skipped("a store could not be read")
-
+                // The gate patch 274 built moved with it. It still fails
+                // closed, and `AppStores.reconcileRequires` is the list it
+                // fails closed on — beside the fields it is about, because a
+                // name MISSING from that list makes reconciliation more likely
+                // to run, and reconciliation deletes.
                 importReport = try Sub4Import.run(
                     into: db,
-                    activities: ActivityStore.shared.activities,
-                    // ALL GEAR, not just shoes — patch 267. The `gear` table
-                    // holds anything an activity can name, and a bike that is
-                    // not in it is 287 activities naming gear the database does
-                    // not hold.
-                    shoes: AthleteStore.shared.allGear,
-                    notes: Array(NotesStore.shared.notes.values),
-                    proposals: ProposalStore.shared.records,
-                    matchDecisions: Array(Matcher.shared.decisions.values),
-                    syncState: ActivityStore.shared.syncState,
-                    workItems: DetailStore.shared.workItems,
-                    rejections: ActivityStore.shared.receipts,
-                    commutes: Array(CommuteStore.shared.decisions.values),
-                    reconcile: permission,
-                    weather: Array(WeatherStore.shared.byActivity.values),
-                    constants: ConstantsStore.shared.c,
-                    ftpWatts: AthleteStore.shared.ftp,
-                    zones: AthleteStore.shared.hrZones,
-                    plan: PlanStore.shared.plan,
-                    streams: Array(DetailStore.shared.streams.values),
-                    details: Array(DetailStore.shared.details.values),
+                    stores: AppStores.current(),
                     appVersion: AppVersion.patchLabel,
                     // The link between contract items 3 and 11: a run records
                     // which snapshot of its inputs was taken first, or records
@@ -1261,21 +1234,9 @@ struct DatabaseHealthView: View {
     private func runVerify(_ db: Sub4Database) {
         verifying = true
         Task {
-            let report = SemanticVerifier.attempt(
-                db,
-                activities: ActivityStore.shared.activities,
-                shoes: AthleteStore.shared.allGear,
-                notes: Array(NotesStore.shared.notes.values),
-                proposals: ProposalStore.shared.records,
-                syncState: ActivityStore.shared.syncState,
-                workItems: DetailStore.shared.workItems,
-                rejections: ActivityStore.shared.receipts,
-                commutes: Array(CommuteStore.shared.decisions.values),
-                matchDecisions: Array(Matcher.shared.decisions.values),
-                weather: Array(WeatherStore.shared.byActivity.values),
-                zones: AthleteStore.shared.hrZones,
-                streams: Array(DetailStore.shared.streams.values),
-                details: Array(DetailStore.shared.details.values))
+            // The same gathered value the import uses — 301. The verifier
+            // reads a subset of it on purpose; see the overload's comment.
+            let report = SemanticVerifier.attempt(db, stores: AppStores.current())
             verification = report
             // A passing run moves the ledger to `verified`. A failing one
             // leaves it where it is — `SemanticVerifier.record` is what

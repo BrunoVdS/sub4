@@ -4273,6 +4273,96 @@ The pattern they establish is the one D6b should extend rather than reinvent:
 
 
 
+## 12.45 Everything the app holds, as one value — D6b step 1, patch 301
+
+The first patch of the write-through rung, and it writes nothing. It exists
+because of what was found when the trigger was designed.
+
+### 12.45.1 Eighteen defaulted parameters and two hand-written call sites
+
+`Sub4Import.run` takes twenty parameters; eighteen have defaults.
+`SemanticVerifier.attempt` takes fourteen; thirteen have defaults, and thirteen
+of the expressions feeding it are the same ones the import gets. Both lists were
+assembled by hand inside `DatabaseHealthView`, forty lines apart:
+
+    ActivityStore.shared.activities          AthleteStore.shared.allGear
+    Array(NotesStore.shared.notes.values)    ProposalStore.shared.records
+    ActivityStore.shared.syncState           DetailStore.shared.workItems
+    ActivityStore.shared.receipts            Array(CommuteStore.shared.decisions.values)
+    Array(Matcher.shared.decisions.values)   Array(WeatherStore.shared.byActivity.values)
+    AthleteStore.shared.hrZones              Array(DetailStore.shared.streams.values)
+    Array(DetailStore.shared.details.values)
+
+**D6b's trigger would have been the third copy**, in code that runs unattended.
+
+The hazard is not the duplication. It is the defaults: a forgotten argument is
+not a compile error, it is **a table that quietly stops being imported**, and
+nothing on any screen says so. A read-back would report those rows as missing
+from the database — which reads as a data problem rather than as a forgotten
+line, and is exactly the confusion §12.35.4 keeps naming.
+
+This is §12.41.1's argument arriving from a direction it did not anticipate.
+That section said not to hand-write seventeen incremental writers because each
+is a chance to be wrong. The single writer that already exists has seventeen
+chances to be **called** wrong, and two of them were live.
+
+### 12.45.2 What it is, and what it deliberately is not
+
+`AppStores` is a `Sendable` value with one field per store and a
+`@MainActor current()` that reads them all. `Sub4Import.run(into:stores:)` and
+`SemanticVerifier.attempt(_:stores:)` are **overloads** that forward field by
+field; both granular signatures are untouched, so every existing import test
+still calls what it called.
+
+It changes no behaviour. That is the point: the proof is that the three
+read-backs are unmoved at 672 / 672 / 649, and if the extraction dropped a table
+they say which.
+
+`Sendable` is not decoration. D6b hands this to a detached task after a sync,
+and whether the app's own data can cross an isolation boundary is better found
+out in a patch that changes nothing than in the one that adds a trigger.
+
+**Not "snapshot".** `LegacySnapshot` and `SnapshotManifest` already mean *a
+protected copy of the input files taken before anything decodes them* —
+contract item 3. A third meaning for that word in the same subsystem costs a
+reader more than the name is worth.
+
+### 12.45.3 The gate moved, because a missing name there deletes
+
+Patch 274's reconcile permission was computed in the view from a hand-written
+list of store names, and `canReconcile` fails **closed** on any store that never
+reported.
+
+Read the failure direction carefully. A name that is **present** and untrusted
+refuses — that is the gate working. A name that is **missing from the list
+entirely** is never checked, so `canReconcile` is more likely to return true,
+so reconciliation runs, so rows are deleted. **A forgotten name there is a
+delete hazard, not a skip hazard**, and it lived in a view forty lines from the
+argument list it governed.
+
+`AppStores.reconcileRequires` holds it now, verbatim, beside the fields it is
+about, pinned by a test.
+
+Making the list **derive** from the fields is the right end state and is a
+separate patch. Mixing a permissions change into a mechanical extraction would
+make both harder to check, and this one is checked by a read-back that has to
+come out identical.
+
+### 12.45.4 A count is not a proof, and the comment says so
+
+`AppStores.fieldCount` is pinned at seventeen and `theFieldCountIsPinned`
+asserts `Mirror` agrees. That does not prove the forwarding — it makes adding a
+field something somebody has to acknowledge, which is the half that is cheap.
+
+Three fields are proved to land end-to-end, and `reconcile` gets its own test
+because it is the one that deletes: a forwarding that dropped it would default
+to skipping, which is safe, and one that inverted it would not — and only one of
+those is visible without looking.
+
+Stated at its real strength rather than dressed up. The same honesty §12.39.6.1
+applies to `samplesWalked`: a check that can only report success has not been
+tested.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,
