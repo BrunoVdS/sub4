@@ -178,29 +178,41 @@ checks between read-backs.
 
 ### 5.1 What fires it
 
-Not per-store. `ActivityStore.ingest()` is where a sync finishes, but
-`DetailStore` finishes later and independently in two separate `defer`s, and
-notes and commutes are written by a person at any moment.
+**ANSWERED AT 302, and this section was wrong about the most important thing in
+it.** Kept rather than rewritten, because the correction is the finding.
 
-So: a **coalescing trigger** — something marks the database dirty, and one run
-is scheduled that absorbs every mark arriving before it starts. `StoreWriteJournal.attempt`
-is the natural place to raise the flag, since every store already passes through
-it and it already knows the store's name.
+It said `StoreWriteJournal.attempt` was where "every store already passes
+through". It is not. There are three write paths — `attempt` (six stores),
+`StoreWrite.encode` thrown (notes and commutes, the watched writes), and
+`UserDefaults.set` (match decisions, rejection receipts, skip lists, the sync
+cursor). A flag raised in the first would have missed notes and match decisions,
+the two things in this app that cannot be re-fetched from anywhere.
 
-Open: whether the flag lives on the journal or beside it. The journal's stated
-job is "which stores are behind their memory", and "the database is behind the
-files" is a different sentence about a different thing.
+**So there is no dirty flag.** Not one that moved somewhere better — none. A
+dirty flag fails silently, a whole-world run fails by being late, and the run
+costs 0.325 s. An optimisation with a silent failure mode, bought against a
+third of a second, is not worth having. §12.46.2.
+
+**The trigger:** backgrounding, in `ContentView`'s existing `onChange(of:
+scenePhase)`. One, because a missed trigger is late rather than lost. More are
+a later patch and each is one line.
+
+Original text, for the record: *"a coalescing trigger — something marks the
+database dirty… `StoreWriteJournal.attempt` is the natural place to raise the
+flag, since every store already passes through it."*
 
 ### 5.2 What a failed database write does
 
-Reuse `StoreWriteJournal` with a store named for the database. Its contract —
-*memory keeps what was fetched, the disagreement is recorded, a successful write
-clears it, Settings shows it* — is the same sentence for the database as for a
-file, and it is already built, already tested, and already on screen.
+**Answered at 302, as written.** `StoreWriteJournal` records it under
+`Sub4Database.fileName`, so Settings shows it and the tab badge lights, with no
+new surface. A successful run clears the entry, which is the journal's own rule.
 
-Rolling anything back is wrong for the same reason 266 gives: the data came off
-the network a moment ago, and discarding it to buy consistency nobody asked for
-shows the athlete less than the app has.
+Nothing rolls back, for the reason 266 gives.
+
+One addition the original did not anticipate: **`.noDatabase` is not recorded
+there.** The launch gate having no database is its own condition with its own
+screen, and filing it in a list whose whole job is to be empty would put a
+permanent row in it.
 
 ### 5.3 Inside or beside the file write
 

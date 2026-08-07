@@ -53,11 +53,17 @@ nonisolated struct UnsavedStore: Equatable, Identifiable {
     var id: String { store }
 
     /// One line for Settings. No paths, no error domains.
+    ///
+    /// LOCAL, patch 304 — the day this started failing, where the reader is.
+    /// `prefix(10)` on the ISO string gave the UTC date, which is the wrong day
+    /// for anything that failed after 22:00 in Brussels. §12.48.
     var line: String {
         attempts == 1
             ? error.errorDescription ?? "could not be saved"
-            : "\(attempts) attempts since \(firstFailedUTC.prefix(10))"
+            : "\(attempts) attempts since "
+              + (AppTime.localDay(firstFailedUTC) ?? String(firstFailedUTC.prefix(10)))
     }
+
 }
 
 @MainActor

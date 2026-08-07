@@ -106,6 +106,9 @@ struct DatabaseHealthView: View {
     /// phone is 667 details and 643 traces. That belongs behind a press, and
     /// a screen that did it silently every time it opened would make opening
     /// the screen the expensive thing.
+    /// Patch 302. Observed rather than read once: it changes while this screen
+    /// is open, on any backgrounding.
+    @State private var writeThrough = DatabaseWriteThrough.shared
     @State private var surveying = false
     @State private var survey: [LegacyReading]?
 
@@ -127,6 +130,12 @@ struct DatabaseHealthView: View {
                     // protects the inputs teaches the wrong order.
                     snapshotSection
                     importSection(db)
+                    // PATCH 302. Directly after the Import section, because it
+                    // IS that import — fired without anybody pressing it. The
+                    // screen reads in the order the two things relate: here is
+                    // the button, and here is what happens when nobody presses
+                    // it.
+                    writeThroughSection(db)
                     ledgerSection
                     // DIRECTLY AFTER THE LEDGER, because it is the thing that
                     // moves a run out of `pending`. The screen reads in the
@@ -274,8 +283,17 @@ struct DatabaseHealthView: View {
     private var snapshotSection: some View {
         Section {
             if let m = snapshot {
+                // NOT LOCALISED, and that is the decision — patch 304.
+                //
+                // `2026-08-05-202320` is a FOLDER NAME. It is a stamp being
+                // used as an identifier, and rendering it as local time would
+                // break the correspondence between this row and what is on
+                // disk: you could no longer find the directory it names.
+                //
+                // A timestamp that is a name is not a time. §12.48.
                 LabeledContent("Last snapshot", value: m.id)
                     .font(.caption)
+
                 LabeledContent("Files copied", value: "\(m.copiedCount) of \(m.presentCount)")
                     .font(.caption)
                 LabeledContent("Size",
@@ -1414,12 +1432,75 @@ struct DatabaseHealthView: View {
         }
     }
 
+    /// PATCH 302 — D6b, §12.46.
+    ///
+    /// NO "LAST WRITTEN" FROM DISK. This reads only what has happened since
+    /// launch, and says so in as many words. A persisted timestamp would be a
+    /// second answer to a question `migration_run` already answers, and two
+    /// answers is how §12.29's problem starts.
+    @ViewBuilder
+    private func writeThroughSection(_ db: Sub4Database) -> some View {
+        Section {
+            if writeThrough.isRunning {
+                HStack { ProgressView(); Text("Writing through…").font(.caption) }
+            } else {
+                Button("Write through now") {
+                    Task {
+                        await writeThrough.run(reason: "asked for on this screen")
+                        // THE LEDGER IS THE DURABLE ANSWER — patch 303, and 302
+                        // left it stale.
+                        //
+                        // `runImport` has always ended with this line; the
+                        // write-through button did not, so the two rows on this
+                        // screen showed the same event two minutes apart and it
+                        // read as the button doing nothing. One screen, two
+                        // answers, one of them old — §12.34's shape. §12.47.
+                        await reloadLedger(db)
+                    }
+                }
+            }
+
+            LabeledContent("Last run", value: writeThrough.line)
+                .font(.caption)
+                .foregroundStyle(writeThrough.isHealthy ? Color.dim : .red)
+            LabeledContent("Runs since launch", value: "\(writeThrough.runs)")
+                .font(.caption).foregroundStyle(Color.dim)
+
+            if let why = writeThrough.failureDetail {
+                Text(why).font(.caption2).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            Text("Write-through")
+        } footer: {
+            Text("Runs the import above on its own when the app goes to the "
+                 + "background. It costs about a third of a second and copies "
+                 + "everything, so a missed run is picked up by the next one "
+                 + "rather than leaving a gap.\n\n"
+                 + "AUTOMATIC RUNS DO NOT DELETE. Reconciliation — removing "
+                 + "rows the app no longer has — happens only when you press "
+                 + "Import above. So a note or a decision you delete stays in "
+                 + "the database until then. See ADR-0003 §12.46.\n\n"
+                 + "The two figures above are for THIS LAUNCH only. The "
+                 + "durable record is the import ledger below: after a "
+                 + "write-through it is that run.")
+                .font(.caption2)
+        }
+    }
+
     /// What the last import did, and how it ended — patch 255.
     ///
     /// AFTER the import section, because it is the record of the button above
     /// it. The state is the row that matters: everything else on this screen
     /// says what the database CONTAINS, and this says whether anything has
     /// checked it.
+    ///
+    /// RESTORED HERE AT 303. Patch 302 inserted the write-through section
+    /// immediately above this one and left this comment stranded on it, so a
+    /// paragraph about the import ledger sat over a function that is not the
+    /// import ledger — and this one had no comment at all. Small, and the same
+    /// category as everything else in that patch: prose describing the wrong
+    /// thing. §12.34.
     @ViewBuilder
     private var ledgerSection: some View {
         Section {
@@ -1429,9 +1510,22 @@ struct DatabaseHealthView: View {
                         .font(.callout.weight(.semibold))
                         .foregroundStyle(r.state == .failed ? Color.red : Color.secondary)
                 }
-                LabeledContent("Started", value: r.startedUTC).font(.caption)
+                // LOCAL, WITH THE RAW STRING AS THE FALLBACK — patch 304.
+                //
+                // These were the ISO-8601 UTC values verbatim, which are
+                // correct and are two hours from what the clock on the phone
+                // says. A `Z` is self-describing and a reader still has to do
+                // the arithmetic; a screen should not ask them to. §12.48.
+                //
+                // If `AppTime` cannot parse it the raw value is printed, ugly
+                // and true, rather than a guess — §12.42.1.1.
+                LabeledContent("Started",
+                               value: AppTime.local(r.startedUTC) ?? r.startedUTC)
+                    .font(.caption)
                 if let f = r.finishedUTC {
-                    LabeledContent("Finished", value: f).font(.caption)
+
+                    LabeledContent("Finished", value: AppTime.local(f) ?? f).font(.caption)
+
                 }
                 LabeledContent("By", value: "patch \(r.appVersion)")
                     .font(.caption).foregroundStyle(Color.dim)

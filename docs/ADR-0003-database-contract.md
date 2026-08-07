@@ -4363,6 +4363,257 @@ Stated at its real strength rather than dressed up. The same honesty §12.39.6.1
 applies to `samplesWalked`: a check that can only report success has not been
 tested.
 
+## 12.46 Write-through, and the seam that was not there — D6b step 2, patch 302
+
+The groundwork was wrong about the most important thing in it, and reading the
+source is what said so.
+
+### 12.46.1 Three write paths, not one
+
+`D6B-WRITE-THROUGH-GROUNDWORK.md` §5.1 proposed raising a dirty flag in
+`StoreWriteJournal.attempt`, *"which every store already passes through and
+which already knows the store's name"*.
+
+It does not. There are three:
+
+| | path | stores |
+|---|---|---|
+| 1 | `StoreWriteJournal.attempt` | activities.json, constants.json, athlete.json, details/ and streams/, proposals.json, weather.json |
+| 2 | `StoreWrite.encode`, thrown | notes.json, commutes.json — the WATCHED writes that roll back, §12.17 |
+| 3 | `UserDefaults.set` | match decisions, rejection receipts, the detail store's skip lists, the sync cursor |
+
+A flag raised in (1) covers six and misses **notes and match decisions** — the
+two things in this app that cannot be re-fetched from anywhere. That is the
+worst possible half to miss.
+
+The claim was made from memory of a comment rather than from the call sites.
+Patch 266's header says *"every store's `save()` goes through here"*, and it
+meant every store 266 touched. Recorded because it is the same failure as
+§12.40.5 — **prose describing a scope it never had, believed later by the person
+who wrote it.**
+
+### 12.46.2 So there is no dirty flag at all
+
+Not "the flag moved somewhere better". There is none.
+
+**The failure modes are not comparable.** A dirty flag fails SILENTLY: a store
+that forgets to mark never reaches the database, and nothing says so — the
+read-back would report its rows as missing data, which is §12.35.4's confusion
+again. A whole-world run fails by being LATE: a missed trigger is picked up by
+the next one, because the run does not depend on knowing what changed.
+
+And the flag buys almost nothing. §12.42.3 measured a full run at **0.325 s**,
+because the importer already skips a trace whose stored `fetchedUTC` matches.
+
+> **A dirty flag is an optimisation with a silent failure mode, bought against a
+> third of a second.**
+
+That is the whole design decision, and it is why 302 has no `markDirty`, no
+coalescing window and no timer. Coalescing is one boolean: a trigger arriving
+mid-run makes the current run repeat once when it finishes.
+
+#### 12.46.2.1 One trigger, on purpose
+
+Backgrounding, in `ContentView`'s existing `onChange(of: scenePhase)` — beside
+`BackgroundRefresh.schedule()`, which is already there for the same reason.
+
+One is enough to start **because a missed trigger is late rather than lost.** If
+the app is suspended before the task finishes, the ledger records a `running`
+row and already reports it as "Interrupted runs", and the next backgrounding
+does the work again. The design degrades into the state it was built to report.
+
+More triggers — after a sync, on foreground after a long gap — are a later
+patch, and each is one line. Adding them now would be adding untested paths to
+the patch that first fires this unattended.
+
+### 12.46.3 Automatic runs do not delete, and what that costs
+
+`AppStores.current()` sets `reconcile` to `.run` whenever the four gated stores
+read trustworthily, and reconciliation **deletes** rows the app no longer has.
+
+Doing that by hand with the report on screen is one thing. Doing it unattended,
+several times a day, is a different blast radius, and 302 is the patch that
+makes it unattended. So `writeThrough` overrides it to `.skipped`, **inside the
+function rather than at the call site**, so a future trigger cannot forget.
+
+**The cost, owned rather than buried:** a note or a match decision deleted in the
+app stays in the database until somebody presses Import. The three read-backs
+would not notice — they report what the store has and the database does not,
+never the reverse.
+
+So this patch makes surplus rows in the database more likely, and nothing
+currently detects them. That is D6c's question. It is written here so the next
+person to find one knows it was a decision, not an accident, and the screen's
+footer says it in plain words rather than leaving it to be discovered.
+
+### 12.46.4 What is deliberately still open
+
+- **The ledger.** Every automatic run opens and closes a `migration_run` row, so
+  "the last import" now means "the last backgrounding" — which is arguably the
+  right answer once write-through exists, and arguably makes manual and
+  automatic runs indistinguishable in a list built to tell them apart.
+  Groundwork §5.4, still open, deliberately not changed in the patch that first
+  calls the import unattended.
+- **The cold path.** Unmeasured since 297 and unchanged by this.
+- **Deletions.** §12.46.3.
+
+## 12.47 Two rows about one event — patch 303
+
+302 was correct and looked broken. Both reasons are the same mistake in
+different clothes: **a screen showing two answers to one question, one of them
+wrong.**
+
+### 12.47.1 The button that appeared to do nothing
+
+Pressing "Write through now" twice left the Import ledger unmoved, and the
+reasonable reading was that the button did nothing.
+
+It did. `Last run` went 10:39:24 → 10:42:32 and `Runs since launch` went 3 → 4.
+What did not move was the ledger row beside it, still showing 10:37:26 — the run
+that was current the last time the screen was opened.
+
+`runImport` has always ended with `await reloadLedger(db)`. The write-through
+button did not, so two rows on one screen described the same event five minutes
+apart. §12.34's shape: the older row was not wrong when it was written, and
+nothing on screen said how old it was.
+
+Three lines. The interesting part is that **the symptom pointed at the wrong
+component.** A stale reader made a working writer look dead, and the first
+instinct — mine included — was to doubt the trigger.
+
+### 12.47.2 A red row that was correct and meant nothing
+
+`ledgerSection` renders a missing `snapshotID` in **red**, which was right while
+imports were rare and hand-pressed: a run with no protected copy of its inputs
+is contract item 3 unmet, and worth shouting about.
+
+302 passed `nil` for every automatic run. So from 302 onward the newest ledger
+row would be red after every single backgrounding, permanently, for a condition
+that is not a problem.
+
+That is §12.42.2 again, one screen over — a red row that is correct by rule,
+wrong in meaning, and frequent enough to train a reader out of believing the
+colour. The last patch wrote §12.42.2 and the next one committed it.
+
+**The fix is not to soften the colour.** An automatic run does not TAKE a
+snapshot, but one exists, and it is genuinely the snapshot that preceded the
+run. Recording `LegacySnapshot.latest()?.id` is accurate rather than convenient,
+and it keeps contract item 11's link — *which snapshot of its inputs was taken
+first* — true for automatic runs instead of quietly exempting them.
+
+`nil` still means `nil`: on a device where no snapshot has ever been taken there
+is nothing to record, and inventing one would be worse than the red row, because
+it would claim a protected copy exists when none does. `noSnapshotStaysNone`
+pins that.
+
+### 12.47.3 What the in-memory figures can and cannot say
+
+`Last run` and `Runs since launch` are held in memory on purpose — the question
+they answer is *is this thing firing at all*, which is about now.
+
+They cannot answer *did it fire while I was not looking*. After a relaunch the
+section reads "Not run since this launch", which is true and is indistinguishable
+from the trigger being broken.
+
+The ledger already holds the durable answer, it is directly below, and after any
+write-through it IS the newest row. So the footer now says which figure answers
+which question rather than leaving a reader to work out that the two sections are
+related. No second timestamp was added: two durable answers to one question is
+the thing this section is about.
+
+### 12.47.4 Still open, and now nameable
+
+Manual and automatic runs are distinguishable in the ledger only by accident —
+manual ones carry the snapshot the screen was holding, automatic ones carry the
+latest on disk, and both are populated. `note` is already spent on the counts.
+
+Telling them apart properly wants a `trigger` column on `migration_run`, which
+is a migration and belongs in its own patch. Groundwork §5.4, still open, and
+this is the second patch to decline it for the same reason: not in the one that
+is fixing what the last one broke.
+
+## 12.48 A time that is quietly wrong gets believed — patch 304
+
+The write-through row printed `10:50:39` while the phone said `12:50`. Bruno
+asked why, and the answer is that I had sliced the `Z` off an ISO-8601 UTC
+string and printed what was left.
+
+**A time that is obviously wrong gets questioned. A time that is quietly wrong
+gets believed.** `10:50:39` is a plausible reading of a clock, so nothing about
+it invites checking. The ledger row beside it at least kept the `Z` and was
+therefore honest, if inconvenient.
+
+### 12.48.1 Two kinds of timestamp, and only one moves
+
+| | belongs to | rendered in |
+|---|---|---|
+| **machine** — an import ran, a snapshot was taken, a write failed | *now* | the phone's current zone |
+| **activity** — when the athlete ran | *where the athlete was* | the activity's own zone |
+
+The second category is already handled and must not be touched. Every `Activity`
+carries `timeZoneIdentifier` and `startOffsetSeconds` for exactly this, and §4.1
+says `startUTC` is authoritative for ORDER while `startLocal` is authoritative
+for BELONGING. Rendering a run in Romania at Belgian time would be a new bug
+wearing the fix's clothes.
+
+`AppTime` formats the first category only, and its header says so.
+
+### 12.48.2 What stays in UTC, and why that is not an exception
+
+**The diagnostic paste.** `MigrationRun.line` and
+`StoreWriteJournal.diagnosticLines` are text copied *out* of the app and read
+somewhere else, possibly months later, by somebody who does not know where the
+phone was. A local time in a paste is ambiguous unless it names its offset; the
+ISO string carries its own `Z`.
+
+**The snapshot id.** `2026-08-05-202320` is a **folder name**. It is a stamp
+being used as an identifier, and localising it would break the correspondence
+between the row on screen and the directory on disk — you could no longer find
+what it names.
+
+> **A timestamp that is a name is not a time.**
+
+That line is the whole of the distinction, and it is why the fix is not "convert
+every UTC string on screen".
+
+### 12.48.3 The day boundary is local, which is the half that gets missed
+
+`StoreWriteJournal`'s row said *"3 attempts since 2026-08-06"* by taking
+`prefix(10)` of the ISO string. For anything that first failed after 22:00 in
+Brussels that is the wrong day — the athlete's evening is already tomorrow in
+UTC.
+
+`theDayBoundaryIsLocal` pins it in both directions: 22:30 UTC on the 6th is
+*today* in Brussels and *yesterday* in UTC, and both readings are correct for
+their own zone.
+
+### 12.48.4 A formatter that cannot parse must not invent
+
+`AppTime.local` returns `String?`, and every call site falls back to printing
+the raw value. Ugly and true.
+
+The alternative was live for a while and cost a patch: `?? .distantPast` in
+`RecordingRepository` turned an unparseable timestamp into a date in the year 1,
+which the comparison then reported as a disagreement about *when* something was
+fetched (§12.42.1.1). Sixth instance of §12.15's shape and the second time in
+three patches that a date fallback was the thing that lied.
+
+### 12.48.5 Two ways to get this wrong that are pinned rather than avoided
+
+- **A hardcoded offset.** Brussels is UTC+1 in winter and UTC+2 in summer. A fix
+  written in August with `+2` in it passes every test written in August and is
+  an hour wrong for five months — small enough to read as a rounding problem
+  rather than a bug. `theSameInstantMovesWithTheSeason` runs the same clock
+  reading through both seasons.
+- **`Locale.current` with a fixed pattern.** A phone set to 12-hour time can
+  make `HH` render as 12-hour in some locales. `en_US_POSIX` is the fix and
+  `alwaysTwentyFourHour` is the pin, because the symptom would be an
+  off-by-twelve nobody could reproduce on their own device.
+
+Every test names its zone and its `now` explicitly. A date-formatter test that
+reads the machine's own settings passes on the machine that wrote it and proves
+nothing.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

@@ -147,7 +147,24 @@ struct ContentView: View {
             // Ask for the next background wake on the way out. Submitting again
             // replaces the pending request rather than stacking a second one,
             // so this is safe to call on every backgrounding.
-            if phase == .background { BackgroundRefresh.schedule() }
+            if phase == .background {
+                BackgroundRefresh.schedule()
+                // PATCH 302 — D6b. The one automatic trigger, deliberately.
+                //
+                // A whole-world run costs 0.325 s and copies everything, so a
+                // missed trigger is LATE rather than a gap — which is why one
+                // trigger is enough to start with, and why no dirty flag is
+                // tracked. §12.46.
+                //
+                // The task may not finish if iOS suspends us first. That is
+                // survivable: an interrupted run leaves a `running` row the
+                // ledger already reports as "Interrupted runs", and the next
+                // background does the work again.
+                Task {
+                    await DatabaseWriteThrough.shared
+                        .run(reason: "the app went to the background")
+                }
+            }
         }
     }
 }
