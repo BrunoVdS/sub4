@@ -94,7 +94,7 @@ struct ActivityParityTests {
         #expect(r.zonesAgree)
         #expect(r.storeIsSettled)
         #expect(r.databaseSkipped == 0, "every row reconstituted")
-        #expect(ActivityParity.Outcome.ran(r).isHealthy)
+        #expect(r.isHealthy)
     }
 
     /// THE ONE WITH TEETH. Zero compared against zero agrees perfectly and
@@ -110,8 +110,7 @@ struct ActivityParityTests {
         #expect(r.unexplained == 0, "nothing disagreed, because nothing was looked at")
         #expect(!r.lookedAtSomething)
         #expect(r.summary.hasPrefix("nothing compared"))
-        #expect(!ActivityParity.Outcome.ran(r).isHealthy,
-                "a comparison of nothing must not read as a pass")
+        #expect(!r.isHealthy, "a comparison of nothing must not read as a pass")
     }
 
     // MARK: The negative controls
@@ -128,7 +127,7 @@ struct ActivityParityTests {
         #expect(r.databaseOnly.isEmpty)
         #expect(r.common == 2, "the two they share")
         #expect(r.unexplained > 0)
-        #expect(!ActivityParity.Outcome.ran(r).isHealthy)
+        #expect(!r.isHealthy)
     }
 
     @Test("An activity only the database has is reported")
@@ -184,7 +183,7 @@ struct ActivityParityTests {
         #expect(r.daysOnlyInStore == ["2026-04-20"])
         #expect(r.daysOnlyInDatabase == ["2026-04-21"])
         #expect(r.daysCompared == 2, "the two days they share")
-        #expect(!ActivityParity.Outcome.ran(r).isHealthy)
+        #expect(!r.isHealthy)
     }
 
     @Test("A different offset is reported as the zones disagreeing")
@@ -226,7 +225,7 @@ struct ActivityParityTests {
         #expect(r.databaseKept == 3)
         #expect(r.databaseOnly.isEmpty, "a refused row is not a disagreement")
         #expect(r.unexplained == 0)
-        #expect(ActivityParity.Outcome.ran(r).isHealthy)
+        #expect(r.isHealthy)
     }
 
     /// A FREE CONTINUOUS CONTROL, about the store rather than the database.
@@ -270,17 +269,6 @@ struct ActivityParityTests {
         #expect(r.summary == "3 compared · no differences")
     }
 
-    /// `.never` is not agreement and not a failure — the eighth instance of
-    /// §12.15's shape. An optional report would make "has not run" and "ran and
-    /// found nothing" the same nil.
-    @Test("Not having compared is its own answer")
-    func neverIsAnAnswer() {
-        #expect(ActivityParity.Outcome.never.isHealthy,
-                "not having looked is not a fault")
-        #expect(ActivityParity.Outcome.never.line == "Not compared since this launch.")
-        #expect(!ActivityParity.Outcome.noDatabase.isHealthy)
-        #expect(!ActivityParity.Outcome.readFailed("disk").isHealthy)
-        #expect(ActivityParity.Outcome.noDatabase != .readFailed("disk"),
-                "one is the launch gate, the other is the read")
-    }
+    // `Outcome` moved to `ShadowParity` at 313, and its tests moved with it —
+    // see `VolumeParityTests.neverIsAnAnswer`.
 }

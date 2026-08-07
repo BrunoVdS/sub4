@@ -484,6 +484,17 @@ struct VolumeMarker: Identifiable {
     func delta(_ u: VolumeUnit) -> Double { training(u) - previous(u) }
 }
 
+/// One week's recorded volume, in one discipline and one unit — patch 313.
+///
+/// `nonisolated` because it is two doubles and nothing else; the functions that
+/// build it are not, because `VolumeMetric.recorded` reads `DataCorrections`.
+nonisolated struct RecordedWeek: Equatable, Sendable {
+    var training = 0.0
+    var commute = 0.0
+
+    var total: Double { training + commute }
+}
+
 enum VolumeSeries {
 
     /// Half a year on the card — enough to see a trend without the bars
@@ -518,16 +529,19 @@ enum VolumeSeries {
                                         value: -(count - 1), to: thisMonday)
         else { return [] }
 
-        var training: [String: Double] = [:]
-        var commute: [String: Double] = [:]
-        for a in activities where a.discipline == metric.discipline {
-            guard let d = DayKey.date(a.dayKey) else { continue }
-            let m = monday(of: d)
-            guard m >= first, m <= thisMonday else { continue }
-            let key = DayKey.key(m)
-            training[key, default: 0] += metric.recorded(a, unit)
-            commute[key, default: 0] += metric.commute(a, unit)
-        }
+        // BUCKETED OVER EVERYTHING, THEN WINDOWED — patch 313.
+        //
+        // This used to filter to the drawn weeks before bucketing, which was
+        // right while the only reader was this chart. D6c slice 2 compares
+        // weekly volume between the app and the database, and a comparison that
+        // could only see the 26 weeks this card draws would report a clean half
+        // year and say nothing about the eight months before it.
+        //
+        // So the bucketing is a shared function with no clock in it and this
+        // reads its window out. Identical values for every week drawn — the
+        // window below generates exactly the Mondays the old guard admitted —
+        // and `theWeekBucketingIsUnmoved` is what holds that.
+        let recorded = recordedByWeek(activities, metric: metric, unit: unit)
 
         var planned: [String: (value: Double, exact: Bool, sessions: Int, no: Int?)] = [:]
         for w in store.planWeeks {
@@ -549,14 +563,47 @@ enum VolumeSeries {
             else { return nil }
             let key = DayKey.key(m)
             let p = planned[key]
+            let r = recorded[key] ?? RecordedWeek()
             return VolumeWeek(start: m,
-                              training: training[key] ?? 0,
-                              commute: commute[key] ?? 0,
+                              training: r.training,
+                              commute: r.commute,
                               planned: p?.value ?? 0,
                               plannedExact: p?.exact ?? true,
                               plannedSessions: p?.sessions ?? 0,
                               planWeekNo: p?.no)
         }
+    }
+
+    /// RECORDED VOLUME BY ISO WEEK, OVER EVERYTHING — patch 313, ADR-0003
+    /// §12.57.
+    ///
+    /// NO CLOCK IN IT, and that is the whole reason it exists separately from
+    /// `weeks()`. That function counts back from this Monday, so what it
+    /// returns describes a window; this describes the history. D6c's twin
+    /// compares the history.
+    ///
+    /// Keyed by the Monday's day-key STRING for the reason `weeks()` already
+    /// states: two Mondays computed by different routes are equal to the second
+    /// only if nothing about the calendar moved between them, and the string is
+    /// equal when the day is the same.
+    ///
+    /// A discipline with nothing recorded returns an EMPTY dictionary rather
+    /// than a row of zeros. Absent means "this sport does not appear in this
+    /// history"; a zero would mean "it appears and did nothing", and only one
+    /// of those is true of a swimmer who has never swum.
+    static func recordedByWeek(_ activities: [Activity],
+                               metric: VolumeMetric,
+                               unit: VolumeUnit) -> [String: RecordedWeek] {
+        var out: [String: RecordedWeek] = [:]
+        for a in activities where a.discipline == metric.discipline {
+            guard let d = DayKey.date(a.dayKey) else { continue }
+            let key = DayKey.key(monday(of: d))
+            var w = out[key] ?? RecordedWeek()
+            w.training += metric.recorded(a, unit)
+            w.commute += metric.commute(a, unit)
+            out[key] = w
+        }
+        return out
     }
 
     /// One marker per discipline, always all three — a zero is information and

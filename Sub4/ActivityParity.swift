@@ -71,43 +71,20 @@
 //
 //  A green tick that means nothing is worse than no tick.
 //
+//  IT NO LONGER RUNS ITSELF — patch 313
+//  ------------------------------------
+//  312 put `Outcome` and `run` here, because there was one slice. Slice 2 needs
+//  the same database read and the same `settle`, so both moved to
+//  `ShadowParity`: one read, one settle, every slice, and a result that
+//  survives the sheet being dismissed. What is left is a pure comparison of two
+//  `[Activity]` — which is what lets a test build its two sides from genuinely
+//  different places.
+//
 
 import Foundation
 
 @MainActor
 enum ActivityParity {
-
-    /// What a run produced.
-    ///
-    /// `.never` is not agreement and it is not a failure — the eighth instance
-    /// of §12.15's shape in this project, and the reason this is an enum rather
-    /// than an optional report.
-    enum Outcome: Equatable {
-        case never
-        case ran(Report)
-        /// No open database. Not the same as a read that failed.
-        case noDatabase
-        case readFailed(String)
-
-        var line: String {
-            switch self {
-            case .never:      "Not compared since this launch."
-            case .ran(let r): r.summary
-            case .noDatabase: "The database is not open, so nothing was derived."
-            case .readFailed(let why): "The database could not be read — \(why)"
-            }
-        }
-
-        /// `.never` is healthy. Not having looked is not a fault; looking and
-        /// disagreeing is.
-        var isHealthy: Bool {
-            switch self {
-            case .never:      true
-            case .ran(let r): r.lookedAtSomething && r.unexplained == 0
-            case .noDatabase, .readFailed: false
-            }
-        }
-    }
 
     // MARK: The report
 
@@ -187,6 +164,12 @@ enum ActivityParity {
         /// Zero compared against zero agrees perfectly and proves nothing.
         var lookedAtSomething: Bool { common > 0 }
 
+        /// MOVED UP FROM `Outcome` AT 313, when running and holding went to
+        /// `ShadowParity`. A report that can say whether it passed lets a
+        /// caller ask without owning the enum — and lets a test assert on the
+        /// thing it built rather than on a wrapper.
+        var isHealthy: Bool { lookedAtSomething && unexplained == 0 }
+
         var summary: String {
             guard lookedAtSomething else {
                 return "nothing compared — \(storeCount) in the app, "
@@ -225,30 +208,9 @@ enum ActivityParity {
         }
     }
 
-    // MARK: Running it
+    // MARK: The comparison
 
-    /// Read, settle, compare.
-    ///
-    /// ON THE MAIN ACTOR, like `runReadBack` beside it and unlike
-    /// `RecordingRoundTrip.compareOffMain`. Two reasons, both measured rather
-    /// than assumed: the read is the same 672-row query the activity read-back
-    /// already runs here, and `settle` is the same work `ActivityStore` does
-    /// twice on every launch. `ActivityRoster` is `@MainActor` anyway, because
-    /// `isKept` reads `MatchRules` and `DataCorrections`.
-    static func run(_ db: Sub4Database) -> Outcome {
-        switch ActivityRepository.all(db) {
-        case .unavailable:
-            return .noDatabase
-        case .failed(let why):
-            return .readFailed(why)
-        case .loaded(let rows, let skipped):
-            return .ran(compare(store: ActivityStore.shared.activities,
-                                databaseRows: rows,
-                                databaseSkipped: skipped))
-        }
-    }
-
-    /// The comparison, with both sides handed in.
+    /// Both sides handed in.
     ///
     /// STATIC AND TAKING ITS INPUTS, so a test can build the two sides from
     /// genuinely different places — which is the only answer this project has

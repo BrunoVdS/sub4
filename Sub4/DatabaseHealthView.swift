@@ -102,10 +102,14 @@ struct DatabaseHealthView: View {
     @State private var verifying = false
     @State private var verification: VerificationReport?
 
-    /// D6c slice 1 — patch 312. `.never` until the button is pressed, and
-    /// `.never` is not agreement.
-    @State private var comparingParity = false
-    @State private var parity: ActivityParity.Outcome = .never
+    /// D6c — patch 312, moved off `@State` at 313.
+    ///
+    /// OBSERVED RATHER THAN OWNED, like `writeThrough` above. The result used
+    /// to live here, so pressing Done discarded it — and the diagnostics paste,
+    /// which is the thing somebody reads later, said "Not compared since this
+    /// launch" a minute after the comparison passed. True of the `@State` and
+    /// false about the world. §12.57.
+    @State private var parity = ShadowParity.shared
 
     /// Patch 262 — the legacy survey. Nil until the button is pressed.
     ///
@@ -1251,30 +1255,40 @@ struct DatabaseHealthView: View {
         }
     }
 
-    /// D6c SLICE 1 — patch 312, groundwork §6.1.
+    /// D6c — patch 312, restructured at 313 when slice 2 arrived.
     ///
-    /// The three sections above ask *do both sides hold the same records*. This
-    /// asks *would the app derive the same list* — same activities, same order,
-    /// same day buckets, same clocks. It re-checks no fields; `ActivityRoundTrip`
-    /// does that and doing it twice is how two answers to one question start.
+    /// ONE SECTION, ONE BUTTON, EVERY SLICE. Groundwork §7 left the shape open
+    /// until there was more than one comparison to lay out. There are two now,
+    /// they need the SAME database read and the SAME `ActivityRoster.settle`,
+    /// and two buttons would let somebody run half of it and see something that
+    /// looked whole.
+    ///
+    /// The three sections above ask *do both sides hold the same records* —
+    /// nineteen named fields per activity. This asks *would the app derive the
+    /// same answers*: the same list, in the same order, in the same days, and
+    /// now adding up to the same distances.
     ///
     /// EVERY ROW IS UNCONDITIONAL once a comparison has run. §12.54.2, and this
-    /// screen has now learned it twice: a row that vanishes at zero cannot be
-    /// told from a row nobody wired in.
+    /// screen has now learned that twice.
     @ViewBuilder
     private func paritySection(_ db: Sub4Database) -> some View {
         Section {
-            if comparingParity {
+            if parity.isRunning {
                 HStack { ProgressView(); Text("Deriving…").font(.caption) }
             } else {
                 Button("Compare the derived lists") { runParity(db) }
             }
 
-            LabeledContent("Parity", value: parity.line)
+            LabeledContent("Parity", value: parity.last.line)
                 .font(.caption)
-                .foregroundStyle(parity.isHealthy ? Color.dim : .red)
+                .foregroundStyle(parity.last.isHealthy ? Color.dim : .red)
 
-            if case .ran(let r) = parity {
+            // MARK: Slice 1 — the list
+
+            if let r = parity.last.activities {
+                Text("The list")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+
                 // THE THREE DENOMINATORS — groundwork §2.1 case 2. A dead read
                 // stops them matching, and zero compared to zero agrees
                 // perfectly while meaning nothing.
@@ -1343,33 +1357,77 @@ struct DatabaseHealthView: View {
                     .font(.caption)
                     .foregroundStyle(r.storeIsSettled ? Color.dim : .red)
             }
+
+            // MARK: Slice 2 — the numbers derived from it
+
+            if let v = parity.last.volume {
+                Text("Daily and weekly volume")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+
+                // EACH COUNT BESIDE ITS OWN DENOMINATOR — §12.54.3. "0 of 324"
+                // is evidence; a bare 0 is noise.
+                LabeledContent("Day distances",
+                               value: "\(v.daysDiffering.count) of \(v.daysCompared) disagree")
+                    .font(.caption)
+                    .foregroundStyle(v.daysDiffering.isEmpty ? Color.dim : .red)
+                ForEach(v.daysDiffering.prefix(5), id: \.self) { day in
+                    Text("  \(day)").font(.caption2).foregroundStyle(.red)
+                }
+
+                LabeledContent("Week figures",
+                               value: "\(v.weeksDiffering.count) of \(v.weekValuesCompared) disagree")
+                    .font(.caption)
+                    .foregroundStyle(v.weeksDiffering.isEmpty ? Color.dim : .red)
+                ForEach(v.weeksDiffering.prefix(5), id: \.self) { w in
+                    Text("  \(w)").font(.caption2).foregroundStyle(.red)
+                }
+
+                LabeledContent("History bands",
+                               value: "\(v.bandsDiffering.count) of \(v.bandsCompared) disagree")
+                    .font(.caption)
+                    .foregroundStyle(v.bandsDiffering.isEmpty ? Color.dim : .red)
+                ForEach(v.bandsDiffering.prefix(6), id: \.self) { b in
+                    Text("  \(b)").font(.caption2).foregroundStyle(.red)
+                }
+
+                LabeledContent("The history starts on the same day",
+                               value: v.historyStartAgrees ? "yes" : "no")
+                    .font(.caption)
+                    .foregroundStyle(v.historyStartAgrees ? Color.dim : .red)
+
+                // ON SCREEN, because a threshold nobody can see is a threshold
+                // nobody can argue with.
+                LabeledContent("Tolerance", value: VolumeParity.toleranceLabel)
+                    .font(.caption).foregroundStyle(Color.dim)
+            }
         } header: {
-            Text("Shadow parity · activities")
+            Text("Shadow parity")
         } footer: {
             Text("Builds the activity list a second time, from the database "
-                 + "instead of the files, and compares them. Both sides run "
-                 + "through the same rules — one copy, called twice — so a "
-                 + "difference here is a difference in the DATA, not in how it "
-                 + "was derived.\n\n"
+                 + "instead of the files, and compares what the app would "
+                 + "derive from each. Both sides run through the same rules — "
+                 + "one copy, called twice — so a difference here is a "
+                 + "difference in the DATA, not in how it was derived.\n\n"
                  + "It does not re-check fields. The three read-backs above do "
                  + "that.\n\n"
+                 + "Volume is compared with a tolerance, because two identical "
+                 + "sums of decimals can end in a different last digit. A "
+                 + "difference under a metre or a second is arithmetic; "
+                 + "anything larger is data.\n\n"
                  + "Rows the rules dropped are not disagreements: the database "
                  + "is carrying something the app no longer wants, which is "
                  + "what automatic write-throughs not reconciling looks like. "
-                 + "There is no approved-difference list for activities, so "
-                 + "every other number above zero is real. See ADR-0003 §12.56.")
+                 + "There is no approved-difference list yet, so every other "
+                 + "number above zero is real. See ADR-0003 §12.56 and §12.57.")
                 .font(.caption2)
         }
     }
 
     private func runParity(_ db: Sub4Database) {
-        comparingParity = true
-        Task {
-            // On the main actor, like `runReadBack` — the same 672-row query,
-            // and `settle` is the same work the store does twice per launch.
-            parity = ActivityParity.run(db)
-            comparingParity = false
-        }
+        // The runner holds the result now, so it survives this sheet being
+        // dismissed — patch 313. It also does the read off the main actor,
+        // which is what lets the spinner draw before the work starts.
+        Task { await parity.run(db) }
     }
 
     /// The precise names, trimmed. `laps[*].averageHR` in the tally says WHAT;
@@ -1851,17 +1909,14 @@ struct DatabaseHealthView: View {
         // place the roster's numbers appear when they are all zero, which is
         // what makes "0 collapsed" evidence rather than an absence.
         lines.append(contentsOf: ActivityStore.shared.loadDiagnosticLines)
-        // PATCH 312. Only after a run — unlike the roster lines above, this one
-        // costs a database read and a full derivation, so there is nothing to
-        // print until somebody presses the button. The line says WHICH of those
-        // two it is, rather than being absent.
-        if case .ran(let p) = parity {
-            lines.append("")
-            lines.append(contentsOf: p.diagnosticLines)
-        } else {
-            lines.append("")
-            lines.append("Activity parity: \(parity.line)")
-        }
+        // PATCH 312, BOTH SLICES AT 313. Only after a run — this one costs a
+        // database read and two full derivations, so there is nothing to print
+        // until somebody presses the button. `Outcome.diagnosticLines` says
+        // WHICH of the four states it is rather than being absent, and the
+        // result now survives the sheet being dismissed, which is the defect
+        // this line had on the day it shipped.
+        lines.append("")
+        lines.append(contentsOf: parity.last.diagnosticLines)
 
         return lines.joined(separator: "\n")
     }
