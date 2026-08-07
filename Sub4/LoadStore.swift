@@ -68,6 +68,19 @@ final class LoadStore {
     /// What the series was last built from. Recompute is a string comparison.
     private var signature = ""
 
+    /// THE INPUTS THE LAST REBUILD USED — patch 315.
+    ///
+    /// D6c slice 3 builds a second series from the DATABASE's activities and
+    /// traces with everything else held identical. "Identical" has to mean the
+    /// same values, not the same gathering done twice: re-reading the stores
+    /// would be a second implementation of the twenty lines above, and the two
+    /// would eventually disagree about an sRPE or a power factor with nothing
+    /// able to say which was right. §12.43, one layer up from where it usually
+    /// bites.
+    ///
+    /// Nil until the first rebuild. Assigned in the one place `days` is.
+    private(set) var lastInputs: LoadSeries.Inputs?
+
     private init() {}
 
     // MARK: Building
@@ -183,18 +196,20 @@ final class LoadStore {
         // are the same thing: the store's own index is built by that function
         // (§12.56.2). Building it again here costs one grouping of ~670 rows
         // per rebuild and buys a `build` with nothing hidden in it.
-        let out = LoadSeries.build(
-            from: MatchRules.cutoffDayKey,
-            to: DayKey.key(),
-            byDay: ActivityRoster.byDay(store.activities),
-            inputs: LoadSeries.Inputs(hrMax: constants.hrMax,
+        let built = LoadSeries.Inputs(hrMax: constants.hrMax,
                                       hrRest: { constants.hrRest(on: $0) },
                                       w: w,
                                       ftp: ftp,
                                       powerFactor: powerFactor,
                                       srpe: srpeByActivity,
                                       healthAverageHR: health,
-                                      streams: details.streams))
+                                      streams: details.streams)
+        lastInputs = built
+        let out = LoadSeries.build(
+            from: MatchRules.cutoffDayKey,
+            to: DayKey.key(),
+            byDay: ActivityRoster.byDay(store.activities),
+            inputs: built)
         days = out
         // One assignment site for all three, so the two derived series cannot
         // describe a different day list from the one they were built from.

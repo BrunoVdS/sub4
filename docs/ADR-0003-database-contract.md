@@ -5397,6 +5397,218 @@ the same trap; changing five things to fix one is how a slice patch stops being
 checkable, which is patch 274's rule about not mixing a permissions change into
 a mechanical extraction.
 
+## 12.58 The day walk, extracted — patch 314
+
+D6c slice 3, part one. No new comparison: one function moves and gets the first
+tests it has ever had.
+
+### 12.58.1 The note §12.16 left was aimed one layer too high
+
+It said: *one `PMC` over two readers, not two builders*. Reading the source says
+that was already true. `PMC.build` takes `[DailyLoad]`, returns `[PMCPoint]`,
+touches no clock and no singleton, and has twelve tests.
+
+The builder that needed splitting is underneath it. `LoadStore.recompute` walked
+four hundred days over a four-rung scoring engine and, inside the walk, read
+**eight** singletons: `ActivityStore`, `DetailStore`, `ConstantsStore`,
+`AthleteStore`, `NotesStore`, `PlanStore`, `Matcher` and `HealthStore`.
+
+That is the fourth instance of one rule in five patches — `isKept` and `dedup`
+at 310, `byDay` at 312, `recordedByWeek` at 313:
+
+> **A derivation with one caller looks like part of that caller. It stops being
+> that the moment something else must agree with it.**
+
+This is the largest of the four. Thirteen files read what it produces: Today's
+load strip, the PMC card, monotony, the Week tab, the monthly review.
+
+### 12.58.2 The split is not tidiness, it is what makes a twin possible
+
+`LoadSeries.build` walks the days. `LoadStore` still decides what to feed it —
+reads the stores, measures the power factor, maps sRPE through the plan and the
+matcher, asks Apple Health for the heart rates Strava does not have.
+
+Slice 3's method is to hold every input identical on both sides except the
+activities and the traces, and vary those. **That is only possible if the walk
+has no hidden inputs.** An argument list of eight is the honest shape of a
+function that genuinely depends on eight things.
+
+One input is a closure and stays one: `hrRest(dayKey)`. The rule behind it —
+that month, then the nearest month within three, then the override — lives in
+`ConstantsStore` and belongs there. Flattening it to a dictionary here would be
+the exact mistake this section is about.
+
+### 12.58.3 The slice order is wrong, and it is worth recording
+
+The load series needs constants, FTP, notes and plan matching. The database
+holds all of them in tables and has a repository for **none** of them — those
+are slices 5 and 6. Slice 3 sits before its own inputs.
+
+The groundwork's order was written before anybody had read `recompute`. It is
+not corrected by reordering, because there is a reason to do slice 3 now:
+
+> D6a accepted a known loss in the traces — *a stream shorter than the distance
+> axis comes back padded with zeros and its original length is gone.* Nothing
+> has ever asked whether that costs a number the athlete reads.
+
+`LoadEngine` scores from the trace when it has one, so slice 3 is the first
+thing that could say. A comparison with a real way to fail is worth more than
+one that waits for its inputs — §2.1 of the groundwork.
+
+One input can never come from a database: Apple Health's average heart rate,
+which engine version 4 uses where Strava has none. It is a cache of somebody
+else's store. Named in `Inputs`, held identical on both sides, and stated rather
+than quietly ignored.
+
+### 12.58.4 Seventeen tests where there were none
+
+`recompute` has never had a unit test and could not have had one: a test would
+have had to stand up eight singletons. That is why `PMC.build` has twelve and
+the thing feeding it had zero — not neglect, a shape.
+
+Two have teeth.
+
+**`everyDayIsPresentIncludingTheEmptyOnes`.** An exponential moving average is
+only defined over a series with no holes. Treating "no row" as "no load" is the
+single most common way a home-rolled fitness curve goes wrong, and it shortens
+the window silently.
+
+**`nothingScoredIsAGap`.** A rest day and a gap both produce `load == 0`. The
+**only** thing that distinguishes them is `DayState`, and a curve drawn across a
+gap is wrong for six weeks afterwards. A refactor could flatten that distinction
+without a single number moving — which is precisely the class of defect a green
+suite over numbers would not see.
+
+`aPartialDayCountsOnlyWhatScored` is the same argument at the day level: adding
+an unscorable session must move the state and must not move the total.
+
+### 12.58.5 What this patch deliberately does not do
+
+It adds no comparison, no screen row and no repository. The only proof it offers
+is that thirteen screens are unmoved — the suite, and Today, Week and Progress
+on the device.
+
+Splitting it that way is patch 274's rule: a mechanical extraction and a
+behaviour change in one patch make both harder to check, and here a moved load
+figure would have had two candidate causes on the most visible screens in the
+app.
+
+## 12.59 Fitness and load, compared — patch 315
+
+D6c slice 3, part two. Both sides build a `[DailyLoad]` through the one
+`LoadSeries.build` that 314 extracted, and the comparison walks every day, every
+session inside it, and the curve on top.
+
+### 12.59.1 What it isolates, and the list of what it does not
+
+Constants, FTP, sRPE and Apple Health come from the **app on both sides**. Not
+for convenience:
+
+- the database holds constants, FTP, notes and the plan in tables and has a
+  repository for **none** of them — slices 5 and 6 (§12.58.3);
+- Apple Health's average heart rate is a cache of somebody else's store. No
+  database this app writes will ever hold it.
+
+So one variable is isolated: **what the database's activities and traces
+produce.** `heldFromTheApp` is printed on screen and in the paste, because a
+comparison that does not state what it held constant produces a number nobody
+can interpret.
+
+The inputs are **taken, not re-gathered**. `LoadStore` remembers what its last
+rebuild used and the twin changes exactly one field of it. Re-reading the stores
+in `ShadowParity` would have been a second implementation of twenty lines of
+gathering, and the two would eventually have disagreed about an sRPE or a power
+factor with nothing able to say which was right — §12.43 one layer up from where
+it usually bites.
+
+That carries a cost worth stating: sRPE and Health are keyed by activity id and
+were gathered over the **app's** list, so an activity the database has and the
+app does not would score without either. Slice 1 reports that case directly as
+`In the database only`. It is visible — there, and not here.
+
+### 12.59.2 The row this slice was built for
+
+The Database screen has said this since D6a, in its own words:
+
+> A stream that was shorter than the distance axis comes back padded with zeros
+> and its original length is gone — that is a real loss and it is expected to
+> show here.
+
+An **accepted** loss. And nothing had ever asked whether it costs a number the
+athlete reads.
+
+`LoadEngine` scores from the trace when it can and falls back to the session
+average when it cannot, and the two rungs do not produce the same figure — the
+average under-scores intervals by about 8%, which is the whole reason the trace
+rung exists. So a padded trace can move a session between rungs, which moves a
+day, which moves the curve.
+
+**`Sessions on a different rung` is that question asked.** It is also what makes
+this a comparison with a real way to fail, which groundwork §2.1 demands of
+every one of them — and slice 3 is the first where nobody could have checked by
+eye. Two four-hundred-day fitness curves cannot be eyeballed.
+
+### 12.59.3 A rung is the cause; a figure is the effect
+
+When a session's source differs, its figure differs too — necessarily. Reporting
+both would count one fault twice and send somebody to the arithmetic instead of
+to the trace.
+
+So the comparison reports the rung **or** the figure, never both, and the tests
+pin it: `aPaddedTraceIsCaughtAsADifferentRung` asserts
+`workoutsWithDifferentFigure` is *empty*. §12.39's rule — name the field, not
+the row — with a second clause: name the cause, not the consequence.
+
+### 12.59.4 Two denominators, because one of them can lie
+
+`daysCompared` is not enough. A device with four hundred rest days in it would
+report four hundred days compared and describe **no training at all** — every
+day agreeing because every day is empty.
+
+So `workoutsCompared` sits beside it and `lookedAtSomething` requires both. That
+is `samplesWalked` (§12.39.6.1) arriving in a third place, and
+`restDaysAloneAreNotAPass` is the test for exactly the case a day count alone
+would wave through.
+
+`DayState` is compared **exactly**, with no tolerance. A rest and a gap both
+carry a load of zero and the state is the only thing between them (§12.58.4);
+admitting a tolerance there would erase the distinction the whole load engine is
+built around. Only the TRIMP figures get one, at 0.01 — four decimal places
+below anything displayed — and it is printed beside the verdict for §12.57.3's
+reason.
+
+The curve is compared over **every point**, not just its last. A difference in
+March that has decayed away by August would be invisible in the headline and is
+still a difference.
+
+### 12.59.5 A slice that could not run is not a slice that passed
+
+`LoadParity.Report` is optional inside `ShadowParity.Outcome` — `lastInputs` is
+nil on a device that has never built a load series.
+
+A nil slice counts as **one difference**, not as zero, and the screen says *"the
+app's load series was not built"* rather than showing nothing. Every version of
+this screen that has treated a missing answer as a clean one has had to be
+corrected: 309's hidden counters (§12.54.2), 311's hidden interrupted-runs row,
+312's evaporating result (§12.57.5). Three times in six patches is a habit, and
+`aMissingSliceIsNotAPass` is the test that breaks it.
+
+### 12.59.6 The apply script is gone, and that is a fix
+
+313's and 314's scripts both went unrun. Neither failure had a symptom: every
+Swift file in both patches was a wholesale copy, so `cp` did all the work that
+shows, and the script's only remaining job was this document. Green build, green
+suite, correct device, missing section — twice.
+
+314 added a check that the previous patch's section had landed. That was the
+wrong fix: it makes the script better at reporting a failure that happens
+because the script is skipped.
+
+**The right fix is to remove the step.** The ADR now ships as a file in the patch
+zip and arrives by the same `cp` that has never once failed. A step that can be
+skipped without symptom is a step that will be, and adding a check to it only
+moves the silence.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

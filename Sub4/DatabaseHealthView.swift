@@ -1400,6 +1400,82 @@ struct DatabaseHealthView: View {
                 LabeledContent("Tolerance", value: VolumeParity.toleranceLabel)
                     .font(.caption).foregroundStyle(Color.dim)
             }
+
+            // MARK: Slice 3 — the fitness curve, patch 315
+
+            if let l = parity.last.load {
+                Text("Fitness and load")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+
+                LabeledContent("Days in each series",
+                               value: "\(l.appDays) vs \(l.databaseDays)")
+                    .font(.caption)
+                    .foregroundStyle(l.appDays == l.databaseDays ? Color.dim : .red)
+                LabeledContent("Days compared", value: "\(l.daysCompared)")
+                    .font(.caption)
+                    .foregroundStyle(l.daysCompared > 0 ? Color.dim : .red)
+                // THE DEEP DENOMINATOR. Four hundred rest days would satisfy
+                // the row above and describe no training at all.
+                LabeledContent("Sessions compared", value: "\(l.workoutsCompared)")
+                    .font(.caption)
+                    .foregroundStyle(l.workoutsCompared > 0 ? Color.dim : .red)
+                LabeledContent("Scored from a trace",
+                               value: "\(l.appTraces) vs \(l.databaseTraces)")
+                    .font(.caption)
+                    .foregroundStyle(l.appTraces == l.databaseTraces ? Color.dim : .red)
+
+                LabeledContent("Days with a different state",
+                               value: "\(l.daysWithDifferentState.count)")
+                    .font(.caption)
+                    .foregroundStyle(l.daysWithDifferentState.isEmpty ? Color.dim : .red)
+                ForEach(l.daysWithDifferentState.prefix(5), id: \.self) { day in
+                    Text("  \(day)").font(.caption2).foregroundStyle(.red)
+                }
+                LabeledContent("Days with a different total",
+                               value: "\(l.daysWithDifferentLoad.count)")
+                    .font(.caption)
+                    .foregroundStyle(l.daysWithDifferentLoad.isEmpty ? Color.dim : .red)
+                ForEach(l.daysWithDifferentLoad.prefix(5), id: \.self) { day in
+                    Text("  \(day)").font(.caption2).foregroundStyle(.red)
+                }
+
+                // THE ROW THIS SLICE EXISTS FOR — see LoadParity's header. A
+                // session scored from the trace on one side and from the
+                // session average on the other is D6a's accepted trace loss
+                // costing a number somebody reads.
+                LabeledContent("Sessions on a different rung",
+                               value: "\(l.workoutsWithDifferentSource.count)")
+                    .font(.caption)
+                    .foregroundStyle(l.workoutsWithDifferentSource.isEmpty
+                                     ? Color.dim : .red)
+                LabeledContent("Sessions with a different figure",
+                               value: "\(l.workoutsWithDifferentFigure.count)")
+                    .font(.caption)
+                    .foregroundStyle(l.workoutsWithDifferentFigure.isEmpty
+                                     ? Color.dim : .red)
+
+                LabeledContent("Curve points that disagree",
+                               value: "\(l.pointsWithDifferentFitness) of \(l.pointsCompared)")
+                    .font(.caption)
+                    .foregroundStyle(l.pointsWithDifferentFitness == 0 ? Color.dim : .red)
+                LabeledContent("Fitness", value: l.fitnessLine)
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Fatigue", value: l.fatigueLine)
+                    .font(.caption).foregroundStyle(Color.dim)
+
+                // THE LIMIT, PRINTED. A comparison that does not say what it
+                // held constant is a comparison whose result cannot be read.
+                LabeledContent("Held from the app", value: LoadParity.heldFromTheApp)
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Tolerance", value: LoadParity.toleranceLabel)
+                    .font(.caption).foregroundStyle(Color.dim)
+            } else if case .ran = parity.last {
+                // NOT ZERO DIFFERENCES — NO ANSWER. The app's own series had
+                // not been built, so there was nothing to compare against.
+                LabeledContent("Fitness and load",
+                               value: "the app's load series was not built")
+                    .font(.caption).foregroundStyle(.red)
+            }
         } header: {
             Text("Shadow parity")
         } footer: {
@@ -1418,7 +1494,13 @@ struct DatabaseHealthView: View {
                  + "is carrying something the app no longer wants, which is "
                  + "what automatic write-throughs not reconciling looks like. "
                  + "There is no approved-difference list yet, so every other "
-                 + "number above zero is real. See ADR-0003 §12.56 and §12.57.")
+                 + "number above zero is real.\n\n"
+                 + "The fitness comparison holds the constants, the FTP, your "
+                 + "session RPEs and Apple Health identical on both sides — "
+                 + "the database has no reader for them yet, and Health it "
+                 + "will never have. So it answers one question: do the "
+                 + "database's activities and traces produce the same load. "
+                 + "See ADR-0003 §12.56, §12.57 and §12.59.")
                 .font(.caption2)
         }
     }

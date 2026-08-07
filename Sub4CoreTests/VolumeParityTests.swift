@@ -285,8 +285,16 @@ struct VolumeParityTests {
                 "the paste says which of the four it is, rather than nothing")
     }
 
-    /// BOTH SLICES OR NEITHER. A run that passed one and failed the other must
-    /// not read as healthy, which is the whole reason there is one button.
+    /// ONE SLICE FAILING FAILS THE RUN. That is the whole reason there is one
+    /// button rather than three: a person cannot run the half that passes.
+    ///
+    /// THE OTHER TWO HAVE TO BE GENUINELY HEALTHY for this to prove anything.
+    /// 315a: the load slice was added to `Outcome` and this test originally
+    /// omitted it, which stopped the file compiling — and the lazy repair,
+    /// passing `load: nil`, would have made the test pass because a MISSING
+    /// slice fails a run. That is a different fact, and it is already pinned by
+    /// `LoadParityTests.aMissingSliceIsNotAPass`. So the load report here is a
+    /// real one, built from the same series on both sides.
     @Test("One slice failing fails the run")
     func oneSliceFailingFailsTheRun() throws {
         let store = history()
@@ -300,9 +308,18 @@ struct VolumeParityTests {
         #expect(activitiesAgree.isHealthy, "the same ids, in the same order")
         #expect(!volumeDiffers.isHealthy, "but not the same kilometres")
 
+        let days = LoadSeries.build(
+            from: "2026-04-20", to: "2026-04-30",
+            byDay: ActivityRoster.byDay(twin),
+            inputs: LoadSeries.Inputs(hrMax: 185, hrRest: { _ in 48 }, w: 1.92,
+                                      ftp: nil, powerFactor: nil))
+        let loadAgrees = LoadParity.compare(app: days, database: days)
+        #expect(loadAgrees.isHealthy, "and the load slice really does pass")
+
         let outcome = ShadowParity.Outcome.ran(activities: activitiesAgree,
-                                               volume: volumeDiffers)
-        #expect(!outcome.isHealthy)
+                                               volume: volumeDiffers,
+                                               load: loadAgrees)
+        #expect(!outcome.isHealthy, "two passes and one failure is a failure")
         #expect(outcome.line.contains("differences"))
     }
 }
