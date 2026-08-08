@@ -6,20 +6,31 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
+**Current at patch 319 (2026-08-08).** Patch 318 installed this file with its state
+sections still describing patch 278c — forty patches behind — which is the failure
+this file exists to prevent. §5 is the part that goes stale; if the patch number in
+its heading is far behind `Sub4/AppVersion.swift`, trust the ADR and the code, not §5.
+
 ---
 
 ## 1. Read before you touch anything
 
 In this order, and only what the task needs:
 
-1. **`docs/ADR-0003-database-contract.md`** — authoritative for all persistence work.
-   §3 identity, §9 decisions, §12 what the import writes. Long, current, and it
-   states the reasoning behind every rule repeated below.
-2. **`docs/HANDOFF-2026-08-05-late.md`** — the long form of current state.
-   (`HANDOFF-2026-08-05.md` is superseded — ignore it.)
-3. **`docs/context/sub4-database.md`** — Phase 3 state, patch 278c, what is next.
-4. **`docs/context/working-agreement.md`** — how Bruno wants you to work. Read it once
-   per session; it is 200 words and it is not optional.
+1. **`docs/ADR-0003-database-contract.md`** — authoritative for all persistence work, and
+   the only document that is always current. §3 identity, §9 decisions, §12 what the import
+   writes and every patch decision from 200 onward. **§12 is the running log; there is no
+   CHANGELOG and there should not be one.** Newest sections are appended before §12.10, not
+   at the end of the file.
+2. **`docs/context/sub4-database.md`** — the shorter map of the same ground.
+3. **`docs/context/working-agreement.md`** — how Bruno wants you to work. Read it once per
+   session; it is 200 words and it is not optional.
+4. **`docs/D6C-SHADOW-PARITY-GROUNDWORK.md`** — if the task is D6c. §6 has the slice order.
+
+**The handoffs are history, not state.** `HANDOFF-2026-08-05.md`,
+`HANDOFF-2026-08-05-late.md` and `HANDOFF-2026-08-06.md` were snapshots; the newest is
+already three days and forty patches old. Read one only to understand how something got
+the way it is. ADR §12 supersedes all three.
 
 ---
 
@@ -36,30 +47,38 @@ In this order, and only what the task needs:
 
 **Persistence (full reasoning in ADR-0003):**
 
-- A migration is **history**. Vocabularies inside one are frozen literals, coupled to
-  the Swift enums by test. Never assert `Sub4Migrations.all.last == <a migration>`.
+- A migration is **history**. Vocabularies inside one are frozen literals, coupled to the
+  Swift enums by test. Never assert `Sub4Migrations.all.last == <a migration>`.
+  A new column means a **new dated migration file**, registered in `Sub4Migrations.migrator`
+  *and* appended to `Sub4Migrations.all` — and the identifiers must sort into run order,
+  because `all == all.sorted()` is asserted.
 - **Strava ids are never primary keys** (§3.1).
 - The import is **idempotent by lookup, not by luck** — it UPDATEs, it does not skip.
 - Each imported row gets its **own SAVEPOINT**.
-- Write the **§12 mapping before the importer**, not after.
+- Write the **§12 mapping before the importer**, not after. Seven mappings written before
+  their importer; seven found something.
 - A migration may lose the old **shape**, not the **data**: guard the removal of a
   retired key on the new blob actually landing (this is what 278c fixed).
 
-**Swift / concurrency:**
+**Swift / concurrency — and the two at the top are recent and expensive:**
 
+- **SE-0434: stored properties of `Sendable` type in a main-actor-isolated value type are
+  implicitly `nonisolated`. Computed properties are NOT** — they are methods.
+  `Sub4Import+Athlete` has read `constants.hrMaxOverride` off the main actor since 228 with
+  no keyword; `AthleteConstants.hrMax` beside it needed one at 317.
+- **`nonisolated` on a type reaches the members written in its own body. It does not reach
+  its extensions.** `AthleteStore.HRZone` went nonisolated at 317 and `HRZone.titled` broke,
+  because `name` lives in `extension AthleteStore.HRZone` in `Theme.swift`, which takes the
+  module default. Five instances: 207, 219, 228, and both ends of 317.
 - `Sub4Import` is `nonisolated` end to end. Anything main-actor it needs is computed
   by the caller and passed in.
-- Anything that is data rather than state says `nonisolated` when written — and code
-  moving from an isolated home to a nonisolated one **inherits nothing**.
-  (`a.km` is a MainActor computed property; `a.distance` beside it is stored and is not.
-  That broke patch 278.)
 - Never put `try` inside `#expect` / `#require` — hoist to a `let`. `#expect`'s message
   is a `Comment?`: an interpolated literal converts, `"a" + "\(b)"` does not.
 - A synthesised `init(from:)` does not use Swift default values.
 - `Self` in a default argument is covariant Self even on a `final class`.
 - SwiftUI type-checker: a large `Form`/`body` as one expression → "unable to type-check
   in reasonable time". Split Sections into computed properties; hoist long strings to
-  constants.
+  constants. `ViewBuilder` takes more than ten children — variadic generics since 5.9.
 - `NSException` cannot be caught by Swift do/catch. Pre-flight Info.plist keys with
   `Bundle.main.object(forInfoDictionaryKey:)` — a missing `NSHealthShareUsageDescription`
   is a hard crash.
@@ -73,9 +92,27 @@ In this order, and only what the task needs:
 
 - Sweep the **bare identifier, then filter**. `\.rejected\b` finds reads and misses
   `rejected = []`.
+- **Changing a type's shape means grepping `Sub4CoreTests/` too, before the build.**
+  Three instances: 315 (a function gained a parameter), 317b (an array gained an element).
+  Both times `Sub4/*.swift` was swept and the test target was not. The three shapes that
+  carry assertions elsewhere are **a function's arity, an array's length, and a printed
+  string's content**.
+- **Do not infer a type's name from its filename.** `ZoneTime.swift` declares `ZoneTotals`.
+  Cost patch 316 a fix-up.
 - **Read the view before naming a control.** The match picker has four entry points and
   three labels: "Fix match…" (Today), "Change match" (activity sheet), "Change" / "Match…"
   (session detail). "Fix match" is the sheet's navigation title, not a button.
+
+**Two rules of argument, both bought with a patch:**
+
+- **Do not reimplement a rule; call it** (§12.43). Applied five times since: `isKept`/`dedup`
+  (310), `byDay` (312), `recordedByWeek` (313), `LoadSeries.build` (314). *A derivation with
+  one caller looks like part of that caller. It stops being that the moment something else
+  must agree with it.*
+- **Do not reason by analogy about two numbers without checking whether one determines the
+  other** (§12.60.1). Patch 316 argued that two heart-rate distributions could integrate to
+  the same TRIMP. They cannot — both come from one walk over one set of bins, and the
+  histogram determines the TRIMP. The argument was rewritten rather than the patch dropped.
 
 ---
 
@@ -92,6 +129,9 @@ In this order, and only what the task needs:
 accumulate invisibly. Patches 275, 276 and 277 all ran on the phone while the test target
 had not compiled since 273. Run the suite from the CLI so that cannot recur.
 
+**Never run `xcodebuild test` while Xcode is building.** They share DerivedData and the
+collision surfaces as `invalid reuse after initialization failure` on files that are fine.
+
 **CI is not a check.** The GitHub account is free (2,000 Actions minutes/month) and the
 allowance is spent. Exhaustion looks like an instant 2–4 s failure of *every* job with the
 annotation about payments / spending limit — that is billing, not code. **It resets
@@ -101,7 +141,9 @@ annotation about payments / spending limit — that is billing, not code. **It r
 **Simulator cannot answer everything.** Six of eleven Phase 2 defects were hardware-only.
 Anything about real activity data, HealthKit, Keychain, or on-device row counts needs the
 phone — and Bruno's eyes, because **the app logs nothing at all**. Ask him to look; do not
-infer from a green suite.
+infer from a green suite. When you ask, give **numbered navigation and a row-by-row table
+of what each figure should read**, including what a failure would look like. "Check the
+Database screen" has been rejected as too thin twice.
 
 **Xcode, the hard-won bits:**
 
@@ -111,6 +153,11 @@ infer from a green suite.
   second reference → `Models 2.swift` → invalid redeclaration. Wrecked the project twice.
   This is a real advantage now: you can add Swift files with `Write` and never touch
   `project.pbxproj`.
+- **A NEW file needs ⌘Q and a reopen before the app target sees it.** The test target picks
+  new files up without one; the app target does not. Patch 317 lost a build to this — forty
+  errors, all `cannot find 'AthleteRepository' in scope`.
+- **Nothing that is not Swift source goes under `Sub4/Sub4/`.** Docs go to `docs/`,
+  scripts to `scripts/`.
 - GRDB **7.11.1**, pinned Exact Version, revision `b83108d10f42680d78f23fe4d4d80fc88dab3212`.
   Product `GRDB` (static) on the `Sub4` target only; `GRDB-dynamic` deliberately not linked.
   Tests reach it via `@testable import Sub4`. Xcode's Exact Version field pre-fills `1.0.0`
@@ -120,6 +167,11 @@ infer from a green suite.
   relief from the 7-day provisioning expiry and nothing else that matters here.
   Provisioning expiry means the app stops launching until rebuilt from Xcode.
 
+**`AppVersion.swift` ships in every patch, without exception** — `patch` bumped and
+`revision` nil for a numbered patch, `patch` unchanged and `revision` set to a lowercase
+letter for a fix-up. The version is on the Settings screen and in the diagnostics paste, and
+a stale reading there is how you find out a patch did not land.
+
 ---
 
 ## 4. Working with Bruno
@@ -128,33 +180,76 @@ Full version in `docs/context/working-agreement.md`. The short form:
 
 - Ask a clarifying question **once**, then proceed. Never re-ask the same set.
 - When he interrupts, **stop immediately** — first time, not the third.
-- Do not assert facts derived from files you have not read **this session**.
+- Do not assert facts derived from files you have not read **this session**. That includes
+  this file.
 - Direct and concise. No flattery, no padding. Push back when something is thin or wrong.
 - **Never write police operational data anywhere near a cloud service.** Unrelated to this
   repo, but it is a standing rule and it does not have exceptions.
 
+**Two surfaces work on this repo, and they ship differently.** Claude Code on the Mac edits
+files in place and git is the undo. Cowork cannot write into the repo — it reads through the
+device bridge and delivers **patch zips that Bruno unzips himself**, which is why patches
+310–317 exist as zips and why `AppVersion.swift` rides in every one. Neither surface touches
+git; Bruno commits.
+
 ---
 
-## 5. State, as of 2026-08-05 (patch 278c)
+## 5. State — patch 319, 2026-08-08
 
-- **D0–D4 complete and verified on the device. D5 in progress, 3 of 5 slices done.**
-- Ten migrations, 51 tables, 212,295 rows, ~37 MB on the phone.
-- `migration_run` reaches `verified`; the semantic verifier compares 19 things across
-  four layers.
-- **Nothing reads the database yet.** The app still runs entirely off its JSON stores.
-  That is D7.
+**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c four slices of eight.
+D7 has not started, and nothing in the app reads the database yet.**
 
-**Do this first, before any new work:**
+- **Eleven migrations**, 51 tables, **213,698 rows**, ~37 MB on the phone. On the device:
+  673 activities, 673 details, 649 recordings, **194,154 trace samples**, 8,057 splits,
+  2,349 laps, 761 best efforts, 582 weather, 11 gear, 15 resting months, 5 HR zones,
+  7 notes, 4 corrections, 3 rejections, 107 ledger rows.
+- **931 tests in 88 suites.** 159 Swift files in `Sub4/`, ~56,000 lines; 68 test files.
+- **`migration_run` reaches `verified`.** The semantic verifier compares per-table counts,
+  sync state, identity, an activity fingerprint and the domain checks. **The number of
+  comparisons is printed on the Database screen — it is not restated here**, because a
+  second answer to a question the screen already answers is how §12.29's problem starts.
 
-> **The match picker offers activities the matcher will refuse.** Confirmed on device
-> 2026-08-05 22:00. `MatchPickerView.choiceSection` lists `activities(on: dayKey)`
-> unfiltered; `Matcher.resolve` builds its pool from `all.filter(\.isPlanEligible)`, and
-> `Activity.isPlanEligible` returns `false` by `default:` — so a walk is never eligible.
-> Choosing the walk stores the override, the matcher cannot find it, and the session falls
-> through to the same branch as "explicitly nothing". Week showed *Not done*, Sessions went
-> 4/4 → 3/4, nothing on screen said why. Worse since 272: the import *does* write the row,
-> so the store, `match_decision` and the screen disagree — and the verifier cannot see it,
-> because it counts rows and the count is right.
+**D6a — four repositories, every field compared.**
+`ActivityRepository` (289), `ActivityDetailRepository` (291), `RecordingRepository` (294),
+`AthleteRepository` (317). Each returns a load type that distinguishes *nothing there* from
+*could not look* — §12.15, nine instances now.
+
+**D6b — write-through (302–307).** Every path that writes a store now reaches the database.
+
+**D6c — shadow parity.** Slice order is in `docs/D6C-SHADOW-PARITY-GROUNDWORK.md` §6.
+
+| slice | what | patch |
+|---|---|---|
+| 1 activities — identity, order, days | `ActivityParity` | 312 ✔ |
+| 2 daily and weekly volume | `VolumeParity` | 313 ✔ |
+| 3 fitness and load, incl. the HR histogram | `LoadParity` | 314–316 ✔ |
+| 4 details, splits, laps, traces | — | open |
+| 5 notes, corrections, plan matching | — | open |
+| 6 zones, weather, gear | `AthleteRoundTrip` (the athlete part) | 317 ✔ / rest open |
+| 7 review payloads | — | open |
+| 8 Today / Week / Plan / Progress summaries | — | open |
+
+**On the device at 317b, all four slices clean:** 674 activities · 324 days · no
+differences; 403 vs 403 load days, 222 vs 222 traces, 7,112 heart-rate buckets, Fitness
+33 vs 33; athlete 27 compared, 0 differences, HR max 181 vs 181, FTP 270 vs 270.
+
+**The approved-difference list has exactly one entry** — `AthleteConstants.version`, added
+at 317, a local cache counter with no column. It is a `struct` carrying `field`, `reason`
+and `patch`, and a test pins the count at one. An entry nobody can justify is a bug that
+has been given a hiding place.
+
+### Still open, and the first one is Bruno's call
+
+> **THE MATCH PICKER OFFERS ACTIVITIES THE MATCHER WILL REFUSE.** Confirmed on device
+> 2026-08-05 22:00, still open at 319. `MatchPickerView.choiceSection` lists
+> `activities(on: dayKey)` unfiltered; `Matcher.resolve` builds its pool from
+> `all.filter(\.isPlanEligible)`, and `Activity.isPlanEligible` returns `false` by
+> `default:` — so a walk is never eligible. Choosing the walk stores the override, the
+> matcher cannot find it, and the session falls through to the same branch as "explicitly
+> nothing". Week showed *Not done*, Sessions went 4/4 → 3/4, nothing on screen said why.
+> Worse since 272: the import *does* write the row, so the store, `match_decision` and the
+> screen disagree — and the verifier cannot see it, because it counts rows and the count
+> is right.
 >
 > **Two fixes and the decision is Bruno's, not yours:**
 > (a) the picker lists only plan-eligible activities, extras greyed with a reason;
@@ -164,8 +259,33 @@ Full version in `docs/context/working-agreement.md`. The short form:
 > session's adherence and effort figures.
 > **Ask, then implement. Do not pick.**
 
-Then: D5's remaining slices, D6 shadow parity, D7 activate, D8 remove the JSON writers.
-`docs/context/sub4-database.md` has the ordered list and the open questions inside it.
+- **Background refresh has never fired.** 107 ledger rows: 1 manual, 34 backgrounded,
+  22 foregrounded, **0 backgroundRefresh**, 50 from before the trigger column existed.
+  Needs the `Woken by iOS` count from the Settings screen to decide whether patch 307's
+  path is dead or iOS has simply never woken the app.
+- **`Interrupted runs: 2`** as of 317b, from that night's ⌘R cycles. Should not climb on a
+  day with no rebuilds.
+- **`Sub4/manual.html` is 35 patches stale** — last touched at 284, and it has zero
+  mentions of the Database screen, shadow parity, write-through, GRDB or migrations. It is
+  a *user* document and §11 "Where the data lives" is the part that will be wrong; deferred
+  until D7 settles that answer rather than writing it twice.
+- **`SUB4_CURRENT_PEER_REVIEW_AND_REMEDIATION_PLAN.md` is untouched since the baseline**
+  (3 August). Deferred until the D-ladder finishes, for the same reason.
+- `review_evidence_source` — the proposals import stays unverified against real data until
+  **24 August 2026**, the first real review.
+- `content_revision` — **probably has no correct occupant** among the preference keys. Its
+  real first occupant is likely the plan's content hash. Settle before building.
+- `lateArrivals` has been computed since patch 45 and is displayed nowhere.
+- **The protected snapshot goes stale.** The one on the phone is `2026-08-05-202320` from
+  patch 279. Take a fresh one before anything destructive.
+- **`ActivityStore.load()` still has the two-`try?` shape** patch 273 fixed on the four
+  authored stores. Left deliberately: it is a cache and re-fetchable.
+- **2026-09-01 — GitHub Actions allowance resets.**
+
+**Next:** D6c slice 4 (details, splits, laps, traces), then 5, then the rest of 6, 7, 8.
+Then D7 activate — `Sub4Launch.migrationFailureBlocksTheApp` flips to `true`. Then D8,
+stabilise one release window and remove the JSON writers. Phase 4A (Apple Health canonical)
+cannot start before D7's exit gate.
 
 ---
 
@@ -176,11 +296,22 @@ Then: D5's remaining slices, D6 shadow parity, D7 activate, D8 remove the JSON w
 - **Read the code that produces the number, not the numbers either side of it.**
 - A test that keeps passing can stop describing the system.
 - A warning-shaped defect needs a test.
+- **A diagnostic that cannot say why it has no answer will be read as having one**
+  (§12.15). Nine instances.
+- **A row that vanishes at zero cannot be told from a row nobody wired in** (§12.54.2).
+  A count beside its denominator is evidence; a bare zero is noise; a missing zero is
+  nothing. Every diagnostic line is unconditional.
+- **A comparison must have a real way to fail.** Zero compared to zero agrees perfectly and
+  proves nothing, which is why every parity report carries a denominator and a negative
+  control.
 - **A method written in anticipation is not a feature.** `ProposalStore.remove` waited 45
   patches for a caller.
 - **An account beats a list.** Five counters can each be right while the set is missing a
   case; a residual cannot hide one.
 - Six controls have been found reporting work they did not do.
+- **A step that can be skipped without symptom will be** (§12.59.6). The `apply-NNN.py`
+  script was dropped from patches at 315 for exactly this: twice it was not run and nothing
+  showed, because its only remaining job was the ADR.
 
 ---
 
@@ -199,6 +330,15 @@ Then: D5's remaining slices, D6 shadow parity, D7 activate, D8 remove the JSON w
 | `load-model-research.md` | touching load / TRIMP / CTL calculation |
 | `ipad-readiness.md` + `ipad-rebuild-plan.md` | iPad work |
 | `mac-readiness.md` | Mac work |
+
+**Every one of those carries a date, and most are from late July.** They are a map, not the
+territory — verify a number against the code before building on it.
+
+Other documents worth knowing exist: `docs/D6A-DETAIL-GROUNDWORK.md`,
+`docs/D6A-RECORDING-GROUNDWORK.md`, `docs/D6B-WRITE-THROUGH-GROUNDWORK.md`,
+`docs/D6C-SHADOW-PARITY-GROUNDWORK.md` (read §6 before any D6c slice),
+`docs/PLAN-cutover-v2.md` (the ladder and the calendar constraint),
+`docs/ADR-0001-product-definition.md`, `docs/ADR-0002-strava-retirement.md`.
 
 `docs/SWITCHOVER.md` records how this repo moved from Cowork to Claude Code and what
 changed. Read once, then it is history.

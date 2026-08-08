@@ -5965,6 +5965,380 @@ stamps rather than facts about the athlete — §12.10 already records that
 `computedUTC` currently answers "when did this row arrive" — and comparing a
 stamp the store does not keep would be comparing the database against itself.
 
+## 12.62 The memory base, and the state that shipped forty patches behind — patch 319
+
+Patch 318 moved the project's knowledge base out of Cowork and into the repo: `CLAUDE.md`,
+`docs/context/` (twelve files), `docs/SWITCHOVER.md`, `.claude/settings.json`, and
+`scripts/test.sh` + `scripts/preflight.sh`. Eighteen files, 1,530 lines, and a good idea —
+Cowork's memory store does not travel with the code, and every session that starts cold pays
+for that.
+
+It fixed the test counts and the repo-relative paths on the way in. It did not fix the state
+sections.
+
+`CLAUDE.md` §5 and `docs/context/sub4-database.md` both opened with **"as of 2026-08-05,
+patch 278c"** and said *D0–D4 complete, D5 in progress, 3 of 5 slices done*. The commit that
+installed them was made at patch 318.
+
+### 12.62.1 Why this is a defect and not untidiness
+
+A stale README costs a reader ten minutes. This is different, and the difference is
+mechanical: **`CLAUDE.md` is the file every session reads first, and nothing else it reads
+contradicts §5 early enough to matter.** A session that opens it comes away believing the
+database work is mid-D5 — that `ActivityRepository` is the newest reader, that shadow parity
+has not started, that seven migrations are still to come. It would then plan against that
+picture, and the plan would be wrong in a way the code would only reveal after the work had
+begun.
+
+That is the same failure this project already has a name for at four different scales:
+
+- **§12.15** — a diagnostic that cannot say why it has no answer will be read as having one.
+- **§12.29** — two answers to one question is how the wrong one gets believed.
+- **"A test that keeps passing can stop describing the system."**
+- **§12.54.2** — a row that vanishes at zero cannot be told from a row nobody wired in.
+
+Every one of them is the same shape: *a thing that used to be true, still being read as
+true.* A memory base is that shape with the highest leverage available, because it is read
+before anything that could correct it.
+
+`docs/context/README.md`, in the same commit, states the rule it broke:
+
+> *"These are working notes, not archives. When something here turns out to be wrong or is
+> superseded, edit the file in the same commit as the code change. A file that stops
+> describing the system is worse than no file."*
+
+**Writing the rule down did not make it hold** — which is §12.61.9's finding arriving again,
+one document up. Both are now restated as mechanical checks rather than intentions: the
+context index carries a **date per file**, and the instruction is that a date far behind
+`Sub4/AppVersion.swift` means read the code.
+
+### 12.62.2 What was actually wrong
+
+| stated | true at 319 |
+|---|---|
+| patch 278c, 2026-08-05 | 319, 2026-08-08 |
+| D0–D4 complete, D5 in progress, 3 of 5 slices | D0–D5, D6a, D6b complete; D6c four slices of eight |
+| **Ten** migrations | **Eleven** — `2026-08-12-run-trigger` at 311 |
+| 51 tables, 212,295 rows | 51 tables, 213,698 rows |
+| 668 activities, 645 traces, 192,954 samples | 673, 649, 194,154 |
+| the verifier compares **19** things | see below — the number was removed, not corrected |
+| read `HANDOFF-2026-08-05-late.md` for current state | `HANDOFF-2026-08-06.md` exists and is newer; all three are history |
+
+`README.md` had gone further and was stating things that were false rather than merely old:
+*"Dependencies: None yet. GRDB arrives with the database migration"* (GRDB 7.11.1 has been
+pinned since 226), *"86 Swift files, ~31,500 lines"* (159 and ~56,000), and **"There is no
+automated test target and no CI"** — against 68 test files, 931 tests and a workflow that
+has existed since 4 August.
+
+### 12.62.3 The number that was deleted rather than updated
+
+The exported file said the semantic verifier *"compares 19 things across four layers"*.
+
+The obvious repair is to count them and write the new number. That was rejected. The
+verifier builds its list at run time — `countChecks` returns one per imported table,
+`domainChecks` returns a variable set, and three more are appended individually — so the
+total is a property of the data, not of the source. Any figure written here is a snapshot
+that starts drifting the moment a table is added.
+
+**The Database screen already prints it**, as `N comparisons, all agreed`. So the document
+now describes the *shape* — counts, sync state, identity, an activity fingerprint, the
+domain checks — and points at the screen for the number.
+
+> **Where a screen already answers a question, a document should describe the question and
+> not repeat the answer.**
+
+That is §12.29's rule applied to prose. The one place it does not apply is a figure a reader
+needs in order to know whether the document itself is current — which is exactly what the
+patch number in a heading is for, and why it is the one number stated at the top of both
+files.
+
+### 12.62.4 What 319 does not touch, and why
+
+**`Sub4/manual.html`**, last edited at patch 284. It has zero occurrences of "Database
+health", "Shadow parity", "read-back", "write-through", "Import ledger", "GRDB" or
+"migration". That is defensible for most of it — the manual is a *user* document and the
+Database screen is a diagnostic surface — but its §11 is called *"Where the data lives"*,
+and that section is describing an architecture the app is halfway through leaving.
+
+Deferred deliberately: **D7 changes that answer.** Writing §11 now means writing it twice,
+and the second version would be written against a system that had just moved. The staleness
+is recorded in `CLAUDE.md` §5 so it is a known gap rather than a surprise.
+
+**`SUB4_CURRENT_PEER_REVIEW_AND_REMEDIATION_PLAN.md`**, untouched since the 3 August
+baseline, for the same reason: it is the ordered plan for the ladder currently being climbed,
+and rewriting it mid-climb means rewriting it again at the top. `README.md` now says to read
+it for the shape of the argument rather than for current state.
+
+**No CHANGELOG was added**, and the README now says so in as many words. `git log` plus this
+section carry that history in more detail than a changelog would, and a third place to write
+the same thing is precisely the failure §12.29 describes.
+
+### 12.62.5 The two surfaces, recorded because the docs disagreed about it
+
+`docs/context/sub4-database.md` said the Cowork patch workflow was *"all gone"* and that
+"Claude Code edits files in place and git is the undo".
+
+Half true, and the half that is false is load-bearing. **Two surfaces work on this repo.**
+Claude Code on the Mac does edit in place. **Cowork cannot write into the repo at all** — it
+reads through the device bridge and delivers patch zips that Bruno unzips himself, which is
+what 310 through 319 are. A session reading the old sentence would try to edit files it
+cannot write and discover the constraint the slow way.
+
+Retired for real: the `SUB4_ROOT` preflight, the anchor-uniqueness rules, and
+`git --no-optional-locks status`. Retired at 315 for Cowork too: `apply-NNN.py` (§12.59.6).
+Still true on both surfaces: run the suite before a device build, never run `xcodebuild test`
+while Xcode is building, a new Swift file needs Xcode restarted, `AppVersion.swift` ships in
+every patch, and **neither surface touches git — Bruno commits.**
+
+### 12.62.6 The open item that has now survived a document rewrite
+
+The match-picker defect — the picker offers activities `Matcher.resolve` will refuse, because
+`Activity.isPlanEligible` returns `false` by `default:` and a walk is never eligible — was
+recorded on 2026-08-05 with the instruction **"do this first, before any new work"** and the
+note that the choice between the two fixes is Bruno's.
+
+Forty-one patches have been built since. It is carried forward again rather than quietly
+dropped, and the fact that it survived a rewrite of the document that holds it is the point:
+**an item that is still open after a refresh is a decision that has not been made, not a note
+that has gone stale.** The two fixes and their consequences are restated in full in both
+files so that neither can be actioned without the argument attached.
+
+## 12.63 What the detail screens derive — D6c slice 4, patch 320
+
+291 and 295 compared every field of every detail: calories, the polyline, each
+split's distance and moving time, each lap, each best effort. That question is
+answered and stays answered.
+
+This asks the other one. `ActivityDetail` carries a family of derived figures —
+`overallPace`, `medianSplitPace`, `fastestSplit`, `closingPace(km:)`,
+`openingPace(km:)`, `bestWindowPace(km:)` — and `PaceTarget.measured` switches
+over four of them to produce the sentence on the activity screen: *"5:57 —
+faster than asked"*. **Nothing had ever asked whether the database's copy
+produces the same sentence.**
+
+### 12.63.1 Why equal fields do not settle it
+
+The obvious objection is that they do. If every field agrees, every function of
+those fields agrees, and slice 4 is arithmetic that cannot fail.
+
+That is true **if and only if** every field feeding a derivation is one of the
+fields the read-back compares — which is a claim about coverage, not a theorem.
+§12.16's warning is that equal counts can hide changed values; this is the same
+warning one level up, where equal values are assumed to imply equal answers.
+
+Two concrete ways the implication breaks, both live in this codebase:
+
+- **A filter is a field nobody compares.** `displaySplits` drops a trailing
+  fragment under 100 m. The read-back compares splits *by index*, so a fragment
+  present on one side only shows as `splits missing 6` — one row in a tally of
+  thousands, and nothing says the table on screen changed.
+- **A derivation can read a field the read-back reports as an approved
+  difference.** The twelve zero-heart-rate details are a known, permanent
+  difference. Whether that difference reaches a number the athlete reads is a
+  separate question, and until this patch nothing asked it.
+
+It is the same argument slice 3 made for traces and got a real answer to:
+D6a's accepted trace padding does not cost a load figure. This asks it of
+details.
+
+### 12.63.2 The answer, and the property it was wrongly said to turn on
+
+**AMENDED AT 320a. The claim below was too narrow and the device disproved it
+on the first run — see §12.63.8.** It is corrected here rather than only
+contradicted later, because a section that still states the wrong reason is
+what a future reader will find first.
+
+The claim was: *`hasHRSplits` is the only derived property on `ActivityDetail`
+that reads `averageHR`, and it asks `($0.averageHR ?? 0) > 0` — under which a
+stored zero and a missing value are the same answer, so D6a's normalisation
+cannot reach a pace, a split table or a lap reading.*
+
+**True of `ActivityDetail`'s own properties. False of the derivation chain.**
+`IntervalDetector.fromLaps` copies `lap.averageHR` into `RepSplit.avgHR`, and
+the importer normalises laps as well as splits. The corrected statement is:
+
+> **Nothing in this app DRAWS a heart rate without guarding `hr > 0`** —
+> `SplitTables` line 194 for the kilometre table, line 336 for the lap table,
+> and `hasHRSplits` one level up. So the normalisation reaches no figure the
+> athlete reads, but it does reach a value the comparison carries, and the two
+> are not the same sentence.
+
+It is checked four ways rather than two: `aZeroHeartRateReadsLikeAMissingOne`
+and `aZeroLapHeartRateIsNormalisedNotADifference` assert the drawn answers
+match on splits and on laps; `aRealHeartRateIsSeen` and
+`aRealLapHeartRateIsStillCompared` assert the comparison is not simply blind.
+Without the second pair the first would pass on a comparison that never looked.
+
+On screen the evidence is `Details with heart-rate splits: N vs N`, printed on
+both sides, because a count beside its twin is evidence and a claim is not.
+
+### 12.63.3 The denominator that would have lied
+
+Every pace window returns `nil` when the detail has too few complete splits. A
+strength session has none at all.
+
+So a run over 673 details produces **8,076 pace comparisons**, and on a history
+with no splits in it every one of them would be `nil == nil` — twelve agreements
+per detail, describing nothing, reported as a clean slice.
+
+`paceFiguresCompared` counts the pairs evaluated. **`paceFiguresAnswered` counts
+the pairs where both sides produced a number, and that is what
+`lookedAtSomething` tests.** Both are on screen; the second is the one that
+means anything.
+
+> **A figure that is missing on both sides agrees perfectly and proves nothing.**
+
+That is §12.54.2 one level deeper than the row it was written for, and
+`nilsOnBothSidesAreNotEvidence` is the test that pins it.
+
+The window sizes — closing 1/2/4 km, opening 1/2 km, best 1/2/4/5 km — are the
+ones `PaceTarget.Kind` actually carries from the plan ("last 4 km at MP",
+"2×4 km @5:38–5:43"), plus 1 km, which any detail with a single complete split
+can answer. Without the 1 km entries the denominator would be dominated by nils
+on short sessions.
+
+### 12.63.4 The plan is not consulted, and that is on screen
+
+`IntervalDetector.fromLaps` takes an optional `IntervalPlan` which narrows the
+work laps by the plan's cut pace. It is passed **nil**.
+
+Getting a real plan means `Matcher.day()` → `Session` → `IntervalPlan.from`, and
+`Matcher` is slice 5 — groundwork §8 names that dependency as the one thing it
+had not investigated. Holding the app's plan on both sides was the alternative
+and would have followed slice 3's pattern exactly; it was rejected because it
+drags the whole matching path into a slice whose subject is laps.
+
+What that leaves unexercised is the cut-pace filter, and only that. Everything
+else in the detector runs on both sides: the 20-second and 50-metre work rule,
+the uniform auto-lap rejection, the renumbering after filtering, and every rep's
+seconds, metres, heart rate and derived pace.
+
+`heldFromTheApp` says **"the plan — laps are read with no cut pace"** on screen
+and in the paste, for §12.59's reason: a comparison that does not say what it
+left out is a comparison whose result cannot be interpreted.
+
+### 12.63.5 Nothing here is a second implementation
+
+Every figure is read off `ActivityDetail`'s own properties and the lap reading
+is `IntervalDetector.fromLaps` — the app's own function, called twice. §12.43,
+sixth application after `isKept`/`dedup` (310), `byDay` (312), `recordedByWeek`
+(313), `LoadSeries.build` (314) and the athlete round trip (317).
+
+A parity file that re-derived a closing pace would eventually disagree with the
+screen, and **no test could say which was right** — the failure §12.43 describes
+as silent, and worse here than in 310 because a pace is a number somebody acts
+on rather than a list somebody scrolls.
+
+`DataCorrections.isIgnored(id:)` is called for the same reason. The two sessions
+refused by name are `excluded`, not `missing`, and are not counted as
+differences — §12.42.2, and 298's rule that a permanently correct red row is a
+row that stops being read.
+
+### 12.63.6 The test that proves the windows are distinct
+
+`onlyTheClosingPaceMoves` changes the final kilometre and asserts that
+`closing 1 km` differs while `opening 1 km` and `opening 2 km` do not.
+`onlyTheOpeningPaceMoves` does the mirror.
+
+Without that pair, a comparison that reported every window on every change would
+be indistinguishable from one that compared each detail once and named twelve
+figures. The counts would look right, the diagnostics would look thorough, and
+the slice would be a single equality wearing twelve labels.
+
+`aFragmentChangesTheSplitSet` is the sharpest of the negative controls and was
+sharpened once during the patch. A 40 m fragment was the first fixture; the
+arithmetic showed it moves `overallPace` by 0.13 s/km, which rounds away. At
+90 m in 60 s it moves it from 333 to 339 — and the test now asserts **exactly
+one** figure differs, `overall`, because every windowed pace filters on
+`isPartial` and never sees the fragment while `overallPace` walks every split.
+
+That asymmetry is deliberate in `ActivityDetail` and is stated there: overall
+pace is *"the same arithmetic that produces the pace in the header, so the two
+can never disagree."* A comparison that only checked the table would have missed
+it.
+
+### 12.63.7 One read, four slices
+
+`ShadowParity.run` now reads details in the same pass as the activities and the
+traces. **`Outcome.ran` gains a fourth associated value and a nil detail slice
+counts as one difference**, on the same rule 315 established for the load slice:
+a comparison that could not run is no answer, not zero differences.
+
+Nil means the *read* failed. A device holding no details at all still produces a
+report, and `lookedAtSomething` is what refuses to call that a pass — the two
+states are different and the screen says which.
+
+**The test target was grepped before the zip was built**, which is §12.61.9's
+rule discharged rather than restated. `Outcome.ran` had two call sites in
+`Sub4CoreTests/`, both found, both updated. Each was given a genuinely healthy
+`DetailParity.Report` rather than `nil`: passing nil would have made those tests
+pass with three failing slices instead of one, which is 315a's defect exactly —
+a green assertion for the wrong reason.
+
+### 12.63.8 The slice found the thing it was built to rule out — 320a
+
+First device run of 320: everything green except **`Reps that differ: 16`** out
+of 1,141, with **`Details with a different lap reading: 0`**. Same rep counts on
+both sides, same detector verdict, sixteen individual reps differing inside
+them.
+
+The cause took one grep. `Sub4Import+Recording` line 218 writes
+`positiveOrNil(split.averageHR)`; **line 229 writes `positiveOrNil(lap.averageHR)`
+as well.** `IntervalDetector.fromLaps` copies `l.averageHR` straight into
+`RepSplit.avgHR`. So a lap the store holds as `0` comes back as `nil`, and 320
+compared `r.avgHR != t.avgHR` and called it a divergence.
+
+§12.63.2 had argued this could not happen. It was wrong in the same shape as
+§12.60.1: **a claim scoped to one type, used as if it covered the whole path.**
+`hasHRSplits` really is the only property on `ActivityDetail` that reads
+`averageHR` — and `ActivityDetail` is not where the derivation ends.
+
+#### The approved list was the wrong answer, and that is the decision worth recording
+
+The obvious repair was an entry: `laps[*].avgHR`, reason *the importer's
+`positiveOrNil`*, patch 320a. Groundwork §5 already lists exactly this loss for
+the read-back.
+
+It was rejected. **The read-back and this slice are asking different questions,
+and the same fact is an approved difference in one and a comparison defect in
+the other.** The read-back compares records, so a field that genuinely differs
+belongs on its list. This compares what the app derives — and the app derives
+nothing different, because `SplitTables` guards `hr > 0` at the kilometre table
+(line 194) and at the lap table (line 336). Both sides draw an empty cell.
+
+Putting it on the approved list would have enshrined a wrong comparison as a
+data decision, which is precisely what §12.61.2 warns the list must never
+become: *an entry nobody can justify is a bug that has been given a hiding
+place.* The entry would have been justifiable-sounding and still wrong.
+
+> **Compare what the reader draws, not what the carrier holds — and when the
+> two disagree, that is a fact about the comparison, not about the data.**
+
+#### What 320a changes
+
+`shownHR` states the readers' rule once — `guard let v, v > 0` — and both the
+rep and the split comparison use it. Nothing is lost: 148 against nothing still
+differs, 148 against 150 still differs. Only the importer's own normalisation
+stops being reported as a divergence the athlete could see.
+
+**The 16 do not vanish.** `reps whose zero heart rate was normalised` and
+`splits whose zero heart rate was normalised` are new rows, dim, unconditional.
+A count that disappeared the moment it was understood would be §12.54.2's defect
+committed deliberately — and the day one of those sixteen becomes a real
+148-versus-nothing is the day the two counters part company and the red one
+moves.
+
+#### And it exposed a gap it was not looking for
+
+320 compared each split's derived `paceSecPerKm`, `isPartial` and `isFragment`
+and **did not compare its heart rate at all**. The kilometre table draws that
+column; it was uncompared. 320a adds it, under the same rule.
+
+That is the second time this slice has paid for itself before shipping clean:
+the fragment fixture at §12.63.6, and this. **A comparison that finds something
+on its first real run is worth more than one that is green on its first real
+run**, and the thing it found here was in the argument rather than in the data.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

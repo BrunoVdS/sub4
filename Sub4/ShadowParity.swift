@@ -33,23 +33,32 @@
 //  and their current behaviour. Changing five things to fix one is how a slice
 //  patch stops being checkable.
 //
-//  THREE SLICES AT 315, AND THE THIRD ONE CAN BE NIL
-//  -------------------------------------------------
+//  FOUR SLICES AT 320, AND TWO OF THEM CAN BE NIL
+//  ----------------------------------------------
 //  `LoadParity` needs the app's own load series and the inputs the last rebuild
 //  used. Both exist on `LoadStore` after one recompute, and this asks for one
 //  before comparing — but `lastInputs` is nil on a device that has never built
 //  a series, so the slice is optional.
 //
+//  `DetailParity` needs a detail read that worked. `ActivityDetailRepository`
+//  can come back `.failed`, and a comparison against nothing is not a
+//  comparison.
+//
 //  A NIL SLICE COUNTS AS ONE DIFFERENCE, not as zero. A comparison that could
 //  not run is no answer, and every version of this screen that has treated
 //  those two as the same has had to be corrected.
 //
-//  `ActivityParity` AND `VolumeParity` ARE NOW PURE COMPARISONS
-//  -----------------------------------------------------------
-//  Each takes two `[Activity]` and returns a `Report`. Neither reads a
-//  database, a store or a clock. That is what lets a test build their two sides
-//  from genuinely different places, and it is the property slice 3 will inherit
+//  EVERY SLICE IS A PURE COMPARISON
+//  --------------------------------
+//  Each takes its two sides and returns a `Report`. None reads a database, a
+//  store or a clock. That is what lets a test build their two sides from
+//  genuinely different places, and it is the property each new slice inherits
 //  for free.
+//
+//  ONE READ PER TABLE GROUP, STILL. Slice 4 adds a detail read to the same
+//  pass rather than a second button, for the reason at the top of this file:
+//  a screen where somebody can run half the comparison is a screen that reports
+//  half an answer as a whole one.
 //
 
 import Foundation
@@ -71,7 +80,8 @@ final class ShadowParity {
         case never
         case ran(activities: ActivityParity.Report,
                  volume: VolumeParity.Report,
-                 load: LoadParity.Report?)
+                 load: LoadParity.Report?,
+                 details: DetailParity.Report?)
         /// The launch gate never opened one. Not the same as a read failing.
         case noDatabase
         case readFailed(String)
@@ -80,10 +90,10 @@ final class ShadowParity {
             switch self {
             case .never:
                 "Not compared since this launch."
-            case .ran(let a, let v, let l):
-                Self.total(a, v, l) == 0
+            case .ran(let a, let v, let l, let d):
+                Self.total(a, v, l, d) == 0
                     ? "\(a.common) activities · \(v.daysCompared) days · no differences"
-                    : "\(Self.total(a, v, l)) differences"
+                    : "\(Self.total(a, v, l, d)) differences"
             case .noDatabase:
                 "The database is not open, so nothing was derived."
             case .readFailed(let why):
@@ -97,31 +107,34 @@ final class ShadowParity {
             switch self {
             case .never:                true
             // A SLICE THAT COULD NOT RUN IS NOT A PASS. `load` is nil when the
-            // app's own series has not been built yet, and treating a missing
-            // comparison as a clean one is the whole family of defect this
-            // screen keeps correcting.
-            case .ran(let a, let v, let l):
-                a.isHealthy && v.isHealthy && (l?.isHealthy ?? false)
+            // app's own series has not been built yet and `details` is nil when
+            // the detail read failed; treating a missing comparison as a clean
+            // one is the whole family of defect this screen keeps correcting.
+            case .ran(let a, let v, let l, let d):
+                a.isHealthy && v.isHealthy
+                && (l?.isHealthy ?? false) && (d?.isHealthy ?? false)
             case .noDatabase, .readFailed: false
             }
         }
 
-        /// The three slices' differences, or zero when there is nothing to
+        /// The four slices' differences, or zero when there is nothing to
         /// count. A slice that could not run contributes ONE — it is not zero
         /// differences, it is no answer.
         static func total(_ a: ActivityParity.Report,
                           _ v: VolumeParity.Report,
-                          _ l: LoadParity.Report?) -> Int {
-            a.unexplained + v.unexplained + (l?.unexplained ?? 1)
+                          _ l: LoadParity.Report?,
+                          _ d: DetailParity.Report?) -> Int {
+            a.unexplained + v.unexplained
+            + (l?.unexplained ?? 1) + (d?.unexplained ?? 1)
         }
 
         var activities: ActivityParity.Report? {
-            if case .ran(let a, _, _) = self { return a }
+            if case .ran(let a, _, _, _) = self { return a }
             return nil
         }
 
         var volume: VolumeParity.Report? {
-            if case .ran(_, let v, _) = self { return v }
+            if case .ran(_, let v, _, _) = self { return v }
             return nil
         }
 
@@ -129,18 +142,29 @@ final class ShadowParity {
         /// comparison ran. `ShadowParity.run` asks for it first, so this should
         /// only ever be nil on a device with no training in it at all.
         var load: LoadParity.Report? {
-            if case .ran(_, _, let l) = self { return l }
+            if case .ran(_, _, let l, _) = self { return l }
             return nil
         }
 
-        /// Both slices' lines, or the reason there are none. Unconditional —
+        /// Nil when the detail read itself failed — patch 320. Not the same as
+        /// a device with no details, which compares zero of zero and is caught
+        /// by `lookedAtSomething` instead.
+        var details: DetailParity.Report? {
+            if case .ran(_, _, _, let d) = self { return d }
+            return nil
+        }
+
+        /// Every slice's lines, or the reason there are none. Unconditional —
         /// 266c's rule, and the paste is where this patch's own defect showed.
         var diagnosticLines: [String] {
             switch self {
-            case .ran(let a, let v, let l):
+            case .ran(let a, let v, let l, let d):
                 a.diagnosticLines + [""] + v.diagnosticLines + [""]
                 + (l?.diagnosticLines
                    ?? ["Load parity: the app's own load series was not built"])
+                + [""]
+                + (d?.diagnosticLines
+                   ?? ["Detail parity: the details could not be read"])
             case .never, .noDatabase, .readFailed:
                 ["Shadow parity: \(line)"]
             }
@@ -193,12 +217,19 @@ final class ShadowParity {
             }.value
             LoadStore.shared.recomputeIfNeeded()
 
+            // SLICE 4 — patch 320. Read in the same pass for the same reason
+            // the traces are: a second button is a way to see half an answer.
+            let storedDetails = await Task.detached(priority: .userInitiated) {
+                ActivityDetailRepository.all(db).details
+            }.value
+
             last = .ran(activities: ActivityParity.compare(store: mine,
                                                            databaseRows: rows,
                                                            databaseSkipped: skipped),
                         volume: VolumeParity.compare(store: mine,
                                                      database: twin.activities),
-                        load: loadReport(twin: twin.activities, traces: traces))
+                        load: loadReport(twin: twin.activities, traces: traces),
+                        details: detailReport(storedDetails))
             runs += 1
         }
     }
@@ -233,5 +264,19 @@ final class ShadowParity {
         // the zone rows mean the trace rather than the boundaries.
         return LoadParity.compare(app: LoadStore.shared.days, database: theirs,
                                   zones: AthleteStore.shared.hrZones)
+    }
+
+    /// Slice 4 — patch 320.
+    ///
+    /// NIL ONLY WHEN THE READ ITSELF FAILED. A device that holds no details at
+    /// all still gets a report, and `lookedAtSomething` is what refuses to call
+    /// that a pass — the two states are different and the screen says which.
+    ///
+    /// Nothing is swapped, unlike the load slice: both sides are whole details,
+    /// and the only thing that differs between them is where they came from.
+    private func detailReport(_ database: [ActivityDetail]?) -> DetailParity.Report? {
+        guard let database else { return nil }
+        return DetailParity.compare(app: Array(DetailStore.shared.details.values),
+                                    database: database)
     }
 }

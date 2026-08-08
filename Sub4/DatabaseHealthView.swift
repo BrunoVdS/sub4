@@ -1659,6 +1659,143 @@ struct DatabaseHealthView: View {
                                value: "the app's load series was not built")
                     .font(.caption).foregroundStyle(.red)
             }
+
+            // MARK: Slice 4 — details, splits and laps
+
+            if let d = parity.last.details {
+                Text("Details, splits and laps")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+
+                LabeledContent("Details in each side",
+                               value: "\(d.appDetails) vs \(d.databaseDetails)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Details compared", value: "\(d.detailsCompared)")
+                    .font(.caption)
+                    .foregroundStyle(d.detailsCompared > 0 ? Color.dim : .red)
+                LabeledContent("In the app only", value: "\(d.detailsOnlyInApp.count)")
+                    .font(.caption)
+                    .foregroundStyle(d.detailsOnlyInApp.isEmpty ? Color.dim : .red)
+                // DIM, NOT RED — patch 298's rule. DataCorrections refuses two
+                // sessions and the importer declines their details at the door,
+                // while DetailStore keeps them because it keys by Strava id and
+                // never sees an Activity. A permanently correct red row is a row
+                // that stops being read.
+                LabeledContent("Excluded on purpose",
+                               value: "\(d.detailsExcluded.count)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("In the database only",
+                               value: "\(d.detailsOnlyInDatabase.count)")
+                    .font(.caption)
+                    .foregroundStyle(d.detailsOnlyInDatabase.isEmpty ? Color.dim : .red)
+
+                // THE TWO DENOMINATORS, AND THE SECOND IS THE REAL ONE. A pace
+                // that is nil on both sides agrees perfectly and proves nothing,
+                // so the count of figures BOTH sides answered is what says
+                // whether this looked at anything.
+                LabeledContent("Pace figures compared",
+                               value: "\(d.paceFiguresCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  both sides answered",
+                               value: "\(d.paceFiguresAnswered)")
+                    .font(.caption)
+                    .foregroundStyle(d.paceFiguresAnswered > 0 ? Color.dim : .red)
+                LabeledContent("Pace figures that differ",
+                               value: "\(d.paceFiguresDiffering.count)")
+                    .font(.caption)
+                    .foregroundStyle(d.paceFiguresDiffering.isEmpty ? Color.dim : .red)
+                ForEach(d.paceFiguresDiffering.prefix(6), id: \.self) { f in
+                    Text("    \(f)").font(.caption2).foregroundStyle(.red)
+                }
+                if d.paceFiguresDiffering.count > 6 {
+                    Text("    + \(d.paceFiguresDiffering.count - 6) more figures")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+
+                LabeledContent("Splits compared", value: "\(d.splitsCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Splits with a different pace",
+                               value: "\(d.splitsWithDifferentPace)")
+                    .font(.caption)
+                    .foregroundStyle(d.splitsWithDifferentPace == 0 ? Color.dim : .red)
+                LabeledContent("Splits with a different heart rate",
+                               value: "\(d.splitsWithDifferentHR)")
+                    .font(.caption)
+                    .foregroundStyle(d.splitsWithDifferentHR == 0 ? Color.dim : .red)
+                // DIM AND ALWAYS PRESENT — patch 320a. Carried differently,
+                // drawn the same: the importer's `positiveOrNil` on a stored
+                // zero. Not a difference, and not allowed to vanish either.
+                LabeledContent("  zero heart rates normalised",
+                               value: "\(d.splitsWithNormalisedHR)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Details with a different split set",
+                               value: "\(d.detailsWithDifferentSplitSet.count)")
+                    .font(.caption)
+                    .foregroundStyle(d.detailsWithDifferentSplitSet.isEmpty
+                                     ? Color.dim : .red)
+                LabeledContent("Details with different flags",
+                               value: "\(d.detailsWithDifferentFlags.count)")
+                    .font(.caption)
+                    .foregroundStyle(d.detailsWithDifferentFlags.isEmpty
+                                     ? Color.dim : .red)
+                LabeledContent("Details with different elevation",
+                               value: "\(d.detailsWithDifferentElevation.count)")
+                    .font(.caption)
+                    .foregroundStyle(d.detailsWithDifferentElevation.isEmpty
+                                     ? Color.dim : .red)
+                LabeledContent("Details with a different track",
+                               value: "\(d.detailsWithDifferentTrack.count)")
+                    .font(.caption)
+                    .foregroundStyle(d.detailsWithDifferentTrack.isEmpty
+                                     ? Color.dim : .red)
+
+                LabeledContent("Laps offered to the detector",
+                               value: "\(d.lapsCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Details read as intervals", value: d.intervalLine)
+                    .font(.caption)
+                    .foregroundStyle(d.appDetailsReadAsIntervals
+                                     == d.databaseDetailsReadAsIntervals
+                                     ? Color.dim : .red)
+                LabeledContent("Details with a different lap reading",
+                               value: "\(d.detailsWithDifferentLapReading.count)")
+                    .font(.caption)
+                    .foregroundStyle(d.detailsWithDifferentLapReading.isEmpty
+                                     ? Color.dim : .red)
+                LabeledContent("Reps compared", value: "\(d.repsCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Reps that differ", value: "\(d.repsDiffering)")
+                    .font(.caption)
+                    .foregroundStyle(d.repsDiffering == 0 ? Color.dim : .red)
+                LabeledContent("  zero heart rates normalised",
+                               value: "\(d.repsWithNormalisedHR)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+
+                // THE ROW D6a's ACCEPTED LOSS IS AIMED AT. `hasHRSplits` is the
+                // only derived property that reads averageHR, and it treats a
+                // stored zero and a missing value alike — so these two matching
+                // is the evidence that the normalisation costs no figure.
+                LabeledContent("Details with heart-rate splits", value: d.hrSplitsLine)
+                    .font(.caption)
+                    .foregroundStyle(d.appDetailsWithHRSplits
+                                     == d.databaseDetailsWithHRSplits
+                                     ? Color.dim : .red)
+                LabeledContent("Details with a route", value: d.routeLine)
+                    .font(.caption)
+                    .foregroundStyle(d.appDetailsWithRoute == d.databaseDetailsWithRoute
+                                     ? Color.dim : .red)
+
+                LabeledContent("Held from the app", value: DetailParity.heldFromTheApp)
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Tolerance", value: DetailParity.toleranceLabel)
+                    .font(.caption).foregroundStyle(Color.dim)
+            } else if case .ran = parity.last {
+                // NOT ZERO DIFFERENCES — NO ANSWER, again. The detail read
+                // itself failed, which is a different fact from a device that
+                // holds no details.
+                LabeledContent("Details, splits and laps",
+                               value: "the details could not be read")
+                    .font(.caption).foregroundStyle(.red)
+            }
         } header: {
             Text("Shadow parity")
         } footer: {
@@ -1676,8 +1813,22 @@ struct DatabaseHealthView: View {
                  + "Rows the rules dropped are not disagreements: the database "
                  + "is carrying something the app no longer wants, which is "
                  + "what automatic write-throughs not reconciling looks like. "
-                 + "There is no approved-difference list yet, so every other "
-                 + "number above zero is real.\n\n"
+                 + "Details excluded on purpose are not disagreements either — "
+                 + "two sessions are refused by name. Every other number above "
+                 + "zero is real.\n\n"
+                 + "Details, splits and laps compare what the activity screen "
+                 + "would DERIVE: the closing, opening and best-window paces, "
+                 + "the split table, and what the laps read as. The plan is not "
+                 + "consulted, so laps are read with no cut pace — that is "
+                 + "slice 5. A pace that is missing on both sides agrees and "
+                 + "proves nothing, which is why the figures BOTH sides "
+                 + "answered are counted separately.\n\n"
+                 + "Heart rates are compared as the tables DRAW them — every "
+                 + "one of them guards `hr > 0`, so a stored zero and a missing "
+                 + "value are the same pixel. What is carried differently and "
+                 + "drawn the same is counted on its own line, dim, because a "
+                 + "row that vanishes once it is understood is a row nobody can "
+                 + "watch. See ADR-0003 §12.63.8.\n\n"
                  + "The fitness comparison holds the constants, your zones, "
                  + "the FTP, your session RPEs and Apple Health identical on "
                  + "both sides — the database has no reader for them yet, and "

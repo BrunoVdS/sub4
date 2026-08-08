@@ -32,6 +32,23 @@ import GRDB
 @MainActor
 struct VolumeParityTests {
 
+    /// PATCH 320. A detail with enough complete splits to answer every pace
+    /// window, so the detail slice below is genuinely healthy rather than
+    /// vacuously so — 315a's lesson, which was that a slice passed `nil` makes
+    /// a test pass for the wrong reason.
+    private func detail(_ id: String = "a") -> ActivityDetail {
+        ActivityDetail(
+            activityId: id, calories: nil, descriptionText: nil,
+            averageCadence: nil, averageWatts: nil, maxWatts: nil,
+            deviceName: nil, polyline: nil,
+            splits: (1...5).map {
+                ActivityDetail.Split(index: $0, distanceM: 1_000,
+                                     movingTime: 330 + $0, elapsedTime: 335 + $0,
+                                     elevationDiff: 4, averageHR: 150)
+            },
+            bestEfforts: [], laps: [], fetched: Date(timeIntervalSince1970: 1))
+    }
+
     private nonisolated struct NoRows: Error {}
 
     private func ride(_ id: String, at startLocal: String,
@@ -316,10 +333,17 @@ struct VolumeParityTests {
         let loadAgrees = LoadParity.compare(app: days, database: days)
         #expect(loadAgrees.isHealthy, "and the load slice really does pass")
 
+        // THE DETAIL SLICE PASSES TOO — patch 320. Handing it an empty pair
+        // would make this test pass with THREE failures instead of one, which
+        // is 315a's defect: a green assertion for the wrong reason.
+        let detailsAgree = DetailParity.compare(app: [detail()], database: [detail()])
+        #expect(detailsAgree.isHealthy, "and the detail slice really does pass")
+
         let outcome = ShadowParity.Outcome.ran(activities: activitiesAgree,
                                                volume: volumeDiffers,
-                                               load: loadAgrees)
-        #expect(!outcome.isHealthy, "two passes and one failure is a failure")
+                                               load: loadAgrees,
+                                               details: detailsAgree)
+        #expect(!outcome.isHealthy, "three passes and one failure is a failure")
         #expect(outcome.line.contains("differences"))
     }
 }

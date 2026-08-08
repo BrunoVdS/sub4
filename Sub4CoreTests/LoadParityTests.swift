@@ -32,6 +32,22 @@ import GRDB
 @MainActor
 struct LoadParityTests {
 
+    /// PATCH 320. One detail with enough splits to answer a pace, so the
+    /// detail slice in `aMissingSliceIsNotAPass` is genuinely healthy rather
+    /// than vacuously so.
+    private func detail(_ id: String = "a") -> ActivityDetail {
+        ActivityDetail(
+            activityId: id, calories: nil, descriptionText: nil,
+            averageCadence: nil, averageWatts: nil, maxWatts: nil,
+            deviceName: nil, polyline: nil,
+            splits: (1...5).map {
+                ActivityDetail.Split(index: $0, distanceM: 1_000,
+                                     movingTime: 330 + $0, elapsedTime: 335 + $0,
+                                     elevationDiff: 4, averageHR: 150)
+            },
+            bestEfforts: [], laps: [], fetched: Date(timeIntervalSince1970: 1))
+    }
+
     private nonisolated struct NoRows: Error {}
 
     private func ride(_ id: String, on day: String,
@@ -387,11 +403,27 @@ struct LoadParityTests {
         #expect(activities.isHealthy)
         #expect(volume.isHealthy)
 
+        // `details` is handed a genuinely healthy report — patch 320, and the
+        // reason is 315a's: passing nil there too would make this pass for the
+        // wrong reason, since a missing DETAIL slice fails for its own sake.
+        let details = DetailParity.compare(app: [detail()], database: [detail()])
+        #expect(details.isHealthy, "the detail slice really does pass")
+
         let withoutLoad = ShadowParity.Outcome.ran(activities: activities,
-                                                   volume: volume, load: nil)
+                                                   volume: volume, load: nil,
+                                                   details: details)
         #expect(!withoutLoad.isHealthy, "no answer is not zero differences")
         #expect(withoutLoad.line.contains("differences"))
         #expect(withoutLoad.diagnosticLines
                     .contains("Load parity: the app's own load series was not built"))
+
+        // AND THE OTHER WAY ROUND — patch 320. A detail slice that could not
+        // run fails the whole outcome on its own.
+        let withoutDetails = ShadowParity.Outcome.ran(activities: activities,
+                                                      volume: volume,
+                                                      load: nil, details: nil)
+        #expect(!withoutDetails.isHealthy)
+        #expect(withoutDetails.diagnosticLines
+                    .contains("Detail parity: the details could not be read"))
     }
 }
