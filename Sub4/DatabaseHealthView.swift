@@ -126,6 +126,11 @@ struct DatabaseHealthView: View {
     @State private var planExtrasTrip: PlanExtrasRoundTrip.Report?
     @State private var weatherGearLoad: WeatherGearLoad?
     @State private var weatherGearTrip: WeatherGearRoundTrip.Report?
+    // PATCH 327 — D6c slice 7. The ninth read-back, and the only one whose
+    // subject may legitimately not exist yet: the first real review is due
+    // 24 August 2026.
+    @State private var reviewLoad: ReviewTrailLoad?
+    @State private var reviewTrip: ReviewRoundTrip.Report?
     @State private var verifying = false
     @State private var verification: VerificationReport?
 
@@ -212,6 +217,13 @@ struct DatabaseHealthView: View {
                     // PATCH 324. Last of the read-backs and the one that closes
                     // slice 6 — 583 readings and eleven shoes.
                     weatherGearReadBackSection
+                    // PATCH 327. Ninth and last of the read-backs, and the one
+                    // that finishes D6c's record side. It sits at the end
+                    // because it is the only one that can legitimately compare
+                    // nothing: the first real review is due 24 August 2026, and
+                    // until then a green "no review stored yet" is the correct
+                    // answer rather than a missing one.
+                    reviewReadBackSection
                     // AFTER the three read-backs, because it asks the question
                     // they cannot: they compare RECORDS, this compares the list
                     // the app would DERIVE from them. The screen reads in the
@@ -257,6 +269,7 @@ struct DatabaseHealthView: View {
                         await reloadAuthored(db)
                         await reloadPlan(db)
                         await reloadWeatherGear(db)
+                        await reloadReview(db)
                     }
                 }
             }
@@ -1975,6 +1988,249 @@ struct DatabaseHealthView: View {
             database: load)
     }
 
+    /// PATCH 327 — the ninth read-back, D6c slice 7, ADR-0003 §12.71.
+    ///
+    /// SIX TABLES, ONE SECTION. `review`, `review_evidence`,
+    /// `review_evidence_source`, `proposal`, `proposal_change` and
+    /// `proposal_watch` are one tree with one root, and a person reading this
+    /// screen has one question about them: did the review that ran survive the
+    /// round trip whole.
+    ///
+    /// THE ONLY SECTION ON THIS SCREEN THAT IS GREEN WHILE COMPARING NOTHING.
+    /// `ReviewDue.state()` needs four finished plan weeks; the block began
+    /// Monday 27 July and the first review is due Monday 24 August 2026. Until
+    /// that day the honest answer is "nothing has been written yet", and a row
+    /// that said "0 compared" in red for three weeks would teach its reader to
+    /// scroll past it — which is exactly what §12.40.1 measured and what
+    /// §12.15 warns about from the other direction. So the empty state is
+    /// stated, with the date, and is not styled as a fault.
+    ///
+    /// THE THREE ROWS THAT ARE NOT COUNTS. Evidence lineage, decisions, and
+    /// withheld sections are columns nothing writes. They are printed as
+    /// statements about the writer rather than as numbers, because §12.54.2's
+    /// whole point is that a zero cannot say which kind of zero it is.
+    ///
+    /// NO BUTTON, and every row unconditional.
+    /// The reviews footer, as a constant. See the footer's own comment.
+    private static let reviewFooter =
+        "The monthly review trail — six tables holding what the model was "
+      + "told, what it said, and what it would change. The one thing in this "
+      + "database that cannot be re-fetched: a review costs a call to a model "
+      + "over data that has since moved.\n\n"
+      + "The first real review is due 24 August 2026, so until then an empty "
+      + "read is the correct answer and is not marked as a fault. A review the "
+      + "database holds and the app has lost is not marked as one either — "
+      + "that is the case this whole table group exists for.\n\n"
+      + "The evidence pack and the model's prose are compared in full and "
+      + "never printed: a difference is named by its field and measured in "
+      + "characters. Nothing in this section or in the diagnostics paste "
+      + "carries review text.\n\n"
+      + "proposal_change.planSessionUID is deliberately not a foreign key — a "
+      + "proposal has to survive a plan revision that renumbers the week it "
+      + "names — so nothing but this resolves it against the sessions the "
+      + "database holds.\n\n"
+      + "Three approved differences, all structural, and one finding that is "
+      + "not approved: review_evidence_source is written by nothing, so "
+      + "ADR-0002's lineage purge has no rows to query. ADR-0003 §12.71."
+
+    @ViewBuilder
+    private var reviewReadBackSection: some View {
+        Section {
+            if let load = reviewLoad {
+                LabeledContent("The read", value: load.line)
+                    .font(.caption)
+                    .foregroundStyle(load.isTrustworthy ? Color.dim : .red)
+            } else {
+                HStack { ProgressView(); Text("Reading back…").font(.caption) }
+            }
+
+            if let r = reviewTrip {
+                LabeledContent("Compared", value: r.summary)
+                    .font(.caption)
+                    .foregroundStyle(r.lookedAtSomething ? Color.dim : .red)
+
+                Text("Reviews")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                LabeledContent("In each side",
+                               value: "\(r.reviewsInApp) vs \(r.reviewsInDatabase)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Compared", value: "\(r.reviewsCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  fields compared", value: "\(r.reviewFieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Only in the app", value: "\(r.reviewsOnlyInApp.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.reviewsOnlyInApp.isEmpty ? Color.dim : .red)
+                // NOT RED AT ANY VALUE — §12.8.1. A review the database holds
+                // and the app has lost is the database doing the one job that
+                // matters most here; colouring it would style the rescue as
+                // the fault.
+                LabeledContent("Only in the database",
+                               value: "\(r.reviewsOnlyInDatabase.count)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("App records sharing a run time",
+                               value: "\(r.duplicateRunTimes.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.duplicateRunTimes.isEmpty ? Color.dim : .red)
+                LabeledContent("Fields that differ",
+                               value: "\(r.reviewDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.reviewDifferences.isEmpty ? Color.dim : .red)
+                ForEach(r.reviewDifferences.prefix(4), id: \.self) { d in
+                    Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                }
+
+                Text("Evidence")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                LabeledContent("In each side",
+                               value: "\(r.evidenceInApp) vs \(r.evidenceInDatabase)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Compared", value: "\(r.evidenceCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  fields compared", value: "\(r.evidenceFieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Section keys seen",
+                               value: r.sectionKeysSeen.isEmpty
+                                      ? "none" : r.sectionKeysSeen.joined(separator: ", "))
+                    .font(.caption2).foregroundStyle(Color.dim)
+                // EXPECTED ZERO, PRINTED ANYWAY. The importer writes wasSent = 1
+                // unconditionally, so the schema's withheld-section case has
+                // never had a row. The day a review learns to hold a section
+                // back, this is where it shows.
+                LabeledContent("Built and withheld", value: "\(r.evidenceWithheld)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                // NOT A COUNT — A STATEMENT. See §12.71.3: nothing in the app
+                // writes review_evidence_source, so ADR-0002's lineage purge
+                // has nothing to query. Worded so the zero cannot be read as
+                // "checked, and clean".
+                LabeledContent("Lineage rows",
+                               value: r.evidenceSourceRows == 0
+                                      ? "0 — nothing writes this table"
+                                      : "\(r.evidenceSourceRows)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Fields that differ",
+                               value: "\(r.evidenceDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.evidenceDifferences.isEmpty ? Color.dim : .red)
+                ForEach(r.evidenceDifferences.prefix(4), id: \.self) { d in
+                    Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                }
+
+                Text("Proposals")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                LabeledContent("In each side",
+                               value: "\(r.proposalsInApp) vs \(r.proposalsInDatabase)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Compared", value: "\(r.proposalsCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  fields compared", value: "\(r.proposalFieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                // The type documents itself as 1–5 and the column's CHECK
+                // permits 0–100. Printed so the day those two disagree is a
+                // thing somebody can see — §12.71.4.
+                LabeledContent("Confidence range seen", value: r.confidenceRange)
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Carrying a decision",
+                               value: r.proposalsCarryingADecision == 0
+                                      ? "0 — no screen offers the choice"
+                                      : "\(r.proposalsCarryingADecision)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Fields that differ",
+                               value: "\(r.proposalDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.proposalDifferences.isEmpty ? Color.dim : .red)
+                ForEach(r.proposalDifferences.prefix(4), id: \.self) { d in
+                    Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                }
+
+                Text("Changes and watch items")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                LabeledContent("Changes in each side",
+                               value: "\(r.changesInApp) vs \(r.changesInDatabase)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Compared", value: "\(r.changesCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  fields compared", value: "\(r.changeFieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                // THE ONE NUMBER NOBODY ELSE COMPUTES. planSessionUID is not a
+                // foreign key by design, so nothing but this resolves it, and
+                // `rejections(plan:)` already has a name for what a failure
+                // means: "no session with that id — invented".
+                LabeledContent("Naming a known session",
+                               value: "\(r.changesNamingAKnownSession) of \(r.changesResolvable)")
+                    .font(.caption)
+                    .foregroundStyle(r.changesNamingAKnownSession == r.changesResolvable
+                                     ? Color.dim : .red)
+                LabeledContent("  plan session uids in the database",
+                               value: "\(r.planSessionUIDsKnown)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                // NOT RED — patch 327b. A database with no plan in it cannot
+                // answer whether a uid is real, and reporting that as a failed
+                // resolve would accuse the model of inventing sessions on a
+                // device that has simply not imported the plan yet.
+                LabeledContent("  could not be checked",
+                               value: "\(r.changesUnresolvable)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Fields that differ",
+                               value: "\(r.changeDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.changeDifferences.isEmpty ? Color.dim : .red)
+                ForEach(r.changeDifferences.prefix(6), id: \.self) { d in
+                    Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                }
+                LabeledContent("Watch items in each side",
+                               value: "\(r.watchInApp) vs \(r.watchInDatabase)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Compared", value: "\(r.watchCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("That differ", value: "\(r.watchDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.watchDifferences.isEmpty ? Color.dim : .red)
+                ForEach(r.watchDifferences.prefix(4), id: \.self) { d in
+                    Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                }
+
+                LabeledContent("Rows the reader could not read",
+                               value: "\(r.rowsSkipped)")
+                    .font(.caption)
+                    .foregroundStyle(r.rowsSkipped == 0 ? Color.dim : .red)
+                LabeledContent("Approved differences",
+                               value: ReviewRoundTrip.approved.map(\.field)
+                                   .joined(separator: ", "))
+                    .font(.caption2).foregroundStyle(Color.dim)
+            }
+        } header: {
+            Text("Read-back · reviews")
+        } footer: {
+            // HOISTED TO A CONSTANT — patch 327a, same reason `diagnosticLines`
+            // stopped being one array literal. A footer built from eleven `+`
+            // concatenations is one expression, and this file already carries
+            // the largest `body` in the project.
+            Text(Self.reviewFooter)
+                .font(.caption2)
+        }
+    }
+
+    /// Same shape as `reloadWeatherGear`: the read off the main actor, the
+    /// comparison on it, because `ProposalStore` is a main-actor singleton.
+    ///
+    /// `ProposalStore.records` and NOT a filtered view of it. 325a is the
+    /// reason that sentence is here: `AthleteStore` exposes `shoes`, `bikes`
+    /// and `retired` separately as well as `allGear`, and passing the part
+    /// where the whole was meant produced five phantom differences that were
+    /// reasoned about twice before the wiring was checked. This store exposes
+    /// exactly one collection, which is why this one is safe — recorded so the
+    /// next reader knows it was checked rather than assumed.
+    private func reloadReview(_ db: Sub4Database) async {
+        let load = await Task.detached(priority: .utility) {
+            ReviewRepository.load(db)
+        }.value
+        reviewLoad = load
+        reviewTrip = ReviewRoundTrip.compare(
+            storeRecords: ProposalStore.shared.records,
+            database: load)
+    }
+
     /// Same shape as `reloadAthlete`: the read off the main actor, the
     /// comparison on it, because the stores it compares against are main-actor
     /// singletons.
@@ -2752,6 +3008,7 @@ struct DatabaseHealthView: View {
             await reloadAuthored(db)
             await reloadPlan(db)
             await reloadWeatherGear(db)
+            await reloadReview(db)
             return
         }
         if let message = Sub4Launch.shared.failureMessage {
@@ -2767,6 +3024,7 @@ struct DatabaseHealthView: View {
             await reloadAuthored(db)
             await reloadPlan(db)
             await reloadWeatherGear(db)
+            await reloadReview(db)
         } catch {
             opened = .failure(error)
         }
@@ -3086,6 +3344,17 @@ struct DatabaseHealthView: View {
         } else {
             lines.append("Weather and gear read-back: "
                        + "\(weatherGearLoad?.line ?? "not read")")
+        }
+        // PATCH 327. Counts, field names, ISO run times, plan session uids and
+        // CHARACTER COUNTS. The evidence pack and the model's prose are
+        // compared and never printed — §12.7 promises this paste carries
+        // nothing the athlete wrote, and this slice carries strictly more of
+        // that kind of text than 322 did.
+        lines.append("")
+        if let r = reviewTrip {
+            lines.append(contentsOf: r.diagnosticLines)
+        } else {
+            lines.append("Review read-back: \(reviewLoad?.line ?? "not read")")
         }
 
         return lines.joined(separator: "\n")

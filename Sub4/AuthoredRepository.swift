@@ -311,7 +311,7 @@ nonisolated enum AuthoredRoundTrip {
         // nested in an `@Observable final class`, so a `nonisolated` enum
         // cannot reach it. Set arithmetic over the KEYS asks the question this
         // code actually has — which uids are on one side only — and never
-        // touches note equality. §12.65.10.
+        // touches note equality. §12.65.10.s
         let mineKeys = Set(mine.keys)
         let theirKeys = Set(theirs.keys)
         r.notesOnlyInApp = mineKeys.subtracting(theirKeys).sorted()

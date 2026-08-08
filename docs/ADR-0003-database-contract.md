@@ -7450,6 +7450,386 @@ date in this project that no patch can bring forward.
 The plan is now read back in full: 260 sessions, 37 weeks, 82 breakdowns, 634
 blocks at 323, and 71 records of trimmings here.
 
+## 12.71 The review trail — D6c slice 7, patch 327
+
+Ninth repository, and the only slice in D6c whose subject may legitimately not
+exist. `ReviewDue.state()` needs four finished plan weeks; the block began
+Monday 27 July 2026, week 4 ends Sunday 23 August, and the first real review is
+due **Monday 24 August 2026**. §12.8.3 built `ReviewRehearsal` so that day is a
+repeat rather than a premiere. This is the other half of that preparation: the
+read-back that will say, on the 24th, whether the review survived the trip.
+
+Six tables: `review`, `review_evidence`, `review_evidence_source`, `proposal`,
+`proposal_change`, `proposal_watch`.
+
+### 12.71.1 A green zero, exactly once
+
+Every previous read-back could assume its subject existed — 672 activities, 583
+readings, 260 sessions. This one cannot, and that changes what the screen has to
+say.
+
+`ReviewLoad.loaded(reviews: [])` is a **successful** read of an empty trail, and
+the line carries the date:
+
+    No review is stored. The first is due 24 August 2026, so this is the
+    expected state until then.
+
+That is §12.15 in its purest form. "Nothing compared" is the same sentence
+whether the review path is broken or whether it is three weeks early, and only
+one of those is worth acting on. A row that sat red for three weeks would train
+its reader to scroll past it — §12.40.1 measured that once already — and the row
+that then went red for a real reason would be the one nobody looked at.
+
+So `bothSidesAreEmpty` is the one condition under which this section is healthy
+while comparing nothing. Any other zero is still a zero worth looking at:
+`reviewsInApp`, `reviewsInDatabase` and `reviewsCompared` are three separate
+numbers and the summary names which of four worlds the reader is in.
+
+### 12.71.2 Prose is compared in full and reported in characters
+
+322 established that a note's text is compared and never printed. This slice
+carries strictly more of that kind of content: `review_evidence.body` is the
+entire evidence pack — every figure the model was given about the athlete's
+training — and `proposal.reasoning` is a model's prose about the athlete, at
+length. `summary`, `newDetail`, `why` and every watch item are the same class.
+
+The rule, therefore: **a difference is named by its field and measured in
+characters.**
+
+    review 2026-06-05T09:00:00Z · evidence body (app 4812 chars, database 4780)
+    review 2026-06-05T09:00:00Z · summary (same length, 220 chars, different text)
+
+Both forms are actionable — a length difference says truncation, an equal length
+with a difference says substitution — and neither discloses a character.
+`noDiagnosticLineCarriesReviewText` plants a sentinel in every prose field,
+forces every comparator to fire, and greps every emitted line for it. That test
+is the only thing standing between this section and a future edit that prints a
+value, because every other test would still pass.
+
+### 12.71.3 `review_evidence_source` is written by nothing
+
+The finding, and it is not a zero.
+
+The table exists because ADR-0002's purge has to find every stored piece of
+evidence with Strava lineage and remove it while leaving the verdict standing.
+The schema comment argues that at length and is right: lineage has to be
+queryable, and a comma-separated column would make a data-deletion obligation
+depend on substring matching.
+
+Nothing writes it. Not `Sub4Import.importProposals`, not the review runner, not
+the rehearsal. Its only `INSERT` in the whole project is inside
+`DomainSchemaTests`. So it holds zero rows on every device, will hold zero rows
+on 24 August, and **ADR-0002's lineage obligation is presently unmet by
+construction rather than by accident.**
+
+§12.54.2 is why the row is worded as a statement about the writer rather than a
+count:
+
+    Lineage rows        0 — nothing writes this table
+
+A bare `0` cannot say which kind of zero it is. This one can.
+
+Two smaller members of the same family, both printed unconditionally:
+
+- **`proposal.decision` and `decidedUTC`** — two columns for accepting or
+  rejecting a proposal. `ReviewProposal` has no such field and no screen offers
+  the choice. Same shape as `gear.retiredUTC` at §12.68.4, and filed as an
+  approved structural difference for the same reason.
+- **The evidence decomposition** — the schema anticipates a pack of sections,
+  each of which may be withheld, and argues carefully that the audit trail has
+  to show what was NOT sent. The importer writes exactly one row per review,
+  `sectionKey = 'pack'`, `wasSent = 1`, unconditionally. The withheld branch has
+  never had a row. `sectionKeysSeen` and `evidenceWithheld` are on screen so the
+  day that changes is visible.
+
+### 12.71.4 Two contracts for `confidence`, and neither knows about the other
+
+`ReviewProposal.confidence` documents itself in its own comment:
+
+    /// 1–5. Low confidence on a `harder` verdict is a reason to wait.
+
+`proposal.confidence` carries `CHECK (confidence IS NULL OR (confidence >= 0 AND
+confidence <= 100))`.
+
+`AuthoredImportTests` has been writing **70** since patch 225 and nothing has
+ever objected, because 70 satisfies the column and no code enforces the comment.
+So there are two live contracts, they disagree by a factor of twenty, and the
+figure is one a human reads to decide whether to act on a proposal.
+
+**Not resolved here, and deliberately.** Deciding whether 1–5 or 0–100 is right
+is a product decision about a screen that does not exist yet, and a patch that
+tightened the CHECK would refuse the rehearsal record already on the device.
+What this patch does is make the disagreement *visible*: `confidenceRange` is on
+screen and in the paste, so the first real review either lands inside 1–5 or
+does not, and somebody can decide with a number in front of them.
+
+Recorded because a contradiction nobody has written down is one that gets
+rediscovered rather than fixed.
+
+### 12.71.5 The sixth canonical-id instance, and the first that gets resolved
+
+`proposal_change.planSessionUID` holds `ReviewProposal.Change.sessionUid`, which
+is the plan session's **`uid`** — the column 323 compared — and not
+`plan_session.id`. Sixth member of the family after `gearId` (289), athlete
+provenance (317), `correction.subjectID` (322), `plan_session.planWeekID` (323)
+and `weather.activityID` (324).
+
+It is deliberately **not** a foreign key. The migration header says why: a
+proposal has to survive a plan revision that renumbers the week it names.
+
+Which means nothing checks it — and `ReviewProposal.rejections(plan:)` already
+has a name for the failure: *"no session with that id — invented"*. That check
+runs against the app's current plan at read time. Nothing has ever run it
+against the database.
+
+So this reader does, and it is the most valuable number in the slice:
+
+    Naming a known session        3 of 3
+      plan session uids in the database      260
+
+Resolved against `SELECT DISTINCT uid FROM plan_session` across **all** stored
+versions, not the active one. A proposal written against Rev 4.0 names uids that
+Rev 4.1 may have dropped; counting that as unresolved would report history as
+corruption. The uids are read inside the same transaction as the changes they
+resolve, because a second read could see a plan that had been re-imported in
+between and report resolutions that were never true together.
+
+An unresolved uid feeds `unexplained` through the subtraction
+`changesCompared - changesNamingAKnownSession`, so it is red exactly once rather
+than twice.
+
+### 12.71.6 §12.43, tenth application
+
+`proposal_change.what` has no app-side field — the importer derives it, and the
+derivation is two lines:
+
+    c.skip ? "Skip this session" : c.newDetail
+
+Two lines is exactly the size of copy that gets away with drifting, so the
+comparison calls `Sub4Import.changeSummary(_:)` rather than restating it.
+`Sub4Import.iso8601(_:)` and `Sub4Import.reviewProvider` are called for the same
+reason: the pairing key and the provider constant both belong to the writer, and
+a second copy of either is a second place to forget.
+
+`review.provider` is the third approved difference for this reason. The app
+holds a model and no provider; §12.7.2 refused to guess one from the model
+string; so the comparison checks the column against the constant the importer
+writes, which is what §12.63.8 means by comparing what the writer draws rather
+than the field it came from. There is no field it came from.
+
+### 12.71.7 One case the guard deliberately does not cover
+
+`ReviewProposal.acceptedChanges(plan:)` and `rejections(plan:)` are guardrails
+applied at READ time on the app side — locked weeks, empty evidence, invented
+uids, duplicate sessions. They are not stored and must not be: the database
+keeps what the model said, and the guardrails are a judgement made freshly
+against whatever plan is current.
+
+Comparing them here would be comparing a derivation against a record. That is
+slice 8's job for the tab summaries and nobody's job in slice 7, and naming it
+means it is not discovered as a gap later.
+
+### 12.71.9 The type-checker failure left SwiftUI — 327a
+
+`Report.diagnosticLines` was one array literal of thirty-eight elements, most
+carrying string interpolation and two carrying `+` concatenation. The compiler
+refused it:
+
+    error: the compiler is unable to type-check this expression in reasonable
+           time; try breaking up the expression into distinct sub-expressions
+
+CLAUDE.md has carried this rule since the Phase 2 work, and every instance until
+now was a SwiftUI `Form` or `body`. **It is not a SwiftUI problem.** It is a
+problem with any single expression large enough that the constraint solver has
+to consider the whole of it, and a big array literal of interpolated strings is
+exactly that shape — SwiftUI just produces them more often.
+
+`PlanExtrasRoundTrip.diagnosticLines` has thirty-four elements and compiles, so
+the threshold sits somewhere between the two. Locating it precisely would be
+worthless: it moves with the compiler version and with what else is on the line.
+The fix is to stop writing the shape. One `lines.append(...)` per statement is
+trivially checkable, reads the same, and cannot regress.
+
+The same insurance was applied to `DatabaseHealthView.reviewReadBackSection`'s
+footer — eleven concatenated string literals hoisted to
+`private static let reviewFooter`. That one had not failed. It is in the largest
+`body` in the project and would have been the next to.
+
+**The rule this leaves behind:** a list of interpolated strings is an
+expression, not a list. Build it with statements once it is longer than a
+screenful, in a view or out of one.
+
+### 12.71.10 Could not be checked is not the same as failed — 327b
+
+The resolve in §12.71.5 shipped counting **every** unresolved `planSessionUID`
+against the database, including on a database holding no plan at all.
+
+`planSessionUIDsKnown == 0` does not mean the uid is wrong. It means the
+question could not be asked. Counting it as a difference tells the reader the
+model invented a session, on a device that has simply not imported the plan yet
+— and "the model is fabricating sessions" is an accusation somebody would act
+on.
+
+This is §12.15 wearing a number instead of a sentence. A diagnostic that cannot
+say why it has no answer will be read as having one, and a *count* that cannot
+distinguish "no answer" from "the wrong answer" is the same failure with less
+room to explain itself. It is also `StoreReadJournal.canReconcile`'s argument in
+a second place: **do not act on the strength of an incomplete reading.** There
+the act was a delete; here it is an accusation.
+
+    changesUnresolvable  =  planSessionUIDsKnown == 0 ? changesCompared : 0
+    changesResolvable    =  changesCompared - changesUnresolvable
+    unexplained         +=  changesResolvable - changesNamingAKnownSession
+
+Both figures print unconditionally, and the "could not be checked" row is not
+red at any value.
+
+**Two tests found it, and a third had asserted the defect.**
+`aReviewRoundTripsWhole` and `nothingWritesEvidenceLineage` both imported a
+review without a plan and both went red on a report whose every difference list
+was empty — a `unexplained: 1` with nothing to point at, which is not a state a
+correct report can be in. Meanwhile `noPlanMeansNoResolution` asserted the
+behaviour as shipped, in so many words: *"a uid that cannot be checked is not a
+uid that passed"*. That sentence is true and the conclusion drawn from it was
+not: not-passed and failed are different, and the report only had one column for
+them.
+
+The test is now inverted and paired with `aPlanMakesTheQuestionAnswerable`, so
+the two cases are pinned against each other rather than one of them being
+assumed.
+
+### 12.71.11 Two smaller corrections in the same run
+
+**A printed string changed in a fix-up and the test target was not grepped.**
+327a rebuilt `diagnosticLines` (§12.71.9) and reworded the lineage row from
+*"nothing writes review_evidence_source"* to *"nothing in the app writes
+review_evidence_source"*. `nothingWritesEvidenceLineage` greps for that text and
+went red. §12.61.9 names three shapes that carry assertions elsewhere — a
+function's arity, an array's length, **and a printed string's content** — and
+the rule was followed when writing 327 and skipped when fixing it. *A fix-up is
+a patch.*
+
+**`what` is derived from `newDetail`, so they cannot differ independently.**
+`aChangeMovedToAnotherSessionIsADifference` swaps two changes' replacement text
+and expected two differences. It reports four:
+`Sub4Import.changeSummary` returns `newDetail` for a non-skip, so each swapped
+position differs on both fields. §12.60.1 in miniature — reasoning about two
+numbers without checking whether one determines the other, for the fourth time.
+
+The four is worth having rather than papering over: it is the observable
+consequence of §12.71.6 calling the importer's own derivation instead of
+restating it. If `what` ever stopped tracking `newDetail`, that count would
+drop to two and the test would say so.
+
+### 12.71.12 The device run, and the two identities it found — 8 August
+
+Slice 7 was expected to have no device evidence before 24 August. It got some
+the same evening, because the rehearsal button was pressed about eleven times
+while its confirmation went unnoticed, and the import that followed reported
+**Reviews: 5 new, 6 refreshed** — eleven records seen where one was expected.
+
+The read-back said:
+
+    The read      8 reviews, 8 proposals, 0 evidence-lineage rows.
+    Compared      56 compared · 3 differences
+
+    Reviews       11 vs 8 · 8 compared · 40 fields · 0 differ
+      App records sharing a run time        3        ← the only red row
+    Evidence      11 vs 8 · 8 compared · 32 fields · 0 differ
+      Section keys seen                     pack
+      Lineage rows            0 — nothing writes this table
+    Proposals     11 vs 8 · 8 compared · 40 fields · 0 differ
+      Confidence range seen                 3
+      Carrying a decision     0 — no screen offers the choice
+    Changes       22 vs 16 · 16 compared · 96 fields · 0 differ
+      Naming a known session                16 of 16
+      plan session uids in the database     260
+    Watch items   22 vs 16 · 16 compared · 0 differ
+
+**Every denominator is an exact product** — 8×5, 8×4, 8×5, 16×6, and
+8+8+8+16+16 = 56 — and `unexplained` is exactly the three collisions. 224 field
+comparisons across eight reviews with zero differences, and sixteen of sixteen
+`planSessionUID` values resolving against the 260 uids the database holds. The
+round trip is correct.
+
+#### A review has two identities and they do not agree
+
+The app's identity for a review is `ProposalStore.Record.id` — *"window
+start→end, plus run count"*. The database's is `(accountID, ranUTC)`, and
+`ranUTC` is `Sub4Import.iso8601`, which is `.withInternetDateTime`: **one-second
+resolution.**
+
+Two records written inside the same second are therefore one row. Eleven became
+eight. The importer is doing exactly what it was written to do — idempotent by
+lookup — and the lookup key cannot distinguish them.
+
+Three things follow, and only the first is cosmetic:
+
+1. `Record.id` is never stored, so the run count is not representable at all.
+   It is on the approved list (§12.71) as *"no column, and none is wanted"* —
+   which was written believing `ranUTC` was a sufficient key. It is sufficient
+   for one review a month and not in general.
+2. **`review` carries no unique constraint on `(accountID, ranUTC)`.** The
+   convergence is a convention enforced by a `SELECT` in one importer, not a
+   guarantee the schema makes. A second writer would not inherit it.
+3. The three lost records are lost *silently* on the writing side. Nothing in
+   the import panel says so — `5 new, 6 refreshed` sums to eleven and reads as
+   complete. **The read-back is the only thing in the app that noticed**, and
+   it noticed because `duplicateRunTimes` reports a key collision instead of
+   letting `Dictionary(uniquingKeysWith:)` drop one silently. That line was
+   written as a defensive formality and earned its place within an hour.
+
+#### The decision is Bruno's
+
+Real monthly reviews arrive one per month, so the collision needs two writes in
+the same second and cannot happen in normal use. Three ways forward:
+
+- **(a) Record it and move on.** The failure is reachable only through the
+  rehearsal, which is an internal-build button. Cost: the schema keeps a key it
+  cannot fully honour, and the read-back shows a red row on any device that has
+  rehearsed.
+- **(b) Carry `Record.id` onto `review` and key the importer on it.** Makes the
+  two identities one, which is the canonical-id family's whole lesson (§12.71.5
+  is the sixth instance). Cost: a migration, and `review.id` becoming a column
+  with two meanings unless the new one is named separately.
+- **(c) Sub-second `ranUTC`.** Smallest change, and the worst of the three: it
+  makes the collision *less likely* rather than impossible, which is the kind of
+  fix that removes the symptom and leaves the cause.
+
+**Ask, then implement. Do not pick** — the same rule the match-picker defect is
+filed under. (b) is the principled answer and D7 is the next rung; deferring it
+past the cutover is defensible and should be a decision rather than a drift.
+
+#### The rehearsal records must go before 24 August
+
+Eleven of them. `ReviewDue` counting any would push the first real review out by
+28 days, from 24 August to 21 September. Delete on the Progress tab, then import
+again — `Reconciled: yes` was already on during this run, so the `review` rows
+cascade out with `review_evidence`, `proposal`, `proposal_change` and
+`proposal_watch` behind them.
+
+### 12.71.8 What is left after slice 7
+
+D6c has one slice remaining of its original eight — **8, the tab summaries**.
+
+The record side is now complete: nine repositories, and every table the importer
+writes has a reader that compares it against what the app holds.
+
+Three things this slice leaves open, all named rather than closed:
+
+1. **Nothing has been proved against real data.** Both sides of every test are
+   built here. On the device today `ProposalStore` holds either nothing or the
+   rehearsal record, and until 24 August the read-back's honest output is "no
+   review stored yet". The tests are the only evidence this reader works, which
+   is exactly the situation groundwork §2.1 said a comparison must not be left
+   in — and is unavoidable for this one slice.
+2. **`review_evidence_source` stays unmet.** §12.71.3. It is now visible on a
+   screen and asserted by a test, which is the most a read-back can do about a
+   writer that does not exist.
+3. **The confidence contradiction stays unresolved.** §12.71.4.
+
+The one date in this project no patch can bring forward is still 24 August 2026.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

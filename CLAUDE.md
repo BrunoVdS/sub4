@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 319 (2026-08-08).** Patch 318 installed this file with its state
+**Current at patch 327b (2026-08-08).** Patch 318 installed this file with its state
 sections still describing patch 278c — forty patches behind — which is the failure
 this file exists to prevent. §5 is the part that goes stale; if the patch number in
 its heading is far behind `Sub4/AppVersion.swift`, trust the ADR and the code, not §5.
@@ -89,9 +89,15 @@ the way it is. ADR §12 supersedes all three.
   is a `Comment?`: an interpolated literal converts, `"a" + "\(b)"` does not.
 - A synthesised `init(from:)` does not use Swift default values.
 - `Self` in a default argument is covariant Self even on a `final class`.
-- SwiftUI type-checker: a large `Form`/`body` as one expression → "unable to type-check
-  in reasonable time". Split Sections into computed properties; hoist long strings to
-  constants. `ViewBuilder` takes more than ten children — variadic generics since 5.9.
+- **The "unable to type-check in reasonable time" failure is not a SwiftUI failure.** A
+  large `Form`/`body` as one expression is the common case — split Sections into computed
+  properties, hoist long strings to constants — but 327a hit it in a plain `[String]`:
+  `diagnosticLines` was one array literal of 38 interpolated elements, two of them `+`
+  concatenations. `PlanExtrasRoundTrip`'s 34 compiles, so the threshold is between them
+  and is not worth locating. **A list of interpolated strings is an expression, not a
+  list** — build it with `append` statements once it is longer than a screenful, in a view
+  or out of one. §12.71.9. `ViewBuilder` takes more than ten children — variadic generics
+  since 5.9.
 - `NSException` cannot be caught by Swift do/catch. Pre-flight Info.plist keys with
   `Bundle.main.object(forInfoDictionaryKey:)` — a missing `NSHealthShareUsageDescription`
   is a hard crash.
@@ -119,7 +125,10 @@ the way it is. ADR §12 supersedes all three.
 - Sweep the **bare identifier, then filter**. `\.rejected\b` finds reads and misses
   `rejected = []`.
 - **Changing a type's shape means grepping `Sub4CoreTests/` too, before the build.**
-  Three instances: 315 (a function gained a parameter), 317b (an array gained an element).
+  Four instances: 315 (a function gained a parameter), 317b (an array gained an element),
+  327a (a fix-up reworded a printed string while rebuilding the function around it).
+  **A fix-up is a patch** — 327a followed this rule when 327 was written and skipped it
+  when fixing 327.
   Both times `Sub4/*.swift` was swept and the test target was not. The three shapes that
   carry assertions elsewhere are **a function's arity, an array's length, and a printed
   string's content**.
@@ -220,10 +229,19 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 326, 2026-08-08
+## 5. State — patch 327b, 2026-08-08
 
-**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c seven of eight; slices 6 and 6c closed.
-D7 has not started, and nothing in the app reads the database yet.**
+**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c seven of eight closed;
+only slice 8 remains. D7 has not started, and nothing in the app reads the database yet.**
+
+**That last clause is the whole of what is left, and it is worth restating because the
+read-backs make it easy to forget.** All nine repositories are reachable only from
+`DatabaseHealthView` and the parity types. `ActivityStore.load()` still opens
+`activities.json`; so does every other store. D6c proves the data can be *reconstituted*;
+it does not prove a store *fed from* the database would behave identically, and only
+`ActivityStore` has the extracted-rules shape (`ActivityRoster`) that would make that
+provable. Repointing each store's load path is the substance of D7 and is covered by no
+slice completed so far.
 
 - **Eleven migrations**, 51 tables, ~214,000 rows, ~37 MB on the phone. On the device:
   674 activities, 674 details, 649 recordings, ~194,000 trace samples, 7,986 splits,
@@ -240,7 +258,7 @@ D7 has not started, and nothing in the app reads the database yet.**
 **D6a — seven repositories, every field compared.**
 `ActivityRepository` (289), `ActivityDetailRepository` (291), `RecordingRepository` (294),
 `AthleteRepository` (317), `AuthoredRepository` (322), `PlanRepository` (323),
-`WeatherGearRepository` (324), `PlanExtrasRepository` (326). Each returns a load type that distinguishes *nothing there*
+`WeatherGearRepository` (324), `PlanExtrasRepository` (326), `ReviewRepository` (327). Each returns a load type that distinguishes *nothing there*
 from *could not look* — §12.15, twelve instances, and 323's has four shapes rather than
 three because "stored but not activated" and "two plans both active" are states the schema
 permits and nothing else could name.
@@ -264,8 +282,36 @@ thing worth writing down, because everything outside it looks finished from insi
 | 6 zones, weather, gear | `AthleteRoundTrip` (317) + `WeatherGearRepository` | 324 ✔ |
 | 6b the plan — weeks, sessions, breakdowns, blocks | `PlanRepository` + `PlanRoundTrip` | 323 ✔ |
 | 6c the plan's trimmings — exercises, fuel, warm-up | `PlanExtrasRepository` | 326 ✔ |
-| 7 review payloads | — | open |
+| 7 review payloads | `ReviewRepository` + `ReviewRoundTrip` | 327 ✔ |
 | 8 Today / Week / Plan / Progress summaries | — | open |
+
+**Slice 7 was verified on the device on 8 August, earlier than expected.** The rehearsal
+button was pressed about eleven times, and the import reported `Reviews: 5 new, 6 refreshed`
+— eleven records where one was expected. The read-back: **56 compared · 3 differences**,
+`11 vs 8` reviews, 224 field comparisons with **zero** differences, **16 of 16** changes
+resolving against 260 plan uids, and the only red row being *App records sharing a run
+time: 3*. Every denominator is an exact product — 8×5, 8×4, 8×5, 16×6.
+
+**It found a real identity mismatch, and the decision on it is Bruno's** — see §12.71.12.
+The app keys a review by `Record.id` (window + run count); the database keys it by
+`(accountID, ranUTC)` at **one-second** resolution, with no unique constraint behind it.
+Eleven records became eight rows, silently on the writing side; `duplicateRunTimes` is the
+only thing in the app that noticed. Unreachable in normal use — one review a month — so
+(a) record it, (b) carry `Record.id` onto `review` and key on it, or (c) sub-second
+`ranUTC` are all defensible. **Ask, then implement.**
+
+**The eleven rehearsal records must be deleted before 24 August**, or `ReviewDue` pushes
+the first real review to 21 September.
+
+**The slice still has no evidence from a REAL review, and cannot before
+24 August 2026.** `ReviewDue.state()` needs four finished plan weeks; the first review is
+due Monday 24 August. Until then `ProposalStore` holds nothing or the rehearsal record,
+the six review tables hold nothing or one synthetic tree, and the read-back's correct
+output is *"no review stored yet · first due 24 Aug 2026"* — green, because both sides are
+empty. Its 23 tests are the only evidence the reader works. Two findings it surfaced stay
+open: **nothing writes `review_evidence_source`**, so ADR-0002's lineage purge has no rows
+to query (§12.71.3); and **`confidence` has two live contracts** — the type says 1–5, the
+column's CHECK says 0–100, and 70 has been written since patch 225 (§12.71.4).
 
 **On the device, every slice run so far is clean.** 674 activities · 324 days · no
 differences; 403 vs 403 load days, 222 vs 222 traces, 7,112 heart-rate buckets, Fitness
@@ -326,8 +372,15 @@ test.
   until D7 settles that answer rather than writing it twice.
 - **`SUB4_CURRENT_PEER_REVIEW_AND_REMEDIATION_PLAN.md` is untouched since the baseline**
   (3 August). Deferred until the D-ladder finishes, for the same reason.
-- `review_evidence_source` — the proposals import stays unverified against real data until
-  **24 August 2026**, the first real review.
+- `review_evidence_source` — **nothing writes it**, so ADR-0002's lineage purge has no rows
+  to query (§12.71.3). Confirmed on the device at 327b: `0 — nothing writes this table`.
+  Separately, the proposals import stays unverified against a REAL review until
+  **24 August 2026**.
+- **Two identities for one review** (§12.71.12) — `Record.id` vs `(accountID, ranUTC)` at
+  one-second resolution, no unique constraint. Bruno's call: record it, add a column, or
+  go sub-second. Eleven rehearsal records on the device became eight rows.
+- **`confidence` has two live contracts** (§12.71.4) — the type says 1–5, the column's
+  CHECK says 0–100, and 70 has been written since patch 225. The device reads `3`.
 - `content_revision` — **probably has no correct occupant** among the preference keys. Its
   real first occupant is likely the plan's content hash. Settle before building.
 - `lateArrivals` has been computed since patch 45 and is displayed nowhere.
@@ -344,8 +397,11 @@ test.
   the patch that writes it** — which is why `gear.retiredUTC` stays unwritten (§12.68.4).
 - **2026-09-01 — GitHub Actions allowance resets.**
 
-**Next:** D6c slice 7 (review payloads) and 8 (tab summaries). Then D7 activate, D8,
-and 4A.
+**Next:** D6c slice 8 (tab summaries). Then D7 activate, D8, and 4A. Before D7 is pressed,
+two things that are not slices: fold the nine read-backs into one roll-up with a durable
+result — §12.57 corrected `@State`-evaporation for `ShadowParity` and never for the
+read-backs, and nine buttons that must each be pressed is not a gate anybody can lean on —
+and refresh the protected snapshot, which is still `2026-08-05-202320` from patch 279.
 Then D7 activate — `Sub4Launch.migrationFailureBlocksTheApp` flips to `true`. Then D8,
 stabilise one release window and remove the JSON writers. Phase 4A (Apple Health canonical)
 cannot start before D7's exit gate.
@@ -360,7 +416,10 @@ cannot start before D7's exit gate.
 - A test that keeps passing can stop describing the system.
 - A warning-shaped defect needs a test.
 - **A diagnostic that cannot say why it has no answer will be read as having one**
-  (§12.15). Nine instances.
+  (§12.15). Thirteen instances — and at 327b the first one wearing a NUMBER rather than a
+  sentence: a count that could not tell "the question could not be asked" from "the answer
+  was wrong" reported a missing plan as a model inventing sessions. **Could not be checked
+  is not the same as failed.**
 - **A row that vanishes at zero cannot be told from a row nobody wired in** (§12.54.2).
   A count beside its denominator is evidence; a bare zero is noise; a missing zero is
   nothing. Every diagnostic line is unconditional.
