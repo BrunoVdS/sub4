@@ -92,9 +92,11 @@ enum MatchParity {
     ///
     /// The match decisions are not in it and cannot be until something reads
     /// `match_decision` — which holds zero rows, so there would be nothing to
-    /// check. The plan is slice 6b.
+    /// check. **The plan joined the list at 323**, which leaves the match
+    /// decisions as the only held input this screen cannot yet corroborate,
+    /// and an empty table as the reason.
     static let verifiedByReadBack =
-        "the commute decisions, by the authored read-back"
+        "the plan and the commute decisions, by their read-backs"
 
     // MARK: The report
 

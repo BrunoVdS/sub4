@@ -120,6 +120,8 @@ struct DatabaseHealthView: View {
     /// argument, and the same dissolution of the `@State` evaporation trap.
     @State private var authoredLoad: AuthoredLoad?
     @State private var authoredTrip: AuthoredRoundTrip.Report?
+    @State private var planLoad: PlanLoad?
+    @State private var planTrip: PlanRoundTrip.Report?
     @State private var verifying = false
     @State private var verification: VerificationReport?
 
@@ -196,6 +198,13 @@ struct DatabaseHealthView: View {
                     // measured that once already. Eleven records do not need
                     // two headings.
                     authoredReadBackSection
+                    // PATCH 323. Sixth read-back and the largest by a wide
+                    // margin — 260 sessions where the athlete's profile was 27
+                    // fields. It sits last of the read-backs because it is the
+                    // one whose numbers need reading twice: the compared count
+                    // is a third of the table's, and the row that says why is
+                    // directly under it.
+                    planReadBackSection
                     // AFTER the three read-backs, because it asks the question
                     // they cannot: they compare RECORDS, this compares the list
                     // the app would DERIVE from them. The screen reads in the
@@ -239,6 +248,7 @@ struct DatabaseHealthView: View {
                         await reloadLedger(db)
                         await reloadAthlete(db)
                         await reloadAuthored(db)
+                        await reloadPlan(db)
                     }
                 }
             }
@@ -1522,6 +1532,177 @@ struct DatabaseHealthView: View {
         }
     }
 
+    /// PATCH 323 — the sixth read-back, D6c slice 6b, ADR-0003 §12.66.
+    ///
+    /// THE SECTION WHOSE NUMBERS NEED A SECOND LINE TO BE HONEST. `plan_session`
+    /// holds three times what the app holds, because three versions of the same
+    /// plan are stored and one is active. "260 compared" above a table of 780
+    /// reads as data loss to anyone who has not been told why, so the row
+    /// underneath states the ratio and the version count rather than leaving it
+    /// to be worked out. §12.15 applied to a denominator.
+    ///
+    /// WHAT IT IS FOR, BEYOND ITSELF. Slice 3 said "sRPE given the plan" and
+    /// slice 5 said it held "the plan" — both because nothing had read
+    /// `plan_session` back. Both lines below now shorten.
+    ///
+    /// NO BUTTON, like the athlete's and the authored, and every row
+    /// unconditional — §12.54.2.
+    @ViewBuilder
+    private var planReadBackSection: some View {
+        Section {
+            if let load = planLoad {
+                LabeledContent("The read", value: load.line)
+                    .font(.caption)
+                    .foregroundStyle(load.isTrustworthy ? Color.dim : .red)
+            } else {
+                HStack { ProgressView(); Text("Reading back…").font(.caption) }
+            }
+
+            if let r = planTrip {
+                LabeledContent("Compared", value: "\(r.totalCompared)")
+                    .font(.caption)
+                    .foregroundStyle(r.lookedAtSomething ? Color.dim : .red)
+                // THE ROW THAT STOPS 260-OF-780 READING AS LOSS.
+                LabeledContent("Of the table", value: r.versionLine)
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Active version", value: r.activeVersion)
+                    .font(.caption2).foregroundStyle(Color.dim)
+
+                Text("The plan's header")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                LabeledContent("Fields compared", value: "\(r.metaFieldsCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Fields that differ", value: "\(r.metaDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.metaDifferences.isEmpty ? Color.dim : .red)
+
+                Text("Weeks")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                LabeledContent("In each side",
+                               value: "\(r.weeksInApp) vs \(r.weeksInDatabase)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Compared", value: "\(r.weeksCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  fields compared", value: "\(r.weekFieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("  stats compared", value: "\(r.weekStatsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Only in the app", value: "\(r.weeksOnlyInApp.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.weeksOnlyInApp.isEmpty ? Color.dim : .red)
+                LabeledContent("Only in the database",
+                               value: "\(r.weeksOnlyInDatabase.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.weeksOnlyInDatabase.isEmpty ? Color.dim : .red)
+                LabeledContent("Fields that differ", value: "\(r.weekDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.weekDifferences.isEmpty ? Color.dim : .red)
+                LabeledContent("Stats that differ",
+                               value: "\(r.weekStatDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.weekStatDifferences.isEmpty ? Color.dim : .red)
+                ForEach(r.weekDifferences.prefix(4), id: \.self) { d in
+                    Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                }
+
+                Text("Sessions")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                LabeledContent("In each side",
+                               value: "\(r.sessionsInApp) vs \(r.sessionsInDatabase)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Compared", value: "\(r.sessionsCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  fields compared", value: "\(r.sessionFieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Only in the app", value: "\(r.sessionsOnlyInApp.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.sessionsOnlyInApp.isEmpty ? Color.dim : .red)
+                LabeledContent("Only in the database",
+                               value: "\(r.sessionsOnlyInDatabase.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.sessionsOnlyInDatabase.isEmpty ? Color.dim : .red)
+                LabeledContent("Fields that differ",
+                               value: "\(r.sessionDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.sessionDifferences.isEmpty ? Color.dim : .red)
+                ForEach(r.sessionDifferences.prefix(6), id: \.self) { d in
+                    Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                }
+                // Context, not assertions. A session without a date is a
+                // prologue week; a session without a fuelling line is strength,
+                // rest, travel or a walk. Both counts matching is the claim.
+                LabeledContent("Carrying a date", value: r.datedLine)
+                    .font(.caption2)
+                    .foregroundStyle(r.appSessionsWithADate
+                                     == r.databaseSessionsWithADate
+                                     ? Color.dim : .red)
+                LabeledContent("Carrying a fuelling line", value: r.fuelLine)
+                    .font(.caption2)
+                    .foregroundStyle(r.appSessionsWithFuel
+                                     == r.databaseSessionsWithFuel
+                                     ? Color.dim : .red)
+
+                Text("Breakdowns")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                LabeledContent("In each side",
+                               value: "\(r.breakdownsInApp) vs \(r.breakdownsInDatabase)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Compared", value: "\(r.breakdownsCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  fields compared", value: "\(r.breakdownFieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Blocks compared", value: "\(r.blocksCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  fields compared", value: "\(r.blockFieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Blocks that differ", value: "\(r.blockDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.blockDifferences.isEmpty ? Color.dim : .red)
+                ForEach(r.blockDifferences.prefix(4), id: \.self) { d in
+                    Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                }
+
+                LabeledContent("Rows the reader could not read",
+                               value: "\(r.rowsSkipped)")
+                    .font(.caption)
+                    .foregroundStyle(r.rowsSkipped == 0 ? Color.dim : .red)
+                LabeledContent("Approved differences",
+                               value: PlanRoundTrip.approvedNote)
+                    .font(.caption2).foregroundStyle(Color.dim)
+            }
+        } header: {
+            Text("Read-back · the plan")
+        } footer: {
+            Text("The bundled plan, decomposed across six tables on import and "
+                 + "reassembled here. Unlike every other read-back this one "
+                 + "cannot be testing for drift — plan.json is read-only at "
+                 + "runtime and is replaced wholesale on app update. What it "
+                 + "tests is whether the decomposition inverts.\n\n"
+                 + "The compared count is about a third of the rows in the "
+                 + "tables, and that is correct: three versions of the same "
+                 + "plan are stored and one is active. Every plan table "
+                 + "divides by three exactly.\n\n"
+                 + "Every field of every week, session, breakdown and block "
+                 + "has a column and every column is written, so there are no "
+                 + "approved differences — ADR-0003 §12.66.")
+                .font(.caption2)
+        }
+    }
+
+    /// Same shape as `reloadAuthored`: the read off the main actor, the
+    /// comparison on it, because `PlanStore` is a main-actor singleton.
+    private func reloadPlan(_ db: Sub4Database) async {
+        let load = await Task.detached(priority: .utility) {
+            PlanRepository.load(db)
+        }.value
+        planLoad = load
+        let store = PlanStore.shared
+        planTrip = PlanRoundTrip.compare(storeMeta: store.plan.meta,
+                                         storeWeeks: store.plan.weeks,
+                                         storeSessions: store.plan.sessions,
+                                         database: load)
+    }
+
     /// Same shape as `reloadAthlete`: the read off the main actor, the
     /// comparison on it, because the stores it compares against are main-actor
     /// singletons.
@@ -2297,6 +2478,7 @@ struct DatabaseHealthView: View {
             await reloadLedger(db)
             await reloadAthlete(db)
             await reloadAuthored(db)
+            await reloadPlan(db)
             return
         }
         if let message = Sub4Launch.shared.failureMessage {
@@ -2310,6 +2492,7 @@ struct DatabaseHealthView: View {
             await reloadLedger(db)
             await reloadAthlete(db)
             await reloadAuthored(db)
+            await reloadPlan(db)
         } catch {
             opened = .failure(error)
         }
@@ -2606,6 +2789,14 @@ struct DatabaseHealthView: View {
             lines.append(contentsOf: r.diagnosticLines)
         } else {
             lines.append("Authored read-back: \(authoredLoad?.line ?? "not read")")
+        }
+        // PATCH 323. Bundled plan content — uids, field names and counts, and
+        // nothing the athlete wrote.
+        lines.append("")
+        if let r = planTrip {
+            lines.append(contentsOf: r.diagnosticLines)
+        } else {
+            lines.append("Plan read-back: \(planLoad?.line ?? "not read")")
         }
 
         return lines.joined(separator: "\n")

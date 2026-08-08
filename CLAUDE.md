@@ -97,6 +97,14 @@ the way it is. ADR §12 supersedes all three.
 - `DayKey`'s formatters are `nonisolated(unsafe)` — never mutate them, add a new one.
 - Dates are compared as `"yyyy-MM-dd"` strings, never as `Date`.
 
+- **`error: unexpected variant during dependency scanning on module 'X'`** is a poisoned
+  module cache, not your code. Xcode.app and command-line `xcodebuild` share
+  `~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex` and disagree on
+  `-fmessage-length`, which is part of the module context hash — so alternating ⌘R and
+  `./scripts/test.sh` can leave two PCM variants and the scanner refuses to choose.
+  Cure: `rm -rf ~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex`. Same family as
+  the rule above: two front-ends, one DerivedData.
+
 **Searching this codebase:**
 
 - Sweep the **bare identifier, then filter**. `\.rejected\b` finds reads and misses
@@ -203,27 +211,28 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 322b, 2026-08-08
+## 5. State — patch 323, 2026-08-08
 
-**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c six slices of eight.
+**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c seven slices of eight.
 D7 has not started, and nothing in the app reads the database yet.**
 
 - **Eleven migrations**, 51 tables, ~214,000 rows, ~37 MB on the phone. On the device:
   674 activities, 674 details, 649 recordings, ~194,000 trace samples, 7,986 splits,
   4,700 laps, 582 weather, 11 gear, 15 resting months, 5 HR zones, 7 notes,
   4 corrections, 3 rejections.
-- **1004 tests in 92 suites** as of 322b (931 in 88 at 319; `DetailParity`, `MatchResolver`,
-  `MatchParity` and `AuthoredRepository` added since). 163 Swift files in `Sub4/`,
-  ~59,000 lines.
+- **1005 tests in 92 suites** at 322b, plus `PlanRepository` at 323. The run prints the
+  current total. 164 Swift files in `Sub4/`, ~60,000 lines.
 - **`migration_run` reaches `verified`.** The semantic verifier compares per-table counts,
   sync state, identity, an activity fingerprint and the domain checks. **The number of
   comparisons is printed on the Database screen — it is not restated here**, because a
   second answer to a question the screen already answers is how §12.29's problem starts.
 
-**D6a — five repositories, every field compared.**
+**D6a — six repositories, every field compared.**
 `ActivityRepository` (289), `ActivityDetailRepository` (291), `RecordingRepository` (294),
-`AthleteRepository` (317), `AuthoredRepository` (322). Each returns a load type that
-distinguishes *nothing there* from *could not look* — §12.15, ten instances now.
+`AthleteRepository` (317), `AuthoredRepository` (322), `PlanRepository` (323). Each returns
+a load type that distinguishes *nothing there* from *could not look* — §12.15, eleven
+instances, and 323's has four shapes rather than three because "stored but not activated"
+and "two plans both active" are states the schema permits and nothing else could name.
 
 **D6b — write-through (302–307).** Every path that writes a store now reaches the database.
 
@@ -238,6 +247,8 @@ distinguishes *nothing there* from *could not look* — §12.15, ten instances n
 | 5 plan matching | `MatchResolver` + `MatchParity` | 321 ✔ |
 | 5b notes and corrections | `AuthoredRepository` + `AuthoredRoundTrip` | 322 ✔ |
 | 6 zones, weather, gear | `AthleteRoundTrip` (the athlete part) | 317 ✔ / rest open |
+| 6b the plan — weeks, sessions, breakdowns, blocks | `PlanRepository` + `PlanRoundTrip` | 323 ✔ |
+| 6c the plan's trimmings — exercises, fuel, warm-up | — | open |
 | 7 review payloads | — | open |
 | 8 Today / Week / Plan / Progress summaries | — | open |
 
@@ -248,6 +259,10 @@ details with 8,088 pace figures (6,562 answered), 7,986 splits, 4,700 laps, 1,14
 all zero; 518 days matched, 252 sessions, 10 matched and 664 extras — and
 `extras + matches = 674` exactly — with adherence 10 of 236 on both sides. **Slice 5b
 (322) has not been verified on the device yet.**
+
+**`LoadParity` now verifies sRPE outright** and `MatchParity` verifies the plan — both
+lines shortened at 323 because `plan_session` is read back. The match decisions are the
+only held input still uncorroborated, and `match_decision` holding zero rows is why.
 
 **The approved-difference list has exactly three entries** — `AthleteConstants.version`
 (317), a local cache counter with no column; and `user_note.activityID` and
@@ -304,8 +319,8 @@ nobody can justify is a bug that has been given a hiding place.
   authored stores. Left deliberately: it is a cache and re-fetchable.
 - **2026-09-01 — GitHub Actions allowance resets.**
 
-**Next:** D6c slice 6b (the plan — `plan_session`'s 780 rows, `plan_week`, fuel and
-warm-up), the rest of slice 6 (weather's 583 rows, gear as a record), then 7 and 8.
+**Next:** D6c slice 6c (the plan's trimmings — `plan_exercise`, fuel, warm-up), the rest
+of slice 6 (weather's 583 rows, gear as a record), then 7 and 8.
 Then D7 activate — `Sub4Launch.migrationFailureBlocksTheApp` flips to `true`. Then D8,
 stabilise one release window and remove the JSON writers. Phase 4A (Apple Health canonical)
 cannot start before D7's exit gate.

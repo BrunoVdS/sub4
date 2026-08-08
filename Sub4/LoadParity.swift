@@ -152,14 +152,14 @@ enum LoadParity {
     ///                      The two sides cannot differ; nothing to read.
     ///   · the matcher      proven at 321, §12.64.
     ///   · the plan         held identically on both sides, so it cannot
-    ///                      differ. HELD, not verified — that is slice 6b, and
-    ///                      it is why the line says "given the plan" rather
-    ///                      than stopping at "verified".
+    ///                      differ. VERIFIED SINCE 323 — the plan read-back
+    ///                      compares all 260 sessions field by field, so the
+    ///                      caveat this line carried from 322 is gone and the
+    ///                      sentence stops at "sRPE".
     ///
     /// Apple Health is not in it and never will be: its heart rate is a cache
     /// of somebody else's store that no database this app writes will hold.
-    static let verifiedByReadBack =
-        "constants, zones, FTP and sRPE — sRPE given the plan"
+    static let verifiedByReadBack = "constants, zones, FTP and sRPE"
 
     private static func close(_ a: Double, _ b: Double) -> Bool {
         abs(a - b) <= trimpTolerance

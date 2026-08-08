@@ -6778,6 +6778,176 @@ database will not let a test enter. The step that generalises is:
 > and assert the refusal separately, so the constraint and the tolerance of it
 > are two claims rather than one accident.
 
+## 12.66 The plan, read back — D6c slice 6b, patch 323
+
+`PlanRepository` reassembles `Week`, `Session`, `SessionDetail` and `Block` from
+six tables and compares every field against the bundled plan the app holds.
+Sixth repository, and the largest: 260 sessions where the athlete's profile was
+27 fields.
+
+### 12.66.1 A different claim from every read-back before it
+
+`plan.json` ships in the bundle, is read-only at runtime and is replaced
+wholesale on app update. The app therefore **cannot have drifted from the
+database by writing**, which is the thing every previous read-back was built to
+catch. What can have gone wrong is the import: one file decomposed across six
+tables and reassembled here. A difference is a decomposition that does not
+invert.
+
+That makes this the first read-back whose failure mode is entirely in the
+importer, and it is worth saying because it changes what a green result buys.
+It does not buy "the plan has not been corrupted" — nothing corrupts it. It
+buys "the plan can be served from the database", which is the precondition for
+D7 retiring `plan.json` as a runtime input.
+
+### 12.66.2 The canonical-id trap, fourth instance — and the most inviting
+
+`Session.weekUid` is the plan's own week identifier, `"w14"`.
+`plan_session.planWeekID` is a UUID minted by the importer. A reader returning
+the column would compile, type-check, read plausibly, and report **all 260
+sessions as differing on `weekUid`** while the data was perfectly intact.
+
+Fourth instance: `gearId` at 289, athlete provenance at 317,
+`correction.subjectID` at 322, this. The rule is unchanged — *any column
+referencing another table holds that table's canonical id, and every store keys
+by the source's* — but this one is the easiest of the four to walk into, because
+the column is spelled `planWeekID` and the field is spelled `weekUid` and they
+differ by one word. The SQL joins `plan_week` and returns `w.uid`, and
+`theWeekUidIsThePlansOwnAndNotTheRowId` asserts both halves: that the column is
+a 36-character UUID, and that the reader does not return it.
+
+### 12.66.3 "At most one active" is per plan, and that was nearly a silent bug
+
+The index is:
+
+```sql
+CREATE UNIQUE INDEX plan_version_one_active
+ON plan_version(planID) WHERE activatedUTC IS NOT NULL
+```
+
+Read at speed that says one active version exists, and the first draft of this
+reader used `fetchOne` on that basis. It says one active version exists **per
+plan**. `Sub4Import.upsertPlan` keys the `plan` row on
+`(week1Monday, raceDate)`, so moving the race date mints a *second plan*, and
+`activate` clears the flag only `WHERE planID = ?`. Two active versions, both
+legal.
+
+Today the device holds one plan, so `fetchOne` would have been right — and would
+have stayed right until the day the race date moved, at which point it would
+have picked one of two silently and every count on the screen would have been a
+coin toss nobody could see being flipped.
+
+So the reader counts them and returns `.ambiguousActiveVersion` rather than
+choosing. §12.15's eleventh instance and §12.60.1's rule arriving together: **do
+not reason by analogy about two numbers without checking whether one determines
+the other.** A unique index on a column is not a unique index on a table.
+
+`twoActivePlansAreAmbiguous` builds the state and asserts the refusal, so the
+day a race moves this is a named answer rather than a wrong one.
+
+### 12.66.4 The denominator that needs a second row to be honest
+
+`plan_session` holds 780 rows. The app holds 260 sessions. Both are correct:
+three versions of the same plan are stored. Every plan table divides by three
+exactly — 111 weeks, 552 stats, 780 sessions, 246 breakdowns, 1,902 blocks — and
+`plan_session_block`'s own migration comment, written long before this patch,
+says the extractor emits those four fields **634 times**, which is 1,902 ÷ 3
+arriving from a completely different direction.
+
+"260 compared" printed above a table holding 780 reads as data loss to anyone
+who has not been told why. So the row beneath it says
+`260 of 780 rows · 3 versions`, and the active version's label is beside it.
+That is §12.15 applied to a denominator instead of to an error: a number that
+cannot say why it is smaller than the table will be read as loss.
+
+### 12.66.5 Two declarations of `ApprovedDifference`, and a third not written
+
+`AthleteRoundTrip` (317) and `AuthoredRoundTrip` (322) each declare their own
+`struct ApprovedDifference`. That is already §12.43's defect in miniature — one
+idea, two implementations, nothing keeping them in step.
+
+**This round trip has no approved differences at all.** Every field of `Meta`,
+`Week`, `Session`, `SessionDetail` and `Block` has a column and every column is
+written. So there is no list here, and deliberately not an empty one: a third
+declaration holding nothing would be a type written in anticipation, which is
+what 321 deleted a forwarder to avoid.
+
+The screen and the paste still print **"approved differences: none"**, because
+the absence has to be visible — §12.54.2 again. A reader who sees no such line
+cannot tell "nothing needed approving" from "nobody looked".
+
+The two existing declarations should become one. That is a change to two shipped
+files for no behavioural gain, so it is recorded here rather than done inside a
+slice patch, and it is a decision rather than an oversight.
+
+### 12.66.6 The property that held the breakdown is data
+
+`Session.breakdown` is `swimDetail ?? strengthDetail`. A reader that put a
+strength breakdown into `swimDetail` would compare **equal on every field of the
+detail and every field of every block** — and the session would draw with a
+swimmer's icon. `plan_session_detail.kind` exists in the schema for exactly this
+and nothing had ever checked that a reader used it.
+
+So `kind` is compared as a field of the session in its own right —
+`"breakdown kind"` — and `aStrengthBreakdownDoesNotComeBackAsASwim` asserts the
+property rather than the contents. The blocks are compared **by ordinal**, not
+as a set: they are a sequence, and a set comparison would call a shuffled
+session identical. `reorderedBlocksAreCaught` swaps two and asserts both are
+reported.
+
+### 12.66.7 The frozen vocabularies, and 322b's helper used a second time
+
+`plan_session.discipline` and `.intensity` carry CHECK constraints over frozen
+value lists, exactly as `user_note.feel` does. An unrecognised value is skipped
+and counted rather than mapped.
+
+**Not mapped to `.other`, and the contrast is the interesting part.**
+`Discipline.init(from:)` maps an unknown raw value to `.other` on purpose — that
+is what keeps a newly extracted `plan.json` loading rather than failing the app
+to launch. The same behaviour in this reader would turn a schema drift into a
+silent data change: a session would come back as "other" and nothing on any
+screen would say a value had been lost. Same enum, two directions, opposite
+correct answers.
+
+As at §12.65.11 the constraint means the state cannot arise from this schema, so
+`forceUnknownDiscipline` writes it with `PRAGMA ignore_check_constraints` and
+`theSchemaRefusesAnUnknownDiscipline` asserts the refusal separately. Second use
+of a helper written one patch earlier, which is the first evidence that 322b's
+rule generalised rather than described one incident.
+
+### 12.66.8 What two other screens stopped saying
+
+**`LoadParity`** said `constants, zones, FTP and sRPE — sRPE given the plan`.
+The caveat existed because `note.rpe` was verified at 322 and the plan it scales
+was not. It now reads `constants, zones, FTP and sRPE`.
+
+**`MatchParity`** said it verified `the commute decisions`. It now verifies
+`the plan and the commute decisions`, which leaves the match decisions as the
+only held input that screen cannot corroborate — and `match_decision` holding
+zero rows as the reason.
+
+Both strings are interpolated into their tests rather than duplicated there, so
+the two assertions followed the change without editing. That is §12.61.9's rule
+paying for itself in the direction of nothing breaking: **the test target was
+grepped before the zip was built**, and it found two references that needed no
+edit, which is the outcome the grep exists to establish rather than to fix.
+
+### 12.66.9 What is still held after 323
+
+**Apple Health.** A cache of somebody else's store. No database this app writes
+will ever hold it, and no patch will ever verify it.
+
+**The match decisions.** `match_decision` has no reader and zero rows. When the
+match-picker defect is settled and overrides start being stored, it will need
+one.
+
+**Weather and gear.** `weather` holds 583 rows and is drawn on every activity
+screen; gear is read through a join at 289 but never compared as a record. The
+rest of slice 6.
+
+**The plan's own trimmings.** `plan_exercise`, five fuel tables, four warm-up
+tables — about 150 rows. Drawn on screens, feeding no derivation. Slice 6c.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,
