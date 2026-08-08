@@ -88,7 +88,16 @@ import WeatherKit
 /// constraint frozen inside its migration, and this is what a test compares it
 /// against. A third provider added here fails that test, which is the prompt to
 /// write the migration that widens the constraint.
-enum WeatherSource: String, Codable, Hashable, CaseIterable {
+/// `nonisolated` since patch 324. `WeatherGearRepository` constructs one
+/// inside a database transaction, and the module compiles with
+/// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` — so without this the reader
+/// could not call `WeatherSource(rawValue:)` at all. Same correction as
+/// `Discipline` at 219 and `AthleteStore.HRZone` at 317.
+///
+/// There is no `extension WeatherSource` anywhere in the target, which is the
+/// check §12.61.7.1 exists to make: the keyword reaches members written in the
+/// type's own body and does NOT reach its extensions.
+nonisolated enum WeatherSource: String, Codable, Hashable, CaseIterable {
     case appleWeather, openMeteo
 
     var label: String {
@@ -106,7 +115,18 @@ enum WeatherSource: String, Codable, Hashable, CaseIterable {
 /// network is never asked again — which matters more than it sounds: 655
 /// activities against a quota is a real number, and a view that re-queried on
 /// every appearance would spend it on scrolling.
-struct ActivityWeather: Codable, Hashable {
+/// `nonisolated` since patch 324, and for the stronger of the two reasons.
+///
+/// Reading a stored property off the main actor already worked — SE-0434 makes
+/// `Sendable` stored properties of a main-actor value type implicitly
+/// nonisolated, which is how `Sub4Import+Weather` has read `w.tempC` since 133.
+/// CONSTRUCTING one did not, and `WeatherGearRepository` constructs 583 of them
+/// inside a transaction.
+///
+/// Checked first, per §12.61.7.1: there is no `extension ActivityWeather` in
+/// the target, so every member is in the body below and the keyword reaches all
+/// of them.
+nonisolated struct ActivityWeather: Codable, Hashable {
 
     let activityId: String
     /// Degrees Celsius, mean over the session.
@@ -137,6 +157,17 @@ struct ActivityWeather: Codable, Hashable {
     /// isolation, which is MainActor by default, and the importer reads this
     /// from a nonisolated context. Same correction as `Activity.discipline` in
     /// patch 219; the stored `source` beside it needs nothing.
+    ///
+    /// REDUNDANT SINCE 324, when the type itself became `nonisolated`, and kept
+    /// rather than deleted: the sentence above is the history of why the
+    /// distinction between a stored and a computed property cost this project
+    /// time, and a keyword removed is a lesson removed. It is also what the
+    /// declaration would need again if the type ever went back.
+    ///
+    /// **THIS IS THE VALUE BOTH SIDES OF THE READ-BACK COMPARE**, not `source`.
+    /// The column is NOT NULL and the importer writes this, so a nil `source`
+    /// normalises to Open-Meteo on the way in and cannot round trip as nil.
+    /// §12.63.8's rule: compare what the reader draws. §12.67.3.
     nonisolated var provider: WeatherSource { source ?? .openMeteo }
 
     /// The compass point the wind came from, which is what anybody actually

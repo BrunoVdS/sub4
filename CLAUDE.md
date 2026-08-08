@@ -70,6 +70,10 @@ the way it is. ADR §12 supersedes all three.
   its extensions.** `AthleteStore.HRZone` went nonisolated at 317 and `HRZone.titled` broke,
   because `name` lives in `extension AthleteStore.HRZone` in `Theme.swift`, which takes the
   module default. Five instances: 207, 219, 228, and both ends of 317.
+- **Reading a stored property off the main actor works; CONSTRUCTING the type does not.**
+  SE-0434 covers the read, not the initialiser — `Sub4Import` had read `ActivityWeather`
+  fields since 133 and 324 was the first code to build one off the actor. Mark the type
+  `nonisolated`, and grep for `extension <Type>` first.
 - **`optional == nil` is a call to `Optional.==` and needs `Wrapped: Equatable`.** In a
   `nonisolated` context the conformance must be nonisolated too, so `dict[key] == nil`
   fails on a main-actor value type with nothing on the line naming it. Ask the keys:
@@ -211,28 +215,30 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 323, 2026-08-08
+## 5. State — patch 324, 2026-08-08
 
-**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c seven slices of eight.
+**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c seven of eight, and slice 6 closed.
 D7 has not started, and nothing in the app reads the database yet.**
 
 - **Eleven migrations**, 51 tables, ~214,000 rows, ~37 MB on the phone. On the device:
   674 activities, 674 details, 649 recordings, ~194,000 trace samples, 7,986 splits,
   4,700 laps, 582 weather, 11 gear, 15 resting months, 5 HR zones, 7 notes,
   4 corrections, 3 rejections.
-- **1005 tests in 92 suites** at 322b, plus `PlanRepository` at 323. The run prints the
-  current total. 164 Swift files in `Sub4/`, ~60,000 lines.
+- **1005 tests in 92 suites** at 322b, plus `PlanRepository` (323) and
+  `WeatherGearRepository` (324). The run prints the current total. 165 Swift files in
+  `Sub4/`, ~60,000 lines.
 - **`migration_run` reaches `verified`.** The semantic verifier compares per-table counts,
   sync state, identity, an activity fingerprint and the domain checks. **The number of
   comparisons is printed on the Database screen — it is not restated here**, because a
   second answer to a question the screen already answers is how §12.29's problem starts.
 
-**D6a — six repositories, every field compared.**
+**D6a — seven repositories, every field compared.**
 `ActivityRepository` (289), `ActivityDetailRepository` (291), `RecordingRepository` (294),
-`AthleteRepository` (317), `AuthoredRepository` (322), `PlanRepository` (323). Each returns
-a load type that distinguishes *nothing there* from *could not look* — §12.15, eleven
-instances, and 323's has four shapes rather than three because "stored but not activated"
-and "two plans both active" are states the schema permits and nothing else could name.
+`AthleteRepository` (317), `AuthoredRepository` (322), `PlanRepository` (323),
+`WeatherGearRepository` (324). Each returns a load type that distinguishes *nothing there*
+from *could not look* — §12.15, twelve instances, and 323's has four shapes rather than
+three because "stored but not activated" and "two plans both active" are states the schema
+permits and nothing else could name.
 
 **D6b — write-through (302–307).** Every path that writes a store now reaches the database.
 
@@ -246,7 +252,7 @@ and "two plans both active" are states the schema permits and nothing else could
 | 4 details, splits, laps, reps | `DetailParity` | 320 ✔ |
 | 5 plan matching | `MatchResolver` + `MatchParity` | 321 ✔ |
 | 5b notes and corrections | `AuthoredRepository` + `AuthoredRoundTrip` | 322 ✔ |
-| 6 zones, weather, gear | `AthleteRoundTrip` (the athlete part) | 317 ✔ / rest open |
+| 6 zones, weather, gear | `AthleteRoundTrip` (317) + `WeatherGearRepository` | 324 ✔ |
 | 6b the plan — weeks, sessions, breakdowns, blocks | `PlanRepository` + `PlanRoundTrip` | 323 ✔ |
 | 6c the plan's trimmings — exercises, fuel, warm-up | — | open |
 | 7 review payloads | — | open |
@@ -264,11 +270,14 @@ all zero; 518 days matched, 252 sessions, 10 matched and 664 extras — and
 lines shortened at 323 because `plan_session` is read back. The match decisions are the
 only held input still uncorroborated, and `match_decision` holding zero rows is why.
 
-**The approved-difference list has exactly three entries** — `AthleteConstants.version`
-(317), a local cache counter with no column; and `user_note.activityID` and
-`user_note.planVersionID` (322), two columns the writer has never populated. It is a
-`struct` carrying `field`, `reason` and `patch`, and a test pins the count. An entry
-nobody can justify is a bug that has been given a hiding place.
+**The approved-difference list has exactly five entries** — `AthleteConstants.version`
+(317), a local cache counter with no column; `user_note.activityID` and
+`user_note.planVersionID` (322), two columns the writer has never populated; and
+`Shoe.primary` and `gear.retiredUTC` (324), the only two that are structural rather than
+a value left NULL. A test pins each count. An entry nobody can justify is a bug that has
+been given a hiding place — and **an entry nothing exercises is a suppression nobody has
+checked**, which 324 tests for the first time. 317's and 322's entries still have no such
+test.
 
 ### Still open, and the first one is Bruno's call
 
@@ -319,8 +328,8 @@ nobody can justify is a bug that has been given a hiding place.
   authored stores. Left deliberately: it is a cache and re-fetchable.
 - **2026-09-01 — GitHub Actions allowance resets.**
 
-**Next:** D6c slice 6c (the plan's trimmings — `plan_exercise`, fuel, warm-up), the rest
-of slice 6 (weather's 583 rows, gear as a record), then 7 and 8.
+**Next:** D6c slice 6c (the plan's trimmings — `plan_exercise`, fuel, warm-up), then
+slices 7 (review payloads) and 8 (tab summaries).
 Then D7 activate — `Sub4Launch.migrationFailureBlocksTheApp` flips to `true`. Then D8,
 stabilise one release window and remove the JSON writers. Phase 4A (Apple Health canonical)
 cannot start before D7's exit gate.

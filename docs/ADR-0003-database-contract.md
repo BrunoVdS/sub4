@@ -6948,6 +6948,139 @@ rest of slice 6.
 **The plan's own trimmings.** `plan_exercise`, five fuel tables, four warm-up
 tables — about 150 rows. Drawn on screens, feeding no derivation. Slice 6c.
 
+## 12.67 Weather and gear, read back — D6c slice 6 closed, patch 324
+
+`WeatherGearRepository` reads `weather`'s 583 rows and `gear`'s eleven back out
+and compares them against `WeatherStore` and `AthleteStore`. Seventh repository.
+Slice 6 has read "317 ✔ / rest open" since the athlete's zones were done; it
+now reads done.
+
+### 12.67.1 The canonical-id trap, fifth instance — and the one exception
+
+`weather.activityID` is the canonical activity id; `ActivityWeather.activityId`
+is Strava's. `Sub4Import+Weather` resolves through `activity_alias` on the way
+in, with a comment saying the alias "is the one that survives Strava's
+retirement", so this reverses the alias on the way out. Fifth instance: 289,
+317, 322, 323, this.
+
+**`gear` is the exception, and the exception is asserted.** `gear.externalID`
+IS Strava's gear id and `Shoe.id` IS Strava's gear id, so the two key against
+each other with nothing in between. `activity_alias` maps activities; a join
+added here out of symmetry with the weather query would return zero rows and
+report all eleven shoes missing from both sides at once.
+`gearKeysDirectlyWithNoAlias` states it, because after four patches of "join the
+alias" the dangerous move is no longer forgetting to — it is doing it
+everywhere.
+
+### 12.67.2 The eighth isolation instance, and the first that is a construction
+
+`ActivityWeather` and `WeatherSource` were main-actor isolated by the module
+default. Reading a stored property off the main actor already worked — SE-0434,
+which is how `Sub4Import+Weather` has read `w.tempC` since 133. **Constructing
+one did not**, and this reader constructs 583 of them inside a transaction.
+
+Both are now `nonisolated`, as `Activity.dayKey` was at 207, `Discipline` at
+219, `Sub4Import` at 228 and `AthleteStore.HRZone` at 317. The check §12.61.7.1
+exists to force was made first and is recorded here so it is visible that it was
+made: **there is no `extension ActivityWeather` and no `extension WeatherSource`
+anywhere in the target**, so the keyword reaches every member. That check is the
+one whose absence cost 317a.
+
+`ActivityWeather.provider` keeps its now-redundant `nonisolated` keyword rather
+than losing it. The comment above it is the record of why the stored/computed
+distinction cost this project time, and a keyword deleted is a lesson deleted —
+§9.2's argument about calling a move a deletion, applied to code.
+
+### 12.67.3 `source` cannot round trip, and that is not an approved difference
+
+`ActivityWeather.source` is `WeatherSource?`. `weather.provider` is NOT NULL and
+the importer writes `w.provider`, which is `source ?? .openMeteo`. So a nil
+source normalises to Open-Meteo on write and **cannot come back as nil**.
+
+The obvious move is a sixth entry on the approved list. It is the wrong one, and
+320a already made this exact call about a zero heart rate: an approved entry
+would enshrine a wrong comparison as a data decision. What both sides genuinely
+hold — and what every screen actually draws — is `provider`, the defaulted
+value. So `provider` is compared and `source` is not.
+
+The count of readings whose stored `source` is nil is printed as context. The
+normalisation is then visible rather than hidden by the very thing that makes it
+harmless, which is the difference between a comparison that is right and one
+that merely passes.
+
+### 12.67.4 One field with no column, one column with no field
+
+The approved list gains its fourth and fifth entries, and its only two
+STRUCTURAL ones — every entry before this was a value the writer left NULL.
+
+**`Shoe.primary` has no column.** It is Strava's answer to "which pair is the
+default": a preference held on their side and refetched with the athlete, not a
+fact about the shoe. The database keeps what survives Strava's retirement, and
+this is not that.
+
+**`gear.retiredUTC` is a column nothing writes**, and this one is a finding
+rather than a decision. Retirement is known at decode time and thrown away
+twice:
+
+  - `AthleteStore.swift:401` builds a retired shoe with the comment *"A retired
+    shoe is nobody's primary, whatever the API says about the day it was"* and
+    sets `primary: false`. The retirement is collapsed into a boolean about
+    something else.
+  - `Sub4Import`'s `INSERT INTO gear` names six columns and omits this one.
+
+So the schema has a place for a fact the app learns and neither side keeps. It
+is recorded here and NOT fixed in 324: filling the column is a change to the
+importer, and mixing a reader patch with a writer change is how a later
+difference becomes impossible to attribute — 321's argument for single-claim
+slices.
+
+`theApprovedDifferenceIsActuallyApproved` changes `primary` on one side and
+asserts no difference is reported. **An approved entry that nothing exercises is
+a suppression nobody has checked**, and this is the first patch to write that
+test — 317's and 322's entries are still unexercised, which is worth fixing the
+next time either file is open.
+
+### 12.67.5 The absence that is the database being right
+
+`weather.activityID` is a foreign key. A reading whose activity the roster
+dropped **cannot be stored** — the importer counts those as `weatherUnmatched`
+and moves on. Reported as "only in the app" they would paint the section red for
+the database doing the only thing it can.
+
+So `compare` takes the app's own activity roster as a `Set` and splits them out:
+a reading missing from the database is `readingsForUnknownActivities` if the app
+does not hold the activity either, and a real difference if it does. Both lines
+are on screen; only the second is ever red.
+
+That distinction is only possible because both sides are available at the call
+site. Without the roster the honest answer would have been "some of these are
+fine and this screen cannot tell you which", which is §12.15's shape — and it is
+worth naming that the fix was **passing in more context**, not loosening the
+comparison. `aGenuinelyMissingReadingFails` is the pair that keeps it honest:
+same shape, activity present, must fail.
+
+### 12.67.6 No tolerance, and why this differs from 314 and 320
+
+Every weather figure is a `Double` written to a REAL column and read back, with
+no formatting step in between. That is lossless. The tolerances elsewhere exist
+because something in the path rounds — TRIMP is computed at 314, paces are
+formatted to whole seconds at 320 — and there is nothing of the kind here.
+
+A tolerance would forgive a difference that can only mean the value changed.
+`doublesAreNotForgiven` writes 1/3 and asserts it returns bit for bit.
+
+### 12.67.7 What is still held, after slice 6 closes
+
+**Apple Health.** A cache of somebody else's store. No database this app writes
+will ever hold it, and no patch will ever verify it.
+
+**The match decisions.** `match_decision` has no reader and zero rows. It needs
+one when the match-picker defect is settled and overrides start being stored.
+
+**The plan's trimmings.** `plan_exercise`, five fuel tables, four warm-up
+tables — about 150 rows, drawn on screens, feeding no derivation. Slice 6c, and
+the only part of D6c's original eight still open before slices 7 and 8.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

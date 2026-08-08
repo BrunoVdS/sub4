@@ -122,6 +122,8 @@ struct DatabaseHealthView: View {
     @State private var authoredTrip: AuthoredRoundTrip.Report?
     @State private var planLoad: PlanLoad?
     @State private var planTrip: PlanRoundTrip.Report?
+    @State private var weatherGearLoad: WeatherGearLoad?
+    @State private var weatherGearTrip: WeatherGearRoundTrip.Report?
     @State private var verifying = false
     @State private var verification: VerificationReport?
 
@@ -205,6 +207,9 @@ struct DatabaseHealthView: View {
                     // is a third of the table's, and the row that says why is
                     // directly under it.
                     planReadBackSection
+                    // PATCH 324. Last of the read-backs and the one that closes
+                    // slice 6 — 583 readings and eleven shoes.
+                    weatherGearReadBackSection
                     // AFTER the three read-backs, because it asks the question
                     // they cannot: they compare RECORDS, this compares the list
                     // the app would DERIVE from them. The screen reads in the
@@ -249,6 +254,7 @@ struct DatabaseHealthView: View {
                         await reloadAthlete(db)
                         await reloadAuthored(db)
                         await reloadPlan(db)
+                        await reloadWeatherGear(db)
                     }
                 }
             }
@@ -1703,6 +1709,154 @@ struct DatabaseHealthView: View {
                                          database: load)
     }
 
+    /// PATCH 324 — the seventh read-back, D6c slice 6, ADR-0003 §12.67.
+    ///
+    /// TWO TABLES, ONE SECTION, for §12.65.7's reason: both are caches of
+    /// fetched source data making the same shape of claim, and this screen now
+    /// carries seven read-backs. Weather is the largest table that had no
+    /// reader; gear is eleven rows and the more interesting half, because the
+    /// approved list gains its only two STRUCTURAL entries — one field with no
+    /// column, one column with no field.
+    ///
+    /// THE ROW THAT STOPS A CORRECT DATABASE LOOKING BROKEN. A reading whose
+    /// activity the roster dropped cannot be stored — `weather.activityID` is a
+    /// foreign key. Those are counted on their own line rather than reported as
+    /// missing, and the line is unconditional so a device with none still says
+    /// zero.
+    ///
+    /// NO BUTTON, and every row unconditional — §12.54.2.
+    @ViewBuilder
+    private var weatherGearReadBackSection: some View {
+        Section {
+            if let load = weatherGearLoad {
+                LabeledContent("The read", value: load.line)
+                    .font(.caption)
+                    .foregroundStyle(load.isTrustworthy ? Color.dim : .red)
+            } else {
+                HStack { ProgressView(); Text("Reading back…").font(.caption) }
+            }
+
+            if let r = weatherGearTrip {
+                LabeledContent("Compared", value: "\(r.totalCompared)")
+                    .font(.caption)
+                    .foregroundStyle(r.lookedAtSomething ? Color.dim : .red)
+
+                Text("Weather")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                LabeledContent("In each side",
+                               value: "\(r.readingsInApp) vs \(r.readingsInDatabase)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Compared", value: "\(r.readingsCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  fields compared", value: "\(r.readingFieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Only in the app", value: "\(r.readingsOnlyInApp.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.readingsOnlyInApp.isEmpty ? Color.dim : .red)
+                // NOT RED AT ANY VALUE. These are readings the database is
+                // right to refuse, and colouring them would train the eye to
+                // ignore the row above.
+                LabeledContent("  for an activity the app does not hold",
+                               value: "\(r.readingsForUnknownActivities)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Only in the database",
+                               value: "\(r.readingsOnlyInDatabase.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.readingsOnlyInDatabase.isEmpty ? Color.dim : .red)
+                LabeledContent("Fields that differ",
+                               value: "\(r.readingDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.readingDifferences.isEmpty ? Color.dim : .red)
+                ForEach(r.readingDifferences.prefix(6), id: \.self) { d in
+                    Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                }
+                // Context. The normalisation made visible rather than hidden by
+                // the thing that makes it harmless — see §12.67.3.
+                LabeledContent("With no stored source",
+                               value: "\(r.readingsWithNoStoredSource)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("From Apple Weather", value: r.appleLine)
+                    .font(.caption2)
+                    .foregroundStyle(r.appReadingsFromAppleWeather
+                                     == r.databaseReadingsFromAppleWeather
+                                     ? Color.dim : .red)
+
+                Text("Gear")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                LabeledContent("In each side",
+                               value: "\(r.gearInApp) vs \(r.gearInDatabase)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Compared", value: "\(r.gearCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  fields compared", value: "\(r.gearFieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Only in the app", value: "\(r.gearOnlyInApp.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.gearOnlyInApp.isEmpty ? Color.dim : .red)
+                LabeledContent("Only in the database",
+                               value: "\(r.gearOnlyInDatabase.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.gearOnlyInDatabase.isEmpty ? Color.dim : .red)
+                LabeledContent("Fields that differ", value: "\(r.gearDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.gearDifferences.isEmpty ? Color.dim : .red)
+                ForEach(r.gearDifferences.prefix(4), id: \.self) { d in
+                    Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                }
+                // EXPECTED ZERO, PRINTED ANYWAY. The column exists and nothing
+                // writes it; the day that changes, this row is where it shows.
+                LabeledContent("Carrying a retirement date",
+                               value: "\(r.gearCarryingRetirement)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+
+                LabeledContent("Rows the reader could not read",
+                               value: "\(r.rowsSkipped)")
+                    .font(.caption)
+                    .foregroundStyle(r.rowsSkipped == 0 ? Color.dim : .red)
+                LabeledContent("Approved differences",
+                               value: WeatherGearRoundTrip.approved.map(\.field)
+                                   .joined(separator: ", "))
+                    .font(.caption2).foregroundStyle(Color.dim)
+            }
+        } header: {
+            Text("Read-back · weather and gear")
+        } footer: {
+            Text("The two caches of fetched source data. Weather is the largest "
+                 + "table in the database and is drawn on every activity "
+                 + "screen; gear is eleven rows that outlive the source they "
+                 + "came from.\n\n"
+                 + "Readings are keyed by Strava's activity id on both sides — "
+                 + "the column holds the canonical id and the query reverses "
+                 + "the alias, which is what the importer did on the way in. "
+                 + "The doubles are compared exactly: a REAL column round trip "
+                 + "is lossless, so a tolerance would forgive a changed value.\n\n"
+                 + "A reading whose activity the app no longer holds cannot be "
+                 + "stored at all — the column is a foreign key — so those are "
+                 + "counted separately rather than reported as missing.\n\n"
+                 + "Two approved differences, both structural: Shoe.primary has "
+                 + "no column, and gear.retiredUTC is a column nothing writes — "
+                 + "ADR-0003 §12.67.")
+                .font(.caption2)
+        }
+    }
+
+    /// Same shape as `reloadPlan`: the read off the main actor, the comparison
+    /// on it, because all three stores it reaches are main-actor singletons.
+    ///
+    /// The activity roster goes in as a `Set` so the comparison can tell a
+    /// reading the database refused from a reading it lost.
+    private func reloadWeatherGear(_ db: Sub4Database) async {
+        let load = await Task.detached(priority: .utility) {
+            WeatherGearRepository.load(db)
+        }.value
+        weatherGearLoad = load
+        weatherGearTrip = WeatherGearRoundTrip.compare(
+            storeWeather: Array(WeatherStore.shared.byActivity.values),
+            storeGear: AthleteStore.shared.shoes,
+            knownActivityIDs: Set(ActivityStore.shared.activities.map(\.id)),
+            database: load)
+    }
+
     /// Same shape as `reloadAthlete`: the read off the main actor, the
     /// comparison on it, because the stores it compares against are main-actor
     /// singletons.
@@ -2479,6 +2633,7 @@ struct DatabaseHealthView: View {
             await reloadAthlete(db)
             await reloadAuthored(db)
             await reloadPlan(db)
+            await reloadWeatherGear(db)
             return
         }
         if let message = Sub4Launch.shared.failureMessage {
@@ -2493,6 +2648,7 @@ struct DatabaseHealthView: View {
             await reloadAthlete(db)
             await reloadAuthored(db)
             await reloadPlan(db)
+            await reloadWeatherGear(db)
         } catch {
             opened = .failure(error)
         }
@@ -2797,6 +2953,14 @@ struct DatabaseHealthView: View {
             lines.append(contentsOf: r.diagnosticLines)
         } else {
             lines.append("Plan read-back: \(planLoad?.line ?? "not read")")
+        }
+        // PATCH 324. Strava activity ids, gear ids, field names and counts.
+        lines.append("")
+        if let r = weatherGearTrip {
+            lines.append(contentsOf: r.diagnosticLines)
+        } else {
+            lines.append("Weather and gear read-back: "
+                       + "\(weatherGearLoad?.line ?? "not read")")
         }
 
         return lines.joined(separator: "\n")
