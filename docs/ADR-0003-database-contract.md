@@ -6485,6 +6485,299 @@ Still held after 321, and still uncompared: the plan itself, the notes, the
 corrections and Apple Health. The first three are slice 6b; the fourth never
 will be.
 
+## 12.65 The two tables the athlete writes — D6c slice 5b, patch 322
+
+`user_note` holds seven rows and `correction` holds four. Between them they are
+the smallest thing D6c has read back, and they close a loop 321 opened.
+
+### 12.65.1 The chain into sRPE, and the one link that was missing
+
+`LoadStore` builds the figure that scales a session's training load like this:
+
+```swift
+srpeByActivity[a.id] = Double(rpe)
+    * Double(DataCorrections.scoringSeconds(a)) / 60
+```
+
+keyed by the activity `Matcher.day(dayKey)` picked, for the session the plan
+dated. Four inputs. After 321, exactly one of them had never been checked:
+
+| input | state before 322 |
+|---|---|
+| `note.rpe` | read out of `NotesStore`, **never read back** |
+| `scoringSeconds` | `officialTiming` and `useElapsedTime` are **compile-time constants** keyed by activity id — they live in the binary, not in a table. The two sides cannot differ; there is nothing to read and nothing to compare, ever |
+| the matcher | proven at 321, §12.64 |
+| the plan | held identically on both sides, so it cannot differ. Held, not verified — slice 6b |
+
+This reads `note.rpe` back. `LoadParity.verifiedByReadBack` therefore becomes
+**"constants, zones, FTP and sRPE — sRPE given the plan"**, and the qualifier is
+not decoration. It is the difference between a claim that is true and one that
+sounds true.
+
+> **A verification chain is only as long as its weakest unread link, and the
+> honest way to state it is to name the link you did not read.**
+
+### 12.65.2 `correction` is one of slice 5's own held inputs
+
+`correction`'s four rows are the commute decisions — `subjectKind = 'activity'`,
+`field = 'isCommute'`. §12.64.3 held them because `isPlanEligible` reads
+`CommuteStore` through `isCommuteRide`, and patch 251 decided not to thread a
+decision dictionary through fourteen call sites.
+
+Holding is still right: the same store answering the same activity ids cannot
+make the two sides disagree. But **held-and-checked is a different sentence from
+held-and-assumed**, and `MatchParity.verifiedByReadBack` is what earns the
+first. Third application of §12.61.1's argument.
+
+The match decisions are not in it and cannot be until something reads
+`match_decision` — which holds zero rows, so there would be nothing to check.
+
+### 12.65.3 The canonical-id trap, for the third time
+
+`correction.subjectID` is the CANONICAL activity id: the importer resolves it
+through `Sub4Import.canonicalActivity` before writing.
+`CommuteDecision.activityId` is Strava's.
+
+A reader returning the column straight through would hand all four decisions an
+id matching nothing in `CommuteStore`, and the comparison would report four
+losses that are a join this reader got wrong rather than data that went missing.
+
+Third instance: `gearId` at 289, the athlete's provenance at 317, this. The
+pattern is stable enough to name:
+
+> **Any column that references another table holds the canonical id, and every
+> store keys by the source's. A reader that does not join is a reader that
+> invents a difference.**
+
+One detail matters and is easy to get wrong: the join goes back through
+**`activity_alias`**, not `activity_source_record`. Both hold the same
+canonical-to-Strava pairing; only one of them is the table the writer used.
+
+### 12.65.4 Timestamps compare as strings, not as dates
+
+The importer writes `Sub4Import.iso8601(note.created)`. This reads the column
+and compares it to `Sub4Import.iso8601` of the store's own `Date` — **the
+writer's own formatter, called on both sides**.
+
+Parsing the column back into a `Date` and comparing with a tolerance was the
+alternative and is worse twice over: it needs a second formatter that could
+disagree with the first (§12.43), and a tolerance would forgive a drift the
+string comparison catches exactly.
+
+291 needed `sameSecond` for `fetched` because both sides held `Date`s. Here one
+side holds text, and text is the honest thing to compare it as.
+`theTimestampsCompareAsTheWriterWroteThem` pins both halves: four tenths of a
+second is not a difference, two seconds is.
+
+### 12.65.5 Two rows this reader declines rather than guesses at
+
+An unrecognised `feel` raw value is a row this reader cannot reconstitute — it
+is **skipped and counted**, not mapped to nil. Mapping it would turn a schema
+drift into a silent data change, and the note would come back looking
+answered-with-nothing rather than unreadable.
+
+Same for a `correction.value` that is neither `"true"` nor `"false"`. A guess
+there would silently flip whether a ride may satisfy a planned session.
+
+`skipped` counts both, 289's rule, and **`aSkippedRowIsADifference` pins that it
+fails the comparison** — without that, a reader declining every row would agree
+with an empty store.
+
+### 12.65.6 The approved list gains its second and third entries
+
+`user_note.activityID` and `user_note.planVersionID` are left NULL by the
+importer, on purpose, with the reason written at the line that does it:
+
+> *Resolving a note to the activity that satisfied its session is a MATCHING
+> decision. The importer is not the matcher — the same rule that stops it
+> merging the 21 April duplicate ride.*
+
+The list is now three entries across two patches, and every one of them carries
+its reason and its patch number. `theApprovedListIsJustified` asserts the count
+and the shape, so a fourth entry costs a deliberate edit to a test as well as a
+line in an array — §12.61.2's gate, still holding.
+
+### 12.65.7 One section for two tables
+
+Groundwork §7 warned that a screen nobody scrolls to the bottom of is a screen
+whose bottom rows are not read, and §12.40.1 measured that once already. The
+Database screen already carries four read-backs and five parity slices.
+
+Eleven records do not need two headings. **Read-back · authored** carries both,
+with a denominator each, and the two tables are one heading because they share
+a property nothing else on the screen has: **the athlete wrote them.** Every
+other table is a cache of something fetched.
+
+### 12.65.8 What the paste may not carry
+
+A note's `text` is the athlete writing about their own training. It is
+**compared and never printed** — not in a count, not truncated, not at all. What
+reaches the paste is the session uid, which is the plan's own identifier, and
+the names of the fields that differ.
+
+`theDiagnosticLinesAreUnconditional` asserts the absence directly, by checking
+that the fixture's own words do not appear in the output. §12.7's promise
+enforced by a test rather than by care.
+
+### 12.65.9 What is still held after 322
+
+**The plan.** `plan_session` and its 780 rows, `plan_week`, and the fuel and
+warm-up tables have no reader. That is slice 6b, and it is what stands between
+"sRPE given the plan" and "sRPE".
+
+**Apple Health.** A cache of somebody else's store. No database this app writes
+will ever hold it, and no patch will ever verify it.
+
+**Weather and gear.** `weather` holds 583 rows and is drawn on every activity
+screen; gear is read through a join at 289 but never compared as a record. Both
+are the rest of slice 6.
+
+### 12.65.10 `== nil` is not a nil check — 322a
+
+322 compiled and ran. `⌘R` produced four warnings, all the same one, at
+`AuthoredRepository.swift` 294, 295, 328 and 331:
+
+    Main actor-isolated conformance of 'NotesStore.Note' to 'Equatable'
+    cannot be used in nonisolated context; this is an error in the Swift 6
+    language mode
+
+The four lines looked like this:
+
+```swift
+r.notesOnlyInApp      = mine.keys.filter  { theirs[$0] == nil }.sorted()
+r.notesOnlyInDatabase = theirs.keys.filter { mine[$0]  == nil }.sorted()
+```
+
+**Nothing in that line mentions equality, and the line is a call to
+`Optional.==`.** `theirs[$0]` is `NotesStore.Note?`; comparing an optional to
+`nil` resolves to `static func == (lhs: Wrapped?, rhs: _OptionalNilComparisonType)`,
+which is constrained `Wrapped: Equatable`. So the subscript's *value type* has to
+be `Equatable` in order to ask a question about its *key*.
+
+`NotesStore.Note` is nested in `@Observable final class NotesStore` and inherits
+the main actor from it, so its synthesised `Equatable` conformance is
+main-actor-isolated. `CommuteDecision` is top-level and unannotated and takes the
+module default, which `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` makes the same
+thing. `AuthoredRepository` is a `nonisolated enum` running inside a database
+transaction. Neither conformance is reachable from there.
+
+**The fix is not a keyword.** The comparison never wanted note equality; it
+wanted membership, and membership is a question about keys:
+
+```swift
+let mineKeys = Set(mine.keys)
+let theirKeys = Set(theirs.keys)
+r.notesOnlyInApp      = mineKeys.subtracting(theirKeys).sorted()
+r.notesOnlyInDatabase = theirKeys.subtracting(mineKeys).sorted()
+
+for uid in mineKeys.intersection(theirKeys).sorted() { … }
+```
+
+`String` is `Equatable` and `Hashable` with no actor anywhere in sight, and the
+loop that follows gets its intersection for free instead of re-deriving it. The
+same edit was made for `commutesOnlyInApp` / `commutesOnlyInDatabase`, where the
+`DataCorrections.isIgnored` filter now applies to the difference rather than
+inside the membership test.
+
+**Marking the types `nonisolated` would have worked and would have been the
+wrong trade.** Both are drawn by SwiftUI and mutated from the main actor; making
+their conformances reachable from a transaction is a boundary move to satisfy a
+line that did not need the boundary crossed. This is the same judgement
+§12.61.7.1 made about `HRZone.name` from the other direction: move the member
+that is on the wrong side, not the type.
+
+**Sixth instance of the isolation family, and the first that is invisible in
+review.** The five before it named the thing that was isolated — a computed
+property (317), a type's extension (207, 219, 228, 317a). This one names
+nothing. There is no `.` on the right-hand side, no member being reached, no
+identifier belonging to the isolated type. A reader checking a `nonisolated`
+function for main-actor reaches will not see `== nil` as one, because it is not
+written as one. The rule has to be carried as a fact about the *operator*:
+
+> **`optional == nil` requires `Wrapped: Equatable`.** In a `nonisolated`
+> context, that means `Wrapped`'s conformance must be nonisolated too. For
+> dictionary membership, ask the keys — `Set(a.keys).subtracting(Set(b.keys))` —
+> which never touches the value type at all.
+
+`dictionary[key] != nil` and `if let _ = dictionary[key]` are the two other
+spellings; the first has the identical problem, the second does not, which is
+why the shortest correct habit here is the one that stops asking about values.
+
+**It was a warning again, not an error** — the third time (258, 317a, now this)
+that the compiler said the thing and the build succeeded anyway. In Swift 6
+language mode all four become errors. The reason this one reached `⌘R` rather
+than the test run is that `./scripts/test.sh` builds the test target, whose
+output scrolled past four warnings inside 931 passing tests.
+
+### 12.65.11 The test could not build the row the schema forbids — 322b
+
+322a's build was clean and the test run was not. Two tests failed, both on
+their setup:
+
+    SQLite error 19: CHECK constraint failed:
+    feel IS NULL OR feel IN ('easier', 'expected', 'harder')
+    - while executing `UPDATE user_note SET feel = 'elated'`
+
+`anUnknownFeelIsSkippedNotNilled` and `aSkippedRowIsADifference` both need a
+`user_note` row this binary cannot map. Both built it the obvious way, with an
+UPDATE, and `2026-08-04-domain` refuses it. **Neither test reached its
+assertion**, which is the part worth naming: a test that fails in its setup is
+indistinguishable in a summary line from a test that fails on what it claims,
+and the summary line is what gets read.
+
+**The reader's branch is not dead, so the tests are not deleted.** The
+constraint enumerates the values *this* schema knows. Migrations are
+append-only, so widening `domainFeels` means a new dated migration — after
+which a database holds a fourth value and any binary compiled against the old
+`Feel` reads a row it cannot reconstitute. That is precisely the case the skip
+branch exists for, and it is reachable by an app downgrade or by a database
+restored from a newer install. What the constraint rules out is the state
+arising *today*; it does not rule out the state.
+
+So the row is forced:
+
+```swift
+try db.queue.writeWithoutTransaction { d in
+    try d.execute(sql: "PRAGMA ignore_check_constraints = ON")
+    defer { try? d.execute(sql: "PRAGMA ignore_check_constraints = OFF") }
+    try d.execute(sql: "UPDATE user_note SET feel = ?", arguments: [raw])
+}
+```
+
+`writeWithoutTransaction` because the pragma is a connection setting and does
+not belong inside a transaction boundary, and it is turned off again before the
+connection goes back so nothing downstream runs unchecked.
+
+**The asymmetry between the two decline tests is the schema, not the reader.**
+`anUnparseableValueIsSkipped` passed, and it does the same thing to
+`correction.value` — because `correction.value` is a free-text column with no
+CHECK. Two sibling tests, one refused and one not, and the difference is a
+constraint written eighteen migrations ago. Nothing about the reader
+distinguishes them.
+
+**One test added, and one deliberately not.** `theSchemaRefusesAnUnknownFeel`
+asserts the refusal that stopped the other two, because nothing did:
+`DomainSchemaTests.feelsMatch` pins WHICH values the constraint lists against
+`Feel.allCases`, and that is a different claim from the constraint being
+enforced at all. What was **not** added is a second list-agreement assertion —
+writing one in `AuthoredRepositoryTests` would have been §12.43's defect
+committed inside a patch whose subject is a schema constraint. The existing
+test was found by grepping the test target for `domainFeels` before writing
+anything, which is §12.61.9's rule applied for once in the direction of not
+adding code.
+
+**Third time a test's SETUP has been the failure and not its subject** — 315
+and 316 were diagnostic-line counts, 317b was the same, and each time the fix
+was a mechanical step written down afterwards. This one has a different shape:
+those were assertions elsewhere that a change invalidated; this is a state the
+database will not let a test enter. The step that generalises is:
+
+> **A test that constructs an invalid state through SQL is subject to the
+> schema's own constraints.** If the state is one the schema forbids but the
+> reader must still survive, force it — `PRAGMA ignore_check_constraints` —
+> and assert the refusal separately, so the constraint and the tolerance of it
+> are two claims rather than one accident.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

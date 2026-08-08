@@ -112,6 +112,14 @@ struct DatabaseHealthView: View {
     /// are the same visit.
     @State private var athleteLoad: AthleteLoad?
     @State private var athleteTrip: AthleteRoundTrip.Report?
+
+    /// PATCH 322 — the fifth read-back, and the second with no button.
+    ///
+    /// Seven notes and four commute decisions. Like the athlete's, it costs one
+    /// read and therefore runs on open rather than behind a press — §12.61.4's
+    /// argument, and the same dissolution of the `@State` evaporation trap.
+    @State private var authoredLoad: AuthoredLoad?
+    @State private var authoredTrip: AuthoredRoundTrip.Report?
     @State private var verifying = false
     @State private var verification: VerificationReport?
 
@@ -177,6 +185,17 @@ struct DatabaseHealthView: View {
                     // holds constants, zones and FTP from the app, and this is
                     // what turns that from an assumption into a check.
                     athleteReadBackSection
+                    // PATCH 322. The fifth, and the one that closes the loop
+                    // 321 opened: `note.rpe` was slice 3's last unverified
+                    // input, and `correction` holds one of slice 5's three
+                    // held ones.
+                    //
+                    // ONE SECTION FOR TWO TABLES, deliberately. Groundwork §7
+                    // warned that a screen nobody scrolls to the bottom of is a
+                    // screen whose bottom rows are not read, and §12.40.1
+                    // measured that once already. Eleven records do not need
+                    // two headings.
+                    authoredReadBackSection
                     // AFTER the three read-backs, because it asks the question
                     // they cannot: they compare RECORDS, this compares the list
                     // the app would DERIVE from them. The screen reads in the
@@ -219,6 +238,7 @@ struct DatabaseHealthView: View {
                     Task {
                         await reloadLedger(db)
                         await reloadAthlete(db)
+                        await reloadAuthored(db)
                     }
                 }
             }
@@ -1391,6 +1411,131 @@ struct DatabaseHealthView: View {
         }
     }
 
+    /// PATCH 322 — the fifth read-back, D6c slice 5b, ADR-0003 §12.65.
+    ///
+    /// TWO TABLES, ONE SECTION. `user_note` and `correction` between them hold
+    /// eleven records, and both are authored by the athlete rather than fetched
+    /// — which is what makes them one heading rather than two.
+    ///
+    /// WHAT IT IS FOR, BEYOND ITSELF. `note.rpe` was the last unverified input
+    /// to slice 3's sRPE, and `correction` holds the commute decisions slice 5
+    /// takes from the app. Both of those lines on the Shadow parity section
+    /// below now say "verified" instead of only "held".
+    ///
+    /// NO BUTTON, like the athlete's, and every row unconditional — §12.54.2.
+    @ViewBuilder
+    private var authoredReadBackSection: some View {
+        Section {
+            if let load = authoredLoad {
+                LabeledContent("The read", value: load.line)
+                    .font(.caption)
+                    .foregroundStyle(load.isTrustworthy ? Color.dim : .red)
+            } else {
+                HStack { ProgressView(); Text("Reading back…").font(.caption) }
+            }
+
+            if let r = authoredTrip {
+                LabeledContent("Compared", value: "\(r.totalCompared)")
+                    .font(.caption)
+                    .foregroundStyle(r.lookedAtSomething ? Color.dim : .red)
+
+                Text("Notes")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                LabeledContent("In each side",
+                               value: "\(r.notesInApp) vs \(r.notesInDatabase)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Compared", value: "\(r.notesCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  fields compared", value: "\(r.noteFieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Only in the app", value: "\(r.notesOnlyInApp.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.notesOnlyInApp.isEmpty ? Color.dim : .red)
+                LabeledContent("Only in the database",
+                               value: "\(r.notesOnlyInDatabase.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.notesOnlyInDatabase.isEmpty ? Color.dim : .red)
+                LabeledContent("Fields that differ", value: "\(r.noteDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.noteDifferences.isEmpty ? Color.dim : .red)
+                ForEach(r.noteDifferences.prefix(6), id: \.self) { d in
+                    Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                }
+                // THE ROW SLICE 3 DEPENDS ON. An RPE is what becomes an sRPE; a
+                // note without one contributes nothing to the load, so these
+                // two matching is what earns the "verified" line below.
+                LabeledContent("Carrying an RPE", value: r.rpeLine)
+                    .font(.caption)
+                    .foregroundStyle(r.appNotesWithRPE == r.databaseNotesWithRPE
+                                     ? Color.dim : .red)
+
+                Text("Commute decisions")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                LabeledContent("In each side",
+                               value: "\(r.commutesInApp) vs \(r.commutesInDatabase)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Compared", value: "\(r.commutesCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  fields compared", value: "\(r.commuteFieldsCompared)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Only in the app", value: "\(r.commutesOnlyInApp.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.commutesOnlyInApp.isEmpty ? Color.dim : .red)
+                LabeledContent("Only in the database",
+                               value: "\(r.commutesOnlyInDatabase.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.commutesOnlyInDatabase.isEmpty ? Color.dim : .red)
+                LabeledContent("Fields that differ",
+                               value: "\(r.commuteDifferences.count)")
+                    .font(.caption)
+                    .foregroundStyle(r.commuteDifferences.isEmpty ? Color.dim : .red)
+                ForEach(r.commuteDifferences.prefix(4), id: \.self) { d in
+                    Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                }
+
+                LabeledContent("Rows the reader could not read",
+                               value: "\(r.rowsSkipped)")
+                    .font(.caption)
+                    .foregroundStyle(r.rowsSkipped == 0 ? Color.dim : .red)
+                LabeledContent("Approved differences",
+                               value: AuthoredRoundTrip.approved.isEmpty
+                                   ? "none"
+                                   : AuthoredRoundTrip.approved.map(\.field)
+                                       .joined(separator: ", "))
+                    .font(.caption2).foregroundStyle(Color.dim)
+            }
+        } header: {
+            Text("Read-back · authored")
+        } footer: {
+            Text("The two tables the athlete writes rather than the source: "
+                 + "session notes and commute decisions. Small, and load-"
+                 + "bearing twice over — an RPE becomes the sRPE that scales a "
+                 + "session's training load, and a commute decision decides "
+                 + "whether a ride may satisfy a planned session at all.\n\n"
+                 + "Timestamps are compared as the strings the importer writes, "
+                 + "through its own formatter, rather than parsed back into "
+                 + "dates and forgiven by a tolerance.\n\n"
+                 + "A note's text is compared and never printed here. Two "
+                 + "columns are left NULL by the importer on purpose and are "
+                 + "listed as approved differences — ADR-0003 §12.65.")
+                .font(.caption2)
+        }
+    }
+
+    /// Same shape as `reloadAthlete`: the read off the main actor, the
+    /// comparison on it, because the stores it compares against are main-actor
+    /// singletons.
+    private func reloadAuthored(_ db: Sub4Database) async {
+        let load = await Task.detached(priority: .utility) {
+            AuthoredRepository.load(db)
+        }.value
+        authoredLoad = load
+        authoredTrip = AuthoredRoundTrip.compare(
+            storeNotes: Array(NotesStore.shared.all.values),
+            storeCommutes: Array(CommuteStore.shared.decisions.values),
+            database: load)
+    }
+
     /// The read off the main actor, the comparison on it — the stores it
     /// compares against are main-actor singletons and the database read is not
     /// this screen's to block on, however small it is.
@@ -1880,6 +2025,11 @@ struct DatabaseHealthView: View {
 
                 LabeledContent("Held from the app", value: MatchParity.heldFromTheApp)
                     .font(.caption).foregroundStyle(Color.dim)
+                // PATCH 322. One of the three is now checked by the authored
+                // read-back above rather than assumed.
+                LabeledContent("Of those, verified",
+                               value: MatchParity.verifiedByReadBack)
+                    .font(.caption).foregroundStyle(Color.dim)
             }
         } header: {
             Text("Shadow parity")
@@ -2146,6 +2296,7 @@ struct DatabaseHealthView: View {
             await recheck(db)
             await reloadLedger(db)
             await reloadAthlete(db)
+            await reloadAuthored(db)
             return
         }
         if let message = Sub4Launch.shared.failureMessage {
@@ -2158,6 +2309,7 @@ struct DatabaseHealthView: View {
             await recheck(db)
             await reloadLedger(db)
             await reloadAthlete(db)
+            await reloadAuthored(db)
         } catch {
             opened = .failure(error)
         }
@@ -2444,6 +2596,16 @@ struct DatabaseHealthView: View {
             lines.append(contentsOf: r.diagnosticLines)
         } else {
             lines.append("Athlete read-back: \(athleteLoad?.line ?? "not read")")
+        }
+        // PATCH 322. Session uids, field names and counts. A note's TEXT is
+        // compared and never printed — it is the athlete writing about their
+        // own training, and §12.7 promises this paste carries nothing of the
+        // kind.
+        lines.append("")
+        if let r = authoredTrip {
+            lines.append(contentsOf: r.diagnosticLines)
+        } else {
+            lines.append("Authored read-back: \(authoredLoad?.line ?? "not read")")
         }
 
         return lines.joined(separator: "\n")

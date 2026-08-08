@@ -142,11 +142,24 @@ enum LoadParity {
     /// "not varied here" and "proven identical", and the second is a claim
     /// that has to be earned by something on screen.
     ///
-    /// sRPE and Apple Health are not in it and will not be: sRPE is slice 5,
-    /// and Health's heart rate is a cache of somebody else's store that no
-    /// database this app writes will ever hold.
+    /// PATCH 322 ADDED sRPE, AND THE QUALIFIER IS NOT DECORATION. The figure
+    /// is `note.rpe × DataCorrections.scoringSeconds(a) / 60`, keyed by the
+    /// activity the matcher picked, for the session the plan dated. After 322
+    /// each of those is settled EXCEPT the plan:
+    ///
+    ///   · `note.rpe`       read back and compared, patch 322.
+    ///   · `scoringSeconds` compile-time constants in the binary, not rows.
+    ///                      The two sides cannot differ; nothing to read.
+    ///   · the matcher      proven at 321, §12.64.
+    ///   · the plan         held identically on both sides, so it cannot
+    ///                      differ. HELD, not verified — that is slice 6b, and
+    ///                      it is why the line says "given the plan" rather
+    ///                      than stopping at "verified".
+    ///
+    /// Apple Health is not in it and never will be: its heart rate is a cache
+    /// of somebody else's store that no database this app writes will hold.
     static let verifiedByReadBack =
-        "constants, zones and FTP, by the athlete read-back"
+        "constants, zones, FTP and sRPE — sRPE given the plan"
 
     private static func close(_ a: Double, _ b: Double) -> Bool {
         abs(a - b) <= trimpTolerance

@@ -269,6 +269,10 @@ struct MatchParityTests {
 
         for expected in ["Match parity: 1 days, 1 matches",
                          "held from the app: \(MatchParity.heldFromTheApp)",
+                         // PATCH 322. The commute decisions are still held —
+                         // and now checked by the authored read-back rather
+                         // than assumed. Two different sentences, two lines.
+                         "of those, verified: \(MatchParity.verifiedByReadBack)",
                          "planned sessions compared: 1",
                          "sessions that claimed an activity on both sides: 1",
                          "extras compared: 1",

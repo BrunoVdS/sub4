@@ -83,6 +83,19 @@ enum MatchParity {
     static let heldFromTheApp =
         "the plan, the match decisions and the commute decisions"
 
+    /// Of those three, the one the authored read-back now checks — patch 322.
+    ///
+    /// A SEPARATE STRING RATHER THAN AN EDIT TO THE ONE ABOVE, for §12.61.1's
+    /// reason: what this comparison holds constant did not change, what is
+    /// known about it did, and collapsing the two would lose the distinction
+    /// between "not varied here" and "proven identical".
+    ///
+    /// The match decisions are not in it and cannot be until something reads
+    /// `match_decision` — which holds zero rows, so there would be nothing to
+    /// check. The plan is slice 6b.
+    static let verifiedByReadBack =
+        "the commute decisions, by the authored read-back"
+
     // MARK: The report
 
     struct Report: Equatable {
@@ -178,6 +191,7 @@ enum MatchParity {
             var lines = [
                 "Match parity: \(daysCompared) days, \(matchesResolved) matches",
                 "  held from the app: \(heldFromTheApp)",
+                "  of those, verified: \(verifiedByReadBack)",
                 "  planned sessions compared: \(sessionsCompared)",
                 "  sessions that claimed an activity on both sides: \(matchesResolved)",
                 "  extras compared: \(extrasCompared)",

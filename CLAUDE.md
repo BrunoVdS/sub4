@@ -60,7 +60,7 @@ the way it is. ADR §12 supersedes all three.
 - A migration may lose the old **shape**, not the **data**: guard the removal of a
   retired key on the new blob actually landing (this is what 278c fixed).
 
-**Swift / concurrency — and the two at the top are recent and expensive:**
+**Swift / concurrency — and the three at the top are recent and expensive:**
 
 - **SE-0434: stored properties of `Sendable` type in a main-actor-isolated value type are
   implicitly `nonisolated`. Computed properties are NOT** — they are methods.
@@ -70,8 +70,17 @@ the way it is. ADR §12 supersedes all three.
   its extensions.** `AthleteStore.HRZone` went nonisolated at 317 and `HRZone.titled` broke,
   because `name` lives in `extension AthleteStore.HRZone` in `Theme.swift`, which takes the
   module default. Five instances: 207, 219, 228, and both ends of 317.
+- **`optional == nil` is a call to `Optional.==` and needs `Wrapped: Equatable`.** In a
+  `nonisolated` context the conformance must be nonisolated too, so `dict[key] == nil`
+  fails on a main-actor value type with nothing on the line naming it. Ask the keys:
+  `Set(a.keys).subtracting(Set(b.keys))`. Sixth isolation instance — 322a; the first
+  invisible in review.
 - `Sub4Import` is `nonisolated` end to end. Anything main-actor it needs is computed
   by the caller and passed in.
+- **A test that builds an invalid state through SQL is subject to the schema's own CHECK
+  constraints.** If the reader must survive a state the schema forbids, force it with
+  `PRAGMA ignore_check_constraints` inside `writeWithoutTransaction`, and assert the
+  refusal separately. 322's two failures were setup failures, not assertion failures.
 - Never put `try` inside `#expect` / `#require` — hoist to a `let`. `#expect`'s message
   is a `Comment?`: an interpolated literal converts, `"a" + "\(b)"` does not.
 - A synthesised `init(from:)` does not use Swift default values.
@@ -194,25 +203,27 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 319, 2026-08-08
+## 5. State — patch 322b, 2026-08-08
 
-**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c four slices of eight.
+**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c six slices of eight.
 D7 has not started, and nothing in the app reads the database yet.**
 
-- **Eleven migrations**, 51 tables, **213,698 rows**, ~37 MB on the phone. On the device:
-  673 activities, 673 details, 649 recordings, **194,154 trace samples**, 8,057 splits,
-  2,349 laps, 761 best efforts, 582 weather, 11 gear, 15 resting months, 5 HR zones,
-  7 notes, 4 corrections, 3 rejections, 107 ledger rows.
-- **931 tests in 88 suites.** 159 Swift files in `Sub4/`, ~56,000 lines; 68 test files.
+- **Eleven migrations**, 51 tables, ~214,000 rows, ~37 MB on the phone. On the device:
+  674 activities, 674 details, 649 recordings, ~194,000 trace samples, 7,986 splits,
+  4,700 laps, 582 weather, 11 gear, 15 resting months, 5 HR zones, 7 notes,
+  4 corrections, 3 rejections.
+- **1004 tests in 92 suites** as of 322b (931 in 88 at 319; `DetailParity`, `MatchResolver`,
+  `MatchParity` and `AuthoredRepository` added since). 163 Swift files in `Sub4/`,
+  ~59,000 lines.
 - **`migration_run` reaches `verified`.** The semantic verifier compares per-table counts,
   sync state, identity, an activity fingerprint and the domain checks. **The number of
   comparisons is printed on the Database screen — it is not restated here**, because a
   second answer to a question the screen already answers is how §12.29's problem starts.
 
-**D6a — four repositories, every field compared.**
+**D6a — five repositories, every field compared.**
 `ActivityRepository` (289), `ActivityDetailRepository` (291), `RecordingRepository` (294),
-`AthleteRepository` (317). Each returns a load type that distinguishes *nothing there* from
-*could not look* — §12.15, nine instances now.
+`AthleteRepository` (317), `AuthoredRepository` (322). Each returns a load type that
+distinguishes *nothing there* from *could not look* — §12.15, ten instances now.
 
 **D6b — write-through (302–307).** Every path that writes a store now reaches the database.
 
@@ -223,25 +234,31 @@ D7 has not started, and nothing in the app reads the database yet.**
 | 1 activities — identity, order, days | `ActivityParity` | 312 ✔ |
 | 2 daily and weekly volume | `VolumeParity` | 313 ✔ |
 | 3 fitness and load, incl. the HR histogram | `LoadParity` | 314–316 ✔ |
-| 4 details, splits, laps, traces | — | open |
-| 5 notes, corrections, plan matching | — | open |
+| 4 details, splits, laps, reps | `DetailParity` | 320 ✔ |
+| 5 plan matching | `MatchResolver` + `MatchParity` | 321 ✔ |
+| 5b notes and corrections | `AuthoredRepository` + `AuthoredRoundTrip` | 322 ✔ |
 | 6 zones, weather, gear | `AthleteRoundTrip` (the athlete part) | 317 ✔ / rest open |
 | 7 review payloads | — | open |
 | 8 Today / Week / Plan / Progress summaries | — | open |
 
-**On the device at 317b, all four slices clean:** 674 activities · 324 days · no
+**On the device, every slice run so far is clean.** 674 activities · 324 days · no
 differences; 403 vs 403 load days, 222 vs 222 traces, 7,112 heart-rate buckets, Fitness
-33 vs 33; athlete 27 compared, 0 differences, HR max 181 vs 181, FTP 270 vs 270.
+33 vs 33; athlete 27 compared, 0 differences, HR max 181 vs 181, FTP 270 vs 270; 674
+details with 8,088 pace figures (6,562 answered), 7,986 splits, 4,700 laps, 1,141 reps,
+all zero; 518 days matched, 252 sessions, 10 matched and 664 extras — and
+`extras + matches = 674` exactly — with adherence 10 of 236 on both sides. **Slice 5b
+(322) has not been verified on the device yet.**
 
-**The approved-difference list has exactly one entry** — `AthleteConstants.version`, added
-at 317, a local cache counter with no column. It is a `struct` carrying `field`, `reason`
-and `patch`, and a test pins the count at one. An entry nobody can justify is a bug that
-has been given a hiding place.
+**The approved-difference list has exactly three entries** — `AthleteConstants.version`
+(317), a local cache counter with no column; and `user_note.activityID` and
+`user_note.planVersionID` (322), two columns the writer has never populated. It is a
+`struct` carrying `field`, `reason` and `patch`, and a test pins the count. An entry
+nobody can justify is a bug that has been given a hiding place.
 
 ### Still open, and the first one is Bruno's call
 
 > **THE MATCH PICKER OFFERS ACTIVITIES THE MATCHER WILL REFUSE.** Confirmed on device
-> 2026-08-05 22:00, still open at 319. `MatchPickerView.choiceSection` lists
+> 2026-08-05 22:00, still open at 322a. `MatchPickerView.choiceSection` lists
 > `activities(on: dayKey)` unfiltered; `Matcher.resolve` builds its pool from
 > `all.filter(\.isPlanEligible)`, and `Activity.isPlanEligible` returns `false` by
 > `default:` — so a walk is never eligible. Choosing the walk stores the override, the
@@ -258,14 +275,19 @@ has been given a hiding place.
 > directions."* (b) has consequences: the walk's distance and load would enter that
 > session's adherence and effort figures.
 > **Ask, then implement. Do not pick.**
+>
+> **321 asserted it as it behaves today.** `MatchResolverTests`
+> `.anOverrideNamingAnIneligibleActivityIsLost` states the defect in a test, so the day it
+> is fixed the test inverts rather than the change going unnoticed. The decision is still
+> Bruno's.
 
-- **Background refresh has never fired.** 107 ledger rows: 1 manual, 34 backgrounded,
-  22 foregrounded, **0 backgroundRefresh**, 50 from before the trigger column existed.
-  Needs the `Woken by iOS` count from the Settings screen to decide whether patch 307's
-  path is dead or iOS has simply never woken the app.
+- ~~Background refresh has never fired.~~ **Closed.** `backgroundRefresh: 1` appeared in
+  the ledger during the 320 device run. Patch 307's path works; iOS had simply never woken
+  the app. Open from 311 to 320 on evidence that was an absence, which is §12.54.2's
+  shape.
 - **`Interrupted runs: 2`** as of 317b, from that night's ⌘R cycles. Should not climb on a
   day with no rebuilds.
-- **`Sub4/manual.html` is 35 patches stale** — last touched at 284, and it has zero
+- **`Sub4/manual.html` is 38 patches stale** — last touched at 284, and it has zero
   mentions of the Database screen, shadow parity, write-through, GRDB or migrations. It is
   a *user* document and §11 "Where the data lives" is the part that will be wrong; deferred
   until D7 settles that answer rather than writing it twice.
@@ -282,7 +304,8 @@ has been given a hiding place.
   authored stores. Left deliberately: it is a cache and re-fetchable.
 - **2026-09-01 — GitHub Actions allowance resets.**
 
-**Next:** D6c slice 4 (details, splits, laps, traces), then 5, then the rest of 6, 7, 8.
+**Next:** D6c slice 6b (the plan — `plan_session`'s 780 rows, `plan_week`, fuel and
+warm-up), the rest of slice 6 (weather's 583 rows, gear as a record), then 7 and 8.
 Then D7 activate — `Sub4Launch.migrationFailureBlocksTheApp` flips to `true`. Then D8,
 stabilise one release window and remove the JSON writers. Phase 4A (Apple Health canonical)
 cannot start before D7's exit gate.
