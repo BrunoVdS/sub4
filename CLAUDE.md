@@ -26,6 +26,8 @@ In this order, and only what the task needs:
 3. **`docs/context/working-agreement.md`** — how Bruno wants you to work. Read it once per
    session; it is 200 words and it is not optional.
 4. **`docs/D6C-SHADOW-PARITY-GROUNDWORK.md`** — if the task is D6c. §6 has the slice order.
+5. **`docs/D6C-SLICE-8-GROUNDWORK.md`** — if the task is slice 8. Checked against the
+   source at 328a; §1.1 lists what slices 1–7 already cover and must not be re-proved.
 
 **The handoffs are history, not state.** `HANDOFF-2026-08-05.md`,
 `HANDOFF-2026-08-05-late.md` and `HANDOFF-2026-08-06.md` were snapshots; the newest is
@@ -423,7 +425,11 @@ test.
   the patch that writes it** — which is why `gear.retiredUTC` stays unwritten (§12.68.4).
 - **2026-09-01 — GitHub Actions allowance resets.**
 
-**Next:** D6c slice 8's twin (patch 329) — the extraction landed at 328. Then D7 activate, D8, and 4A. Before D7 is pressed,
+**Next:** D6c slice 8 — **read `docs/D6C-SLICE-8-GROUNDWORK.md` first**, it was checked
+against the source at 328a and says what is already covered, what is not, and the one
+thing most likely to get the slice wrong (the `startKey <= todayKey` cutoff). Split:
+**329** the extraction — `TabSummary`, `PlanStore` statics, `accumulate` going static,
+`PlanFocus`'s two call sites — behaviour-neutral, the suite is the proof. **330** the twin. Then D7 activate, D8, and 4A. Before D7 is pressed,
 two things that are not slices: fold the nine read-backs into one roll-up with a durable
 result — §12.57 corrected `@State`-evaporation for `ShadowParity` and never for the
 read-backs, and nine buttons that must each be pressed is not a gate anybody can lean on —
@@ -485,6 +491,7 @@ territory — verify a number against the code before building on it.
 Other documents worth knowing exist: `docs/D6A-DETAIL-GROUNDWORK.md`,
 `docs/D6A-RECORDING-GROUNDWORK.md`, `docs/D6B-WRITE-THROUGH-GROUNDWORK.md`,
 `docs/D6C-SHADOW-PARITY-GROUNDWORK.md` (read §6 before any D6c slice),
+`docs/D6C-SLICE-8-GROUNDWORK.md` (read before slice 8),
 `docs/PLAN-cutover-v2.md` (the ladder and the calendar constraint),
 `docs/ADR-0001-product-definition.md`, `docs/ADR-0002-strava-retirement.md`.
 
