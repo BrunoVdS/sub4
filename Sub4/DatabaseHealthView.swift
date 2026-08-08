@@ -1796,6 +1796,91 @@ struct DatabaseHealthView: View {
                                value: "the details could not be read")
                     .font(.caption).foregroundStyle(.red)
             }
+
+            // MARK: Slice 5 — plan matching
+
+            if let m = parity.last.matches {
+                Text("Plan matching")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+
+                LabeledContent("Days compared", value: "\(m.daysCompared)")
+                    .font(.caption)
+                    .foregroundStyle(m.daysCompared > 0 ? Color.dim : .red)
+                LabeledContent("Planned sessions compared",
+                               value: "\(m.sessionsCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                // THE DENOMINATOR THAT MEANS SOMETHING. Most planned sessions
+                // resolve to nothing on both sides and agree perfectly; this is
+                // the count of sessions that actually claimed an activity.
+                LabeledContent("  claimed an activity on both sides",
+                               value: "\(m.matchesResolved)")
+                    .font(.caption)
+                    .foregroundStyle(m.matchesResolved > 0 ? Color.dim : .red)
+                LabeledContent("Extras compared", value: "\(m.extrasCompared)")
+                    .font(.caption).foregroundStyle(Color.dim)
+
+                LabeledContent("Days only in the app",
+                               value: "\(m.daysOnlyInApp.count)")
+                    .font(.caption)
+                    .foregroundStyle(m.daysOnlyInApp.isEmpty ? Color.dim : .red)
+                LabeledContent("Days only in the database",
+                               value: "\(m.daysOnlyInDatabase.count)")
+                    .font(.caption)
+                    .foregroundStyle(m.daysOnlyInDatabase.isEmpty ? Color.dim : .red)
+                LabeledContent("Sessions on one side only",
+                               value: "\(m.sessionsOnOneSideOnly.count)")
+                    .font(.caption)
+                    .foregroundStyle(m.sessionsOnOneSideOnly.isEmpty ? Color.dim : .red)
+
+                // THE ROW THIS SLICE EXISTS FOR.
+                LabeledContent("Sessions that claimed a different activity",
+                               value: "\(m.sessionsWithADifferentActivity.count)")
+                    .font(.caption)
+                    .foregroundStyle(m.sessionsWithADifferentActivity.isEmpty
+                                     ? Color.dim : .red)
+                ForEach(m.sessionsWithADifferentActivity.prefix(6), id: \.self) { u in
+                    Text("    \(u)").font(.caption2).foregroundStyle(.red)
+                }
+                // AND THE ONE THAT TURNS 4/4 INTO 3/4.
+                LabeledContent("Sessions done on one side only",
+                               value: "\(m.sessionsDoneOnOneSideOnly.count)")
+                    .font(.caption)
+                    .foregroundStyle(m.sessionsDoneOnOneSideOnly.isEmpty
+                                     ? Color.dim : .red)
+                ForEach(m.sessionsDoneOnOneSideOnly.prefix(6), id: \.self) { u in
+                    Text("    \(u)").font(.caption2).foregroundStyle(.red)
+                }
+                LabeledContent("Sessions chosen a different way",
+                               value: "\(m.sessionsWithADifferentSource.count)")
+                    .font(.caption)
+                    .foregroundStyle(m.sessionsWithADifferentSource.isEmpty
+                                     ? Color.dim : .red)
+                LabeledContent("Days with different extras",
+                               value: "\(m.daysWithDifferentExtras.count)")
+                    .font(.caption)
+                    .foregroundStyle(m.daysWithDifferentExtras.isEmpty
+                                     ? Color.dim : .red)
+                LabeledContent("Days with a different extras order",
+                               value: "\(m.daysWithDifferentExtraOrder.count)")
+                    .font(.caption)
+                    .foregroundStyle(m.daysWithDifferentExtraOrder.isEmpty
+                                     ? Color.dim : .red)
+
+                // THE WEEK SCREEN'S OWN FIGURE, both sides. A reader can hold
+                // this against the Week tab without pressing anything else.
+                LabeledContent("Adherence", value: m.adherenceLine)
+                    .font(.caption)
+                    .foregroundStyle(m.appSessionsDone == m.databaseSessionsDone
+                                     ? Color.dim : .red)
+                // ZERO IS THE HONEST ANSWER TODAY — match_decision holds no
+                // rows. Printed so that "no differences" is not read as
+                // coverage of the override branch, which was never entered.
+                LabeledContent("Overrides applied", value: "\(m.overridesApplied)")
+                    .font(.caption).foregroundStyle(Color.dim)
+
+                LabeledContent("Held from the app", value: MatchParity.heldFromTheApp)
+                    .font(.caption).foregroundStyle(Color.dim)
+            }
         } header: {
             Text("Shadow parity")
         } footer: {
@@ -1829,6 +1914,14 @@ struct DatabaseHealthView: View {
                  + "drawn the same is counted on its own line, dim, because a "
                  + "row that vanishes once it is understood is a row nobody can "
                  + "watch. See ADR-0003 §12.63.8.\n\n"
+                 + "Plan matching runs the app's own resolver twice, over two "
+                 + "activity lists. The plan, the match decisions and the "
+                 + "commute decisions come from the app on both sides, so the "
+                 + "only thing that moves is the activities. A vague session "
+                 + "takes the first candidate, so the ORDER of that list "
+                 + "decides what it claims — which is why this slice's answer "
+                 + "rests on the list slice reporting zero order "
+                 + "disagreements. See ADR-0003 §12.64.\n\n"
                  + "The fitness comparison holds the constants, your zones, "
                  + "the FTP, your session RPEs and Apple Health identical on "
                  + "both sides — the database has no reader for them yet, and "

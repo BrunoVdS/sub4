@@ -32,6 +32,30 @@ import GRDB
 @MainActor
 struct LoadParityTests {
 
+    /// PATCH 321. A genuinely healthy match slice — one run, one planned run,
+    /// matched on both sides. Handed an empty pair instead, the assertion above
+    /// would pass with one more failing slice than it means to test, which is
+    /// 315a's defect.
+    private func matchesAgree() -> MatchParity.Report {
+        let a = Activity(id: "m1", name: "Morning Run", sportType: "Run",
+                         startLocal: "2026-04-20T09:00:00", distance: 10_000,
+                         movingTime: 3_300, elapsedTime: 3_400,
+                         elevationGain: nil, averageHeartrate: nil,
+                         isTrainer: nil, maxHeartrate: nil, gearId: nil,
+                         maxSpeed: nil, deviceWatts: nil, averageWatts: nil,
+                         startUTC: "2026-04-20T07:00:00Z", startLat: nil,
+                         startLon: nil, timeZoneIdentifier: nil,
+                         startOffsetSeconds: 7200)
+        let s = Session(uid: "s1", weekUid: "w1", day: "Mon",
+                        date: "2026-04-20", discipline: .run, intensity: nil,
+                        title: "10 km", detail: nil, fuel: nil, prep: nil,
+                        seq: 0, swimDetail: nil, strengthDetail: nil)
+        let day = MatchResolver.day(sessions: [s], activities: [a],
+                                    decisions: [:], dayKey: "2026-04-20")
+        return MatchParity.compare(app: ["2026-04-20": day],
+                                   database: ["2026-04-20": day])
+    }
+
     /// PATCH 320. One detail with enough splits to answer a pace, so the
     /// detail slice in `aMissingSliceIsNotAPass` is genuinely healthy rather
     /// than vacuously so.
@@ -411,7 +435,8 @@ struct LoadParityTests {
 
         let withoutLoad = ShadowParity.Outcome.ran(activities: activities,
                                                    volume: volume, load: nil,
-                                                   details: details)
+                                                   details: details,
+                                                   matches: matchesAgree())
         #expect(!withoutLoad.isHealthy, "no answer is not zero differences")
         #expect(withoutLoad.line.contains("differences"))
         #expect(withoutLoad.diagnosticLines
@@ -421,7 +446,8 @@ struct LoadParityTests {
         // run fails the whole outcome on its own.
         let withoutDetails = ShadowParity.Outcome.ran(activities: activities,
                                                       volume: volume,
-                                                      load: nil, details: nil)
+                                                      load: nil, details: nil,
+                                                      matches: matchesAgree())
         #expect(!withoutDetails.isHealthy)
         #expect(withoutDetails.diagnosticLines
                     .contains("Detail parity: the details could not be read"))

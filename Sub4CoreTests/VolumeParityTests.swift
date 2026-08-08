@@ -32,6 +32,30 @@ import GRDB
 @MainActor
 struct VolumeParityTests {
 
+    /// PATCH 321. A genuinely healthy match slice — one run, one planned run,
+    /// matched on both sides. Handed an empty pair instead, the assertion above
+    /// would pass with one more failing slice than it means to test, which is
+    /// 315a's defect.
+    private func matchesAgree() -> MatchParity.Report {
+        let a = Activity(id: "m1", name: "Morning Run", sportType: "Run",
+                         startLocal: "2026-04-20T09:00:00", distance: 10_000,
+                         movingTime: 3_300, elapsedTime: 3_400,
+                         elevationGain: nil, averageHeartrate: nil,
+                         isTrainer: nil, maxHeartrate: nil, gearId: nil,
+                         maxSpeed: nil, deviceWatts: nil, averageWatts: nil,
+                         startUTC: "2026-04-20T07:00:00Z", startLat: nil,
+                         startLon: nil, timeZoneIdentifier: nil,
+                         startOffsetSeconds: 7200)
+        let s = Session(uid: "s1", weekUid: "w1", day: "Mon",
+                        date: "2026-04-20", discipline: .run, intensity: nil,
+                        title: "10 km", detail: nil, fuel: nil, prep: nil,
+                        seq: 0, swimDetail: nil, strengthDetail: nil)
+        let day = MatchResolver.day(sessions: [s], activities: [a],
+                                    decisions: [:], dayKey: "2026-04-20")
+        return MatchParity.compare(app: ["2026-04-20": day],
+                                   database: ["2026-04-20": day])
+    }
+
     /// PATCH 320. A detail with enough complete splits to answer every pace
     /// window, so the detail slice below is genuinely healthy rather than
     /// vacuously so — 315a's lesson, which was that a slice passed `nil` makes
@@ -342,7 +366,8 @@ struct VolumeParityTests {
         let outcome = ShadowParity.Outcome.ran(activities: activitiesAgree,
                                                volume: volumeDiffers,
                                                load: loadAgrees,
-                                               details: detailsAgree)
+                                               details: detailsAgree,
+                                               matches: matchesAgree())
         #expect(!outcome.isHealthy, "three passes and one failure is a failure")
         #expect(outcome.line.contains("differences"))
     }

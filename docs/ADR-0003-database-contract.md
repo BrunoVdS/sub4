@@ -6339,6 +6339,152 @@ the fragment fixture at §12.63.6, and this. **A comparison that finds something
 on its first real run is worth more than one that is green on its first real
 run**, and the thing it found here was in the argument rather than in the data.
 
+## 12.64 What satisfied which session — D6c slice 5, patch 321
+
+Slices 1 to 4 compared lists, distances, loads and paces. This compares **which
+activity satisfied which planned session**, and the figure that falls out of it
+is *Sessions 4/4* on the Week screen — the one line that says whether the block
+is being done.
+
+Groundwork §8 named this as the open question it had not investigated:
+*"whether a twin can satisfy `Matcher` without pulling the plan and the match
+decisions in with it."* It can, and the answer is the same shape as slice 3's:
+hold them, and let exactly one variable move.
+
+### 12.64.1 The extraction, and why this was the worst one to skip
+
+`MatchResolver` is `Matcher.resolve` and `Matcher.plannedKm`, moved unchanged.
+`decisions` arrives as a parameter instead of being read off the instance; both
+are `static`; `day` gains the eligibility filter and the extras sort that
+`Matcher.day` used to hold. **No behaviour changed**, which is what makes the
+existing suite the proof that the move was faithful — 310's argument and 314's.
+
+Seventh application of §12.43, and the one where the alternative would have been
+least detectable. `isKept`/`dedup` at 310 produced 320 phantom differences when
+it was reimplemented: loud, immediate, obviously wrong. Here a second
+implementation would produce **two plausible match lists differing on which
+activity one session claimed**, with no test able to say which is right, and the
+number underneath it is an adherence figure the athlete acts on.
+
+The delegating `Matcher.resolve` wrapper was removed rather than kept. Nothing
+but `day` ever called it, so a private forwarder would have been a method
+written in anticipation of a caller — which this project has a rule about, and
+`ProposalStore.remove` waiting 45 patches is why.
+
+### 12.64.2 Matching is order-dependent, and nothing had ever said so
+
+Step 3 of the resolution takes `candidates.first!` when a session states no
+distance. **The order of the activity array decides what a vague session
+claims.**
+
+That is deliberate — the pool is newest-first and the first candidate is the
+most recent — and it means this slice's answer rests on slice 1's. Slice 1
+reports `0 order disagreements of 674`. If it ever did not, slice 5 would go red
+too, and it would be right to.
+
+`theOrderOfTheListDecidesAVagueMatch` asserts it directly: the same session,
+the same two activities, presented in two orders, claims a different one each
+time. The function was private and read its inputs from three singletons, so
+nothing could reach that behaviour before this patch.
+
+> **A comparison whose correctness depends on another comparison should say so,
+> on screen and in its own tests.**
+
+### 12.64.3 Three things held, and a reason for each
+
+- **The plan.** `plan_session` and its children are in the database with no
+  reader — slice 6b. Holding it means a difference here cannot be a plan
+  difference.
+- **The match decisions.** `match_decision` is in the database, has no reader,
+  and **holds zero rows on this device**. Reading it would make a difference
+  mean either the activities or the overrides, which is exactly the argument
+  §12.61.1 made for the athlete constants.
+- **The commute decisions.** `isPlanEligible` reads `CommuteStore` through
+  `isCommuteRide`, and patch 251 decided not to thread a decision dictionary
+  through fourteen call sites. It is the same store answering the same activity
+  ids on both sides, so it *cannot* make them disagree — but it is held rather
+  than compared, and saying so is the difference between a limit and a blind
+  spot.
+
+So exactly one variable moves: the activities.
+
+### 12.64.4 The denominator that would have lied, again
+
+Most planned sessions are rest days or sessions with no activity to find. They
+resolve to `nil` on both sides and agree perfectly. A run over 37 weeks would
+report hundreds of matched-nothings and look thorough.
+
+`sessionsCompared` counts every session resolved on both sides.
+**`matchesResolved` counts the ones that claimed an ACTIVITY on both sides**,
+and that is what `lookedAtSomething` tests.
+
+> **A session that matched nothing on both sides agrees perfectly and describes
+> nothing.**
+
+§12.54.2 one level up from the row it was written for, and the third slice in a
+row to need its own version of it — volume had `daysCompared`, detail had
+`paceFiguresAnswered`, this has `matchesResolved`. The pattern is stable enough
+to state as a rule: **when a comparison's natural unit can be empty on both
+sides, the count of non-empty agreements is the real denominator.**
+
+### 12.64.5 Two failures that look alike and are not
+
+`sessionsWithADifferentActivity` and `sessionsDoneOnOneSideOnly` are separate
+rows on purpose. *"The session found something else"* and *"the session found
+nothing"* have different causes — the first is an ordering or a distance, the
+second is a missing activity — and the second is the exact shape the match
+picker defect produces.
+
+`sessionsWithADifferentSource` is a third: the same activity, chosen a different
+way. The row on screen would look identical and the fact behind it would not.
+
+### 12.64.6 The defect is named, asserted and not fixed
+
+`resolve` step 1 honours an override only when the named activity is in the
+pool, and the pool has already been filtered by `isPlanEligible` — under which a
+walk is never eligible. The athlete names the walk, the override is stored, the
+matcher cannot reach it, and the session falls through to the same branch as
+"explicitly nothing". Week says *Not done* with nothing on screen saying why.
+
+Open since 2026-08-05. **321 does not fix it**, and that is a decision rather
+than an omission: both candidate fixes change behaviour, and the choice between
+them is the athlete's — (a) the picker offers only what can win, (b) an explicit
+override beats `isPlanEligible`, which is patch 251's own argument three lines
+above the walk case and would put the walk's distance and load into that
+session's adherence and effort figures.
+
+Fixing it in the same patch as the extraction would also have cost the proof:
+**the existing suite proves the move only because the move changed nothing.**
+
+`anOverrideNamingAnIneligibleActivityIsLost` asserts today's behaviour with the
+defect named in the doc comment, and `theSameOverrideOnAnEligibleActivityWins`
+sits beside it so the first is a statement about eligibility rather than about
+overrides. The day the fix lands, the first test inverts — which is the
+difference between a known defect and a forgotten one.
+
+### 12.64.7 Zero overrides is printed, because zero coverage is a fact
+
+`match_decision` holds no rows on this device, so the override branch is never
+entered on a real run. `overridesApplied` is on screen and in the paste for
+exactly that reason: without it, "no differences" reads as coverage the run does
+not have. The branch is covered by tests and by nothing else, and the screen
+says which.
+
+That is §12.15's shape applied to a comparison rather than to a diagnostic: **a
+check that cannot say what it did not exercise will be read as having exercised
+everything.**
+
+### 12.64.8 What slice 5 unlocks, and what it does not
+
+`LoadStore` builds `srpeByActivity` by resolving notes to activities through
+the matcher — so slice 3's held sRPE depends on matching being right. Proving
+the matching is the prerequisite for slice 3 stopping holding it, which is
+322's job together with a reader for `user_note`.
+
+Still held after 321, and still uncompared: the plan itself, the notes, the
+corrections and Apple Health. The first three are slice 6b; the fourth never
+will be.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

@@ -33,7 +33,7 @@
 //  and their current behaviour. Changing five things to fix one is how a slice
 //  patch stops being checkable.
 //
-//  FOUR SLICES AT 320, AND TWO OF THEM CAN BE NIL
+//  FIVE SLICES AT 321, AND TWO OF THEM CAN BE NIL
 //  ----------------------------------------------
 //  `LoadParity` needs the app's own load series and the inputs the last rebuild
 //  used. Both exist on `LoadStore` after one recompute, and this asks for one
@@ -43,6 +43,11 @@
 //  `DetailParity` needs a detail read that worked. `ActivityDetailRepository`
 //  can come back `.failed`, and a comparison against nothing is not a
 //  comparison.
+//
+//  SLICE 5 IS NOT ONE OF THEM. Matching needs the plan, the decisions and two
+//  activity lists, and all four exist on any launch — there is no state in
+//  which it cannot run, so making it optional would have invented a case to
+//  handle rather than described one.
 //
 //  A NIL SLICE COUNTS AS ONE DIFFERENCE, not as zero. A comparison that could
 //  not run is no answer, and every version of this screen that has treated
@@ -81,7 +86,8 @@ final class ShadowParity {
         case ran(activities: ActivityParity.Report,
                  volume: VolumeParity.Report,
                  load: LoadParity.Report?,
-                 details: DetailParity.Report?)
+                 details: DetailParity.Report?,
+                 matches: MatchParity.Report)
         /// The launch gate never opened one. Not the same as a read failing.
         case noDatabase
         case readFailed(String)
@@ -90,10 +96,10 @@ final class ShadowParity {
             switch self {
             case .never:
                 "Not compared since this launch."
-            case .ran(let a, let v, let l, let d):
-                Self.total(a, v, l, d) == 0
+            case .ran(let a, let v, let l, let d, let m):
+                Self.total(a, v, l, d, m) == 0
                     ? "\(a.common) activities · \(v.daysCompared) days · no differences"
-                    : "\(Self.total(a, v, l, d)) differences"
+                    : "\(Self.total(a, v, l, d, m)) differences"
             case .noDatabase:
                 "The database is not open, so nothing was derived."
             case .readFailed(let why):
@@ -110,31 +116,34 @@ final class ShadowParity {
             // app's own series has not been built yet and `details` is nil when
             // the detail read failed; treating a missing comparison as a clean
             // one is the whole family of defect this screen keeps correcting.
-            case .ran(let a, let v, let l, let d):
+            case .ran(let a, let v, let l, let d, let m):
                 a.isHealthy && v.isHealthy
                 && (l?.isHealthy ?? false) && (d?.isHealthy ?? false)
+                && m.isHealthy
             case .noDatabase, .readFailed: false
             }
         }
 
-        /// The four slices' differences, or zero when there is nothing to
+        /// The five slices' differences, or zero when there is nothing to
         /// count. A slice that could not run contributes ONE — it is not zero
         /// differences, it is no answer.
         static func total(_ a: ActivityParity.Report,
                           _ v: VolumeParity.Report,
                           _ l: LoadParity.Report?,
-                          _ d: DetailParity.Report?) -> Int {
+                          _ d: DetailParity.Report?,
+                          _ m: MatchParity.Report) -> Int {
             a.unexplained + v.unexplained
             + (l?.unexplained ?? 1) + (d?.unexplained ?? 1)
+            + m.unexplained
         }
 
         var activities: ActivityParity.Report? {
-            if case .ran(let a, _, _, _) = self { return a }
+            if case .ran(let a, _, _, _, _) = self { return a }
             return nil
         }
 
         var volume: VolumeParity.Report? {
-            if case .ran(_, let v, _, _) = self { return v }
+            if case .ran(_, let v, _, _, _) = self { return v }
             return nil
         }
 
@@ -142,7 +151,7 @@ final class ShadowParity {
         /// comparison ran. `ShadowParity.run` asks for it first, so this should
         /// only ever be nil on a device with no training in it at all.
         var load: LoadParity.Report? {
-            if case .ran(_, _, let l, _) = self { return l }
+            if case .ran(_, _, let l, _, _) = self { return l }
             return nil
         }
 
@@ -150,7 +159,14 @@ final class ShadowParity {
         /// a device with no details, which compares zero of zero and is caught
         /// by `lookedAtSomething` instead.
         var details: DetailParity.Report? {
-            if case .ran(_, _, _, let d) = self { return d }
+            if case .ran(_, _, _, let d, _) = self { return d }
+            return nil
+        }
+
+        /// Slice 5 — patch 321. Never nil: matching needs the plan, the
+        /// decisions and two activity lists, and all four exist on any launch.
+        var matches: MatchParity.Report? {
+            if case .ran(_, _, _, _, let m) = self { return m }
             return nil
         }
 
@@ -158,13 +174,14 @@ final class ShadowParity {
         /// 266c's rule, and the paste is where this patch's own defect showed.
         var diagnosticLines: [String] {
             switch self {
-            case .ran(let a, let v, let l, let d):
+            case .ran(let a, let v, let l, let d, let m):
                 a.diagnosticLines + [""] + v.diagnosticLines + [""]
                 + (l?.diagnosticLines
                    ?? ["Load parity: the app's own load series was not built"])
                 + [""]
                 + (d?.diagnosticLines
                    ?? ["Detail parity: the details could not be read"])
+                + [""] + m.diagnosticLines
             case .never, .noDatabase, .readFailed:
                 ["Shadow parity: \(line)"]
             }
@@ -229,7 +246,8 @@ final class ShadowParity {
                         volume: VolumeParity.compare(store: mine,
                                                      database: twin.activities),
                         load: loadReport(twin: twin.activities, traces: traces),
-                        details: detailReport(storedDetails))
+                        details: detailReport(storedDetails),
+                        matches: matchReport(twin: twin.activities))
             runs += 1
         }
     }
@@ -264,6 +282,42 @@ final class ShadowParity {
         // the zone rows mean the trace rather than the boundaries.
         return LoadParity.compare(app: LoadStore.shared.days, database: theirs,
                                   zones: AthleteStore.shared.hrZones)
+    }
+
+    /// Slice 5 — patch 321.
+    ///
+    /// ONE RESOLVER, TWO ACTIVITY LISTS. Every day carrying a planned session
+    /// or an activity on either side is resolved twice through
+    /// `MatchResolver.day` — the app's own function, extracted and unchanged.
+    ///
+    /// THE PLAN DAYS ARE IN THE SET, not just the activity days. A session on a
+    /// day with no activity still resolves, still counts towards adherence, and
+    /// would be invisible to a walk over activity days alone. Slice 1's 324 days
+    /// are the activities; the plan adds its own.
+    ///
+    /// The decisions come from `Matcher` on BOTH sides. `match_decision` is in
+    /// the database with no reader, and reading it would make a difference here
+    /// mean either the activities or the overrides — the same argument §12.61.1
+    /// made for the athlete constants.
+    private func matchReport(twin: [Activity]) -> MatchParity.Report {
+        let mine = ActivityRoster.byDay(ActivityStore.shared.activities)
+        let theirs = ActivityRoster.byDay(twin)
+        let decisions = Matcher.shared.decisions
+        let days = Set(mine.keys).union(theirs.keys)
+            .union(PlanStore.shared.byDate.keys)
+
+        var app: [String: MatchResolver.Day] = [:]
+        var database: [String: MatchResolver.Day] = [:]
+        for day in days {
+            let sessions = PlanStore.shared.sessions(on: day)
+            app[day] = MatchResolver.day(sessions: sessions,
+                                         activities: mine[day] ?? [],
+                                         decisions: decisions, dayKey: day)
+            database[day] = MatchResolver.day(sessions: sessions,
+                                              activities: theirs[day] ?? [],
+                                              decisions: decisions, dayKey: day)
+        }
+        return MatchParity.compare(app: app, database: database)
     }
 
     /// Slice 4 — patch 320.

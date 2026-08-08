@@ -228,19 +228,15 @@ final class Matcher {
     /// `extras` deliberately includes commutes, walks, kayaking and any
     /// plan-eligible activity that found no session — it's the full movement
     /// picture, not a discard pile.
+    /// EXTRACTED AT 321. The eligibility filter, the resolution and the extras
+    /// sort all moved to `MatchResolver.day`; this supplies the three inputs
+    /// and nothing else. The twin supplies its own.
     func day(_ dayKey: String) -> (matches: [Match], extras: [Activity]) {
-        let sessions = PlanStore.shared.sessions(on: dayKey)
-        let all = ActivityStore.shared.activities(on: dayKey)
-
-        let eligible = all.filter(\.isPlanEligible)
-        let ineligible = all.filter { !$0.isPlanEligible }
-
-        let (matches, leftover) = resolve(sessions: sessions,
-                                          activities: eligible,
-                                          dayKey: dayKey)
-
-        let extras = (leftover + ineligible).sorted { $0.startLocal < $1.startLocal }
-        return (matches, extras)
+        let d = MatchResolver.day(sessions: PlanStore.shared.sessions(on: dayKey),
+                                  activities: ActivityStore.shared.activities(on: dayKey),
+                                  decisions: decisions,
+                                  dayKey: dayKey)
+        return (d.matches, d.extras)
     }
 
     func isComplete(_ session: Session, on dayKey: String) -> Bool {
@@ -275,100 +271,14 @@ final class Matcher {
     }
 
     // MARK: Core
-
-    private func resolve(sessions: [Session],
-                         activities: [Activity],
-                         dayKey: String) -> ([Match], [Activity]) {
-
-        var pool = activities
-        var matches: [Match] = []
-
-        // 1. Manual overrides win outright.
-        //
-        //    THREE OUTCOMES, TWO OF THEM THE SAME MATCH. "Explicitly nothing"
-        //    and "the activity named is not here" both produce an unmatched
-        //    session, which is the behaviour the `""` shape had and is kept
-        //    deliberately: the athlete overrode the matcher, so the matcher
-        //    does not get another guess. The importer treats the two
-        //    differently, because the database can tell them apart and this
-        //    screen cannot.
-        var remaining: [Session] = []
-        for s in sessions {
-            if let decision = decisions[s.uid] {
-                if let forced = decision.activityId,
-                   let i = pool.firstIndex(where: { $0.id == forced }) {
-                    matches.append(Match(session: s, activity: pool.remove(at: i), auto: false))
-                } else {
-                    matches.append(Match(session: s, activity: nil, auto: false))
-                }
-            } else {
-                remaining.append(s)
-            }
-        }
-
-        // 2. Rest days in the past complete themselves — a rest day is done by
-        //    doing nothing, so there is never an activity to find.
-        var needsActivity: [Session] = []
-        for s in remaining {
-            if s.isRest {
-                let past = dayKey < DayKey.key()
-                matches.append(Match(session: s,
-                                     activity: nil,
-                                     auto: true))
-                _ = past
-            } else {
-                needsActivity.append(s)
-            }
-        }
-
-        // 3. Automatic matching, best-fit first. Sessions with a stated distance
-        //    are resolved before vague ones so they claim the right activity.
-        for s in needsActivity.sorted(by: { plannedKm($0) ?? 0 > plannedKm($1) ?? 0 }) {
-            let candidates = pool.enumerated().filter { $0.element.discipline == s.discipline }
-
-            guard !candidates.isEmpty else {
-                matches.append(Match(session: s, activity: nil, auto: true))
-                continue
-            }
-
-            let pick: Int
-            if let target = plannedKm(s), candidates.count > 1 {
-                pick = candidates.min {
-                    abs($0.element.km - target) < abs($1.element.km - target)
-                }!.offset
-            } else {
-                pick = candidates.first!.offset
-            }
-            matches.append(Match(session: s, activity: pool.remove(at: pick), auto: true))
-        }
-
-        let order = sessions.map(\.uid)
-        matches.sort {
-            (order.firstIndex(of: $0.session.uid) ?? 0)
-                < (order.firstIndex(of: $1.session.uid) ?? 0)
-        }
-        return (matches, pool)
-    }
-
-    /// Best guess at the planned distance, pulled from the session text
-    /// ("26 km", "1200 m", "6×100").
-    private func plannedKm(_ s: Session) -> Double? {
-        let text = [s.title, s.detail, s.breakdown?.total]
-            .compactMap { $0 }.joined(separator: " ")
-
-        if let m = text.range(of: #"(\d+(?:[.,]\d+)?)\s*km"#, options: .regularExpression) {
-            let n = text[m].replacingOccurrences(of: "km", with: "")
-                .trimmingCharacters(in: .whitespaces)
-                .replacingOccurrences(of: ",", with: ".")
-            return Double(n)
-        }
-        if let m = text.range(of: #"(\d{3,5})\s*m\b"#, options: .regularExpression) {
-            let n = text[m].replacingOccurrences(of: "m", with: "")
-                .trimmingCharacters(in: .whitespaces)
-            return Double(n).map { $0 / 1000.0 }
-        }
-        return nil
-    }
+    //
+    // EXTRACTED AT 321. `resolve` and `plannedKm` moved to `MatchResolver`
+    // unchanged, and `day` above is now one of its two callers.
+    //
+    // THE DELEGATING WRAPPER WAS REMOVED RATHER THAN KEPT. Nothing but `day`
+    // ever called `resolve`, so a private forwarder would have been a method
+    // written in anticipation of a caller — which this project has a rule
+    // about, and `ProposalStore.remove` waiting 45 patches is the reason.
 }
 
 // MARK: - Week roll-up
