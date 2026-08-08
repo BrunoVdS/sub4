@@ -74,6 +74,15 @@ nonisolated enum Sub4Import {
         var activitiesUpdated = 0
         var gearInserted = 0
         var gearAlreadyPresent = 0
+        /// Rows whose name or distance was rewritten because Strava's figure
+        /// had moved. A SUBSET of `gearAlreadyPresent`, not a sibling of it —
+        /// the row was present either way, and this says whether it changed.
+        ///
+        /// Expected to be small and non-zero on any device that runs: a shoe
+        /// gains distance every time it is worn. Zero on every import for weeks
+        /// would mean the refresh has stopped working, which is the state this
+        /// counter exists to make visible. Patch 325.
+        var gearRefreshed = 0
         /// Activities naming gear the athlete profile does not hold. Counted
         /// rather than refused: a missing shoe is not a reason to lose a run.
         var gearUnresolved = 0
@@ -311,7 +320,7 @@ nonisolated enum Sub4Import {
                      "  samples: \(samplesImported), short: \(recordingsShort), no activity: \(recordingsUnmatched)",
                      "Details seen: \(detailsSeen) — imported \(detailsImported), replaced \(detailsUpdated), unchanged \(detailsUnchanged)",
                      "  splits: \(splitsImported), laps: \(lapsImported), efforts: \(effortsImported), no activity: \(detailsUnmatched)",
-                     "Gear inserted: \(gearInserted), already present: \(gearAlreadyPresent)",
+                     "Gear inserted: \(gearInserted), already present: \(gearAlreadyPresent), refreshed: \(gearRefreshed)",
                      "Activities naming unknown gear: \(gearUnresolved)"]
             for (external, count) in unresolvedGearRanked {
                 l.append("  \(external): \(count) activities")
@@ -539,18 +548,51 @@ nonisolated enum Sub4Import {
     // MARK: Gear
 
     /// Returns Strava's gear id → canonical gear id, for the activity loop.
+    ///
+    /// LAST KNOWN, NOT FIRST SEEN — patch 325, ADR-0003 §12.68.
+    ///
+    /// Until 325 this function did `continue` on an existing row: name and
+    /// distance were written once, at first import, and never again. Patch
+    /// 324's read-back found it — one shoe of six differing on `distanceM`
+    /// after five days, and the count could only ever grow.
+    ///
+    /// **Why that matters more than a red row on a screen.** ADR-0002 retires
+    /// Strava at Phase 4A. When the import is switched off, whatever is in
+    /// `gear.distanceM` on that day is the mileage FOR EVER — there is no
+    /// second copy to reconcile against afterwards. The schema's own comment on
+    /// the table says gear "survives the source it came from — shoes keep their
+    /// mileage after Strava is gone", and a first-seen figure is not that. This
+    /// is the difference between freezing the right number and freezing an old
+    /// one.
+    ///
+    /// `gearAlreadyPresent` keeps its meaning — the row was there — and
+    /// `gearRefreshed` counts the subset that actually changed.
     private static func importGear(_ d: Database,
                                    shoes: [AthleteStore.Shoe],
                                    now: String,
                                    into report: inout Report) throws -> [String: String] {
         var map: [String: String] = [:]
         for shoe in shoes {
-            if let existing = try String.fetchOne(d, sql: """
-                SELECT id FROM gear
+            if let row = try Row.fetchOne(d, sql: """
+                SELECT id, name, distanceM FROM gear
                 WHERE accountID = ? AND sourceID = ? AND externalID = ?
-                """, arguments: [accountID, sourceID, shoe.id]) {
+                """, arguments: [accountID, sourceID, shoe.id]),
+               let existing = row["id"] as String? {
                 map[shoe.id] = existing
                 report.gearAlreadyPresent += 1
+
+                // WRITTEN ONLY WHEN SOMETHING MOVED. An unconditional UPDATE
+                // would work and would make `gearRefreshed` mean "rows we
+                // touched" rather than "rows that changed" — and a counter
+                // that cannot go quiet cannot report that the refresh stopped.
+                let sameName = (row["name"] as String?) == shoe.name
+                let sameDistance = (row["distanceM"] as Double?) == shoe.distanceM
+                if !sameName || !sameDistance {
+                    try d.execute(sql: """
+                        UPDATE gear SET name = ?, distanceM = ? WHERE id = ?
+                        """, arguments: [shoe.name, shoe.distanceM, existing])
+                    report.gearRefreshed += 1
+                }
                 continue
             }
             let id = UUID().uuidString

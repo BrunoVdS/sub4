@@ -101,6 +101,11 @@ the way it is. ADR §12 supersedes all three.
 - `DayKey`'s formatters are `nonisolated(unsafe)` — never mutate them, add a new one.
 - Dates are compared as `"yyyy-MM-dd"` strings, never as `Date`.
 
+- **`./scripts/test.sh` reported nothing at all from 318 to 325** — it passed `-quiet`,
+  which suppresses swift-testing's summary, and then printed advice about a count it had
+  never seen. Fixed at 325b: no summary line now exits 1, and so does a run reporting
+  under 500 tests. **A guard that cannot fail has not been tested** — the first time you
+  install one, break something on purpose and watch it complain. §12.69.
 - **`error: unexpected variant during dependency scanning on module 'X'`** is a poisoned
   module cache, not your code. Xcode.app and command-line `xcodebuild` share
   `~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex` and disagree on
@@ -215,7 +220,7 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 324, 2026-08-08
+## 5. State — patch 325, 2026-08-08
 
 **The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c seven of eight, and slice 6 closed.
 D7 has not started, and nothing in the app reads the database yet.**
@@ -241,6 +246,10 @@ three because "stored but not activated" and "two plans both active" are states 
 permits and nothing else could name.
 
 **D6b — write-through (302–307).** Every path that writes a store now reaches the database.
+**Its boundary, learned at 325:** gear distance is not a store write — it is a refresh from
+Strava's athlete endpoint — so it was never in D6b's scope, and the value sat frozen at
+first import until 324's read-back found it. The boundary of a completeness claim is the
+thing worth writing down, because everything outside it looks finished from inside.
 
 **D6c — shadow parity.** Slice order is in `docs/D6C-SHADOW-PARITY-GROUNDWORK.md` §6.
 
@@ -326,10 +335,17 @@ test.
   patch 279. Take a fresh one before anything destructive.
 - **`ActivityStore.load()` still has the two-`try?` shape** patch 273 fixed on the four
   authored stores. Left deliberately: it is a cache and re-fetchable.
+- **STRAVA IS BEING SWITCHED OFF.** Once the database holds everything, the import stops
+  and the same data arrives from Apple Health and Workout data — ADR-0002's Phase 4A, and
+  the athlete's stated intent as of 325. Two consequences that change how patches are
+  judged: **a cache that stops being refreshed is harmless until it becomes the only
+  copy**, so any importer-fed column freezing an old value is a permanent loss with a
+  date on it; and **any rule built on a Strava-only signal has a shelf life shorter than
+  the patch that writes it** — which is why `gear.retiredUTC` stays unwritten (§12.68.4).
 - **2026-09-01 — GitHub Actions allowance resets.**
 
 **Next:** D6c slice 6c (the plan's trimmings — `plan_exercise`, fuel, warm-up), then
-slices 7 (review payloads) and 8 (tab summaries).
+slices 7 (review payloads) and 8 (tab summaries). Then D7 activate, D8, and 4A.
 Then D7 activate — `Sub4Launch.migrationFailureBlocksTheApp` flips to `true`. Then D8,
 stabilise one release window and remove the JSON writers. Phase 4A (Apple Health canonical)
 cannot start before D7's exit gate.

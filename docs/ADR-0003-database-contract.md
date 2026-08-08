@@ -7081,6 +7081,227 @@ one when the match-picker defect is settled and overrides start being stored.
 tables — about 150 rows, drawn on screens, feeding no derivation. Slice 6c, and
 the only part of D6c's original eight still open before slices 7 and 8.
 
+## 12.68 The gear writer — patch 325
+
+324's read-back went red on its first device run and both causes were in the
+same six lines of `Sub4Import.importGear`. Neither was a defect in the reader.
+
+### 12.68.1 First seen is not last known, and there is a deadline
+
+The function did `continue` on an existing row. Name and distance were written
+once, at first import, and never again. The device showed one shoe of six
+differing on `distanceM` five days after the database was built — which is
+exactly one pair having been run in — and the count could only ever grow.
+
+**A red row on a screen is the small half of this.** ADR-0002 retires Strava at
+Phase 4A. When the import is switched off there is no second copy to reconcile
+against: whatever sits in `gear.distanceM` on that day is the mileage for ever.
+The table's own migration comment says gear "survives the source it came from —
+shoes keep their mileage after Strava is gone", and a first-seen figure is not
+that. The fix is the difference between freezing the right number and freezing
+an old one, and it has a date on it.
+
+Recorded because it generalises: **a cache that stops being refreshed is
+harmless right up until it becomes the only copy.** Every table fed by an
+importer that will one day be switched off is in this position, and `gear` is
+simply the one a read-back happened to reach first.
+
+### 12.68.2 The UPDATE is conditional, and the reason is the counter
+
+`gearRefreshed` counts rows whose name or distance actually moved, not rows the
+importer touched. An unconditional `UPDATE` would have been one line shorter and
+would have made the counter mean "rows we wrote", at which point a week of zeros
+is indistinguishable from a week of no running — and the state worth detecting
+is a refresh that has silently stopped.
+
+`gearAlreadyPresent` keeps its meaning: the row was there. `gearRefreshed` is a
+subset of it, not a sibling. That shape is what let `ImportTests`' three existing
+assertions pass untouched, which was established by grepping the test target
+**before** the change was written rather than by running it afterwards —
+§12.61.9 used the way it was meant to be.
+
+"new / refreshed" is also already the vocabulary the import panel uses for notes,
+reviews, corrections, weather and eight other rows. Gear was the odd one out
+saying "new / known", and now reads like its siblings.
+
+### 12.68.3 Gear the source stopped listing is not a difference
+
+Five rows were red as "only in the database". They are shoes Strava's current
+gear list no longer returns. `gear.sourceID` is nullable precisely so that a
+shoe outlives its source, so keeping them is the schema doing its job.
+
+They are now counted and named on their own line, excluded from `unexplained`,
+and never red.
+
+**AMENDED AT 325a — §12.68.6.** The five rows this section was written about were bikes and a retired shoe the app holds, reached through `AthleteStore.allGear`, which the comparison was not given. The category below is still correct and should now read zero; the evidence that motivated it was not.
+
+**The cost is stated on the screen rather than left to be discovered.** The app
+side of this comparison IS Strava's current list, so every database row absent
+from it falls into this bucket — which means **a gear row that should never have
+been written is now undetectable by this comparison.** Nothing records when a row
+was last seen, so "retired" and "spurious" are the same observation.
+
+The other direction stays red, and that asymmetry is the point: a shoe the source
+lists that the database does not hold is an insert the importer failed to make.
+`aShoeMissingFromTheDatabaseIsStillRed` is the pair that keeps the reclassification
+from being a blanket forgiveness.
+
+### 12.68.4 Retirement is not implemented, by decision
+
+`gear.retiredUTC` stays unwritten. §12.67.4 called it a column with a place for a
+fact the app learns and neither side keeps, and the obvious fix is to write it
+the first time a known shoe stops appearing.
+
+**The athlete's decision is not to.** The Strava import is being switched off
+once the database holds everything; from Phase 4A the same data arrives from
+Apple Health and Workout data, and "absent from Strava's gear list" stops being a
+signal that exists. Building a retirement rule on a source that is going away
+would be a rule with a shelf life shorter than the patch that writes it.
+
+So the column stays empty and stays on the approved list, and this section is why
+— a decision with a reason, rather than an omission a later reader has to guess
+at. If Apple Health offers an equivalent signal after 4A, that is the patch that
+should fill it.
+
+### 12.68.5 What this says about the read-backs generally
+
+Seven repositories have now been built and this is the first to find a **writer**
+defect rather than confirm a reader. The five earlier ones confirmed that what
+was written could be read; 324 was the first to compare against a store the
+importer refreshes from outside itself, and that is where the gap was.
+
+D6b (302–307) wired every path that *writes a store*. Gear distance is not a
+store write — it is a refresh from Strava's athlete endpoint — so it was never in
+D6b's scope and no amount of care within that scope would have caught it. The
+lesson is not "302–307 were incomplete"; it is that **the boundary of a
+completeness claim is the thing to write down**, because everything outside it
+looks finished from inside.
+
+### 12.68.6 The five rows were my wiring, not the athlete's shoes — 325a
+
+`reloadWeatherGear` passed `AthleteStore.shared.shoes`. `AthleteStore` holds
+**three** collections — `shoes`, `bikes` (patch 267) and `retired` — and already
+exposes `var allGear: [Shoe] { shoes + bikes + retired }` for exactly this
+question. The comparison therefore saw six items against the database's eleven
+and reported five as gear the source had dropped.
+
+Four of those five ids begin with `b`. They are bikes.
+
+**Everything §12.68.3 reasoned about was an artefact of that one argument.** The
+reclassification was built on the premise that five rows were shoes Strava had
+stopped listing; they were bikes and a retired shoe the app holds in properties
+nobody handed to the comparison. The cost §12.68.3 carefully wrote down — that a
+spurious gear row would now be indistinguishable from a retired one — was the
+right thing to worry about and was paid to absorb a bug rather than a fact.
+
+**The number that would have caught it was on the same screen the whole time.**
+The import panel says `Gear: 0 new, 11 known, 3 refreshed`. `11 known` means the
+importer's loop ran eleven times, so the *caller* has always passed all eleven.
+Six against eleven with the importer plainly handling eleven should have been the
+end of it. Instead 324's analysis called them retired shoes, and 325 built a
+category on that reading.
+
+That is §12.60.1 for the third time — **do not reason by analogy about two
+numbers without checking whether one determines the other** — and this instance
+is the worst of the three, because the check was not a grep into unfamiliar code.
+It was reading two rows of one screen against each other.
+
+**What is kept, and what changes.**
+
+`gearKeptAfterTheSourceDropped` stays. The category is right and the argument for
+not colouring it red is unchanged — `gear.sourceID` is nullable so that gear
+outlives its source. What changes is that the line should now read **0**, which
+makes it a signal rather than a place a mistake could hide. A non-zero value
+after 325a means something real.
+
+§12.68.4's decision is unaffected: Strava is going away, so no retirement rule
+gets built. But its reasoning was incomplete and is corrected here — the APP does
+track retirement, in `AthleteStore.retired`. It is the database that has no
+record. `gear.retiredUTC` stays empty by decision, not because the fact is
+unavailable.
+
+**The honest limitation this exposes.** `reloadWeatherGear` is view-layer wiring:
+which store property feeds a comparison is decided in a `View` and no test in
+this target can reach it. Every test in `WeatherGearRepositoryTests` passes the
+gear list explicitly and would have passed identically with the wrong list at the
+call site. Seven read-backs in, that is a class of defect the whole apparatus is
+blind to by construction — the repositories and the comparisons are tested, and
+the sentence that connects them to the app is not.
+
+Recorded rather than fixed. A fix means moving the store-to-comparison wiring out
+of the view into something testable, which is a change to seven call sites for no
+behavioural gain, and it belongs on its own rather than inside a letter fix-up.
+
+## 12.69 The guard that reported nothing and read as a pass — patch 325b
+
+`scripts/test.sh` arrived at 318 to solve a specific, expensive problem: `⌘R`
+compiles the app target only, so test-target compile errors accumulate
+invisibly, and patches 275, 276 and 277 all ran on the phone while the suite had
+not compiled since 273.
+
+It passed `-quiet` to `xcodebuild`. That flag suppresses swift-testing's summary
+along with everything else, so the log held one line — `Testing started` — the
+script's own summary grep matched nothing, and it then printed:
+
+    sanity check: the run should report ~931 tests. Far fewer means the test
+    target did not build, which is the exact failure this script exists to catch.
+
+A script that ran, produced no errors, and gave advice about a number it had
+never seen. **Every test count trusted between 318 and 325 came from typing
+`xcodebuild test` by hand instead** — 931 at 317b, 1004 at 322, 1005 at 322b.
+The script was in the install instructions of every patch in that range and was
+reporting nothing in all of them.
+
+### 12.69.1 Why this is worse than having no script
+
+§12.15 says a diagnostic that cannot say why it has no answer will be read as
+having one. Ten instances of that rule are in this document and all of them are
+about Swift. This is the same rule in a shell script, and the failure mode is
+sharper: an absent guard is visibly absent, and a guard that prints a cheerful
+footer occupies the place where a real one would go. Nobody looks twice at a
+step that just passed.
+
+The tell was available and unread — the footer says "should report ~931 tests"
+directly under a summary section containing nothing. Two lines, adjacent,
+contradicting each other, in output shown after every patch for eight patches.
+That is the same shape as §12.68.6's `6 vs 11` beside `11 known`: **the
+contradiction was on screen and the screen was not read as a whole.** Twice in
+one day, which is the argument for the checks below being mechanical rather than
+attentive.
+
+### 12.69.2 What the script does now
+
+`-quiet` is gone; the full output goes to the log and only failures and the
+summary reach the terminal, which is the trade the original wanted and the flag
+took away.
+
+**A run with no `Test run with N tests` line now exits 1.** It is not a pass. It
+is the script having learned nothing, which is exactly the state it exists to
+detect, and it now says so and fails.
+
+**A run reporting fewer than 500 tests exits 1.** The suite has held four figures
+since 322. A number in the tens means a fraction of the target built — the
+original header described this check in prose and never implemented it.
+
+The failing-run path is preserved deliberately: `xcodebuild`'s status is captured
+rather than allowed to abort under `set -e`, so a genuine test failure prints its
+`✘` lines and its summary before the script exits non-zero. The previous version
+would have aborted mid-pipeline with the failures unprinted.
+
+### 12.69.3 The rule this leaves behind
+
+**A check that cannot fail has not been tested, and a check nobody has seen fail
+is a check nobody has tested.** Neither the 500-test floor nor the missing-summary
+exit had ever fired here, because the summary was never present to be absent
+convincingly — the script only ever ran one way.
+
+The cheap habit that would have caught it, and the one worth keeping: **the first
+time a guard is installed, break something on purpose and watch it complain.**
+Point `SUB4_SCHEME` at a scheme that does not exist, or delete a test file, and
+confirm the output is not reassuring. Every guard in this project that has ever
+mattered — the semantic verifier, the parity sections, the unconditional
+diagnostic lines — has a test that makes it fail. This one had prose.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

@@ -476,7 +476,9 @@ struct DatabaseHealthView: View {
                     .font(.caption)
                 LabeledContent("Refreshed", value: "\(r.activitiesUpdated)")
                     .font(.caption)
-                LabeledContent("Gear", value: "\(r.gearInserted) new, \(r.gearAlreadyPresent) known")
+                LabeledContent("Gear", value: "\(r.gearInserted) new, "
+                               + "\(r.gearAlreadyPresent) known, "
+                               + "\(r.gearRefreshed) refreshed")
                     .font(.caption)
                 // The two that cannot be re-fetched, so they get their own rows
                 // rather than being folded into a total.
@@ -1793,10 +1795,15 @@ struct DatabaseHealthView: View {
                 LabeledContent("Only in the app", value: "\(r.gearOnlyInApp.count)")
                     .font(.caption)
                     .foregroundStyle(r.gearOnlyInApp.isEmpty ? Color.dim : .red)
-                LabeledContent("Only in the database",
-                               value: "\(r.gearOnlyInDatabase.count)")
-                    .font(.caption)
-                    .foregroundStyle(r.gearOnlyInDatabase.isEmpty ? Color.dim : .red)
+                // NOT RED AT ANY VALUE, and 325 is why. These are shoes the
+                // source has stopped listing; the database keeping them is the
+                // reason `gear.sourceID` is nullable at all.
+                LabeledContent("Kept after the source dropped it",
+                               value: "\(r.gearKeptAfterTheSourceDropped.count)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                ForEach(r.gearKeptAfterTheSourceDropped.prefix(6), id: \.self) { g in
+                    Text("    \(g)").font(.caption2).foregroundStyle(Color.dim)
+                }
                 LabeledContent("Fields that differ", value: "\(r.gearDifferences.count)")
                     .font(.caption)
                     .foregroundStyle(r.gearDifferences.isEmpty ? Color.dim : .red)
@@ -1833,9 +1840,14 @@ struct DatabaseHealthView: View {
                  + "A reading whose activity the app no longer holds cannot be "
                  + "stored at all — the column is a foreign key — so those are "
                  + "counted separately rather than reported as missing.\n\n"
+                 + "Gear the source no longer lists is kept, not deleted — "
+                 + "that is why gear.sourceID is nullable — so it is counted "
+                 + "rather than reported as a difference. The cost is that a "
+                 + "gear row that should never have been written looks the "
+                 + "same, and nothing records when a row was last seen.\n\n"
                  + "Two approved differences, both structural: Shoe.primary has "
                  + "no column, and gear.retiredUTC is a column nothing writes — "
-                 + "ADR-0003 §12.67.")
+                 + "ADR-0003 §12.67 and §12.68.")
                 .font(.caption2)
         }
     }
@@ -1852,7 +1864,18 @@ struct DatabaseHealthView: View {
         weatherGearLoad = load
         weatherGearTrip = WeatherGearRoundTrip.compare(
             storeWeather: Array(WeatherStore.shared.byActivity.values),
-            storeGear: AthleteStore.shared.shoes,
+            // `allGear`, NOT `shoes` — patch 325a, and the bug it fixes is
+            // instructive. `AthleteStore` holds `shoes`, `bikes` and `retired`
+            // separately and exposes `allGear` as the sum. 324 passed `shoes`,
+            // so the comparison saw six items against the database's eleven and
+            // reported five as "kept after the source dropped it". Four of those
+            // ids begin with `b`: they are bikes the app holds, in a property
+            // nobody handed to the comparison. §12.68.6.
+            //
+            // The importer has always been given all eleven — `11 known` on the
+            // import panel is the number that says so, and it was on screen the
+            // whole time.
+            storeGear: AthleteStore.shared.allGear,
             knownActivityIDs: Set(ActivityStore.shared.activities.map(\.id)),
             database: load)
     }

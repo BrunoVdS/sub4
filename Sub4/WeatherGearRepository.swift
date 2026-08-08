@@ -43,6 +43,27 @@
 //  maps the store's `Shoe` onto them. The two absences are on the approved
 //  list, named, with the reason at the line that causes each.
 //
+//  GEAR THE SOURCE NO LONGER LISTS IS NOT A DIFFERENCE — 325
+//  ----------------------------------------------------------
+//  324 reported five gear rows as "only in the database" in red. They are shoes
+//  Strava's current gear list no longer returns, and the `gear` table's own
+//  migration comment says the row is nullable on `sourceID` because "gear
+//  survives the source it came from — shoes keep their mileage after Strava is
+//  gone". Keeping them is the schema working, not failing.
+//
+//  So they are counted on their own line and excluded from `unexplained`.
+//
+//  **THE COST, STATED RATHER THAN LEFT TO BE NOTICED.** The app side of this
+//  comparison IS Strava's current list, so every database row absent from it
+//  falls into this category — which means **a spurious gear row is now
+//  undetectable by this comparison.** Nothing distinguishes "retired" from
+//  "should never have been written", because no column records when a row was
+//  last seen. `gear.retiredUTC` would; it stays unwritten by decision, since
+//  ADR-0002 retires Strava at Phase 4A and the signal disappears with it.
+//
+//  The other direction stays red: a shoe Strava lists that the database does
+//  NOT hold is a row the importer failed to insert, and that is a real gap.
+//
 //  `source` IS NOT COMPARED, AND `provider` IS — §12.63.8 AGAIN
 //  -----------------------------------------------------------
 //  `ActivityWeather.source` is `WeatherSource?`; `weather.provider` is NOT
@@ -187,8 +208,13 @@ nonisolated enum WeatherGearRoundTrip {
         var readingDifferences: [String] = []
 
         var gearOnlyInApp: [String] = []
-        var gearOnlyInDatabase: [String] = []
         var gearDifferences: [String] = []
+
+        /// Gear the database holds that the source no longer lists. NOT a
+        /// difference — see the header. Named rather than merely counted,
+        /// because eleven rows is a list a person can read and five of them
+        /// being retired shoes is a fact worth being able to check.
+        var gearKeptAfterTheSourceDropped: [String] = []
 
         // MARK: The explained absence
 
@@ -222,8 +248,7 @@ nonisolated enum WeatherGearRoundTrip {
         var unexplained: Int {
             readingsOnlyInApp.count + readingsOnlyInDatabase.count
             + readingDifferences.count
-            + gearOnlyInApp.count + gearOnlyInDatabase.count
-            + gearDifferences.count
+            + gearOnlyInApp.count + gearDifferences.count
             + rowsSkipped
         }
 
@@ -268,7 +293,8 @@ nonisolated enum WeatherGearRoundTrip {
                 "  gear compared: \(gearCompared)",
                 "  gear fields compared: \(gearFieldsCompared)",
                 "  gear only in the app: \(gearOnlyInApp.count)",
-                "  gear only in the database: \(gearOnlyInDatabase.count)",
+                "  gear kept after the source dropped it: "
+                + "\(gearKeptAfterTheSourceDropped.count)",
                 "  gear fields that differ: \(gearDifferences.count)",
                 "  gear carrying a retirement date: \(gearCarryingRetirement)",
                 "  rows the reader could not read: \(rowsSkipped)",
@@ -372,8 +398,13 @@ nonisolated enum WeatherGearRoundTrip {
                                    uniquingKeysWith: { first, _ in first })
         let myGearKeys = Set(myGear.keys)
         let theirGearKeys = Set(theirGear.keys)
+        // RED: the source lists a shoe and the database does not hold it. That
+        // is an insert the importer failed to make.
         r.gearOnlyInApp = myGearKeys.subtracting(theirGearKeys).sorted()
-        r.gearOnlyInDatabase = theirGearKeys.subtracting(myGearKeys).sorted()
+        // NOT RED: the database keeps what the source has stopped listing,
+        // which is the whole reason `gear.sourceID` is nullable.
+        r.gearKeptAfterTheSourceDropped =
+            theirGearKeys.subtracting(myGearKeys).sorted()
 
         for id in myGearKeys.intersection(theirGearKeys).sorted() {
             guard let a = myGear[id], let b = theirGear[id] else { continue }

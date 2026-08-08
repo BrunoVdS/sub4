@@ -24,6 +24,13 @@
 //          Reporting them as missing data would make the screen red for the
 //          database being right.
 //
+//    `aShoeThatHasRunSinceTheLastImportIsRefreshed`
+//        — PATCH 325. The importer used to `continue` on an existing row, so
+//          name and distance were frozen at first import. ADR-0002 retires
+//          Strava at 4A: whatever is in the column that day is the mileage for
+//          ever, so freezing the FIRST figure rather than the LAST is a
+//          permanent loss with a deadline.
+//
 //    `gearKeysDirectlyWithNoAlias`
 //        — the one table in this patch where the canonical-id trap does not
 //          apply, asserted so that a later reader does not "fix" it by adding
@@ -384,6 +391,85 @@ struct WeatherGearRepositoryTests {
         #expect(r.summary == "nothing compared")
     }
 
+    // MARK: The refresh — patch 325
+
+    /// THE DEFECT 324 FOUND. Before this the importer did `continue` on an
+    /// existing row and the distance never moved again.
+    @Test("A shoe that has run since the last import is refreshed")
+    func aShoeThatHasRunSinceTheLastImportIsRefreshed() throws {
+        let db = try Sub4Database.inMemory()
+        let first = try Sub4Import.run(into: db, activities: [], shoes: [shoe(km: 412)])
+        #expect(first.gearInserted == 1)
+        #expect(first.gearRefreshed == 0, "nothing to refresh on the first sight")
+
+        let second = try Sub4Import.run(into: db, activities: [], shoes: [shoe(km: 430)])
+        #expect(second.gearInserted == 0)
+        #expect(second.gearAlreadyPresent == 1, "the row was there either way")
+        #expect(second.gearRefreshed == 1, "and it changed")
+
+        let back = try #require(WeatherGearRepository.load(db).gear?.first)
+        #expect(back.distanceM == 430_000, "last known, not first seen")
+    }
+
+    /// A COUNTER THAT CANNOT GO QUIET CANNOT REPORT THAT THE REFRESH STOPPED.
+    /// An unconditional UPDATE would make `gearRefreshed` mean "rows we
+    /// touched", and a week of zeros would then be indistinguishable from a
+    /// week of no running instead of from a broken refresh.
+    @Test("An unchanged shoe is present but not refreshed")
+    func anUnchangedShoeIsNotCountedAsRefreshed() throws {
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [], shoes: [shoe()])
+        let second = try Sub4Import.run(into: db, activities: [], shoes: [shoe()])
+        #expect(second.gearAlreadyPresent == 1)
+        #expect(second.gearRefreshed == 0)
+    }
+
+    @Test("A renamed shoe is refreshed too")
+    func aRenamedShoeIsRefreshed() throws {
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [], shoes: [shoe(name: "Boston 12")])
+        let second = try Sub4Import.run(into: db, activities: [],
+                                        shoes: [shoe(name: "Boston 12 — winter")])
+        #expect(second.gearRefreshed == 1)
+        let back = try #require(WeatherGearRepository.load(db).gear?.first)
+        #expect(back.name == "Boston 12 — winter")
+    }
+
+    // MARK: Gear the source stopped listing — patch 325
+
+    /// FIVE ROWS WERE RED ON THE DEVICE AT 324, AND THEY WERE RIGHT TO EXIST.
+    /// `gear.sourceID` is nullable precisely so a shoe outlives the source it
+    /// came from; the table's own migration comment says shoes "keep their
+    /// mileage after Strava is gone". Keeping them is the schema working.
+    @Test("Gear the source no longer lists is kept and counted, not a difference")
+    func gearTheSourceDroppedIsNotADifference() throws {
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [],
+                               shoes: [shoe(), shoe("g456", name: "Vaporfly", km: 88)])
+
+        // Strava now returns only one of the two.
+        let r = compare(db, weather: [], gear: [shoe()], known: [])
+        #expect(r.gearCompared == 1)
+        #expect(r.gearKeptAfterTheSourceDropped == ["g456"])
+        #expect(r.unexplained == 0, "not counted against the comparison")
+        #expect(r.gearOnlyInApp.isEmpty)
+    }
+
+    /// THE OTHER DIRECTION STAYS RED. A shoe the source lists that the database
+    /// does not hold is an insert the importer failed to make, and nothing
+    /// about 325 forgives that.
+    @Test("A shoe the source lists but the database lacks is still a difference")
+    func aShoeMissingFromTheDatabaseIsStillRed() throws {
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [], shoes: [shoe()])
+
+        let r = compare(db, weather: [weather("a1")],
+                        gear: [shoe(), shoe("g456", name: "Vaporfly")], known: [])
+        #expect(r.gearOnlyInApp == ["g456"])
+        #expect(r.gearKeptAfterTheSourceDropped.isEmpty)
+        #expect(r.unexplained == 1)
+    }
+
     // MARK: The paste
 
     /// UNCONDITIONAL, every line, including the zeros — §12.54.2.
@@ -395,6 +481,7 @@ struct WeatherGearRepositoryTests {
                        "readings with no stored source",
                        "readings from Apple Weather",
                        "gear compared", "gear fields compared",
+                       "gear kept after the source dropped it",
                        "gear carrying a retirement date",
                        "rows the reader could not read",
                        "approved differences", "unexplained differences"] {
