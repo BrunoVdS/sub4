@@ -259,7 +259,14 @@ enum ReviewBuilder {
             // That helper calls isComplete per session, and isComplete re-runs
             // Matcher.day() in full — so it would re-match every day of the
             // window a second time for a number already computed above.
-            let countable = ws.filter { !$0.isRest && $0.date != nil }
+            // PATCH 328a — `SessionTally.counts`, and this is the copy that
+            // mattered most. This figure is what the MODEL is told each month.
+            // Left as it was, the review would have reported "6 of 8" for a
+            // week the athlete's own screens call "6 of 7", and a proposal
+            // would have been reasoned out over a plan the athlete does not
+            // see. `date != nil` stays: an undated prologue session has no
+            // week to belong to, which is a different exclusion. §12.72.7.
+            let countable = ws.filter { SessionTally.counts($0) && $0.date != nil }
             let done = countable.filter { matchByUid[$0.uid] != nil }.count
             weekRows.append(.init(label: w.label,
                                   plannedKm: planned.km,

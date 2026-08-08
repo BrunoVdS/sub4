@@ -152,16 +152,20 @@ struct WeekRow: View {
     }
 
     /// Only walked for weeks that have started — see the note at the top.
+    /// PATCH 328 — `SessionTally`, like the other four sites. **This changes
+    /// what the Plan tab prints**: optional sessions have left the
+    /// denominator. §12.72.
+    ///
+    /// Still nil for a week that has not begun, and still nil for a week whose
+    /// every session is rest or optional — `total > 0` is the same condition,
+    /// expressed by `lineIfCounted`'s twin here because the caller wants the
+    /// pair rather than the string.
     private var progress: (done: Int, total: Int)? {
         guard started else { return nil }
-        var done = 0, total = 0
-        for key in dayKeys {
-            for m in matcher.day(key).matches where !m.session.isRest {
-                total += 1
-                if m.isDone { done += 1 }
-            }
+        let tally = dayKeys.reduce(SessionTally.Result()) {
+            $0 + SessionTally.over(matcher.day($1).matches)
         }
-        return total > 0 ? (done, total) : nil
+        return tally.total > 0 ? (tally.done, tally.total) : nil
     }
 
     private var kind: WeekKind? { week.weekKind }

@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 327b (2026-08-08).** Patch 318 installed this file with its state
+**Current at patch 328a (2026-08-08).** Patch 318 installed this file with its state
 sections still describing patch 278c — forty patches behind — which is the failure
 this file exists to prevent. §5 is the part that goes stale; if the patch number in
 its heading is far behind `Sub4/AppVersion.swift`, trust the ADR and the code, not §5.
@@ -132,6 +132,10 @@ the way it is. ADR §12 supersedes all three.
   Both times `Sub4/*.swift` was swept and the test target was not. The three shapes that
   carry assertions elsewhere are **a function's arity, an array's length, and a printed
   string's content**.
+- **A grep tells you where a symbol appears, not what the line does with it.** 328 counted
+  the copies of a rule from `grep isDone` output and treated one hit as a call site without
+  opening it; it was a sixth copy, and a seventh only appeared under `grep isRest`. If the
+  NUMBER of copies matters, open each one. §12.72.7.
 - **Do not infer a type's name from its filename.** `ZoneTime.swift` declares `ZoneTotals`.
   Cost patch 316 a fix-up.
 - **Read the view before naming a control.** The match picker has four entry points and
@@ -140,10 +144,14 @@ the way it is. ADR §12 supersedes all three.
 
 **Two rules of argument, both bought with a patch:**
 
-- **Do not reimplement a rule; call it** (§12.43). Applied five times since: `isKept`/`dedup`
-  (310), `byDay` (312), `recordedByWeek` (313), `LoadSeries.build` (314). *A derivation with
-  one caller looks like part of that caller. It stops being that the moment something else
-  must agree with it.*
+- **Do not reimplement a rule; call it** (§12.43). Eleven applications: `isKept`/`dedup`
+  (310), `byDay` (312), `recordedByWeek` (313), `LoadSeries.build` (314), `MatchResolver`
+  (321), `PlanRepository.activeVersion` (326), `changeSummary` (327), `SessionTally` (328).
+  *A derivation with one caller looks like part of that caller. It stops being that the
+  moment something else must agree with it.* **328 is the worst instance so far**: five
+  copies of "done of total", four counting optional sessions and one not, disagreeing on
+  two tabs for 230 patches. A rule copied five times is not five checks — it is five
+  chances to drift, and patch 98 fixed one of them.
 - **Do not reason by analogy about two numbers without checking whether one determines the
   other** (§12.60.1). Patch 316 argued that two heart-rate distributions could integrate to
   the same TRIMP. They cannot — both come from one walk over one set of bins, and the
@@ -229,7 +237,7 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 327b, 2026-08-08
+## 5. State — patch 328a, 2026-08-08
 
 **The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c seven of eight closed;
 only slice 8 remains. D7 has not started, and nothing in the app reads the database yet.**
@@ -283,7 +291,25 @@ thing worth writing down, because everything outside it looks finished from insi
 | 6b the plan — weeks, sessions, breakdowns, blocks | `PlanRepository` + `PlanRoundTrip` | 323 ✔ |
 | 6c the plan's trimmings — exercises, fuel, warm-up | `PlanExtrasRepository` | 326 ✔ |
 | 7 review payloads | `ReviewRepository` + `ReviewRoundTrip` | 327 ✔ |
-| 8 Today / Week / Plan / Progress summaries | — | open |
+| 8 Today / Week / Plan / Progress summaries | `SessionTally` (328) + twin | 328 · twin open |
+
+**328 is slice 8's extraction, shipped alone because it CHANGES WHAT TWO TABS PRINT.**
+"Done of total" had **seven** implementations; six counted the plan's 30 optional Zwift
+rides and one did not, so the Week tab and the Progress tab printed different denominators
+for the same week — since patch 98, which fixed one site of seven. `SessionTally` is now
+the only copy. **Verified on the device:** week 2 reads 6/7 on Week, Plan and Progress
+(three screens that had not agreed before), week 1 stays 4/4, the block total is 10/208 =
+238 − 30. §12.72.
+
+**328 found five of the seven and the device found the other two**, because the campaign
+predicted a NUMBER — adherence 236 → ~206 — and the screen read 236. `MatchParity` had its
+own loop whose comment described a delegation it did not perform, and `Review.swift`'s
+`countable` is what the MODEL is told each month: left alone it would have reported "6 of 8"
+for a week the athlete's screens call "6 of 7", live on 24 August. Both fixed at 328a.
+
+**No D6c slice could have found this**, and that bounds what D6c is evidence of: shadow
+parity proves the database can feed the app, and says nothing about whether the app is
+right. Slice 8's comparison is patch 329.
 
 **Slice 7 was verified on the device on 8 August, earlier than expected.** The rehearsal
 button was pressed about eleven times, and the import reported `Reviews: 5 new, 6 refreshed`
@@ -292,13 +318,13 @@ button was pressed about eleven times, and the import reported `Reviews: 5 new, 
 resolving against 260 plan uids, and the only red row being *App records sharing a run
 time: 3*. Every denominator is an exact product — 8×5, 8×4, 8×5, 16×6.
 
-**It found a real identity mismatch, and the decision on it is Bruno's** — see §12.71.12.
-The app keys a review by `Record.id` (window + run count); the database keys it by
-`(accountID, ranUTC)` at **one-second** resolution, with no unique constraint behind it.
-Eleven records became eight rows, silently on the writing side; `duplicateRunTimes` is the
-only thing in the app that noticed. Unreachable in normal use — one review a month — so
-(a) record it, (b) carry `Record.id` onto `review` and key on it, or (c) sub-second
-`ranUTC` are all defensible. **Ask, then implement.**
+**It found a real identity mismatch** — see §12.71.12. The app keys a review by
+`Record.id` (window + run count); the database keys it by `(accountID, ranUTC)` at
+**one-second** resolution, with no unique constraint behind it. Eleven records became eight
+rows, silently on the writing side; `duplicateRunTimes` is the only thing in the app that
+noticed. **Asked and answered on 8 August: record it, do not fix it** — unreachable outside
+the internal-build rehearsal button, and D7 is the next rung. It becomes a defect rather
+than a note if a second writer of `review` appears.
 
 **The eleven rehearsal records must be deleted before 24 August**, or `ReviewDue` pushes
 the first real review to 21 September.
@@ -377,8 +403,8 @@ test.
   Separately, the proposals import stays unverified against a REAL review until
   **24 August 2026**.
 - **Two identities for one review** (§12.71.12) — `Record.id` vs `(accountID, ranUTC)` at
-  one-second resolution, no unique constraint. Bruno's call: record it, add a column, or
-  go sub-second. Eleven rehearsal records on the device became eight rows.
+  one-second resolution, no unique constraint. Eleven rehearsal records became eight rows.
+  **Decided 8 August: recorded, not fixed.** Revisit if `review` gains a second writer.
 - **`confidence` has two live contracts** (§12.71.4) — the type says 1–5, the column's
   CHECK says 0–100, and 70 has been written since patch 225. The device reads `3`.
 - `content_revision` — **probably has no correct occupant** among the preference keys. Its
@@ -397,7 +423,7 @@ test.
   the patch that writes it** — which is why `gear.retiredUTC` stays unwritten (§12.68.4).
 - **2026-09-01 — GitHub Actions allowance resets.**
 
-**Next:** D6c slice 8 (tab summaries). Then D7 activate, D8, and 4A. Before D7 is pressed,
+**Next:** D6c slice 8's twin (patch 329) — the extraction landed at 328. Then D7 activate, D8, and 4A. Before D7 is pressed,
 two things that are not slices: fold the nine read-backs into one roll-up with a durable
 result — §12.57 corrected `@State`-evaporation for `ShadowParity` and never for the
 read-backs, and nine buttons that must each be pressed is not a gate anybody can lean on —

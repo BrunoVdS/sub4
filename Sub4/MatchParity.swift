@@ -266,10 +266,23 @@ enum MatchParity {
                 }
                 sessionsCompared += 1
 
-                // THE WEEK SCREEN'S FIGURE, counted from the matches both sides
-                // produced rather than re-resolved. Rest days are excluded
-                // exactly as `Matcher.adherence` excludes them.
-                if !m.session.isRest {
+                // THE WEEK SCREEN'S FIGURE, counted from the matches both
+                // sides produced rather than re-resolved.
+                //
+                // PATCH 328a — AND THE COMMENT ABOVE USED TO BE FALSE. It said
+                // "rest days are excluded exactly as `Matcher.adherence`
+                // excludes them", which read like a delegation and was a
+                // hand-written copy. 328 extracted five copies of this rule and
+                // missed this one, so for one patch the Database screen's
+                // adherence counted optional sessions while all three tabs had
+                // stopped. `SessionTally.counts` is the rule; there is nothing
+                // left on this line to drift. §12.72.7.
+                //
+                // A PAIRED WALK, which is why it is the predicate rather than
+                // `SessionTally.over`: one pass counts the app's done and the
+                // database's done for the SAME session, and splitting it into
+                // two walks would be two chances to pair them differently.
+                if SessionTally.counts(m.session) {
                     counted += 1
                     if m.isDone { appDone += 1 }
                     if t.isDone { databaseDone += 1 }

@@ -56,24 +56,23 @@ struct ProgressTabView: View {
                   startKey <= todayKey,
                   let start = DayKey.date(startKey) else { return nil }
 
-            var actual = 0.0, longest = 0.0, done = 0, total = 0
+            var actual = 0.0, longest = 0.0
+            var tally = SessionTally.Result()
             for offset in 0..<7 {
                 guard let d = Calendar(identifier: .iso8601)
                         .date(byAdding: .day, value: offset, to: start) else { continue }
                 let key = DayKey.key(d)
                 let r = matcher.day(key)
 
-                // OPTIONAL SESSIONS EXCLUDED, as they are everywhere else.
-                // This filter was missing until patch 98: the tally counted the
-                // plan's 28 optional Zwift rides while every distance figure on
-                // the same card excluded them, and the info sheet said they were
-                // not counted. Week 1 has no optional sessions, which is why it
-                // never showed.
-                for m in r.matches
-                where !m.session.isRest && !PlanStore.isOptional(m.session) {
-                    total += 1
-                    if m.isDone { done += 1 }
-                }
+                // OPTIONAL SESSIONS EXCLUDED — and since 328 the rule lives in
+                // `SessionTally` rather than on this line.
+                //
+                // The comment that used to sit here said the filter applied
+                // "as they are everywhere else". It did not: patch 98 added it
+                // to this site and left four others counting the plan's 28
+                // optional Zwift rides, so the Week tab and this chart printed
+                // different denominators for the same week. §12.72.
+                tally = tally + SessionTally.over(r.matches)
                 // RUNS only. The planned figure this is charted against is
                 // running kilometres, so anything else here would be comparing
                 // two different quantities on one axis.
@@ -89,7 +88,7 @@ struct ProgressTabView: View {
                              plannedKm: planned.km,
                              plannedExact: planned.exact,
                              actualKm: actual, longestRunKm: longest,
-                             done: done, total: total)
+                             done: tally.done, total: tally.total)
         }
     }
 

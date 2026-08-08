@@ -99,13 +99,13 @@ enum MatchResolver {
     /// whole day again each time; that is left alone. This counts what a
     /// resolution already produced, so it is a tally of the comparison's own
     /// inputs and not a second opinion about them.
+    /// PATCH 328 — the body moved to `SessionTally`, and the rule it applies
+    /// grew an exclusion. Optional sessions are no longer in the denominator,
+    /// which moves this figure on the device and moves it EQUALLY on both
+    /// sides of `MatchParity`, because both sides call this. §12.72.
     static func adherence(_ matches: [Match]) -> (done: Int, total: Int) {
-        var done = 0, total = 0
-        for m in matches where !m.session.isRest {
-            total += 1
-            if m.isDone { done += 1 }
-        }
-        return (done, total)
+        let r = SessionTally.over(matches)
+        return (r.done, r.total)
     }
 
     // MARK: The resolution, moved from `Matcher` at 321

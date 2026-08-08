@@ -400,15 +400,24 @@ struct WeekView: View {
     /// `runKm` is running only. `minutes` and `recorded` still cover everything,
     /// because time and a session count ARE comparable across sports — only
     /// distance is not.
+    /// PATCH 328 — the tally comes from `SessionTally`, the distances do not.
+    ///
+    /// Two different questions and only one of them was duplicated. "How many
+    /// planned sessions were completed" is the app's most-copied derivation
+    /// and now has one implementation; "how far did you actually move this
+    /// week" is asked here and nowhere else, counts EXTRAS as well as matched
+    /// activities, and stays local.
+    ///
+    /// **This changes what the Week tab prints.** The optional Zwift rides
+    /// were in `total` and are not any more, so a week containing one shows a
+    /// smaller denominator than it did at 327. §12.72.
     private var totals: (done: Int, total: Int, runKm: Double,
                          minutes: Int, recorded: Int) {
-        var done = 0, total = 0, km = 0.0, mins = 0, count = 0
+        var km = 0.0, mins = 0, count = 0
+        var tally = SessionTally.Result()
         for key in dayKeys {
             let r = matcher.day(key)
-            for m in r.matches where !m.session.isRest {
-                total += 1
-                if m.isDone { done += 1 }
-            }
+            tally = tally + SessionTally.over(r.matches)
             for a in r.matches.compactMap(\.activity) {
                 if a.discipline == .run { km += a.km }
                 mins += a.minutes; count += 1
@@ -418,7 +427,7 @@ struct WeekView: View {
                 mins += a.minutes; count += 1
             }
         }
-        return (done, total, km, mins, count)
+        return (tally.done, tally.total, km, mins, count)
     }
 }
 

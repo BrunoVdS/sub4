@@ -7796,9 +7796,12 @@ the same second and cannot happen in normal use. Three ways forward:
   makes the collision *less likely* rather than impossible, which is the kind of
   fix that removes the symptom and leaves the cause.
 
-**Ask, then implement. Do not pick** — the same rule the match-picker defect is
-filed under. (b) is the principled answer and D7 is the next rung; deferring it
-past the cutover is defensible and should be a decision rather than a drift.
+**Asked and answered on 8 August: (a) — record it, do not fix it.** The failure
+is reachable only through an internal-build button, real reviews arrive one a
+month, and D7 is the next rung. This section is the record. If a second writer
+of `review` ever appears, or if the app gains a way to run two reviews in one
+second, this becomes a defect rather than a note — and the unique constraint
+`review` does not have is where it would be fixed.
 
 #### The rehearsal records must go before 24 August
 
@@ -7807,6 +7810,195 @@ Eleven of them. `ReviewDue` counting any would push the first real review out by
 again — `Reconciled: yes` was already on during this run, so the `review` rows
 cascade out with `review_evidence`, `proposal`, `proposal_change` and
 `proposal_watch` behind them.
+
+## 12.72 "Done of total", once — patch 328
+
+Found by reading the code before writing slice 8's twin, which is §12.44
+restated: read the code that produces the number, not the numbers either side
+of it.
+
+### 12.72.1 Seven copies, and one of them had been fixed
+
+Counting how many of a week's planned sessions were completed is the most
+reproduced derivation in this app:
+
+| where | excludes rest | excludes optional | fixed |
+|---|---|---|---|
+| `Matcher.adherence(for:)` | yes | **no** | 328 |
+| `MatchResolver.adherence(_:)` — extracted at 321 | yes | **no** | 328 |
+| `WeekView.totals` — the Week tab card | yes | **no** | 328 |
+| `PlanView.PlanRow.progress` — each Plan week row | yes | **no** | 328 |
+| `ProgressTabView.points` — the Progress chart | yes | **yes** | — |
+| `MatchParity:272` — the Database screen's adherence | yes | **no** | **328a** |
+| `Review.swift` `countable` — what the MODEL is told | yes | **no** | **328a** |
+
+**328 said five and shipped five.** The last two are §12.72.7.
+
+The one that excluded them carried the comment, and it named the patch:
+
+> OPTIONAL SESSIONS EXCLUDED, as they are everywhere else. This filter was
+> missing until patch 98: the tally counted the plan's 28 optional Zwift rides
+> while every distance figure on the same card excluded them, and the info
+> sheet said they were not counted.
+
+***"as they are everywhere else"* was true of the file it was written in and
+false of the app.** Patch 98 fixed the site it was looking at and left six.
+
+So for any week containing an optional session, the **Week tab and the Progress
+tab printed different denominators for the same week** — 230 patches, two
+screens, one number the athlete reads as progress.
+
+### 12.72.2 Why nothing caught it, and why no D6c slice would have
+
+Each copy was internally consistent. Every screen agreed with itself. The
+divergence was only visible by holding two tabs side by side, which is not a
+thing any test does and not a thing a person does often.
+
+And **no shadow-parity slice could have found it.** Every one of the seven
+compares the app against the database. This is the app disagreeing with
+*itself*, on two screens, about a derivation whose inputs are identical and
+already proven green by slices 1, 2 and 5. Shadow parity's whole question —
+*would the app produce the same numbers from the database?* — answers "yes" for
+both tabs, because both would reproduce their own answer faithfully.
+
+That is worth stating plainly because it bounds what D6c is evidence of:
+**shadow parity proves the database can feed the app. It says nothing about
+whether the app is right.**
+
+### 12.72.3 One implementation, two entry points, and why not one
+
+`SessionTally` holds the rule: a session counts unless it is **rest** or
+**optional**. Optional is `PlanStore.isOptional`, a regex for `opt.` or
+`optional` over title and detail joined — how the plan HTML marks the rides.
+
+Two entry points, deliberately:
+
+- `over(_ matches: [Match])` — the four match-shaped callers.
+- `over(_ sessions: [Session], isComplete:)` — `Matcher.adherence(for:)`, which
+  walks sessions and re-resolves each day per session. That shape is wasteful
+  and 321 declined to change it; 328 declines too. What it must not do is
+  *disagree*, so the filter is no longer written on its line.
+
+Two shapes is how five copies started, so `bothEntryPointsApplyTheSameRule`
+holds them to one answer on the same input. §12.43, eleventh application.
+
+### 12.72.4 The exclusions are counted, not just applied
+
+`restExcluded` and `optionalExcluded` ride on the result. §12.54.2: an exclusion
+nobody can see is indistinguishable from an exclusion that stopped being
+applied — and this one was half-applied for 230 patches without anybody
+noticing, which is the strongest possible argument for making it visible.
+
+`theOptionalMarkerIsRecognisedWhereverItAppears` pins both spellings in both
+fields, because a plan revision that reworded the marker would otherwise put 28
+sessions back into every denominator silently.
+
+### 12.72.5 What moves on the device
+
+**This is a behaviour change and it was Bruno's decision, taken on 8 August:**
+exclude optional everywhere, matching patch 98's finding and the info sheet.
+
+- **Week tab** — a week containing an optional ride shows a smaller
+  denominator. `3 of 4` becomes `3 of 3`.
+- **Plan tab** — the same, on each week row.
+- **Progress tab** — unchanged. It was already correct.
+- **`MatchParity`'s adherence line** — moves, and moves *equally on both sides*,
+  because both sides call `MatchResolver.adherence`. The device figure was
+  `10 of 236`; it should drop by the number of optional sessions in the block
+  so far, on both sides, and stay green.
+
+The alternative — making Progress count them too — was rejected: it contradicts
+patch 98, the info sheet and every distance figure on the same card.
+
+### 12.72.7 Two more copies, and how the device found them — 328a
+
+328's device campaign made a falsifiable prediction: the Database screen's
+adherence line should fall from `10 of 236` to about `10 of 206`, because 236
+non-rest sessions minus 30 optional ones is 206.
+
+Everything else landed. Week 2 read **6/7** on the Week tab, the Plan tab and
+the Progress tab — three screens that had not agreed before — week 1 stayed
+`4/4` because it has no optional session, and the block total read **10/208**,
+which is 238 − 30 exactly.
+
+**Adherence read `10 of 236 vs 10 of 236`. Unchanged.**
+
+#### Why
+
+`MatchParity` does not call `MatchResolver.adherence`. It has its own loop:
+
+    // Rest days are excluded exactly as `Matcher.adherence` excludes them.
+    if !m.session.isRest {
+        counted += 1
+        if m.isDone { appDone += 1 }
+        if t.isDone { databaseDone += 1 }
+    }
+
+A sixth copy, whose comment *described* a delegation it did not perform.
+Grepping afterwards for `isRest` rather than `isDone` turned up a seventh, in
+`Review.swift` — `countable`, the per-week done-of-total the **model** is told
+each month.
+
+#### How the mistake was made, which is the part worth keeping
+
+The copies were counted by grepping `isDone`. `MatchParity:274` appeared in
+those results and was **assumed** to be a call site rather than read. That is
+§12.44 — *read the code that produces the number, not the numbers either side
+of it* — quoted in the same session it was being broken, and applied to
+everything except the count of how many copies there were.
+
+The generalisation, because this is now the second time a grep has been trusted
+over a read: **a grep tells you where a symbol appears, not what the line does
+with it.** Counting call sites from `grep` output is reading tea leaves. If the
+number of copies matters, open each one.
+
+#### Why it surfaced in an hour rather than at D7
+
+Because the prediction named a number. *"Adherence should drop"* would have
+been satisfied by a screen reading 236 — nothing drops by zero — and the two
+survivors would have gone to D7 undetected, with the app's tabs and the app's
+own review disagreeing about the plan.
+
+**A device check that cannot be wrong is not a check.** Every campaign from
+here states the arithmetic, not the direction.
+
+#### `Review.swift` is the one that mattered
+
+`MatchParity`'s copy is a diagnostic; the review's is not. Left as it was, the
+monthly review would have reported **"6 of 8"** for a week the athlete's own
+screens call **"6 of 7"**, and the proposal would have been reasoned out over a
+plan the athlete does not see. That is worse than either convention on its own,
+and it would have gone live on **24 August**.
+
+Not a new decision: *"exclude optional everywhere"* was decided on 8 August,
+and 328 under-delivered on it by miscounting the sites.
+
+#### One site deliberately left
+
+`ReviewProposal.swift:335` builds the list of sessions the model may rewrite,
+`where !s.isRest`. It is not a denominator — it is a permission — and
+forbidding the model to adjust an optional session is a different question with
+a different answer. Named here so it is not mistaken for an eighth copy nobody
+noticed.
+
+#### And the fix nearly carried the defect
+
+`counts(_:)` as a plain `Bool` predicate would have left `over(_:)` spelling
+the two exclusions out underneath it, because `over` must say *which* exclusion
+applied in order to count them. `Verdict` is the single statement both are
+views of. Caught while writing 328a; recorded because a fix that reintroduces
+the pattern it is fixing is the easiest kind to ship.
+
+### 12.72.6 What this does not do
+
+It does not touch `Matcher.adherence`'s wasteful shape, the distance and minute
+walks in `WeekView.totals` (a different question, asked in one place), or
+slice 8's twin. **The extraction ships alone**, because it changes what two
+tabs print and mixing that with a new parity section would make the device
+verification ambiguous — `ShadowParity`'s own header: *changing five things to
+fix one is how a slice patch stops being checkable.*
+
+Slice 8's comparison is patch 329, built on this.
 
 ### 12.71.8 What is left after slice 7
 

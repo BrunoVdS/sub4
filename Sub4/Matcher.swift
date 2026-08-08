@@ -285,12 +285,18 @@ final class Matcher {
 
 extension Matcher {
     /// Completion for a set of sessions — rest days excluded from the count.
+    /// PATCH 328 — the RULE comes from `SessionTally`, the SHAPE stays here.
+    ///
+    /// This walks sessions and resolves each day again per session, which is
+    /// wasteful and which 321 deliberately declined to change. What it must
+    /// not do is disagree with the other four tallies about what counts, so
+    /// the filter is no longer written on this line. Optional sessions have
+    /// left the denominator — §12.72.
     func adherence(for sessions: [Session]) -> (done: Int, total: Int) {
-        var done = 0, total = 0
-        for s in sessions where !s.isRest {
-            total += 1
-            if let d = s.date, isComplete(s, on: d) { done += 1 }
+        let r = SessionTally.over(sessions) { s in
+            guard let d = s.date else { return false }
+            return isComplete(s, on: d)
         }
-        return (done, total)
+        return (r.done, r.total)
     }
 }
