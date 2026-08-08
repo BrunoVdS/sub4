@@ -475,8 +475,15 @@ phone restores. "No sync" means no live reconciliation between two installs, not
 
 ### 9.2 The seed is `Sub4/plan.json` — the copy inside the target
 
-37 weeks, 260 sessions, 20 exercises, and the `fuel` and `warmup` blocks the app
-actually renders. **279,078 bytes, SHA-256 `a4087101cad4f61e13755aa62dc1003ca09034b04072570dc198257a4809e502`.**
+37 weeks, 261 sessions, 20 exercises, and the `fuel` and `warmup` blocks the app
+actually renders. **279,414 bytes, SHA-256 `0d41f78c1b55175c8cd02c1e78a10eb669ef75577d47d2916e001f067bda8686`.**
+
+**Amended 8 August 2026, patch 329a.** Was 260 sessions, 279,078 bytes, SHA-256
+`a4087101cad4f61e…`. The plan was revised — week 2's long run moved from Saturday
+8 August to Sunday 9 August and Saturday became a rest day, §12.74 — which added
+one rest session. `PlanSeedTests` failed on all three constants the moment the
+file changed, and this paragraph was updated in the same patch as the test. That
+is the sequence §12.13.4 exists to enforce, and the three weeks it once did not.
 
 **Amended 5 August 2026, patch 246.** This paragraph read "243,194 bytes,
 SHA-256 beginning `e93bf5ea`" until today. The seed changed in commit `13782b8`
@@ -7810,6 +7817,193 @@ Eleven of them. `ReviewDue` counting any would push the first real review out by
 again — `Reconciled: yes` was already on during this run, so the `review` rows
 cascade out with `review_evidence`, `proposal`, `proposal_change` and
 `proposal_watch` behind them.
+
+## 12.74 A plan revision, and the drift it uncovered — patch 329a
+
+Week 2's long run moved from Saturday 8 August to Sunday 9 August; Saturday
+became a rest day. The athlete's decision, taken 8 August, having first
+declined the lighter option of simply running a day late and letting adherence
+record the miss.
+
+### 12.74.1 The finding, which is bigger than the change
+
+`Sub4/plan.json` is a build output — `tools/extract_plan.py` generates it from
+`tools/marathon_plan_sub_4hr.html`. So the correct way to revise the plan is to
+edit the HTML and regenerate.
+
+**Regenerating from the committed HTML does not reproduce the committed
+plan.json.** Checked before touching anything:
+
+    regenerated == committed : False
+      sessions identical     : True
+      weeks differing        : 33 of 37   (stats only — km and h)
+
+The JSON's week headline figures are HIGHER than the HTML's on 33 weeks. That
+is **patch 240's work**: `PlanFocus.volumeExport` exists to dump what the app
+itself computes so the stated totals can be written back — *"after which the
+stated totals and the derived line are the same arithmetic and cannot drift."*
+The JSON received that correction. The HTML never did.
+
+**So a naive regenerate would have silently reverted patch 240 across 33
+weeks** — a correction to every week's headline volume, undone by doing the
+thing the documentation says to do. `SWITCHOVER.md` §5 warned that two editable
+copies is how the Rev 4.1 title-drift class of bug happens; this is that bug,
+already present, pointing the other way.
+
+The safe operation, and the one used: edit the HTML, regenerate, then take
+**only `sessions`** from the regeneration and keep the committed `weeks`. The
+result is provably what the extractor would produce for the half that changed,
+and provably unchanged for the half that must not.
+
+A second, smaller drift in the same file: the extractor writes `indent=1` and
+the committed `plan.json` is `indent=2`, so a plain regenerate reformats all
+8,700 lines and buries the real change in whole-file noise. The shipped file is
+written back at `indent=2`, which makes the revision a **21-line diff** —
+readable, and therefore reviewable. A build output that cannot be diffed is a
+build output nobody checks.
+
+**This leaves the HTML still stale on week stats.** It was stale before and is
+stale now; 329a did not make it worse and did not fix it. Fixing it means
+running `volumeExport` and pasting 37 rows back into the HTML, which is a job
+of its own and is now on the open list.
+
+### 12.74.2 Three uids changed, and one of them was not asked for
+
+`extract_plan.py` derives a session uid from `{week}-{day}-{slug(title)}`, so a
+session that moves days changes identity:
+
+| before | after |
+|---|---|
+| `wk-02-sat-long-run` | gone |
+| — | `wk-02-sat-rest-walk` |
+| — | `wk-02-sun-long-run` |
+| `wk-02-sun-zwift-walk-optional` | `wk-02-sun-zwift-walk-optional-1` |
+
+The last one **was not part of the change**. Sunday now holds two sessions, so
+the extractor appends the sequence number to disambiguate — and a session
+nobody touched changed identity as a side effect of one being moved next to it.
+
+That is worth naming because uids are the key `user_note`, `match_decision` and
+`proposal_change.planSessionUID` all hang off. Nothing orphaned here: neither
+session had happened yet, and `match_decision` holds zero rows on the device.
+**A revision later in the block would not be so lucky**, and this is the
+concrete demonstration that §12.71.5's "a proposal must survive a plan revision
+that renumbers the week it names" is not hypothetical.
+
+### 12.74.3 What does not change
+
+- **Week 2's countable total stays 7.** The new Saturday session is rest, and
+  rest is excluded (§12.72). Today reads 6/7; a run on Sunday finishes 7/7.
+- **The block total stays 208**, same reason.
+- **Weekly volume is unchanged** — same sessions, same distances, different
+  days, and the week still ends on Sunday.
+- **`peakLongRunKm` and the long-run ladder** are untouched; the run is the same
+  10 km.
+
+### 12.74.4 The database needs no work, and that is the design paying off
+
+`plan_version` is keyed by a `contentHash` over the plan's bytes (§12.66). A
+changed `plan.json` produces a new hash, so the import mints **plan version 4**,
+activates it, and keeps the three old versions as history — which is exactly
+what that table was built for: *"a note that changes one session's detail must"*
+make a new version.
+
+Nothing to migrate, nothing to delete, and every read-back reads the active
+version only. The arithmetic that "divides by 3 exactly" at 326 becomes four —
+expected, and not a regression.
+
+Also worth stating plainly: **the plan is the prescription, not the record.**
+Moving a session does not move any activity, any load figure or any CTL point.
+It moves what the app expects, and therefore what adherence is measured
+against.
+
+## 12.73 The tab summaries, as functions of their inputs — patch 329
+
+D6c slice 8's extraction. The comparison is 330.
+
+### 12.73.1 The fourth extraction of one shape
+
+| patch | what moved | why |
+|---|---|---|
+| 310 | `ActivityRoster` | the five rules that turn rows into the list |
+| 321 | `MatchResolver` | one day's matching, from inputs not singletons |
+| 328 | `SessionTally` | "done of total", once instead of seven times |
+| 329 | `TabSummary` | what the Progress and Week tabs add up |
+
+Every one existed for the same reason: **a twin cannot call a derivation that
+lives inside a `View` and reads `.shared`.** §12.43, eleven applications, and it
+keeps recurring because a derivation with one caller looks like part of that
+caller right up until something else has to agree with it.
+
+This is the last one D6c needs.
+
+### 12.73.2 The planned side was already pure — which is why this is small
+
+Read out of the source before any code (groundwork §2.1): `plannedVolume`,
+`plannedRunKm(week:)`, `sessions(inWeek:)` and `accumulate` are pure functions
+of `plan.sessions` and `weeksByUid`. Nothing touches the network, the disk or
+the clock. They could not be **called** with anything else, and that was the
+only thing standing between slice 8 and a twin.
+
+So each gained a static form taking its inputs, and the instance method became
+a one-line wrapper. No caller changed. `accumulate` became `static` — its body
+already called only static members, so that is a keyword rather than a change —
+and **one call site moved with it**, `PlanFocus.plannedVolume(week:)`. That
+blast radius was established by grepping `Sub4/` **and** `Sub4CoreTests/` before
+the edit, not after. §12.72.7 is the record of what assuming costs.
+
+`thePlannedRunKmWrapperAgrees` and `thePlannedVolumeWrapperAgrees` ask the
+wrapper and the static the same question over the real bundled plan. A wrapper
+that stops agreeing with what it wraps is §12.43's failure with a shorter fuse.
+
+### 12.73.3 The clock is a parameter, and that is the whole slice's hinge
+
+`weekPoints` skips weeks that have not begun — `startKey <= todayKey`.
+Groundwork §7 named this as **the single most likely way to get slice 8 wrong**
+before any code existed, because a twin applying a different cutoff, or reading
+a different clock a second later, compares 34 weeks against 2 and reports 32
+phantom differences.
+
+`todayKey` is therefore a parameter, and neither `TabSummary` nor its callers
+may reach for `DayKey.key()`. A function that reads the clock cannot be asked
+twice with the same answer guaranteed, and a comparison is by definition asking
+twice. Same argument `Sub4Import` makes about `now`.
+
+Two tests pin it: one that a future week is skipped, one that moving the
+caller's day moves which weeks appear.
+
+### 12.73.4 A closure for the days, not a dictionary
+
+`day:` is `(String) -> MatchResolver.Day` rather than a prepared dictionary.
+The view resolves lazily, one key at a time; building a dictionary of every day
+of every begun week first would do work the view does not do today, which would
+make this a **performance change as well as a move**. This patch is neither.
+
+330 passes a closure backed by the database's days, and will want to know which
+keys it was asked for and did not have. That belongs in the twin.
+
+### 12.73.5 The one figure worth a test of its own
+
+`longestRunKm` is a **maximum, not a sum**, which makes it the most sensitive
+figure in the slice: a missing activity moves it only if that activity was the
+longest. Two weeks of 10 + 10 and 4 + 16 have the same total and different
+maxima, and no other figure in slice 8 would notice the difference.
+`theLongestRunIsAMaximumNotASum` is that case, stated directly.
+
+The counterpart is `weekActuals`, which counts **extras** — the commute, the
+walks, everything the matcher left unmatched. No other comparison in the
+project counts them, because every other comparison is about the plan and this
+one is about movement. A move that quietly dropped them would leave every other
+figure right.
+
+### 12.73.6 Why this ships alone
+
+Same split as 328/329 and the same argument: `ShadowParity`'s own header says
+*changing five things to fix one is how a slice patch stops being checkable*.
+329 is behaviour-neutral and its device check is one question — do the Progress
+and Week tabs still read what they read at 328a. If a number moves, it is a bug
+in the extraction, and that is worth knowing before a comparison is layered on
+top of it.
 
 ## 12.72 "Done of total", once — patch 328
 

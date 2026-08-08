@@ -285,6 +285,22 @@ final class Matcher {
 
 extension Matcher {
     /// Completion for a set of sessions — rest days excluded from the count.
+    /// PATCH 329b — one conversion, not one per caller.
+    ///
+    /// `day(_:)` returns a TUPLE, for historical reasons predating
+    /// `MatchResolver`. The derivations extracted at 321 and 329 speak
+    /// `MatchResolver.Day`, and 329 assumed `day(_:)` already did — it does
+    /// not, and the build said so in `WeekView` before it reached the second
+    /// call site in `ProgressTabView`.
+    ///
+    /// Wrapping it at each call site would have been two copies of a two-line
+    /// conversion, which is §12.43's shape at its smallest and exactly how
+    /// "done of total" reached seven copies. So it lives here once.
+    func resolved(_ dayKey: String) -> MatchResolver.Day {
+        let r = day(dayKey)
+        return MatchResolver.Day(matches: r.matches, extras: r.extras)
+    }
+
     /// PATCH 328 — the RULE comes from `SessionTally`, the SHAPE stays here.
     ///
     /// This walks sessions and resolves each day again per session, which is

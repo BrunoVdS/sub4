@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 328a (2026-08-08).** Patch 318 installed this file with its state
+**Current at patch 329 (2026-08-08).** Patch 318 installed this file with its state
 sections still describing patch 278c — forty patches behind — which is the failure
 this file exists to prevent. §5 is the part that goes stale; if the patch number in
 its heading is far behind `Sub4/AppVersion.swift`, trust the ADR and the code, not §5.
@@ -239,7 +239,7 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 328a, 2026-08-08
+## 5. State — patch 329, 2026-08-08
 
 **The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c seven of eight closed;
 only slice 8 remains. D7 has not started, and nothing in the app reads the database yet.**
@@ -293,7 +293,7 @@ thing worth writing down, because everything outside it looks finished from insi
 | 6b the plan — weeks, sessions, breakdowns, blocks | `PlanRepository` + `PlanRoundTrip` | 323 ✔ |
 | 6c the plan's trimmings — exercises, fuel, warm-up | `PlanExtrasRepository` | 326 ✔ |
 | 7 review payloads | `ReviewRepository` + `ReviewRoundTrip` | 327 ✔ |
-| 8 Today / Week / Plan / Progress summaries | `SessionTally` (328) + twin | 328 · twin open |
+| 8 Today / Week / Plan / Progress summaries | `SessionTally` (328) + `TabSummary` (329) + twin | 328 · 329 · twin open |
 
 **328 is slice 8's extraction, shipped alone because it CHANGES WHAT TWO TABS PRINT.**
 "Done of total" had **seven** implementations; six counted the plan's 30 optional Zwift
@@ -425,11 +425,15 @@ test.
   the patch that writes it** — which is why `gear.retiredUTC` stays unwritten (§12.68.4).
 - **2026-09-01 — GitHub Actions allowance resets.**
 
-**Next:** D6c slice 8 — **read `docs/D6C-SLICE-8-GROUNDWORK.md` first**, it was checked
-against the source at 328a and says what is already covered, what is not, and the one
-thing most likely to get the slice wrong (the `startKey <= todayKey` cutoff). Split:
-**329** the extraction — `TabSummary`, `PlanStore` statics, `accumulate` going static,
-`PlanFocus`'s two call sites — behaviour-neutral, the suite is the proof. **330** the twin. Then D7 activate, D8, and 4A. Before D7 is pressed,
+**329 landed the extraction.** `TabSummary` holds `weekPoints`, `actualVolume` and
+`weekActuals`; `PlanStore.plannedRunKm`, `plannedVolume`, `sessions(inWeek:)` and
+`accumulate` gained static forms taking their inputs, with the instance methods as
+one-line wrappers. Behaviour-neutral. **`todayKey` is a parameter** — groundwork §7's
+cutoff, and the hinge the whole slice turns on. §12.73.
+
+**Next:** **330**, slice 8's twin — read `docs/D6C-SLICE-8-GROUNDWORK.md` first; §1.1 says
+what slices 1–7 already cover and must not be re-proved, §3 says the planned half is
+identical by construction, §7 says the cutoff is how this gets got wrong. Then D7 activate, D8, and 4A. Before D7 is pressed,
 two things that are not slices: fold the nine read-backs into one roll-up with a durable
 result — §12.57 corrected `@State`-evaporation for `ShadowParity` and never for the
 read-backs, and nine buttons that must each be pressed is not a gate anybody can lean on —

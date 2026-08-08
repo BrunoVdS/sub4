@@ -51,15 +51,25 @@ struct PlanSeedTests {
     /// Recorded 5 August 2026 at patch 246, against the seed as corrected by
     /// patches 238 and 242. Mirrored in ADR-0003 §9.2 — the two must agree.
     enum Frozen {
-        static let bytes = 279_078
+        /// PATCH 329a — the plan was revised: week 2's long run moved from
+        /// Saturday 8 August to Sunday 9 August, Saturday became a rest day.
+        /// §12.74. These three constants and ADR §9.2 were updated in the
+        /// SAME patch as the file, which is the whole point of this suite —
+        /// the header records the three weeks the ADR spent describing a file
+        /// that had already changed.
+        static let bytes = 279_414
         static let sha256 =
-            "a4087101cad4f61e13755aa62dc1003ca09034b04072570dc198257a4809e502"
+            "0d41f78c1b55175c8cd02c1e78a10eb669ef75577d47d2916e001f067bda8686"
 
         /// The counts the shape freeze is actually about. A file can keep its
         /// size and hash only by keeping these, but a future reader wants to
         /// know what the numbers mean without decoding anything.
         static let weeks = 37
-        static let sessions = 260
+        /// 261 since 329a — 260 plus the rest day that replaced week 2's
+        /// Saturday long run. `weeks` and `exercises` are unchanged, which is
+        /// itself the check: a revision that moved a session must not have
+        /// added a week or lost an exercise.
+        static let sessions = 261
         static let exercises = 20
 
         /// The stale root copy, deleted from the source tree on 3 August 2026

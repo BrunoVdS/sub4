@@ -156,8 +156,16 @@ final class PlanStore {
         let exact: Bool
     }
 
-    func plannedRunKm(week: Week) -> PlannedDistance {
-        let runs = sessions(inWeek: week).filter { $0.discipline == .run }
+    /// PATCH 329 — the body took a parameter and the instance method became a
+    /// wrapper. It was already a pure function of `plan.sessions`; it simply
+    /// could not be CALLED with anything else, which is the only thing that
+    /// stood between slice 8 and a twin. §12.73.
+    ///
+    /// No behaviour change: every caller of the instance method gets the same
+    /// answer over the same sessions.
+    static func plannedRunKm(sessions all: [Session],
+                             inWeek week: Week) -> PlannedDistance {
+        let runs = Self.sessions(all, inWeek: week).filter { $0.discipline == .run }
         var km = 0.0
         var exact = true
         for s in runs {
@@ -168,8 +176,16 @@ final class PlanStore {
         return PlannedDistance(km: km, exact: exact)
     }
 
+    func plannedRunKm(week: Week) -> PlannedDistance {
+        Self.plannedRunKm(sessions: plan.sessions, inWeek: week)
+    }
+
+    static func sessions(_ all: [Session], inWeek week: Week) -> [Session] {
+        all.filter { $0.weekUid == week.uid }
+    }
+
     func sessions(inWeek week: Week) -> [Session] {
-        plan.sessions.filter { $0.weekUid == week.uid }
+        Self.sessions(plan.sessions, inWeek: week)
     }
 
     /// Longest single planned run, excluding race week — the number the long-run
@@ -209,23 +225,41 @@ final class PlanStore {
 
     /// Planned volume for required sessions dated on or before `day`.
     /// Pass nil for the whole block.
-    func plannedVolume(throughDay day: String? = nil) -> PlanVolume {
+    ///
+    /// PATCH 329 — parameterised, same as `plannedRunKm`. `weeksByUid` comes in
+    /// with the sessions because the LOGGED-week exclusion needs it, and a
+    /// caller holding one without the other would be holding half a plan.
+    static func plannedVolume(sessions: [Session],
+                              weeksByUid: [String: Week],
+                              throughDay day: String? = nil) -> PlanVolume {
         var v = PlanVolume()
-        for s in plan.sessions {
+        for s in sessions {
             guard weeksByUid[s.weekUid]?.logged == false else { continue }
             if let day, let d = s.date, d > day { continue }
             if s.date == nil { continue }
             if Self.isOptional(s) { continue }
-            accumulate(s, into: &v)
+            Self.accumulate(s, into: &v)
         }
         return v
+    }
+
+    func plannedVolume(throughDay day: String? = nil) -> PlanVolume {
+        Self.plannedVolume(sessions: plan.sessions,
+                           weeksByUid: weeksByUid,
+                           throughDay: day)
     }
 
     /// The switch, extracted in patch 239 so `plannedVolume(throughDay:)` and
     /// `plannedVolume(week:)` cannot come to disagree about what a session
     /// contributes. The EXCLUSIONS stay at each call site — they differ — but
     /// the accumulation is one piece of code.
-    func accumulate(_ s: Session, into v: inout PlanVolume) {
+    ///
+    /// PATCH 329 — `static`. Its body already called only static members, so
+    /// this is a keyword rather than a change. One call site moved with it:
+    /// `PlanFocus.plannedVolume(week:)`, which now says `Self.accumulate`.
+    /// Checked by grep across `Sub4/` and `Sub4CoreTests/` before the edit,
+    /// not assumed — §12.72.7 is the record of what assuming costs.
+    static func accumulate(_ s: Session, into v: inout PlanVolume) {
         switch s.discipline {
         case .run:
             let d = Self.plannedRunKm(s)

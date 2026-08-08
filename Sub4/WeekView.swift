@@ -400,34 +400,30 @@ struct WeekView: View {
     /// `runKm` is running only. `minutes` and `recorded` still cover everything,
     /// because time and a session count ARE comparable across sports — only
     /// distance is not.
-    /// PATCH 328 — the tally comes from `SessionTally`, the distances do not.
+    /// PATCH 328 — the tally came from `SessionTally`. PATCH 329 — the
+    /// distances followed it into `TabSummary`, and this comment says so
+    /// rather than still claiming they "stay local", which was true for
+    /// exactly one patch.
     ///
-    /// Two different questions and only one of them was duplicated. "How many
-    /// planned sessions were completed" is the app's most-copied derivation
-    /// and now has one implementation; "how far did you actually move this
-    /// week" is asked here and nowhere else, counts EXTRAS as well as matched
-    /// activities, and stays local.
+    /// Two different questions, and they stayed two after the move. "How many
+    /// planned sessions were completed" excludes rest and optional; "how far
+    /// did you actually move this week" counts EXTRAS as well as matched
+    /// activities, because the commute and the walks are movement.
     ///
     /// **This changes what the Week tab prints.** The optional Zwift rides
     /// were in `total` and are not any more, so a week containing one shows a
     /// smaller denominator than it did at 327. §12.72.
     private var totals: (done: Int, total: Int, runKm: Double,
                          minutes: Int, recorded: Int) {
-        var km = 0.0, mins = 0, count = 0
-        var tally = SessionTally.Result()
-        for key in dayKeys {
-            let r = matcher.day(key)
-            tally = tally + SessionTally.over(r.matches)
-            for a in r.matches.compactMap(\.activity) {
-                if a.discipline == .run { km += a.km }
-                mins += a.minutes; count += 1
-            }
-            for a in r.extras {
-                if a.discipline == .run { km += a.km }
-                mins += a.minutes; count += 1
-            }
-        }
-        return (tally.done, tally.total, km, mins, count)
+        // PATCH 329 — both halves now come from the shared derivations, so a
+        // twin can produce this card from the database. The DISTINCTION they
+        // draw is unchanged: `SessionTally` is about the plan and counts
+        // neither rest nor optional; `weekActuals` is about movement and
+        // counts extras. §12.73.
+        let days = dayKeys.map { matcher.resolved($0) }
+        let tally = SessionTally.over(days)
+        let moved = TabSummary.weekActuals(days)
+        return (tally.done, tally.total, moved.runKm, moved.minutes, moved.recorded)
     }
 }
 

@@ -1077,7 +1077,7 @@
       "discipline": "strength",
       "intensity": null,
       "title": "Strength B · core only",
-      "detail": "No legs — long run tomorrow · ~15 min",
+      "detail": "No legs — long run Sunday · ~15 min",
       "fuel": null,
       "prep": null,
       "seq": 1,
@@ -1137,10 +1137,23 @@
       }
     },
     {
-      "uid": "wk-02-sat-long-run",
+      "uid": "wk-02-sat-rest-walk",
       "week_uid": "wk-02",
       "day": "Sat",
       "date": "2026-08-08",
+      "discipline": "rest",
+      "intensity": null,
+      "title": "Rest / walk",
+      "detail": "Full rest or an easy walk — long run moved to Sunday",
+      "fuel": null,
+      "prep": null,
+      "seq": 0
+    },
+    {
+      "uid": "wk-02-sun-long-run",
+      "week_uid": "wk-02",
+      "day": "Sun",
+      "date": "2026-08-09",
       "discipline": "run",
       "intensity": "long",
       "title": "Long run",
@@ -1150,7 +1163,7 @@
       "seq": 0
     },
     {
-      "uid": "wk-02-sun-zwift-walk-optional",
+      "uid": "wk-02-sun-zwift-walk-optional-1",
       "week_uid": "wk-02",
       "day": "Sun",
       "date": "2026-08-09",
@@ -1160,7 +1173,7 @@
       "detail": "opt. up to 1.5 h Z2, or a walk — at home",
       "fuel": "opt. · 500 ml Leppin (+1 gel if >60′)",
       "prep": null,
-      "seq": 0
+      "seq": 1
     },
     {
       "uid": "wk-03-mon-swim-no-buoy",

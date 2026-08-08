@@ -190,7 +190,9 @@ extension PlanStore {
         guard !week.logged else { return v }
         for s in sessions(inWeek: week) {
             guard s.date != nil, !Self.isOptional(s) else { continue }
-            accumulate(s, into: &v)
+            // `Self.` since 329 — `accumulate` is static so the twin can reach
+            // it without a `PlanStore`. §12.73.
+            Self.accumulate(s, into: &v)
         }
         return v
     }

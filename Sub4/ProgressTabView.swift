@@ -36,60 +36,20 @@ struct ProgressTabView: View {
 
     // MARK: Week aggregation
 
-    struct WeekPoint: Identifiable {
-        let weekNo: Int
-        let start: Date
-        let plannedKm: Double        // RUNNING only — see PlanStore.plannedRunKm
-        let plannedExact: Bool
-        let actualKm: Double         // RUNNING only, so the two are comparable
-        let longestRunKm: Double
-        let done: Int
-        let total: Int
-        var id: Int { weekNo }
-    }
+    /// PATCH 329 — the type and the walk moved to `TabSummary`; the chart
+    /// below is untouched because the field names moved with them. §12.73.
+    typealias WeekPoint = TabSummary.WeekPoint
 
     /// Only weeks that have begun — a future week has nothing to say.
+    ///
+    /// `todayKey` is passed rather than read inside, because the twin must be
+    /// able to hand both sides the same day. Groundwork §7 named the cutoff as
+    /// the single most likely way to get slice 8 wrong.
     private var points: [WeekPoint] {
-        store.planWeeks.compactMap { w -> WeekPoint? in
-            guard let n = w.weekNo,
-                  let startKey = w.startDate,
-                  startKey <= todayKey,
-                  let start = DayKey.date(startKey) else { return nil }
-
-            var actual = 0.0, longest = 0.0
-            var tally = SessionTally.Result()
-            for offset in 0..<7 {
-                guard let d = Calendar(identifier: .iso8601)
-                        .date(byAdding: .day, value: offset, to: start) else { continue }
-                let key = DayKey.key(d)
-                let r = matcher.day(key)
-
-                // OPTIONAL SESSIONS EXCLUDED — and since 328 the rule lives in
-                // `SessionTally` rather than on this line.
-                //
-                // The comment that used to sit here said the filter applied
-                // "as they are everywhere else". It did not: patch 98 added it
-                // to this site and left four others counting the plan's 28
-                // optional Zwift rides, so the Week tab and this chart printed
-                // different denominators for the same week. §12.72.
-                tally = tally + SessionTally.over(r.matches)
-                // RUNS only. The planned figure this is charted against is
-                // running kilometres, so anything else here would be comparing
-                // two different quantities on one axis.
-                for a in (r.matches.compactMap(\.activity) + r.extras)
-                where a.discipline == .run {
-                    actual += a.km
-                    longest = max(longest, a.km)
-                }
-            }
-
-            let planned = store.plannedRunKm(week: w)
-            return WeekPoint(weekNo: n, start: start,
-                             plannedKm: planned.km,
-                             plannedExact: planned.exact,
-                             actualKm: actual, longestRunKm: longest,
-                             done: tally.done, total: tally.total)
-        }
+        TabSummary.weekPoints(weeks: store.planWeeks,
+                              sessions: store.plan.sessions,
+                              todayKey: todayKey,
+                              day: { matcher.resolved($0) })
     }
 
     // MARK: Body
@@ -375,17 +335,8 @@ struct ProgressTabView: View {
     /// Recorded volume since the plan began. Bike counts training rides only —
     /// commutes have their own tab, and the plan's bike sessions are rides.
     private var actualVolume: PlanStore.PlanVolume {
-        var v = PlanStore.PlanVolume()
-        for a in activities.activities where a.dayKey >= MatchRules.planStartDayKey {
-            switch a.discipline {
-            case .run:      v.runKm += a.km
-            case .swim:     v.swimKm += a.km
-            case .bike:     if a.isPlanEligible { v.bikeHours += Double(a.movingTime) / 3600 }
-            case .strength: if a.isPlanEligible { v.strengthSessions += 1 }
-            default:        break
-            }
-        }
-        return v
+        // PATCH 329 — the walk moved to `TabSummary`. §12.73.
+        TabSummary.actualVolume(activities.activities)
     }
 
     private var volumeRows: [VolumeRow] {
