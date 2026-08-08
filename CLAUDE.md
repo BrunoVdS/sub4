@@ -220,9 +220,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 325, 2026-08-08
+## 5. State — patch 326, 2026-08-08
 
-**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c seven of eight, and slice 6 closed.
+**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c seven of eight; slices 6 and 6c closed.
 D7 has not started, and nothing in the app reads the database yet.**
 
 - **Eleven migrations**, 51 tables, ~214,000 rows, ~37 MB on the phone. On the device:
@@ -240,7 +240,7 @@ D7 has not started, and nothing in the app reads the database yet.**
 **D6a — seven repositories, every field compared.**
 `ActivityRepository` (289), `ActivityDetailRepository` (291), `RecordingRepository` (294),
 `AthleteRepository` (317), `AuthoredRepository` (322), `PlanRepository` (323),
-`WeatherGearRepository` (324). Each returns a load type that distinguishes *nothing there*
+`WeatherGearRepository` (324), `PlanExtrasRepository` (326). Each returns a load type that distinguishes *nothing there*
 from *could not look* — §12.15, twelve instances, and 323's has four shapes rather than
 three because "stored but not activated" and "two plans both active" are states the schema
 permits and nothing else could name.
@@ -263,7 +263,7 @@ thing worth writing down, because everything outside it looks finished from insi
 | 5b notes and corrections | `AuthoredRepository` + `AuthoredRoundTrip` | 322 ✔ |
 | 6 zones, weather, gear | `AthleteRoundTrip` (317) + `WeatherGearRepository` | 324 ✔ |
 | 6b the plan — weeks, sessions, breakdowns, blocks | `PlanRepository` + `PlanRoundTrip` | 323 ✔ |
-| 6c the plan's trimmings — exercises, fuel, warm-up | — | open |
+| 6c the plan's trimmings — exercises, fuel, warm-up | `PlanExtrasRepository` | 326 ✔ |
 | 7 review payloads | — | open |
 | 8 Today / Week / Plan / Progress summaries | — | open |
 
@@ -344,8 +344,8 @@ test.
   the patch that writes it** — which is why `gear.retiredUTC` stays unwritten (§12.68.4).
 - **2026-09-01 — GitHub Actions allowance resets.**
 
-**Next:** D6c slice 6c (the plan's trimmings — `plan_exercise`, fuel, warm-up), then
-slices 7 (review payloads) and 8 (tab summaries). Then D7 activate, D8, and 4A.
+**Next:** D6c slice 7 (review payloads) and 8 (tab summaries). Then D7 activate, D8,
+and 4A.
 Then D7 activate — `Sub4Launch.migrationFailureBlocksTheApp` flips to `true`. Then D8,
 stabilise one release window and remove the JSON writers. Phase 4A (Apple Health canonical)
 cannot start before D7's exit gate.

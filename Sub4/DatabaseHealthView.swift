@@ -122,6 +122,8 @@ struct DatabaseHealthView: View {
     @State private var authoredTrip: AuthoredRoundTrip.Report?
     @State private var planLoad: PlanLoad?
     @State private var planTrip: PlanRoundTrip.Report?
+    @State private var planExtrasLoad: PlanExtrasLoad?
+    @State private var planExtrasTrip: PlanExtrasRoundTrip.Report?
     @State private var weatherGearLoad: WeatherGearLoad?
     @State private var weatherGearTrip: WeatherGearRoundTrip.Report?
     @State private var verifying = false
@@ -1674,6 +1676,80 @@ struct DatabaseHealthView: View {
                                value: "\(r.rowsSkipped)")
                     .font(.caption)
                     .foregroundStyle(r.rowsSkipped == 0 ? Color.dim : .red)
+                // PATCH 326 — slice 6c, under the same heading as slice 6b.
+                // A ninth heading for 150 rows nobody derives anything from is
+                // the wrong trade on a screen this long — groundwork §7.
+                Text("The trimmings")
+                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                if let x = planExtrasTrip {
+                    LabeledContent("Compared", value: "\(x.totalCompared)")
+                        .font(.caption)
+                        .foregroundStyle(x.lookedAtSomething ? Color.dim : .red)
+                    LabeledContent("A fuelling plan on each side", value: x.fuelLine)
+                        .font(.caption2)
+                        .foregroundStyle(x.appHasFuel == x.databaseHasFuel
+                                         ? Color.dim : .red)
+                    LabeledContent("A race-day section", value: x.raceDayLine)
+                        .font(.caption2)
+                        .foregroundStyle(x.appHasRaceDay == x.databaseHasRaceDay
+                                         ? Color.dim : .red)
+                    LabeledContent("A warm-up on each side", value: x.warmupLine)
+                        .font(.caption2)
+                        .foregroundStyle(x.appHasWarmup == x.databaseHasWarmup
+                                         ? Color.dim : .red)
+                    LabeledContent("  fuel fields compared",
+                                   value: "\(x.fuelFieldsCompared)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                    LabeledContent("  products · targets · ladder",
+                                   value: "\(x.productsCompared) · "
+                                        + "\(x.targetsCompared) · "
+                                        + "\(x.ladderStepsCompared)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                    LabeledContent("  race-day lines · steps",
+                                   value: "\(x.raceBeforeCompared) · "
+                                        + "\(x.raceStepsCompared)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                    LabeledContent("  warm-up fields · steps",
+                                   value: "\(x.warmupFieldsCompared) · "
+                                        + "\(x.warmupStepsCompared)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                    LabeledContent("  movements · conditions",
+                                   value: "\(x.movementsCompared) · "
+                                        + "\(x.conditionsCompared)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                    LabeledContent("Exercises",
+                                   value: "\(x.exercisesInApp) vs \(x.exercisesInDatabase)")
+                        .font(.caption).foregroundStyle(Color.dim)
+                    LabeledContent("  fields compared",
+                                   value: "\(x.exerciseFieldsCompared)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                    LabeledContent("Fuel fields that differ",
+                                   value: "\(x.fuelDifferences.count)")
+                        .font(.caption)
+                        .foregroundStyle(x.fuelDifferences.isEmpty ? Color.dim : .red)
+                    LabeledContent("Warm-up fields that differ",
+                                   value: "\(x.warmupDifferences.count)")
+                        .font(.caption)
+                        .foregroundStyle(x.warmupDifferences.isEmpty ? Color.dim : .red)
+                    LabeledContent("List entries that differ",
+                                   value: "\(x.listDifferences.count)")
+                        .font(.caption)
+                        .foregroundStyle(x.listDifferences.isEmpty ? Color.dim : .red)
+                    LabeledContent("Exercise fields that differ",
+                                   value: "\(x.exerciseDifferences.count)")
+                        .font(.caption)
+                        .foregroundStyle(x.exerciseDifferences.isEmpty ? Color.dim : .red)
+                    ForEach((x.fuelDifferences + x.warmupDifferences
+                             + x.listDifferences + x.exerciseDifferences)
+                                .prefix(6), id: \.self) { d in
+                        Text("    \(d)").font(.caption2).foregroundStyle(.red)
+                    }
+                    LabeledContent("Rows the reader could not read",
+                                   value: "\(x.rowsSkipped)")
+                        .font(.caption)
+                        .foregroundStyle(x.rowsSkipped == 0 ? Color.dim : .red)
+                }
+
                 LabeledContent("Approved differences",
                                value: PlanRoundTrip.approvedNote)
                     .font(.caption2).foregroundStyle(Color.dim)
@@ -1692,7 +1768,13 @@ struct DatabaseHealthView: View {
                  + "divides by three exactly.\n\n"
                  + "Every field of every week, session, breakdown and block "
                  + "has a column and every column is written, so there are no "
-                 + "approved differences — ADR-0003 §12.66.")
+                 + "approved differences — ADR-0003 §12.66.\n\n"
+                 + "The trimmings — the fuelling plan, the race-day warm-up "
+                 + "and the exercise library — are ten more tables that feed "
+                 + "no derivation. They are a separate comparison under the "
+                 + "same heading, so a red row says which half broke: this one "
+                 + "means a screen draws wrong, the one above means a training "
+                 + "figure is wrong. §12.70.")
                 .font(.caption2)
         }
     }
@@ -1709,6 +1791,19 @@ struct DatabaseHealthView: View {
                                          storeWeeks: store.plan.weeks,
                                          storeSessions: store.plan.sessions,
                                          database: load)
+
+        // PATCH 326. A second read rather than one that returns everything:
+        // the trimmings are a separate claim and a separate report, so a red
+        // row says which half broke. Same actor shape as above.
+        let extras = await Task.detached(priority: .utility) {
+            PlanExtrasRepository.load(db)
+        }.value
+        planExtrasLoad = extras
+        planExtrasTrip = PlanExtrasRoundTrip.compare(
+            storeFuel: store.plan.fuel,
+            storeWarmup: store.plan.warmup,
+            storeExercises: store.plan.exercises,
+            database: extras)
     }
 
     /// PATCH 324 — the seventh read-back, D6c slice 6, ADR-0003 §12.67.
@@ -2976,6 +3071,13 @@ struct DatabaseHealthView: View {
             lines.append(contentsOf: r.diagnosticLines)
         } else {
             lines.append("Plan read-back: \(planLoad?.line ?? "not read")")
+        }
+        lines.append("")
+        if let r = planExtrasTrip {
+            lines.append(contentsOf: r.diagnosticLines)
+        } else {
+            lines.append("Plan extras read-back: "
+                       + "\(planExtrasLoad?.line ?? "not read")")
         }
         // PATCH 324. Strava activity ids, gear ids, field names and counts.
         lines.append("")

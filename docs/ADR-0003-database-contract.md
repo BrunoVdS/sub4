@@ -7302,6 +7302,154 @@ confirm the output is not reassuring. Every guard in this project that has ever
 mattered — the semantic verifier, the parity sections, the unconditional
 diagnostic lines — has a test that makes it fail. This one had prose.
 
+## 12.70 The plan's trimmings — D6c slice 6c, patch 326
+
+`PlanExtrasRepository` reads the ten tables 323 left behind: the fuelling plan,
+the race-day warm-up protocol and the exercise library. Eighth repository, and
+the last of the plan.
+
+### 12.70.1 A separate claim, deliberately
+
+These feed no derivation. Nothing in `LoadParity` or `MatchParity` waits on
+them; they are drawn on screens and that is all. So they get their own reader
+and their own report rather than growing `PlanRoundTrip`.
+
+**The reason is what a red row means.** A difference in `PlanRoundTrip` means a
+training figure is wrong. A difference here means a screen draws wrong. One
+report would have made those the same event, and the first question anyone asks
+of a red number is which of the two it is — 321's argument for single-claim
+slices, applied to a case where the two claims sit under one heading on screen
+and in two files in the source.
+
+The screen keeps them together for §12.65.7's reason: the Database screen now
+carries eight read-backs, and a ninth heading for 150 rows nobody derives
+anything from is the wrong trade. One heading, two sub-blocks, two reports.
+
+### 12.70.2 One copy of "which version" — §12.43's ninth application
+
+323 resolved the active version inside `PlanRepository.load`, with the
+`ambiguousActiveVersion` guard §12.66.3 argued for. This reader needs the same
+answer.
+
+It is **extracted and called**, not written again:
+`PlanRepository.activeVersion(_:)` now returns `.one / .none / .ambiguous /
+.malformed` and both readers switch on it. Two copies would have been two places
+to remember that `plan_version_one_active` is unique per PLAN and not per table,
+and the second copy is exactly where that gets forgotten — the guard is four
+lines and the reasoning behind it is a paragraph.
+
+`theAmbiguityIsInheritedNotReimplemented` builds the two-plans state and asserts
+this reader refuses it, so the inheritance is a fact rather than an intention.
+
+### 12.70.3 The wrapper is never compared, only its fields — §12.63.8, third time
+
+`Fuel.Caution` is stored as two columns on its parent, `cautionTag` and
+`cautionText`. **There is no column saying whether a `Caution` existed.** Two
+NULLs therefore mean either `caution == nil` or `caution == Caution(tag: nil,
+text: nil)`, and no reader can tell them apart.
+
+Reconstructing a `Caution` and comparing the object would report a difference
+whenever the app held an empty one — a difference that says nothing about the
+data and that writing something cannot fix. So the comparison walks `tag` and
+`text` as scalars belonging to their parent and never touches the wrapper.
+
+Third application of the rule 320a established with the zero heart rate and 324
+reapplied to `weather.provider`: **compare what the reader draws, not the field
+it was stored in.** `anEmptyCautionAndNoCautionAreNotDistinguished` asserts the
+ambiguity rather than pretending it was resolved — the reader picks "absent",
+the comparison never asks, and both facts are in a test.
+
+The same argument covers `Fuel`, `Fuel.RaceDay` and `Warmup` themselves, all
+optional on the type and all stored as a row that either exists or does not.
+Whether each side has one is printed as context, not asserted as a field.
+
+### 12.70.4 One type, three parents
+
+`Fuel.caution`, `Fuel.RaceDay.caution` and `Warmup.caution` are the same type
+reached from three places. Compared as a set of cautions, an importer that wrote
+one parent's caution into another's columns would compare **equal** — and the
+race-day screen would draw the warm-up's warning.
+
+So each is walked separately and named by its parent: `fuel · caution tag`,
+`raceDay · caution text`, `warmup · caution tag`.
+`eachCautionIsNamedByItsParent` changes two of the three and asserts the third
+is not implicated.
+
+This is §12.66.6's breakdown-kind finding in a different costume. There the
+question was which property held a `SessionDetail`; here it is which parent holds
+a `Caution`. Both are cases where **the container is the data** and comparing
+contents alone cannot see it.
+
+### 12.70.5 Eight lists, one ordinal walk
+
+Products, session targets, ladder steps, race-day lines, race-day steps, warm-up
+steps, circuit movements and conditions are all sequences with a
+`UNIQUE(parent, ordinal)` behind them. They are compared **by position**, never
+as sets: a fuel ladder in the wrong order is a different instruction, and the
+16 km row telling you to take three gels is a different instruction again.
+
+One private `list(_:_:_:)` helper does the walk for all eight rather than eight
+near-identical loops — §12.43 inside a single file. `aShuffledLadderIsADifference`
+swaps two rows and asserts both positions are reported.
+
+The exercise library is the exception and is compared as a dictionary keyed by
+`uid`, because that is how the session blocks reference it. A library reordered
+is the same library.
+
+### 12.70.7 A function that writes part of what it reads — 326a
+
+The ordinal walk was written as:
+
+```swift
+private static func list<T>(_ label: String, _ a: [T], _ b: [T],
+                            count: inout Int, fields: inout Int,
+                            into r: inout Report, walk: ...)
+```
+
+and every call site read:
+
+```swift
+list("product", a.products, b.products, count: &r.productsCompared,
+     fields: &r.productFieldsCompared, into: &r) { ... }
+```
+
+`&r.productsCompared` and `&r` are two exclusive accesses to one variable.
+Seven compile errors, one per call site, all saying the same sentence.
+
+**The signature was the defect, not the call.** A function that takes a whole
+and one of its parts is asking the caller to alias, and there is no spelling of
+that call which does not. Swift's exclusivity rule refused it rather than
+letting seven counters be written through two overlapping views of the same
+storage.
+
+The fix is not `withUnsafe…` and not copying to a local at each call site, which
+is what the compiler's own suggestion would have produced seven times over. The
+walk now **returns** a `ListResult` and the caller places the numbers through a
+`mutating func absorb(_:count:fields:)` taking key paths — `self` is then the
+only thing mutated and there is nothing to alias. One statement per call site,
+same as before.
+
+**The rule.** *When a helper needs both an aggregate and its fields, return the
+values instead of writing them through.* `inout` on a part and `inout` on its
+whole cannot coexist in one call, and a design that wants both is a design that
+has not decided who owns the result.
+
+**This is the first build failure `scripts/test.sh` has ever reported.** It
+printed all seven errors, refused to print a summary, and exited 1 — the exact
+service §12.69 restored one patch earlier, on the very next patch, against a
+mistake it had no part in. Fifteen patches ran through it silently between 318
+and 325b; this one took thirty seconds to name.
+
+### 12.70.6 What is left after slice 6c
+
+D6c has one slice remaining of its original eight — 7, the review payloads —
+plus 8, the tab summaries. `review_evidence_source` stays unverifiable against
+real data until the first real review on **24 August 2026**, which is the one
+date in this project that no patch can bring forward.
+
+The plan is now read back in full: 260 sessions, 37 weeks, 82 breakdowns, 634
+blocks at 323, and 71 records of trimmings here.
+
 ## 12.10 The athlete profile, the zones and the resting series
 
 Patch 228. `AthleteConstants` + `AthleteStore` → `athlete_profile`, `hr_zone`,

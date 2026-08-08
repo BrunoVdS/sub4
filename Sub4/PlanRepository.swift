@@ -576,6 +576,47 @@ nonisolated enum PlanRoundTrip {
 
 nonisolated enum PlanRepository {
 
+    // MARK: The active version, resolved once — §12.43
+
+    /// WHICH VERSION EVERY PLAN READER WORKS FROM.
+    ///
+    /// Extracted at 326 so `PlanExtrasRepository` calls it rather than writing
+    /// the query again. §12.43: do not reimplement, call. Two copies of this
+    /// would be two places to remember that "at most one active" is per PLAN
+    /// and not per table — §12.66.3 — and the second copy is exactly where that
+    /// would be forgotten.
+    nonisolated enum ActiveVersion: Sendable {
+        case one(id: String, planID: String,
+                 sourceLabel: String, importedUTC: String,
+                 versionsPresent: Int)
+        case none(versionsPresent: Int)
+        case ambiguous(activeCount: Int, plansPresent: Int)
+        case malformed(String)
+    }
+
+    static func activeVersion(_ d: Database) throws -> ActiveVersion {
+        let versionsPresent = try count(d, "plan_version")
+
+        // ALL OF THEM, THEN COUNTED. `fetchOne` would be a silent choice
+        // between two plans' active versions — §12.66.3.
+        let active = try Row.fetchAll(d, sql: activeVersionSQL)
+        guard let v = active.first else {
+            return .none(versionsPresent: versionsPresent)
+        }
+        guard active.count == 1 else {
+            return .ambiguous(activeCount: active.count,
+                              plansPresent: try count(d, "plan"))
+        }
+        guard let id = v["id"] as String?,
+              let planID = v["planID"] as String?,
+              let sourceLabel = v["sourceLabel"] as String?,
+              let importedUTC = v["importedUTC"] as String? else {
+            return .malformed("the active plan version is missing a column")
+        }
+        return .one(id: id, planID: planID, sourceLabel: sourceLabel,
+                    importedUTC: importedUTC, versionsPresent: versionsPresent)
+    }
+
     static func load(_ db: Sub4Database) -> PlanLoad {
         do {
             return try db.queue.read { d -> PlanLoad in
@@ -593,21 +634,20 @@ nonisolated enum PlanRepository {
 
                 let versionsPresent = rows.versions
 
-                // ALL OF THEM, THEN COUNTED. `fetchOne` here would be a silent
-                // choice between two plans' active versions — see the header.
-                let active = try Row.fetchAll(d, sql: activeVersionSQL)
-                guard let v = active.first else {
+                // ONE COPY OF THIS QUESTION, CALLED — §12.43.
+                let versionID: String, planID: String
+                let sourceLabel: String, importedUTC: String
+                switch try activeVersion(d) {
+                case .one(let id, let plan, let label, let imported, _):
+                    versionID = id; planID = plan
+                    sourceLabel = label; importedUTC = imported
+                case .none:
                     return .noActiveVersion(versionsPresent: versionsPresent)
-                }
-                guard active.count == 1 else {
-                    return .ambiguousActiveVersion(activeCount: active.count,
-                                                   plansPresent: rows.plans)
-                }
-                guard let versionID = v["id"] as String?,
-                      let planID = v["planID"] as String?,
-                      let sourceLabel = v["sourceLabel"] as String?,
-                      let importedUTC = v["importedUTC"] as String? else {
-                    return .failed("the active plan version is missing a column")
+                case .ambiguous(let activeCount, let plansPresent):
+                    return .ambiguousActiveVersion(activeCount: activeCount,
+                                                   plansPresent: plansPresent)
+                case .malformed(let why):
+                    return .failed(why)
                 }
 
                 guard let p = try Row.fetchOne(d, sql: planSQL, arguments: [planID]),
@@ -746,7 +786,9 @@ nonisolated enum PlanRepository {
         }
     }
 
-    private static func count(_ d: Database, _ table: String) throws -> Int {
+    /// Not private since 326 — `activeVersion` is called from
+    /// `PlanExtrasRepository` and this is how it counts what it reports.
+    static func count(_ d: Database, _ table: String) throws -> Int {
         // The table name is a literal from this file, never an argument.
         try Int.fetchOne(d, sql: "SELECT COUNT(*) FROM \(table)") ?? 0
     }
@@ -754,7 +796,7 @@ nonisolated enum PlanRepository {
     /// The partial unique index `plan_version_one_active` makes "at most one"
     /// a property of the schema, so `fetchOne` is not a silent choice between
     /// candidates — there cannot be two.
-    private static let activeVersionSQL = """
+    static let activeVersionSQL = """
         SELECT id, planID, sourceLabel, importedUTC
           FROM plan_version
          WHERE activatedUTC IS NOT NULL
