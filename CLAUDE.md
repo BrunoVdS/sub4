@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 329 (2026-08-08).** Patch 318 installed this file with its state
+**Current at patch 332 (2026-08-09).** Patch 318 installed this file with its state
 sections still describing patch 278c — forty patches behind — which is the failure
 this file exists to prevent. §5 is the part that goes stale; if the patch number in
 its heading is far behind `Sub4/AppVersion.swift`, trust the ADR and the code, not §5.
@@ -91,6 +91,33 @@ the way it is. ADR §12 supersedes all three.
   is a `Comment?`: an interpolated literal converts, `"a" + "\(b)"` does not.
 - A synthesised `init(from:)` does not use Swift default values.
 - `Self` in a default argument is covariant Self even on a `final class`.
+- **A view body has TWO size limits, and only one of them fails on your laptop.** The
+  compile-time one is below. The RUNTIME one is `EXC_BAD_ACCESS` inside `___chkstk_darwin`
+  at a stack address — a **stack overflow** evaluating the body. It compiles clean, passes
+  the suite, and only appears on the device. §12.75.10, §12.76.
+- **The budget is DEPTH, not rows, and a child that draws nothing still spends it.**
+  A `@ViewBuilder` block is built pairwise, so N children are N−1 nested `TupleView`s and
+  SwiftUI walks that chain recursively before drawing anything. 330 crashed on pressing
+  Compare; 330b "fixed" it by giving the new rows their own `Section` — one more top-level
+  child — and it crashed **on opening the tab**, where those rows render nothing. When a
+  size fix makes the crash EARLIER, the size was not the size you thought it was.
+  Remedy, in order: **fewer children per block** (group into `@ViewBuilder` functions —
+  21 in a row is depth 20, six groups is depth 9), then **a separate `View` struct** for
+  any subtree whose dependency surface is small enough to move without moving `@State`.
+  330c did both: `ShadowParitySections.swift` is 700 lines that left the screen's type.
+  §12.76.
+- **`DatabaseHealthView` is where this keeps happening.** Adding to it is a structural
+  change, not an edit. Read §12.76 before adding rows to it. 331 added a Section by
+  putting it inside an existing group and splitting its rows into two functions — the
+  screen's depth did not move.
+- **A computed diagnostic behind a `@State` precondition is not a diagnostic** (§12.77.5).
+  It is one for whoever pressed the button, in the launch they pressed it, and for nobody
+  afterwards. `TraceCoverage` counted 674 activities into five buckets from patch 277 and
+  `DetailStore.backfillRemaining` was `pending.count` from the day it was written — both
+  drawn only inside `if let importReport`, and both invisible on the two days a backfill
+  made them the only numbers that mattered. Same shape as §12.57. When you add a counter,
+  ask *who can read it and when*; the answers must be **anybody** and **whenever the screen
+  is open**.
 - **The "unable to type-check in reasonable time" failure is not a SwiftUI failure.** A
   large `Form`/`body` as one expression is the common case — split Sections into computed
   properties, hoist long strings to constants — but 327a hit it in a plain `[String]`:
@@ -239,10 +266,16 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 329, 2026-08-08
+## 5. State — patch 332, 2026-08-09
 
-**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c seven of eight closed;
-only slice 8 remains. D7 has not started, and nothing in the app reads the database yet.**
+**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c COMPLETE — all eight
+slices, at 330. D7 has not started, and nothing in the app reads the database yet.**
+
+**Two sentences belong together in the D7 decision, and §12.75.8 states them:** D6c proves
+the database can feed the app — every record round-trips and every derivation agrees from
+either side. It does **not** prove the app is right; §12.72 found seven copies of one rule
+disagreeing for 230 patches, and no slice could have caught it, because every slice compares
+the app against the database and that was the app disagreeing with itself.
 
 **That last clause is the whole of what is left, and it is worth restating because the
 read-backs make it easy to forget.** All nine repositories are reachable only from
@@ -293,7 +326,31 @@ thing worth writing down, because everything outside it looks finished from insi
 | 6b the plan — weeks, sessions, breakdowns, blocks | `PlanRepository` + `PlanRoundTrip` | 323 ✔ |
 | 6c the plan's trimmings — exercises, fuel, warm-up | `PlanExtrasRepository` | 326 ✔ |
 | 7 review payloads | `ReviewRepository` + `ReviewRoundTrip` | 327 ✔ |
-| 8 Today / Week / Plan / Progress summaries | `SessionTally` (328) + `TabSummary` (329) + twin | 328 · 329 · twin open |
+| 8 Today / Week / Plan / Progress summaries | `SessionTally` 328 + `TabSummary` 329 + `SummaryParity` | 330 ✔ |
+
+**9 AUGUST: THE PHONE WAS WIPED.** The app was deleted by hand during the 330b crash loop,
+which took every JSON store with it. Recovered from Strava: 674 activities, 586 weather
+readings, 11 gear. **Gone for good:** 7 session notes with their sRPEs (`notes.json`) and
+4 commute decisions (`commutes.json`, which is what fills the `correction` table — the
+`DataCorrections` overrides are source and survived). Also gone: the eleven review
+rehearsal records, which had to be deleted before 24 August anyway. **The first protected
+snapshot in this project's history was taken at 09:39 UTC on 9 August** — 67 of 67 files,
+zero failures, `2026-08-09-083914`. D0 contract item 3 had been open since patch 246.
+
+**The detail backfill is a two-day job and that is Strava's ceiling, not ours.**
+`DetailStore` drains 30 activities per sync at up to two requests each; Strava allows
+**100 reads per 15 minutes and 1,000 per day**, windows resetting at :00/:15/:30/:45 and
+the day at midnight UTC. ~1,180 requests are needed. A bigger batch would mean fewer
+presses, not more activities per day. **Do not read shadow parity as a verdict until
+`Still to fetch` reaches zero** — the detail and recording slices will report gaps that
+are the drain. §12.77.
+
+**Slice 8's code was right at 330a and the SCREEN was not.** 330, 330b and 330c are three
+consecutive fix-ups on one patch, two of them shipped on a wrong diagnosis, and the
+Database tab could not be opened in between. Nothing about the comparison changed; the
+crash was `DatabaseHealthView`'s own size. 330c moved the six parity sections into
+`Sub4/ShadowParitySections.swift` and grouped the rest. **No test in this project can see
+a stack overflow** — 1136 were green through all three. §12.76.
 
 **328 is slice 8's extraction, shipped alone because it CHANGES WHAT TWO TABS PRINT.**
 "Done of total" had **seven** implementations; six counted the plan's 30 optional Zwift
@@ -392,7 +449,7 @@ test.
   the ledger during the 320 device run. Patch 307's path works; iOS had simply never woken
   the app. Open from 311 to 320 on evidence that was an absence, which is §12.54.2's
   shape.
-- **`Interrupted runs: 2`** as of 317b, from that night's ⌘R cycles. Should not climb on a
+- **`Interrupted runs: 1`** as of 331, from that morning's ⌘R cycles. Should not climb on a
   day with no rebuilds.
 - **`Sub4/manual.html` is 38 patches stale** — last touched at 284, and it has zero
   mentions of the Database screen, shadow parity, write-through, GRDB or migrations. It is
@@ -412,8 +469,11 @@ test.
 - `content_revision` — **probably has no correct occupant** among the preference keys. Its
   real first occupant is likely the plan's content hash. Settle before building.
 - `lateArrivals` has been computed since patch 45 and is displayed nowhere.
-- **The protected snapshot goes stale.** The one on the phone is `2026-08-05-202320` from
-  patch 279. Take a fresh one before anything destructive.
+- ~~**The protected snapshot goes stale.**~~ **Closed 9 August** — and closed the hard way.
+  The button shipped at 247 and had never been pressed, so a hand-delete of the app took
+  every store AND the thing that would have protected them. The phone now holds
+  `2026-08-09-083914`, 67 of 67 files. **Take a second one when `Still to fetch` reaches
+  zero**, because the current copy holds 33 of ~674 details. §12.78.
 - **`ActivityStore.load()` still has the two-`try?` shape** patch 273 fixed on the four
   authored stores. Left deliberately: it is a cache and re-fetchable.
 - **STRAVA IS BEING SWITCHED OFF.** Once the database holds everything, the import stops
@@ -431,9 +491,21 @@ test.
 one-line wrappers. Behaviour-neutral. **`todayKey` is a parameter** — groundwork §7's
 cutoff, and the hinge the whole slice turns on. §12.73.
 
-**Next:** **330**, slice 8's twin — read `docs/D6C-SLICE-8-GROUNDWORK.md` first; §1.1 says
-what slices 1–7 already cover and must not be re-proved, §3 says the planned half is
-identical by construction, §7 says the cutoff is how this gets got wrong. Then D7 activate, D8, and 4A. Before D7 is pressed,
+**330 closed slice 8, and D6c with it.** `SummaryParity` compares the Progress chart's week
+points, the four volume rows and the block tally. **It is the only slice that reads the plan
+from the database** — every other one holds it from the app and lets `PlanRoundTrip` verify
+it — so it holds only the match decisions, which makes it the closest thing on that screen
+to what D7 does. §12.75.
+
+**331 and 332 are the backfill's tooling, not the ladder.** 331 pulled the trace account out
+from behind `if let importReport` so `Still to fetch` is readable without pressing Import,
+and drew every row unconditionally — §12.77. 332 added **Share diagnostics** beside Copy:
+same text, written to `sub4-diagnostics-<day>-p<patch>.txt` and handed to the existing
+`ShareSheet`, so it AirDrops to the Mac and the capture names its own build — §12.79.
+Neither touches the database.
+
+**Next:** D7. Before it is pressed, two things that are not slices: fold the nine read-backs
+into one roll-up with a durable result, and refresh the protected snapshot. Then D7 activate, D8, and 4A. Before D7 is pressed,
 two things that are not slices: fold the nine read-backs into one roll-up with a durable
 result — §12.57 corrected `@State`-evaporation for `ShadowParity` and never for the
 read-backs, and nine buttons that must each be pressed is not a gate anybody can lean on —

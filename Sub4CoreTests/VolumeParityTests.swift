@@ -36,6 +36,30 @@ struct VolumeParityTests {
     /// matched on both sides. Handed an empty pair instead, the assertion above
     /// would pass with one more failing slice than it means to test, which is
     /// 315a's defect.
+
+    /// A summary slice that passes, for the same reason `matchesAgree` exists:
+    /// an empty pair compares zero of zero, `lookedAtSomething` is false, and
+    /// the assertion above would then pass with one MORE failing slice than it
+    /// means to test. 315a's defect, and 330 is the fifth slice to have to
+    /// avoid it.
+    private func summariesAgree() -> SummaryParity.Report {
+        let point = TabSummary.WeekPoint(
+            weekNo: 1, start: Date(timeIntervalSince1970: 1_776_600_000),
+            plannedKm: 30, plannedExact: true, actualKm: 28,
+            longestRunKm: 14, done: 3, total: 4)
+        let volume = PlanStore.PlanVolume(runKm: 28, bikeHours: 2,
+                                          swimKm: 1.5, strengthSessions: 2,
+                                          runExact: true)
+        return SummaryParity.compare(app: [point], database: [point],
+                                     appActual: volume, databaseActual: volume,
+                                     appPlanned: volume, databasePlanned: volume,
+                                     planSessionsInApp: 4,
+                                     planSessionsInDatabase: 4,
+                                     daysAskedFor: 7,
+                                     daysWithContentInApp: 4,
+                                     daysWithContentInDatabase: 4)
+    }
+
     private func matchesAgree() -> MatchParity.Report {
         let a = Activity(id: "m1", name: "Morning Run", sportType: "Run",
                          startLocal: "2026-04-20T09:00:00", distance: 10_000,
@@ -367,7 +391,8 @@ struct VolumeParityTests {
                                                volume: volumeDiffers,
                                                load: loadAgrees,
                                                details: detailsAgree,
-                                               matches: matchesAgree())
+                                               matches: matchesAgree(),
+                                               summaries: summariesAgree())
         #expect(!outcome.isHealthy, "three passes and one failure is a failure")
         #expect(outcome.line.contains("differences"))
     }

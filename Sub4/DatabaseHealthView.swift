@@ -141,6 +141,11 @@ struct DatabaseHealthView: View {
     /// which is the thing somebody reads later, said "Not compared since this
     /// launch" a minute after the comparison passed. True of the `@State` and
     /// false about the world. §12.57.
+    ///
+    /// PATCH 330c. The parity ROWS moved to `ShadowParitySections`, which
+    /// observes the same shared runner. This reference stays because the
+    /// diagnostics paste below still needs the outcome — and because that is
+    /// the whole point of the runner owning it rather than a view.
     @State private var parity = ShadowParity.shared
 
     /// Patch 262 — the legacy survey. Nil until the button is pressed.
@@ -156,6 +161,18 @@ struct DatabaseHealthView: View {
     @State private var surveying = false
     @State private var survey: [LegacyReading]?
 
+    /// PATCH 331. Observed, like `writeThrough` and `parity` above, and for
+    /// the same reason: the backlog changes WHILE this screen is open. A drain
+    /// finishing behind a sheet that keeps showing the count it opened with is
+    /// the exact shape 306 fixed for the ledger.
+    @State private var detailStore = DetailStore.shared
+
+    /// PATCH 332. Nil until the share button writes a file. `ShareItem` is the
+    /// wrapper `ShareSheet.swift` owns so that `.sheet(item:)` has something
+    /// `Identifiable` without a retroactive conformance on `URL`.
+    @State private var shared: ShareItem?
+    @State private var shareFailed = false
+
     var body: some View {
         NavigationStack {
             List {
@@ -165,78 +182,31 @@ struct DatabaseHealthView: View {
                 case .failure(let error):
                     failureSection(error)
                 case .success(let db):
-                    verdictSection
-                    fileSection(db)
-                    contentsSection
-                    // BEFORE the import, on screen and in the contract. Item 3
-                    // says copy every legacy input before decoding, and a
-                    // screen that offers to import above the button that
-                    // protects the inputs teaches the wrong order.
-                    snapshotSection
-                    importSection(db)
-                    // PATCH 302. Directly after the Import section, because it
-                    // IS that import — fired without anybody pressing it. The
-                    // screen reads in the order the two things relate: here is
-                    // the button, and here is what happens when nobody presses
-                    // it.
-                    writeThroughSection(db)
-                    ledgerSection
-                    // DIRECTLY AFTER THE LEDGER, because it is the thing that
-                    // moves a run out of `pending`. The screen reads in the
-                    // order the states go: imported, then verified.
-                    verifySection(db)
-                    readBackSection(db)
-                    detailReadBackSection(db)
-                    recordingReadBackSection(db)
-                    // PATCH 317. The fourth, and the one that closes D6a's
-                    // gap: `athlete_profile`, `resting_month` and `hr_zone`
-                    // were the only imported tables nothing ever read back.
-                    // LAST of the four because it is the smallest and because
-                    // the section under it now depends on it — shadow parity
-                    // holds constants, zones and FTP from the app, and this is
-                    // what turns that from an assumption into a check.
-                    athleteReadBackSection
-                    // PATCH 322. The fifth, and the one that closes the loop
-                    // 321 opened: `note.rpe` was slice 3's last unverified
-                    // input, and `correction` holds one of slice 5's three
-                    // held ones.
-                    //
-                    // ONE SECTION FOR TWO TABLES, deliberately. Groundwork §7
-                    // warned that a screen nobody scrolls to the bottom of is a
-                    // screen whose bottom rows are not read, and §12.40.1
-                    // measured that once already. Eleven records do not need
-                    // two headings.
-                    authoredReadBackSection
-                    // PATCH 323. Sixth read-back and the largest by a wide
-                    // margin — 260 sessions where the athlete's profile was 27
-                    // fields. It sits last of the read-backs because it is the
-                    // one whose numbers need reading twice: the compared count
-                    // is a third of the table's, and the row that says why is
-                    // directly under it.
-                    planReadBackSection
-                    // PATCH 324. Last of the read-backs and the one that closes
-                    // slice 6 — 583 readings and eleven shoes.
-                    weatherGearReadBackSection
-                    // PATCH 327. Ninth and last of the read-backs, and the one
-                    // that finishes D6c's record side. It sits at the end
-                    // because it is the only one that can legitimately compare
-                    // nothing: the first real review is due 24 August 2026, and
-                    // until then a green "no review stored yet" is the correct
-                    // answer rather than a missing one.
-                    reviewReadBackSection
-                    // AFTER the three read-backs, because it asks the question
-                    // they cannot: they compare RECORDS, this compares the list
-                    // the app would DERIVE from them. The screen reads in the
+                    // SIX GROUPS AND A CHILD VIEW, NOT TWENTY-ONE SECTIONS —
+                    // patch 330c. The sections and their order are unchanged;
+                    // what changed is how deeply they nest. A `@ViewBuilder`
+                    // block of twenty-one children is a left-leaning chain
+                    // twenty `TupleView`s deep, and SwiftUI walks that chain
+                    // recursively before it draws anything — which is what
+                    // `EXC_BAD_ACCESS` inside `___chkstk_darwin` on opening
+                    // this tab was. Six groups of three or four is depth nine.
+                    // See ShadowParitySections' header and ADR-0003 §12.76.
+                    stateSections(db)
+                    inputSections(db)
+                    ledgerSections(db)
+                    activityReadBackSections(db)
+                    recordReadBackSections
+                    // AFTER the read-backs, because it asks the question they
+                    // cannot: they compare RECORDS, this compares the list the
+                    // app would DERIVE from them. The screen reads in the
                     // order the two questions relate — are the rows the same,
                     // and then would the screens be the same.
-                    paritySection(db)
-                    // AFTER the import and before the benchmark. It is about
-                    // the files the import reads FROM, so it belongs beside
-                    // the import; it is a survey rather than an action, so it
-                    // does not go above it.
-                    legacySection
-                    benchmarkSection
-                    diagnosticsSection(db)
+                    //
+                    // A SEPARATE VIEW rather than a group, because it is the
+                    // largest thing on this screen by a wide margin and it
+                    // needs none of this screen's state. §12.76.2.
+                    ShadowParitySections(db: db)
+                    toolSections(db)
                 }
             }
             .navigationTitle("Database")
@@ -273,8 +243,115 @@ struct DatabaseHealthView: View {
                     }
                 }
             }
+            // PATCH 332. The only presentation modifier on this screen, and it
+            // is here rather than on the diagnostics Section because a sheet
+            // presented from inside a `List` row is presented from a view the
+            // list is free to recycle.
+            .sheet(item: $shared) { item in
+                ShareSheet(items: [item.url])
+            }
 
         }
+    }
+
+    // MARK: - The six groups — patch 330c
+
+    /// PURELY STRUCTURAL. Every group below is a bag of the sections that used
+    /// to sit side by side in `body`, in the same order, drawn identically.
+    /// The grouping exists to make the view tree a tree instead of a chain;
+    /// nothing here decides anything.
+
+    /// What the file is and what is in it.
+    @ViewBuilder
+    private func stateSections(_ db: Sub4Database) -> some View {
+        verdictSection
+        fileSection(db)
+        contentsSection
+    }
+
+    /// What goes in, and what protects what goes in.
+    @ViewBuilder
+    private func inputSections(_ db: Sub4Database) -> some View {
+        // BEFORE the import, on screen and in the contract. Item 3 says copy
+        // every legacy input before decoding, and a screen that offers to
+        // import above the button that protects the inputs teaches the wrong
+        // order.
+        snapshotSection
+        importSection(db)
+        // PATCH 331. Between the import and the write-through, because it is
+        // the answer to "why is the import finding less than I expected" —
+        // and the answer is usually that Strava has not sent it yet.
+        traceBacklogSection
+        // PATCH 302. Directly after the Import section, because it IS that
+        // import — fired without anybody pressing it. The screen reads in the
+        // order the two things relate: here is the button, and here is what
+        // happens when nobody presses it.
+        writeThroughSection(db)
+    }
+
+    /// What ran, and whether it was believed.
+    @ViewBuilder
+    private func ledgerSections(_ db: Sub4Database) -> some View {
+        ledgerSection
+        // DIRECTLY AFTER THE LEDGER, because it is the thing that moves a run
+        // out of `pending`. The screen reads in the order the states go:
+        // imported, then verified.
+        verifySection(db)
+    }
+
+    /// The three read-backs behind a press — 669 rows, 667 details and roughly
+    /// 1.5 million sample comparisons between them.
+    @ViewBuilder
+    private func activityReadBackSections(_ db: Sub4Database) -> some View {
+        readBackSection(db)
+        detailReadBackSection(db)
+        recordingReadBackSection(db)
+    }
+
+    /// The six that run themselves on open, because each costs one read.
+    @ViewBuilder
+    private var recordReadBackSections: some View {
+        // PATCH 317. The fourth, and the one that closes D6a's gap:
+        // `athlete_profile`, `resting_month` and `hr_zone` were the only
+        // imported tables nothing ever read back. FIRST of these because the
+        // parity section below depends on it — shadow parity holds constants,
+        // zones and FTP from the app, and this is what turns that from an
+        // assumption into a check.
+        athleteReadBackSection
+        // PATCH 322. The fifth, and the one that closes the loop 321 opened:
+        // `note.rpe` was slice 3's last unverified input, and `correction`
+        // holds one of slice 5's three held ones.
+        //
+        // ONE SECTION FOR TWO TABLES, deliberately. Groundwork §7 warned that
+        // a screen nobody scrolls to the bottom of is a screen whose bottom
+        // rows are not read, and §12.40.1 measured that once already. Eleven
+        // records do not need two headings.
+        authoredReadBackSection
+        // PATCH 323. Sixth read-back and the largest by a wide margin — 260
+        // sessions where the athlete's profile was 27 fields. Its numbers need
+        // reading twice: the compared count is a third of the table's, and the
+        // row that says why is directly under it.
+        planReadBackSection
+        // PATCH 324. The one that closes slice 6 — 583 readings and eleven
+        // shoes.
+        weatherGearReadBackSection
+        // PATCH 327. Ninth and last of the read-backs, and the one that
+        // finishes D6c's record side. It sits at the end because it is the
+        // only one that can legitimately compare nothing: the first real
+        // review is due 24 August 2026, and until then a green "no review
+        // stored yet" is the correct answer rather than a missing one.
+        reviewReadBackSection
+    }
+
+    /// The three that are about this screen rather than about the data.
+    @ViewBuilder
+    private func toolSections(_ db: Sub4Database) -> some View {
+        // AFTER the import and before the benchmark. It is about the files the
+        // import reads FROM, so it belongs beside the import; it is a survey
+        // rather than an action, so it does not go above it.
+        legacySection
+        benchmarkSection
+        diagnosticsSection(db)
     }
 
     // MARK: Sections
@@ -687,50 +764,12 @@ struct DatabaseHealthView: View {
                                : "\(r.rejectionsImported) new, \(r.rejectionsUpdated) refreshed")
                     .font(.caption)
 
-                // PATCH 277. THE COUNTER THAT HAD NO DECISION BESIDE IT.
-                //
-                // `activity: 668` and `recording: 645` sit four lines apart in
-                // the table list and nothing accounted for the difference —
-                // finding out what it was took reading `DetailStore`, which is
-                // not a thing a number on a screen should require.
-                //
-                // Every activity lands in exactly one bucket and the buckets
-                // sum to the total, so `unexplained` is the only line worth
-                // watching: it is zero today, and the day it is not is the day
-                // an activity has no trace for a reason nothing here has a
-                // name for.
-                if coverage.missing > 0 {
-                    LabeledContent("Activities with no trace",
-                                   value: "\(coverage.missing) of \(coverage.total)")
-                        .font(.caption)
-                    if coverage.answeredEmpty > 0 {
-                        LabeledContent("  asked, nothing there",
-                                       value: "\(coverage.answeredEmpty)")
-                            .font(.caption2).foregroundStyle(Color.dim)
-                    }
-                    if coverage.refused > 0 {
-                        LabeledContent("  the source refused it",
-                                       value: "\(coverage.refused)")
-                            .font(.caption2).foregroundStyle(Color.dim)
-                    }
-                    if coverage.belowThreshold > 0 {
-                        LabeledContent("  under 500 m, never asked",
-                                       value: "\(coverage.belowThreshold)")
-                            .font(.caption2).foregroundStyle(Color.dim)
-                    }
-                    if coverage.queued > 0 {
-                        LabeledContent("  queued, not yet reached",
-                                       value: "\(coverage.queued)")
-                            .font(.caption2).foregroundStyle(Color.dim)
-                    }
-                    // RED, AND SHOWN EVEN AT ZERO once anything is missing —
-                    // the residual is the whole point of the account, and a
-                    // line that only appears when it is non-zero cannot be
-                    // told apart from a line nobody wired in.
-                    LabeledContent("  unexplained", value: "\(coverage.unexplained)")
-                        .font(.caption2)
-                        .foregroundStyle(coverage.isFullyExplained ? Color.dim : Color.red)
-                }
+                // PATCH 331. The trace account MOVED OUT of this report and
+                // into `traceBacklogSection` below. It was never about the
+                // import: it describes what Strava has not sent yet, it is
+                // recomputed on every render, and living here meant it only
+                // existed after somebody pressed Import in this launch — the
+                // §12.57 evaporation, one screen later. See §12.77.
 
                 // PATCH 276. Named for what it MEANS rather than for its
                 // table: every row is a recording the app has decided not to
@@ -861,6 +900,133 @@ struct DatabaseHealthView: View {
     /// counters over an array the screen already holds, and a cached copy
     /// would be the thing that goes stale after an import.
     private var coverage: TraceCoverage { DetailStore.shared.traceCoverage() }
+
+    // MARK: - What Strava has not sent yet — patch 331
+
+    /// PATCH 331 — THE BACKLOG, VISIBLE WITHOUT PRESSING ANYTHING.
+    ///
+    /// Every figure here already existed. `TraceCoverage` has counted them
+    /// since 277 and `DetailStore.backfillRemaining` has been `pending.count`
+    /// since it was written — its own comment says "nothing has ever shown
+    /// it". They were drawn inside `if let importReport`, so they existed only
+    /// after somebody pressed Import in the current launch, and vanished with
+    /// the sheet. That is §12.57's evaporation on a second screen: a true
+    /// answer that a dismissal turns into no answer.
+    ///
+    /// It stopped being a readability point on 9 August. A reinstall emptied
+    /// the phone, 674 activities came back from Strava in one sync and their
+    /// details did not — the queue drains 30 per sync against Strava's 100
+    /// requests per 15 minutes and 1,000 per day, so it is a two-day job. For
+    /// those two days the only question that matters is "how many are left,
+    /// and am I rate-limited right now", and the app could answer neither.
+    ///
+    /// UNCONDITIONAL, INCLUDING AT ZERO — §12.54.2, which this screen has now
+    /// learned four times. The block used to be gated on `missing > 0`, so a
+    /// finished backfill and a section nobody wired in looked identical. The
+    /// whole point of a backlog row is to be read on the day it reaches zero.
+    @ViewBuilder
+    private var traceBacklogSection: some View {
+        Section {
+            backlogHeadlineRows
+            backlogAccountRows
+        } header: {
+            Text("Traces still to fetch")
+        } footer: {
+            Text(Self.backlogFooter).font(.caption2)
+        }
+    }
+
+    /// The three rows somebody watching a backfill actually wants.
+    @ViewBuilder
+    private var backlogHeadlineRows: some View {
+        LabeledContent("Still to fetch", value: "\(detailStore.backfillRemaining)")
+            .font(.caption)
+            .foregroundStyle(detailStore.backfillRemaining == 0 ? Color.dim : Color.ink)
+        LabeledContent("Fetching now", value: detailStore.isFetching ? "yes" : "no")
+            .font(.caption2).foregroundStyle(Color.dim)
+        // NOT "no" WHEN IT IS NIL AND NOTHING ELSE — §12.15. A limit that has
+        // expired and a limit that never happened are the same fact about now,
+        // and the row says so in words rather than leaving the reader to infer
+        // it from an absent line.
+        LabeledContent("Rate limited", value: Self.rateLimitLine(detailStore.rateLimitedUntil))
+            .font(.caption2)
+            .foregroundStyle(Self.isLimited(detailStore.rateLimitedUntil) ? Color.ink : Color.dim)
+    }
+
+    /// PATCH 277's account, unchanged in substance.
+    ///
+    /// `activity: 668` and `recording: 645` sat four lines apart in the table
+    /// list and nothing accounted for the difference — finding out what it was
+    /// took reading `DetailStore`, which is not a thing a number on a screen
+    /// should require.
+    ///
+    /// Every activity lands in exactly one bucket and the buckets sum to the
+    /// total, so `unexplained` is the only line worth watching: it is zero
+    /// today, and the day it is not is the day an activity has no trace for a
+    /// reason nothing here has a name for.
+    @ViewBuilder
+    private var backlogAccountRows: some View {
+        LabeledContent("Activities with no trace",
+                       value: "\(coverage.missing) of \(coverage.total)")
+            .font(.caption).foregroundStyle(Color.dim)
+        LabeledContent("  queued, not yet reached", value: "\(coverage.queued)")
+            .font(.caption2).foregroundStyle(Color.dim)
+        LabeledContent("  under 500 m, never asked", value: "\(coverage.belowThreshold)")
+            .font(.caption2).foregroundStyle(Color.dim)
+        LabeledContent("  asked, nothing there", value: "\(coverage.answeredEmpty)")
+            .font(.caption2).foregroundStyle(Color.dim)
+        LabeledContent("  the source refused it", value: "\(coverage.refused)")
+            .font(.caption2).foregroundStyle(Color.dim)
+        // RED WHEN IT IS NOT ZERO — the residual is the whole point of the
+        // account, and a line that only appears when it is non-zero cannot be
+        // told apart from a line nobody wired in.
+        LabeledContent("  unexplained", value: "\(coverage.unexplained)")
+            .font(.caption2)
+            .foregroundStyle(coverage.isFullyExplained ? Color.dim : Color.red)
+    }
+
+    private static func isLimited(_ until: Date?) -> Bool {
+        guard let until else { return false }
+        return Date() < until
+    }
+
+    /// Local wall-clock, because the reader is deciding whether to press a
+    /// button in the next ten minutes. `Date.FormatStyle` rather than a stored
+    /// `DateFormatter`: a `static let DateFormatter` is a non-Sendable global
+    /// and this project already carries two of those under
+    /// `nonisolated(unsafe)`. A third is not worth a time of day.
+    private static func clock(_ d: Date) -> String {
+        d.formatted(date: .omitted, time: .shortened)
+    }
+
+    private static func rateLimitLine(_ until: Date?) -> String {
+        guard let until else { return "no — not once this launch" }
+        return Date() < until
+            ? "yes — until \(clock(until))"
+            : "no — last cleared at \(clock(until))"
+    }
+
+    private static let backlogFooter =
+        "What Strava has not sent yet. Details and heart-rate traces arrive "
+      + "one activity at a time, 30 per sync, and each costs up to two "
+      + "requests — so a sync uses about 60 of Strava's 100 requests per 15 "
+      + "minutes. The daily ceiling is 1,000 requests, which is the number "
+      + "that decides how long a full backfill takes; a bigger batch would "
+      + "mean fewer presses, not more activities in a day.\n\n"
+      + "Still to fetch is the queue. It reaches zero when the backfill is "
+      + "done, and this section keeps saying zero rather than disappearing, "
+      + "because a section that vanishes when it is finished cannot be told "
+      + "from one nobody wired in.\n\n"
+      + "It counts activities missing a DETAIL or a TRACE. Queued, not yet "
+      + "reached below counts only those missing a trace — so the two differ "
+      + "by the activities whose detail has landed and whose trace has not, "
+      + "and that difference is not an error.\n\n"
+      + "The five rows under Activities with no trace are an account, not a "
+      + "list: every activity lands in exactly one of them and they sum to "
+      + "the total. Under 500 m is never asked at all — a strength session "
+      + "has no distance axis to plot. Unexplained is the residual, and the "
+      + "day it is not zero is the day an activity has no trace for a reason "
+      + "this screen has no name for. ADR-0003 §12.77."
 
     private func runImport(_ db: Sub4Database) {
         importing = true
@@ -2259,550 +2425,6 @@ struct DatabaseHealthView: View {
                                                database: load)
     }
 
-    /// D6c — patch 312, restructured at 313 when slice 2 arrived.
-    ///
-    /// ONE SECTION, ONE BUTTON, EVERY SLICE. Groundwork §7 left the shape open
-    /// until there was more than one comparison to lay out. There are two now,
-    /// they need the SAME database read and the SAME `ActivityRoster.settle`,
-    /// and two buttons would let somebody run half of it and see something that
-    /// looked whole.
-    ///
-    /// The three sections above ask *do both sides hold the same records* —
-    /// nineteen named fields per activity. This asks *would the app derive the
-    /// same answers*: the same list, in the same order, in the same days, and
-    /// now adding up to the same distances.
-    ///
-    /// EVERY ROW IS UNCONDITIONAL once a comparison has run. §12.54.2, and this
-    /// screen has now learned that twice.
-    @ViewBuilder
-    private func paritySection(_ db: Sub4Database) -> some View {
-        Section {
-            if parity.isRunning {
-                HStack { ProgressView(); Text("Deriving…").font(.caption) }
-            } else {
-                Button("Compare the derived lists") { runParity(db) }
-            }
-
-            LabeledContent("Parity", value: parity.last.line)
-                .font(.caption)
-                .foregroundStyle(parity.last.isHealthy ? Color.dim : .red)
-
-            // MARK: Slice 1 — the list
-
-            if let r = parity.last.activities {
-                Text("The list")
-                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-
-                // THE THREE DENOMINATORS — groundwork §2.1 case 2. A dead read
-                // stops them matching, and zero compared to zero agrees
-                // perfectly while meaning nothing.
-                LabeledContent("In the app", value: "\(r.storeCount)")
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("In the database",
-                               value: "\(r.databaseKept) of \(r.databaseOffered) rows")
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("Compared", value: "\(r.common)")
-                    .font(.caption)
-                    .foregroundStyle(r.lookedAtSomething ? Color.dim : .red)
-
-                LabeledContent("In the app only", value: "\(r.storeOnly.count)")
-                    .font(.caption)
-                    .foregroundStyle(r.storeOnly.isEmpty ? Color.dim : .red)
-                LabeledContent("In the database only", value: "\(r.databaseOnly.count)")
-                    .font(.caption)
-                    .foregroundStyle(r.databaseOnly.isEmpty ? Color.dim : .red)
-
-                LabeledContent("Order disagreements",
-                               value: "\(r.orderDiffered) of \(r.orderCompared)")
-                    .font(.caption)
-                    .foregroundStyle(r.orderDiffered == 0 ? Color.dim : .red)
-                if let at = r.firstOrderDisagreement {
-                    Text("  first at position \(at + 1)")
-                        .font(.caption2).foregroundStyle(.red)
-                }
-
-                LabeledContent("Days compared", value: "\(r.daysCompared)")
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("Days that disagree",
-                               value: "\(r.daysOnlyInStore.count + r.daysOnlyInDatabase.count + r.daysWithDifferentMembers.count)")
-                    .font(.caption)
-                    .foregroundStyle(r.daysOnlyInStore.isEmpty
-                                     && r.daysOnlyInDatabase.isEmpty
-                                     && r.daysWithDifferentMembers.isEmpty
-                                     ? Color.dim : .red)
-                ForEach(r.daysWithDifferentMembers.prefix(5), id: \.self) { day in
-                    Text("  \(day)").font(.caption2).foregroundStyle(.red)
-                }
-
-                LabeledContent("Time-zone changes",
-                               value: r.zonesAgree
-                                   ? "\(r.zoneChangesCompared), agreed"
-                                   : "\(r.zoneChangesCompared), disagreed")
-                    .font(.caption)
-                    .foregroundStyle(r.zonesAgree ? Color.dim : .red)
-
-                // DIM WHEN ZERO, INK WHEN NOT — not red. These are not
-                // disagreements; they are rows the database is still carrying
-                // that the app's own rules refuse. §12.46.3 predicted them.
-                LabeledContent("Rows the rules dropped", value: "\(r.databaseDropped)")
-                    .font(.caption)
-                    .foregroundStyle(r.databaseDropped == 0 ? Color.dim : Color.ink)
-                LabeledContent("Rows collapsed as duplicates",
-                               value: "\(r.databaseCollapsed)")
-                    .font(.caption)
-                    .foregroundStyle(r.databaseCollapsed == 0 ? Color.dim : Color.ink)
-                LabeledContent("Rows the reader could not read",
-                               value: "\(r.databaseSkipped)")
-                    .font(.caption)
-                    .foregroundStyle(r.databaseSkipped == 0 ? Color.dim : .red)
-
-                LabeledContent("The app's list is settled",
-                               value: r.storeIsSettled ? "yes" : "no")
-                    .font(.caption)
-                    .foregroundStyle(r.storeIsSettled ? Color.dim : .red)
-            }
-
-            // MARK: Slice 2 — the numbers derived from it
-
-            if let v = parity.last.volume {
-                Text("Daily and weekly volume")
-                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-
-                // EACH COUNT BESIDE ITS OWN DENOMINATOR — §12.54.3. "0 of 324"
-                // is evidence; a bare 0 is noise.
-                LabeledContent("Day distances",
-                               value: "\(v.daysDiffering.count) of \(v.daysCompared) disagree")
-                    .font(.caption)
-                    .foregroundStyle(v.daysDiffering.isEmpty ? Color.dim : .red)
-                ForEach(v.daysDiffering.prefix(5), id: \.self) { day in
-                    Text("  \(day)").font(.caption2).foregroundStyle(.red)
-                }
-
-                LabeledContent("Week figures",
-                               value: "\(v.weeksDiffering.count) of \(v.weekValuesCompared) disagree")
-                    .font(.caption)
-                    .foregroundStyle(v.weeksDiffering.isEmpty ? Color.dim : .red)
-                ForEach(v.weeksDiffering.prefix(5), id: \.self) { w in
-                    Text("  \(w)").font(.caption2).foregroundStyle(.red)
-                }
-
-                LabeledContent("History bands",
-                               value: "\(v.bandsDiffering.count) of \(v.bandsCompared) disagree")
-                    .font(.caption)
-                    .foregroundStyle(v.bandsDiffering.isEmpty ? Color.dim : .red)
-                ForEach(v.bandsDiffering.prefix(6), id: \.self) { b in
-                    Text("  \(b)").font(.caption2).foregroundStyle(.red)
-                }
-
-                LabeledContent("The history starts on the same day",
-                               value: v.historyStartAgrees ? "yes" : "no")
-                    .font(.caption)
-                    .foregroundStyle(v.historyStartAgrees ? Color.dim : .red)
-
-                // ON SCREEN, because a threshold nobody can see is a threshold
-                // nobody can argue with.
-                LabeledContent("Tolerance", value: VolumeParity.toleranceLabel)
-                    .font(.caption).foregroundStyle(Color.dim)
-            }
-
-            // MARK: Slice 3 — the fitness curve, patch 315
-
-            if let l = parity.last.load {
-                Text("Fitness and load")
-                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-
-                LabeledContent("Days in each series",
-                               value: "\(l.appDays) vs \(l.databaseDays)")
-                    .font(.caption)
-                    .foregroundStyle(l.appDays == l.databaseDays ? Color.dim : .red)
-                LabeledContent("Days compared", value: "\(l.daysCompared)")
-                    .font(.caption)
-                    .foregroundStyle(l.daysCompared > 0 ? Color.dim : .red)
-                // THE DEEP DENOMINATOR. Four hundred rest days would satisfy
-                // the row above and describe no training at all.
-                LabeledContent("Sessions compared", value: "\(l.workoutsCompared)")
-                    .font(.caption)
-                    .foregroundStyle(l.workoutsCompared > 0 ? Color.dim : .red)
-                LabeledContent("Scored from a trace",
-                               value: "\(l.appTraces) vs \(l.databaseTraces)")
-                    .font(.caption)
-                    .foregroundStyle(l.appTraces == l.databaseTraces ? Color.dim : .red)
-
-                LabeledContent("Days with a different state",
-                               value: "\(l.daysWithDifferentState.count)")
-                    .font(.caption)
-                    .foregroundStyle(l.daysWithDifferentState.isEmpty ? Color.dim : .red)
-                ForEach(l.daysWithDifferentState.prefix(5), id: \.self) { day in
-                    Text("  \(day)").font(.caption2).foregroundStyle(.red)
-                }
-                LabeledContent("Days with a different total",
-                               value: "\(l.daysWithDifferentLoad.count)")
-                    .font(.caption)
-                    .foregroundStyle(l.daysWithDifferentLoad.isEmpty ? Color.dim : .red)
-                ForEach(l.daysWithDifferentLoad.prefix(5), id: \.self) { day in
-                    Text("  \(day)").font(.caption2).foregroundStyle(.red)
-                }
-
-                // THE ROW THIS SLICE EXISTS FOR — see LoadParity's header. A
-                // session scored from the trace on one side and from the
-                // session average on the other is D6a's accepted trace loss
-                // costing a number somebody reads.
-                LabeledContent("Sessions on a different rung",
-                               value: "\(l.workoutsWithDifferentSource.count)")
-                    .font(.caption)
-                    .foregroundStyle(l.workoutsWithDifferentSource.isEmpty
-                                     ? Color.dim : .red)
-                LabeledContent("Sessions with a different figure",
-                               value: "\(l.workoutsWithDifferentFigure.count)")
-                    .font(.caption)
-                    .foregroundStyle(l.workoutsWithDifferentFigure.isEmpty
-                                     ? Color.dim : .red)
-
-                // THE SHAPE UNDER THE NUMBER — patch 316. TRIMP is an
-                // integral; this is the distribution it integrates. Two
-                // different distributions produce the same TRIMP, and the
-                // distribution is what the Time-in-zone card draws.
-                LabeledContent("Heart-rate buckets compared",
-                               value: "\(l.hrBucketsCompared)")
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("Sessions with a different distribution",
-                               value: "\(l.workoutsWithDifferentHistogram.count)")
-                    .font(.caption)
-                    .foregroundStyle(l.workoutsWithDifferentHistogram.isEmpty
-                                     ? Color.dim : .red)
-                LabeledContent("Zones that disagree",
-                               value: "\(l.zonesDiffering.count) of \(l.zonesCompared)")
-                    .font(.caption)
-                    .foregroundStyle(l.zonesDiffering.isEmpty ? Color.dim : .red)
-                LabeledContent("Sessions in the zone card",
-                               value: "\(l.zoneTracedApp) vs \(l.zoneTracedDatabase)")
-                    .font(.caption)
-                    .foregroundStyle(l.zoneTracedApp == l.zoneTracedDatabase
-                                     ? Color.dim : .red)
-                LabeledContent("Sessions it left out",
-                               value: "\(l.zoneUntracedApp) vs \(l.zoneUntracedDatabase)")
-                    .font(.caption)
-                    .foregroundStyle(l.zoneUntracedApp == l.zoneUntracedDatabase
-                                     ? Color.dim : .red)
-
-                LabeledContent("Curve points that disagree",
-                               value: "\(l.pointsWithDifferentFitness) of \(l.pointsCompared)")
-                    .font(.caption)
-                    .foregroundStyle(l.pointsWithDifferentFitness == 0 ? Color.dim : .red)
-                LabeledContent("Fitness", value: l.fitnessLine)
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("Fatigue", value: l.fatigueLine)
-                    .font(.caption).foregroundStyle(Color.dim)
-
-                // THE LIMIT, PRINTED. A comparison that does not say what it
-                // held constant is a comparison whose result cannot be read.
-                LabeledContent("Held from the app", value: LoadParity.heldFromTheApp)
-                    .font(.caption).foregroundStyle(Color.dim)
-                // PATCH 317. "Held from the app" and "held from the app and
-                // never checked" are different sentences, and until the athlete
-                // read-back above existed this screen could only say the
-                // second one.
-                LabeledContent("Of those, verified", value: LoadParity.verifiedByReadBack)
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("Tolerance", value: LoadParity.toleranceLabel)
-                    .font(.caption).foregroundStyle(Color.dim)
-            } else if case .ran = parity.last {
-                // NOT ZERO DIFFERENCES — NO ANSWER. The app's own series had
-                // not been built, so there was nothing to compare against.
-                LabeledContent("Fitness and load",
-                               value: "the app's load series was not built")
-                    .font(.caption).foregroundStyle(.red)
-            }
-
-            // MARK: Slice 4 — details, splits and laps
-
-            if let d = parity.last.details {
-                Text("Details, splits and laps")
-                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-
-                LabeledContent("Details in each side",
-                               value: "\(d.appDetails) vs \(d.databaseDetails)")
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("Details compared", value: "\(d.detailsCompared)")
-                    .font(.caption)
-                    .foregroundStyle(d.detailsCompared > 0 ? Color.dim : .red)
-                LabeledContent("In the app only", value: "\(d.detailsOnlyInApp.count)")
-                    .font(.caption)
-                    .foregroundStyle(d.detailsOnlyInApp.isEmpty ? Color.dim : .red)
-                // DIM, NOT RED — patch 298's rule. DataCorrections refuses two
-                // sessions and the importer declines their details at the door,
-                // while DetailStore keeps them because it keys by Strava id and
-                // never sees an Activity. A permanently correct red row is a row
-                // that stops being read.
-                LabeledContent("Excluded on purpose",
-                               value: "\(d.detailsExcluded.count)")
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("In the database only",
-                               value: "\(d.detailsOnlyInDatabase.count)")
-                    .font(.caption)
-                    .foregroundStyle(d.detailsOnlyInDatabase.isEmpty ? Color.dim : .red)
-
-                // THE TWO DENOMINATORS, AND THE SECOND IS THE REAL ONE. A pace
-                // that is nil on both sides agrees perfectly and proves nothing,
-                // so the count of figures BOTH sides answered is what says
-                // whether this looked at anything.
-                LabeledContent("Pace figures compared",
-                               value: "\(d.paceFiguresCompared)")
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("  both sides answered",
-                               value: "\(d.paceFiguresAnswered)")
-                    .font(.caption)
-                    .foregroundStyle(d.paceFiguresAnswered > 0 ? Color.dim : .red)
-                LabeledContent("Pace figures that differ",
-                               value: "\(d.paceFiguresDiffering.count)")
-                    .font(.caption)
-                    .foregroundStyle(d.paceFiguresDiffering.isEmpty ? Color.dim : .red)
-                ForEach(d.paceFiguresDiffering.prefix(6), id: \.self) { f in
-                    Text("    \(f)").font(.caption2).foregroundStyle(.red)
-                }
-                if d.paceFiguresDiffering.count > 6 {
-                    Text("    + \(d.paceFiguresDiffering.count - 6) more figures")
-                        .font(.caption2).foregroundStyle(Color.dim)
-                }
-
-                LabeledContent("Splits compared", value: "\(d.splitsCompared)")
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("Splits with a different pace",
-                               value: "\(d.splitsWithDifferentPace)")
-                    .font(.caption)
-                    .foregroundStyle(d.splitsWithDifferentPace == 0 ? Color.dim : .red)
-                LabeledContent("Splits with a different heart rate",
-                               value: "\(d.splitsWithDifferentHR)")
-                    .font(.caption)
-                    .foregroundStyle(d.splitsWithDifferentHR == 0 ? Color.dim : .red)
-                // DIM AND ALWAYS PRESENT — patch 320a. Carried differently,
-                // drawn the same: the importer's `positiveOrNil` on a stored
-                // zero. Not a difference, and not allowed to vanish either.
-                LabeledContent("  zero heart rates normalised",
-                               value: "\(d.splitsWithNormalisedHR)")
-                    .font(.caption2).foregroundStyle(Color.dim)
-                LabeledContent("Details with a different split set",
-                               value: "\(d.detailsWithDifferentSplitSet.count)")
-                    .font(.caption)
-                    .foregroundStyle(d.detailsWithDifferentSplitSet.isEmpty
-                                     ? Color.dim : .red)
-                LabeledContent("Details with different flags",
-                               value: "\(d.detailsWithDifferentFlags.count)")
-                    .font(.caption)
-                    .foregroundStyle(d.detailsWithDifferentFlags.isEmpty
-                                     ? Color.dim : .red)
-                LabeledContent("Details with different elevation",
-                               value: "\(d.detailsWithDifferentElevation.count)")
-                    .font(.caption)
-                    .foregroundStyle(d.detailsWithDifferentElevation.isEmpty
-                                     ? Color.dim : .red)
-                LabeledContent("Details with a different track",
-                               value: "\(d.detailsWithDifferentTrack.count)")
-                    .font(.caption)
-                    .foregroundStyle(d.detailsWithDifferentTrack.isEmpty
-                                     ? Color.dim : .red)
-
-                LabeledContent("Laps offered to the detector",
-                               value: "\(d.lapsCompared)")
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("Details read as intervals", value: d.intervalLine)
-                    .font(.caption)
-                    .foregroundStyle(d.appDetailsReadAsIntervals
-                                     == d.databaseDetailsReadAsIntervals
-                                     ? Color.dim : .red)
-                LabeledContent("Details with a different lap reading",
-                               value: "\(d.detailsWithDifferentLapReading.count)")
-                    .font(.caption)
-                    .foregroundStyle(d.detailsWithDifferentLapReading.isEmpty
-                                     ? Color.dim : .red)
-                LabeledContent("Reps compared", value: "\(d.repsCompared)")
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("Reps that differ", value: "\(d.repsDiffering)")
-                    .font(.caption)
-                    .foregroundStyle(d.repsDiffering == 0 ? Color.dim : .red)
-                LabeledContent("  zero heart rates normalised",
-                               value: "\(d.repsWithNormalisedHR)")
-                    .font(.caption2).foregroundStyle(Color.dim)
-
-                // THE ROW D6a's ACCEPTED LOSS IS AIMED AT. `hasHRSplits` is the
-                // only derived property that reads averageHR, and it treats a
-                // stored zero and a missing value alike — so these two matching
-                // is the evidence that the normalisation costs no figure.
-                LabeledContent("Details with heart-rate splits", value: d.hrSplitsLine)
-                    .font(.caption)
-                    .foregroundStyle(d.appDetailsWithHRSplits
-                                     == d.databaseDetailsWithHRSplits
-                                     ? Color.dim : .red)
-                LabeledContent("Details with a route", value: d.routeLine)
-                    .font(.caption)
-                    .foregroundStyle(d.appDetailsWithRoute == d.databaseDetailsWithRoute
-                                     ? Color.dim : .red)
-
-                LabeledContent("Held from the app", value: DetailParity.heldFromTheApp)
-                    .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("Tolerance", value: DetailParity.toleranceLabel)
-                    .font(.caption).foregroundStyle(Color.dim)
-            } else if case .ran = parity.last {
-                // NOT ZERO DIFFERENCES — NO ANSWER, again. The detail read
-                // itself failed, which is a different fact from a device that
-                // holds no details.
-                LabeledContent("Details, splits and laps",
-                               value: "the details could not be read")
-                    .font(.caption).foregroundStyle(.red)
-            }
-
-            // MARK: Slice 5 — plan matching
-
-            if let m = parity.last.matches {
-                Text("Plan matching")
-                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-
-                LabeledContent("Days compared", value: "\(m.daysCompared)")
-                    .font(.caption)
-                    .foregroundStyle(m.daysCompared > 0 ? Color.dim : .red)
-                LabeledContent("Planned sessions compared",
-                               value: "\(m.sessionsCompared)")
-                    .font(.caption).foregroundStyle(Color.dim)
-                // THE DENOMINATOR THAT MEANS SOMETHING. Most planned sessions
-                // resolve to nothing on both sides and agree perfectly; this is
-                // the count of sessions that actually claimed an activity.
-                LabeledContent("  claimed an activity on both sides",
-                               value: "\(m.matchesResolved)")
-                    .font(.caption)
-                    .foregroundStyle(m.matchesResolved > 0 ? Color.dim : .red)
-                LabeledContent("Extras compared", value: "\(m.extrasCompared)")
-                    .font(.caption).foregroundStyle(Color.dim)
-
-                LabeledContent("Days only in the app",
-                               value: "\(m.daysOnlyInApp.count)")
-                    .font(.caption)
-                    .foregroundStyle(m.daysOnlyInApp.isEmpty ? Color.dim : .red)
-                LabeledContent("Days only in the database",
-                               value: "\(m.daysOnlyInDatabase.count)")
-                    .font(.caption)
-                    .foregroundStyle(m.daysOnlyInDatabase.isEmpty ? Color.dim : .red)
-                LabeledContent("Sessions on one side only",
-                               value: "\(m.sessionsOnOneSideOnly.count)")
-                    .font(.caption)
-                    .foregroundStyle(m.sessionsOnOneSideOnly.isEmpty ? Color.dim : .red)
-
-                // THE ROW THIS SLICE EXISTS FOR.
-                LabeledContent("Sessions that claimed a different activity",
-                               value: "\(m.sessionsWithADifferentActivity.count)")
-                    .font(.caption)
-                    .foregroundStyle(m.sessionsWithADifferentActivity.isEmpty
-                                     ? Color.dim : .red)
-                ForEach(m.sessionsWithADifferentActivity.prefix(6), id: \.self) { u in
-                    Text("    \(u)").font(.caption2).foregroundStyle(.red)
-                }
-                // AND THE ONE THAT TURNS 4/4 INTO 3/4.
-                LabeledContent("Sessions done on one side only",
-                               value: "\(m.sessionsDoneOnOneSideOnly.count)")
-                    .font(.caption)
-                    .foregroundStyle(m.sessionsDoneOnOneSideOnly.isEmpty
-                                     ? Color.dim : .red)
-                ForEach(m.sessionsDoneOnOneSideOnly.prefix(6), id: \.self) { u in
-                    Text("    \(u)").font(.caption2).foregroundStyle(.red)
-                }
-                LabeledContent("Sessions chosen a different way",
-                               value: "\(m.sessionsWithADifferentSource.count)")
-                    .font(.caption)
-                    .foregroundStyle(m.sessionsWithADifferentSource.isEmpty
-                                     ? Color.dim : .red)
-                LabeledContent("Days with different extras",
-                               value: "\(m.daysWithDifferentExtras.count)")
-                    .font(.caption)
-                    .foregroundStyle(m.daysWithDifferentExtras.isEmpty
-                                     ? Color.dim : .red)
-                LabeledContent("Days with a different extras order",
-                               value: "\(m.daysWithDifferentExtraOrder.count)")
-                    .font(.caption)
-                    .foregroundStyle(m.daysWithDifferentExtraOrder.isEmpty
-                                     ? Color.dim : .red)
-
-                // THE WEEK SCREEN'S OWN FIGURE, both sides. A reader can hold
-                // this against the Week tab without pressing anything else.
-                LabeledContent("Adherence", value: m.adherenceLine)
-                    .font(.caption)
-                    .foregroundStyle(m.appSessionsDone == m.databaseSessionsDone
-                                     ? Color.dim : .red)
-                // ZERO IS THE HONEST ANSWER TODAY — match_decision holds no
-                // rows. Printed so that "no differences" is not read as
-                // coverage of the override branch, which was never entered.
-                LabeledContent("Overrides applied", value: "\(m.overridesApplied)")
-                    .font(.caption).foregroundStyle(Color.dim)
-
-                LabeledContent("Held from the app", value: MatchParity.heldFromTheApp)
-                    .font(.caption).foregroundStyle(Color.dim)
-                // PATCH 322. One of the three is now checked by the authored
-                // read-back above rather than assumed.
-                LabeledContent("Of those, verified",
-                               value: MatchParity.verifiedByReadBack)
-                    .font(.caption).foregroundStyle(Color.dim)
-            }
-        } header: {
-            Text("Shadow parity")
-        } footer: {
-            Text("Builds the activity list a second time, from the database "
-                 + "instead of the files, and compares what the app would "
-                 + "derive from each. Both sides run through the same rules — "
-                 + "one copy, called twice — so a difference here is a "
-                 + "difference in the DATA, not in how it was derived.\n\n"
-                 + "It does not re-check fields. The three read-backs above do "
-                 + "that.\n\n"
-                 + "Volume is compared with a tolerance, because two identical "
-                 + "sums of decimals can end in a different last digit. A "
-                 + "difference under a metre or a second is arithmetic; "
-                 + "anything larger is data.\n\n"
-                 + "Rows the rules dropped are not disagreements: the database "
-                 + "is carrying something the app no longer wants, which is "
-                 + "what automatic write-throughs not reconciling looks like. "
-                 + "Details excluded on purpose are not disagreements either — "
-                 + "two sessions are refused by name. Every other number above "
-                 + "zero is real.\n\n"
-                 + "Details, splits and laps compare what the activity screen "
-                 + "would DERIVE: the closing, opening and best-window paces, "
-                 + "the split table, and what the laps read as. The plan is not "
-                 + "consulted, so laps are read with no cut pace — that is "
-                 + "slice 5. A pace that is missing on both sides agrees and "
-                 + "proves nothing, which is why the figures BOTH sides "
-                 + "answered are counted separately.\n\n"
-                 + "Heart rates are compared as the tables DRAW them — every "
-                 + "one of them guards `hr > 0`, so a stored zero and a missing "
-                 + "value are the same pixel. What is carried differently and "
-                 + "drawn the same is counted on its own line, dim, because a "
-                 + "row that vanishes once it is understood is a row nobody can "
-                 + "watch. See ADR-0003 §12.63.8.\n\n"
-                 + "Plan matching runs the app's own resolver twice, over two "
-                 + "activity lists. The plan, the match decisions and the "
-                 + "commute decisions come from the app on both sides, so the "
-                 + "only thing that moves is the activities. A vague session "
-                 + "takes the first candidate, so the ORDER of that list "
-                 + "decides what it claims — which is why this slice's answer "
-                 + "rests on the list slice reporting zero order "
-                 + "disagreements. See ADR-0003 §12.64.\n\n"
-                 + "The fitness comparison holds the constants, your zones, "
-                 + "the FTP, your session RPEs and Apple Health identical on "
-                 + "both sides — the database has no reader for them yet, and "
-                 + "Health it will never have. So it answers one question: do "
-                 + "the database's activities and traces produce the same "
-                 + "load, and the same shape underneath it.\n\n"
-                 + "A training load is an integral over the heart-rate trace. "
-                 + "The distribution it integrates is what the Time-in-zone "
-                 + "card draws, and two different distributions can add up to "
-                 + "the same load — so both are compared. See ADR-0003 "
-                 + "§12.56, §12.57, §12.59 and §12.60.")
-                .font(.caption2)
-        }
-    }
-
-    private func runParity(_ db: Sub4Database) {
-        // The runner holds the result now, so it survives this sheet being
-        // dismissed — patch 313. It also does the read off the main actor,
-        // which is what lets the spinner draw before the work starts.
-        Task { await parity.run(db) }
-    }
-
     /// The precise names, trimmed. `laps[*].averageHR` in the tally says WHAT;
     /// this says which laps, on the ids it prints, so the collapsed row still
     /// leads somewhere.
@@ -2931,6 +2553,21 @@ struct DatabaseHealthView: View {
                 UIPasteboard.general.string = diagnosticsText
                 copied = true
             }
+            // PATCH 332. A SECOND BUTTON, NOT A REPLACEMENT.
+            //
+            // The paste is the fast path when the Mac is in reach of the
+            // clipboard; this one is for when it is not. It ships a FILE, so
+            // AirDrop, Save to Files and Mail all appear, and the name carries
+            // the day and the patch — which is worth more than the transport,
+            // because a capture that names its own build is a capture that can
+            // still be read next week. §12.79.
+            Button("Share diagnostics") {
+                shared = writeDiagnostics().map(ShareItem.init(url:))
+            }
+            if shareFailed {
+                Text("The file could not be written. Copy diagnostics still works.")
+                    .font(.caption2).foregroundStyle(.red)
+            }
             Button("Re-check") {
                 copied = false
                 Task { await recheck(db) }
@@ -2940,8 +2577,48 @@ struct DatabaseHealthView: View {
                  + "own verdicts and — once you have run the survey — how many "
                  + "of the app's files read cleanly. No session names, no "
                  + "places, no dates from your history, and no identifiers "
-                 + "from the survey — it is safe to paste into a message.")
+                 + "from the survey — it is safe to paste into a message.\n\n"
+                 + "Share writes the same text to a dated file and hands it to "
+                 + "the system sheet — AirDrop to a Mac, Save to Files, or "
+                 + "attach it to a message. The file is temporary; the numbers "
+                 + "in it are not stored anywhere.")
                 .font(.caption2)
+        }
+    }
+
+    /// PATCH 332. Written on the press, never on a redraw.
+    ///
+    /// `ShareSheet` rather than SwiftUI's `ShareLink`, and `ShareSheet.swift`
+    /// says why in its own header: `ShareLink` needs its item at view
+    /// construction time, the file does not exist until the button is pressed,
+    /// and the one that shipped at patch 183 "rendered and did nothing at all
+    /// when tapped". Second caller of a wrapper built for the notes CSV.
+    ///
+    /// TEMPORARY IS RIGHT. The file is a transport. Every number in it is
+    /// derived from stores that are still on the phone, so nothing is lost when
+    /// iOS reclaims it, and a diagnostic that accumulated dated copies in the
+    /// container would be a store nobody declared.
+    private func writeDiagnostics() -> URL? {
+        let name = "sub4-diagnostics-\(DayKey.key())-p\(AppVersion.patchLabel).txt"
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent(name)
+        guard let data = diagnosticsText.data(using: .utf8) else {
+            shareFailed = true
+            return nil
+        }
+        do {
+            // The same protection class as the stores it describes — patch 190.
+            // It carries no names or places, but "it is only counts" is an
+            // argument about today's content, not about the file.
+            try data.write(to: url, options: FileProtection.options)
+            shareFailed = false
+            return url
+        } catch {
+            // §12.15. A button that silently does nothing is indistinguishable
+            // from a button nobody wired up, and this one has exactly one
+            // failure mode worth naming.
+            shareFailed = true
+            return nil
         }
     }
 
@@ -3292,6 +2969,22 @@ struct DatabaseHealthView: View {
         // place the roster's numbers appear when they are all zero, which is
         // what makes "0 collapsed" evidence rather than an absence.
         lines.append(contentsOf: ActivityStore.shared.loadDiagnosticLines)
+        // PATCH 331. UNCONDITIONAL, and counts only — no ids, so §12.7's
+        // promise about this paste is untouched. It is here because the paste
+        // is what somebody reads LATER, and "the details were still coming
+        // down" is the single most useful thing to know about a figure taken
+        // during a backfill. Every parity and read-back number below is
+        // conditioned on it.
+        lines.append("")
+        lines.append("Traces still to fetch: \(detailStore.backfillRemaining)")
+        lines.append("  fetching now: \(detailStore.isFetching ? "yes" : "no")")
+        lines.append("  rate limited: \(Self.rateLimitLine(detailStore.rateLimitedUntil))")
+        lines.append("  activities with no trace: \(coverage.missing) of \(coverage.total)")
+        lines.append("    queued, not yet reached: \(coverage.queued)")
+        lines.append("    under 500 m, never asked: \(coverage.belowThreshold)")
+        lines.append("    asked, nothing there: \(coverage.answeredEmpty)")
+        lines.append("    the source refused it: \(coverage.refused)")
+        lines.append("    unexplained: \(coverage.unexplained)")
         // PATCH 312, BOTH SLICES AT 313. Only after a run — this one costs a
         // database read and two full derivations, so there is nothing to print
         // until somebody presses the button. `Outcome.diagnosticLines` says

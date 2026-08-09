@@ -87,7 +87,11 @@ final class ShadowParity {
                  volume: VolumeParity.Report,
                  load: LoadParity.Report?,
                  details: DetailParity.Report?,
-                 matches: MatchParity.Report)
+                 matches: MatchParity.Report,
+                 /// Slice 8 — patch 330. Nil when the plan could not be read
+                 /// from the database, which is the one input this slice needs
+                 /// and no other slice does.
+                 summaries: SummaryParity.Report?)
         /// The launch gate never opened one. Not the same as a read failing.
         case noDatabase
         case readFailed(String)
@@ -96,10 +100,10 @@ final class ShadowParity {
             switch self {
             case .never:
                 "Not compared since this launch."
-            case .ran(let a, let v, let l, let d, let m):
-                Self.total(a, v, l, d, m) == 0
+            case .ran(let a, let v, let l, let d, let m, let s):
+                Self.total(a, v, l, d, m, s) == 0
                     ? "\(a.common) activities · \(v.daysCompared) days · no differences"
-                    : "\(Self.total(a, v, l, d, m)) differences"
+                    : "\(Self.total(a, v, l, d, m, s)) differences"
             case .noDatabase:
                 "The database is not open, so nothing was derived."
             case .readFailed(let why):
@@ -116,34 +120,35 @@ final class ShadowParity {
             // app's own series has not been built yet and `details` is nil when
             // the detail read failed; treating a missing comparison as a clean
             // one is the whole family of defect this screen keeps correcting.
-            case .ran(let a, let v, let l, let d, let m):
+            case .ran(let a, let v, let l, let d, let m, let s):
                 a.isHealthy && v.isHealthy
                 && (l?.isHealthy ?? false) && (d?.isHealthy ?? false)
-                && m.isHealthy
+                && m.isHealthy && (s?.isHealthy ?? false)
             case .noDatabase, .readFailed: false
             }
         }
 
-        /// The five slices' differences, or zero when there is nothing to
+        /// The six slices' differences, or zero when there is nothing to
         /// count. A slice that could not run contributes ONE — it is not zero
         /// differences, it is no answer.
         static func total(_ a: ActivityParity.Report,
                           _ v: VolumeParity.Report,
                           _ l: LoadParity.Report?,
                           _ d: DetailParity.Report?,
-                          _ m: MatchParity.Report) -> Int {
+                          _ m: MatchParity.Report,
+                          _ s: SummaryParity.Report?) -> Int {
             a.unexplained + v.unexplained
             + (l?.unexplained ?? 1) + (d?.unexplained ?? 1)
-            + m.unexplained
+            + m.unexplained + (s?.unexplained ?? 1)
         }
 
         var activities: ActivityParity.Report? {
-            if case .ran(let a, _, _, _, _) = self { return a }
+            if case .ran(let a, _, _, _, _, _) = self { return a }
             return nil
         }
 
         var volume: VolumeParity.Report? {
-            if case .ran(_, let v, _, _, _) = self { return v }
+            if case .ran(_, let v, _, _, _, _) = self { return v }
             return nil
         }
 
@@ -151,7 +156,7 @@ final class ShadowParity {
         /// comparison ran. `ShadowParity.run` asks for it first, so this should
         /// only ever be nil on a device with no training in it at all.
         var load: LoadParity.Report? {
-            if case .ran(_, _, let l, _, _) = self { return l }
+            if case .ran(_, _, let l, _, _, _) = self { return l }
             return nil
         }
 
@@ -159,14 +164,22 @@ final class ShadowParity {
         /// a device with no details, which compares zero of zero and is caught
         /// by `lookedAtSomething` instead.
         var details: DetailParity.Report? {
-            if case .ran(_, _, _, let d, _) = self { return d }
+            if case .ran(_, _, _, let d, _, _) = self { return d }
             return nil
         }
 
         /// Slice 5 — patch 321. Never nil: matching needs the plan, the
         /// decisions and two activity lists, and all four exist on any launch.
+        /// Slice 8 — patch 330. Nil when `PlanRepository.load` did not return
+        /// a plan: this is the only slice that reads one, so it is the only
+        /// one that can be nil for that reason.
+        var summaries: SummaryParity.Report? {
+            if case .ran(_, _, _, _, _, let s) = self { return s }
+            return nil
+        }
+
         var matches: MatchParity.Report? {
-            if case .ran(_, _, _, _, let m) = self { return m }
+            if case .ran(_, _, _, _, let m, _) = self { return m }
             return nil
         }
 
@@ -174,14 +187,16 @@ final class ShadowParity {
         /// 266c's rule, and the paste is where this patch's own defect showed.
         var diagnosticLines: [String] {
             switch self {
-            case .ran(let a, let v, let l, let d, let m):
+            case .ran(let a, let v, let l, let d, let m, let s):
                 a.diagnosticLines + [""] + v.diagnosticLines + [""]
                 + (l?.diagnosticLines
                    ?? ["Load parity: the app's own load series was not built"])
                 + [""]
                 + (d?.diagnosticLines
                    ?? ["Detail parity: the details could not be read"])
-                + [""] + m.diagnosticLines
+                + [""] + m.diagnosticLines + [""]
+                + (s?.diagnosticLines
+                   ?? ["Summary parity: the plan could not be read from the database"])
             case .never, .noDatabase, .readFailed:
                 ["Shadow parity: \(line)"]
             }
@@ -247,7 +262,13 @@ final class ShadowParity {
                                                      database: twin.activities),
                         load: loadReport(twin: twin.activities, traces: traces),
                         details: detailReport(storedDetails),
-                        matches: matchReport(twin: twin.activities))
+                        matches: matchReport(twin: twin.activities),
+                        // SLICE 8 — patch 330. Reads the plan from the
+                        // database, which no other slice does. Same pass as
+                        // the rest for §12.57's reason: a second button is a
+                        // way to see half an answer.
+                        summaries: await summaryReport(twin: twin.activities,
+                                                       db: db))
             runs += 1
         }
     }
@@ -318,6 +339,93 @@ final class ShadowParity {
                                               decisions: decisions, dayKey: day)
         }
         return MatchParity.compare(app: app, database: database)
+    }
+
+    /// Slice 8 — patch 330, the last of D6c.
+    ///
+    /// THE ONLY SLICE THAT READS THE PLAN. Every other one calls
+    /// `PlanStore.shared` for both sides — see `matchReport` directly above —
+    /// so the plan is HELD and `PlanRoundTrip` verifies it separately. This
+    /// one asks the database, which makes the planned figures a comparison
+    /// rather than the same input twice, and makes this the closest thing on
+    /// the screen to what D7 will do.
+    ///
+    /// `todayKey` IS READ ONCE. Both sides are handed the same string. Reading
+    /// it per side is a race that only shows up across midnight, which is
+    /// exactly when nobody is looking — the slice-8 addendum §3.
+    ///
+    /// THE CLOSURES COUNT WHAT THEY WERE ASKED. A closure that returns an
+    /// empty day for a key the database has nothing for is indistinguishable
+    /// from a day that holds nothing, and every other figure here is per WEEK
+    /// so a missing DAY would barely move one. Addendum §2.
+    private func summaryReport(twin: [Activity],
+                               db: Sub4Database) async -> SummaryParity.Report? {
+        let plan = await Task.detached(priority: .userInitiated) {
+            PlanRepository.load(db)
+        }.value
+        guard let dbWeeks = plan.weeks, let dbSessions = plan.sessions else {
+            return nil
+        }
+
+        let todayKey = DayKey.key()
+        let decisions = Matcher.shared.decisions
+        let mineByDay = ActivityRoster.byDay(ActivityStore.shared.activities)
+        let theirsByDay = ActivityRoster.byDay(twin)
+        let dbByDate = Dictionary(grouping: dbSessions.filter { $0.date != nil },
+                                  by: { $0.date! })
+
+        var askedApp = 0, hadApp = 0
+        var askedDatabase = 0, hadDatabase = 0
+
+        let appPoints = TabSummary.weekPoints(
+            weeks: PlanStore.shared.planWeeks,
+            sessions: PlanStore.shared.plan.sessions,
+            todayKey: todayKey,
+            day: { key in
+                askedApp += 1
+                let sessions = PlanStore.shared.sessions(on: key)
+                let acts = mineByDay[key] ?? []
+                if !sessions.isEmpty || !acts.isEmpty { hadApp += 1 }
+                return MatchResolver.day(sessions: sessions, activities: acts,
+                                         decisions: decisions, dayKey: key)
+            })
+
+        let databasePoints = TabSummary.weekPoints(
+            weeks: dbWeeks,
+            sessions: dbSessions,
+            todayKey: todayKey,
+            day: { key in
+                askedDatabase += 1
+                let sessions = dbByDate[key] ?? []
+                let acts = theirsByDay[key] ?? []
+                if !sessions.isEmpty || !acts.isEmpty { hadDatabase += 1 }
+                return MatchResolver.day(sessions: sessions, activities: acts,
+                                         decisions: decisions, dayKey: key)
+            })
+
+        // ASKED FOR THE SAME DAYS OR THE COMPARISON IS NOT ONE. Both walks
+        // cover their own weeks' seven days, so the counts diverge only if the
+        // two sides disagree about which weeks have begun — which the week
+        // figures would also show, but this says it in days.
+        let asked = max(askedApp, askedDatabase)
+
+        return SummaryParity.compare(
+            app: appPoints,
+            database: databasePoints,
+            appActual: TabSummary.actualVolume(ActivityStore.shared.activities),
+            databaseActual: TabSummary.actualVolume(twin),
+            appPlanned: PlanStore.plannedVolume(
+                sessions: PlanStore.shared.plan.sessions,
+                weeksByUid: PlanStore.shared.weeksByUid),
+            databasePlanned: PlanStore.plannedVolume(
+                sessions: dbSessions,
+                weeksByUid: Dictionary(dbWeeks.map { ($0.uid, $0) },
+                                       uniquingKeysWith: { a, _ in a })),
+            planSessionsInApp: PlanStore.shared.plan.sessions.count,
+            planSessionsInDatabase: dbSessions.count,
+            daysAskedFor: asked,
+            daysWithContentInApp: hadApp,
+            daysWithContentInDatabase: hadDatabase)
     }
 
     /// Slice 4 — patch 320.

@@ -7818,6 +7818,468 @@ again — `Reconciled: yes` was already on during this run, so the `review` rows
 cascade out with `review_evidence`, `proposal`, `proposal_change` and
 `proposal_watch` behind them.
 
+## 12.75 The tab summaries, compared — D6c slice 8, patch 330
+
+**D6c is complete.** Eight slices, the last one built on 328's `SessionTally`
+and 329's `TabSummary`.
+
+### 12.75.1 The slice that stopped holding the plan
+
+Slices 1–5 hold the plan from the app. `ShadowParity.matchReport` calls
+`PlanStore.shared.sessions(on:)` for **both** sides, and the screen has always
+said so — *"Held from the app: the plan, the match decisions and the commute
+decisions"*, with *"Of those, verified: the plan … by their read-backs"*
+underneath. It is a division of labour, not an oversight: `PlanRoundTrip` (323)
+proves the plan is identical, `MatchParity` (321) proves the matching is
+identical **given** a plan.
+
+**Slice 8 reads the plan from `PlanRepository.load` instead.** Decided
+8 August, after the holding pattern was discovered part-way through designing
+the slice — which is worth recording, because the earlier decision to compare
+"both halves" was taken while describing a twin that read the plan, and the
+existing screen said otherwise.
+
+The consequence is that slice 8 **holds only the match decisions**, which makes
+it the closest thing on that screen to what D7 will actually do. The cost is
+that the screen now carries two different answers to "where does the plan come
+from", so each slice's `heldFromTheApp` line states its own rather than leaving
+a reader to infer one from another.
+
+### 12.75.2 What it compares, and what it deliberately does not
+
+| compared | not compared, and why |
+|---|---|
+| the `WeekPoint` series — planned km, actual km, longest run, done-of-total, per begun week | day and week distances — slice 2 |
+| the four volume rows, actual and planned | CTL, ATL, the HR histogram — slice 3 |
+| the block tally, summed from the week points | the per-day matching itself — slice 5 |
+
+Groundwork §1.1 lists the six slices whose results must not be re-proved.
+Comparing them again would triple the run time and produce a second answer to a
+settled question — §12.29's problem.
+
+The block tally is **summed from the week points**, not counted a third way.
+`Sessions 10/208` on the Progress card and `10 of 208` on the adherence line
+are already two paths to that number; a third would be a third chance to drift.
+
+### 12.75.3 The longest run is the one figure a total cannot hide
+
+Every other figure in this slice is a sum, and a sum hides a swap: two weeks of
+10 + 10 and 4 + 16 agree on 20 km and disagree on the longest run.
+`longestRunKm` is also the figure the long-run progression is steered by, which
+is the point of a marathon block.
+
+`aLongerRunHidingBehindTheSameTotalIsCaught` is that case stated directly, and
+it is the test most likely to ever fire.
+
+### 12.75.4 The hole inside a closure
+
+`TabSummary.weekPoints` takes `day: (String) -> MatchResolver.Day`. A closure
+returning an **empty** day for a key the database has nothing for is
+indistinguishable from a day that genuinely holds nothing — §12.15 inside a
+lambda, where no `guard` can see it and no `nil` can be returned.
+
+Every other figure in the slice is per WEEK, so a handful of missing DAYS would
+barely move one of them. So both closures count what they were asked:
+`daysAskedFor`, and how many of those each side had anything for. Three figures,
+printed unconditionally, and the only place a day-shaped hole could show.
+
+Named in the slice-8 addendum §2 **before the code existed**, which is the
+second time on this rung that writing the trap down first is what stopped it.
+
+### 12.75.5 A green tick that could never have been anything else
+
+The four volume rows are compared unconditionally — even on a device holding
+nothing. So `lookedAtSomething` cannot be `totalCompared > 0`: that test could
+never be false, and the slice would report healthy having proved nothing.
+
+It is `weeksCompared > 0`. Zero begun weeks is a real state — before 27 July
+2026 it was the only state — and the honest reading of it is *"nothing
+compared"*, not *"agreed"*. Caught while writing the report rather than by a
+test, and `zeroWeeksIsNotHealthy` now pins it.
+
+### 12.75.6 The clock, read once
+
+`todayKey` is read **once** in `summaryReport` and handed to both sides.
+`weekPoints` skips weeks that have not begun, so two reads of the clock — one
+per side — is a race that surfaces only when the comparison straddles midnight,
+which is exactly when nobody is looking. 329 made it a parameter so this could
+be done; 330 is where it is done.
+
+### 12.75.7 A sixth associated value, and the three call sites it broke
+
+`ShadowParity.Outcome.ran` gained `summaries:`. Three test files construct that
+case — `LoadParityTests` twice and `VolumeParityTests` once — and all three
+were found **before** the edit, by grepping `\.ran(` across `Sub4/` and
+`Sub4CoreTests/`.
+
+§12.61.9 names "a function's arity" as one of the three shapes that carry
+assertions elsewhere, and §12.72.7 is the record of what skipping that grep
+cost two patches ago. Each call site gained a `summariesAgree()` helper for the
+same reason `matchesAgree()` exists: an empty pair compares zero of zero, fails
+`lookedAtSomething`, and would make those assertions pass with one more failing
+slice than they mean to test — 315a's defect, now avoided for the fifth time.
+
+### 12.75.9 Two the first run corrected — 330a
+
+**A missing week is two differences, not one.** `aWeekOnOneSideOnly` expected
+`unexplained == 1` and got 2. The report was right: a week the database does not
+have changes the week set *and* the block tally, because the block is summed
+from the week points (§12.75.2). Two claims about two numbers the athlete reads,
+and an expectation that collapsed them would have hidden the second the day it
+mattered. The test now asserts both, including the `6 of 8 vs 3 of 4` line.
+
+**The paste said something the screen did not.** The day figures were two
+diagnostic lines — *"days the app had anything for: 5"*, *"days the database had
+anything for: 3"* — while the screen row beside them already read
+`with anything in each side · 5 vs 3`. One line, `X vs Y`, now, matching the
+screen and matching every other two-sided figure in the file.
+
+That is worth a sentence beyond the fix: **a diagnostics paste exists to be read
+by somebody who was not holding the phone.** If it states a figure differently
+from the screen it was copied off, the reader has to translate before they can
+compare, and the paste has quietly become a second account of the same run —
+§12.29's problem in a smaller box.
+
+### 12.75.10 The runtime face of a rule this file already carried — 330b
+
+330 crashed on the device. `EXC_BAD_ACCESS (code=2)` inside
+`___chkstk_darwin` — the stack probe — three frames under
+`SwiftUI.List.body.getter`. **A stack overflow while SwiftUI evaluated the
+Database screen's body.**
+
+Not a logic fault, and the timing says so: slice 8's rows render nothing until
+`parity.last.summaries` is non-nil, so the screen opened cleanly and died on the
+**first press of Compare**, the moment 25 more rows and two `ForEach`es
+appeared inside a `Section` that was already the largest view in the project.
+
+#### This project had already written the rule down, in its other form
+
+CLAUDE.md §2 and §12.71.9 carry the COMPILE-TIME version: *"unable to
+type-check in reasonable time"*, whose remedy is *"split Sections into computed
+properties; hoist long strings to constants"*. 327a hit it in a plain
+`[String]` and the lesson recorded then was that it is **not a SwiftUI
+failure** — it is any single expression large enough that the machinery has to
+solve the whole of it.
+
+**330b is the same sentence with "stack" where "type-checker" was.** The
+compile-time face fails loudly on a laptop in seconds. The runtime face
+compiles clean, passes 1136 tests, and only appears on a device that has enough
+data to fill the rows. **The second is far more expensive, and it is the one
+that had never been written down.**
+
+#### The fix does two things, deliberately
+
+- Slice 8 became a **`Section` of its own**, which cuts the parent's child
+  count rather than adding to it.
+- Its rows became **three `@ViewBuilder` functions**, which cuts the nesting
+  depth inside that section.
+
+Either alone might have sufficed. Neither alone is worth a second crash to find
+out, and the split reads better anyway — §12.40.1 measured that a screen nobody
+scrolls to the bottom of is a screen whose bottom rows are not read, and slice
+8's figures were the bottom of the bottom.
+
+#### What this says about the screen generally
+
+`DatabaseHealthView` is now ~3,000 lines and holds eight read-backs, six parity
+slices, an import panel, a verifier, a survey, a benchmark and a write-through.
+**It has reached the size where adding to it is a structural change, not an
+edit.** The read-back roll-up already on the pre-D7 list is no longer only about
+`@State` evaporation; it is also about this. Recorded so the next patch that
+wants "just a few more rows" reads it first.
+
+### 12.75.8 What D6c proved, and what it did not
+
+Eight slices, nine read-backs, and every one green on the device.
+
+**It proves the database can feed the app.** Every record round-trips, every
+derivation produces the same answer from either side, and the mechanism D7
+switches onto exists and is exercised.
+
+**It does not prove the app is right.** §12.72 is the standing evidence: seven
+copies of "done of total" disagreed for 230 patches, on two screens, and no
+shadow-parity slice could have found it, because every slice compares the app
+against the database and that was the app disagreeing with itself.
+
+Both sentences belong in the D7 decision.
+
+## 12.76 The fix that made it worse, and what that proved — patch 330c
+
+330b was wrong, and the way it was wrong is the useful part.
+
+§12.75.10 diagnosed the 330 crash as **volume**: 25 rows and two `ForEach`es
+appearing inside the largest `Section` in the project. The remedy followed from
+the diagnosis — give slice 8 its own `Section`, split its rows into three
+functions.
+
+**The crash got worse.** It moved from the first press of Compare to **opening
+the tab**, before any comparison has run and while slice 8 renders nothing at
+all. Same signature: `EXC_BAD_ACCESS (code=2)` at a stack address, inside
+`___chkstk_darwin`. Frame 82 was `start`, so eighty-one frames sat under it.
+
+### 12.76.1 A screen that draws nothing cannot crash from what it draws
+
+That is the whole argument. On open, `parity.last` is `.never`; every
+`if let` in the parity sections takes its empty branch; slice 8's section
+builds nothing. If the fault were the number of rows, 330b could not have
+crashed earlier than 330 did.
+
+So the thing 330b changed on open was not what the screen **draws**. It was the
+**shape of the type**. `DatabaseHealthView.body` held twenty-one sections side
+by side in one `@ViewBuilder` block, and a `@ViewBuilder` block is not a flat
+list — it is a left-leaning chain built pairwise, so twenty-one children are
+twenty nested `TupleView`s. SwiftUI walks that chain recursively before it
+draws a single row, and each level costs a frame. **330b added a child, which
+added a level, whether or not that child ever draws anything.**
+
+The two crashes then have one explanation instead of two: the screen was
+sitting on the stack limit, and 330 tipped it over at runtime depth while 330b
+tipped it over at structural depth.
+
+### 12.76.2 Depth is the budget, and there are two ways to spend it
+
+- **Balance the chain.** Twenty-one children in a row is depth twenty. Six
+  groups of three to five is depth nine. `body` now calls six `@ViewBuilder`
+  group functions — `stateSections`, `inputSections`, `ledgerSections`,
+  `activityReadBackSections`, `recordReadBackSections`, `toolSections` — plus
+  one child view. The sections, and their order, are untouched.
+- **End the chain.** A separate `View` struct is a boundary: the parent's body
+  type contains `ShadowParitySections`, one `Sub4Database` wide, and none of
+  what is below it. Seven hundred lines of view code left
+  `DatabaseHealthView`'s type entirely.
+
+Inside the new file the same budget is spent again: the five parity slices had
+branches of up to thirty-two consecutive rows, and each is now two or three
+`@ViewBuilder` functions. Deepest path in the parity section went from roughly
+thirty-six to roughly nineteen.
+
+### 12.76.3 Why parity was the right thing to extract, and the others were not
+
+**Its dependency surface is one line long.** Every row in slices 1–5 and 8
+reads `ShadowParity.shared` and the open database. Not one of them touches any
+of `DatabaseHealthView`'s forty `@State` properties. That is what made the
+extraction a move rather than a rewrite — no bindings, no plumbing, no
+behaviour to re-verify beyond "the rows are the same rows".
+
+The read-backs are the opposite: each owns two or three `@State` properties and
+a reload function the screen's `onChange` calls. Extracting those means moving
+state, and state that moves is state whose lifetime changed — which is exactly
+the class of defect §12.57 was written about. They stay, grouped.
+
+### 12.76.4 The rule, stated so the next one does not need three tries
+
+**§12.76.4 — a SwiftUI body has a depth budget, and a child that draws nothing
+still spends it.** The compile-time face of this is "unable to type-check in
+reasonable time" (§12.71.9). The runtime face is `___chkstk_darwin`
+(§12.75.10). Both are the same failure — a single expression the machinery has
+to solve whole — and for both the remedy is *fewer children per block and
+fewer levels per path*, not fewer rows on screen.
+
+And the corollary, which is what cost two patches here: **when a size fix makes
+the crash earlier rather than later, the size was not the size you thought it
+was.** 330b treated §12.75.10's own closing sentence — *"it has reached the
+size where adding to it is a structural change, not an edit"* — as advice about
+the section being added. It was advice about the screen.
+
+### 12.76.5 What this cost, honestly
+
+Three consecutive fix-ups on one patch, two of them shipped on a wrong
+diagnosis, and a device that could not open its own health screen for the
+duration. The tests were green at 1136 through all three. **No test in this
+project can see a stack overflow**, and none of the 1136 touches a view body;
+the only instrument for this class of defect is the phone.
+
+## 12.77 The number that existed and could not be read — patch 331
+
+Not a new diagnostic. Every figure in patch 331's section was already computed;
+none of it could be seen without pressing a button that then discarded the
+answer.
+
+`TraceCoverage` has classified all 674 activities into five buckets since patch
+277. `DetailStore.backfillRemaining` has been `pending.count` since it was
+written, and its own comment says so: *"nothing has ever shown it — §12.23.7."*
+That comment was written as an aside. On 9 August it became the whole problem.
+
+### 12.77.1 What made a readability point into a two-day blindfold
+
+A reinstall emptied the phone (§12.78). 674 activities came back from Strava in
+a single sync; their details and traces did not, because `DetailStore` drains
+**30 activities per sync** and each costs up to two requests — about 60 of
+Strava's **100 requests per 15 minutes**, against a **1,000-per-day** ceiling.
+592 activities queued is roughly 1,184 requests. **It is a two-day backfill and
+the app can do nothing about that**, because the constraint is Strava's daily
+quota rather than any constant in this project. A larger batch would mean fewer
+presses, not more activities per day.
+
+For those two days the only two questions that matter are *how many are left*
+and *am I rate-limited right now*. The app could answer neither, and the athlete
+found out he had hit the limit by noticing a batch delivered 22 of 30.
+
+### 12.77.2 Where the answer was hiding
+
+Inside `if let r = importReport`. `importReport` is `@State`, nil until the
+Import button is pressed, discarded when the sheet is dismissed.
+
+**This is §12.57 on a second screen.** 313 moved the parity result off `@State`
+onto the runner, because pressing Done discarded it and the diagnostics paste
+then said "Not compared since this launch" a minute after a comparison passed —
+true of the `@State`, false about the world. The trace account had the identical
+shape and nobody looked, because at the time it was a curiosity rather than a
+thing anybody needed hourly.
+
+The lesson is not "move state to the runner". It is that **a figure worth
+printing is worth printing without a precondition**, and the precondition is
+usually invisible to the person who wrote it because they had just pressed the
+button.
+
+### 12.77.3 Gated on `missing > 0`, which is the other half of the same fault
+
+The block also drew only when something was missing, so a finished backfill and
+a section nobody wired in were the same screen. **§12.54.2, fourth instance on
+this one view.** The whole purpose of a backlog row is to be read on the day it
+reaches zero; the version that disappears at zero is the version that cannot
+answer the question it exists for.
+
+331 draws all five bucket rows and all three headline rows unconditionally.
+
+### 12.77.4 Two counters, deliberately not merged
+
+`Still to fetch` is `pending.count` — activities missing a **detail or** a
+trace. `queued, not yet reached` is the subset missing a **trace**. They differ
+by the activities whose detail landed and whose trace did not, which during a
+drain is most of a batch.
+
+Merging them would have been tidier and wrong: the first says how much work is
+left, the second is one term in an account that must sum to 674. The footer
+states the difference rather than leaving a reader to discover that two numbers
+labelled like synonyms are not equal.
+
+### 12.77.5 What it cost, and the rule
+
+The section is thirty rows of view code and no new computation. It should have
+existed at 277, when the counters did.
+
+**§12.77.5 — a computed diagnostic behind a `@State` precondition is not a
+diagnostic.** It is a diagnostic for whoever pressed the button, in the launch
+they pressed it, and for nobody afterwards. When adding a counter, the question
+is not "is it correct" but "who can read it, and when" — and the answers must
+be *anybody* and *whenever the screen is open*.
+
+## 12.78 The phone was wiped, and what came back — 9 August 2026
+
+Not a patch. An operational event with three lessons, recorded because the
+project's own contract has been warning about this since D0 and this is the
+third time it has happened.
+
+**The app was deleted by hand** during 330b's crash loop — a reasonable thing to
+do to an app that will not open its own screen. Deleting an iOS app removes its
+container, so it took every JSON store with it.
+
+### 12.78.1 The ledger of what survived
+
+| | |
+|---|---|
+| **Recovered from Strava** | 674 activities, 586 weather readings, 11 gear, 15 resting months, 5 HR zones |
+| **Survived as source code** | `DataCorrections` — the elapsed-time overrides, the official race splits, the 2 ignored recordings and the 3 speed-contradiction rejections |
+| **Gone for good** | 7 session notes and their sRPEs (`notes.json`), 4 commute decisions (`commutes.json`) |
+| **Gone and welcome** | the 11 review rehearsal records, which §12.71.13 required be deleted before 24 August |
+| **Gone, and it was the safety net** | the protected snapshot — it lived in the same container |
+
+**`correction` reading 0 while `rejection` reads 3 is correct**, and the pair is
+worth keeping because it looks like a defect. `rejection` is fed by
+`DataCorrections`, which is Swift source and shipped in the binary.
+`correction` is fed by `commutes.json` — see `Sub4Import+Correction`'s header,
+which is explicit that the commute IS the athlete's decision. Source survived a
+container delete; the athlete's four decisions did not.
+
+### 12.78.2 The snapshot existed and was empty, which is the whole argument
+
+D0's contract item 3 — *"copy every legacy input unchanged into a dated
+protected snapshot before decoding"* — has been open since patch 246. §12.13.6
+called it *"the most important missing piece in the project"* and recorded that
+two reinstalls had already destroyed `notes.json` and `weather.json` while it
+was outstanding.
+
+It was still outstanding. **The first protected snapshot in this project's
+history was taken at 08:39 UTC on 9 August 2026** — `2026-08-09-083914`, 67 of
+67 files, 1.4 MB, zero failures, taken by patch 330c. Five declared files read
+NOT PRESENT, which on a phone four hours into a rebuild is the correct answer
+and is drawn dim for that reason.
+
+**A snapshot button that has never been pressed is not a backup.** The feature
+shipped at 247; the protection began on the day after the loss it was built to
+prevent. Nothing about the code was wrong.
+
+### 12.78.3 The recovery is bounded by Strava, not by anything here
+
+`DetailStore` drains **30 activities per sync**, each costing up to two
+requests — about 60 of Strava's **100 requests per 15 minutes**, leaving room
+for the activity-list call. The daily ceiling is **1,000 requests**, windows
+resetting at :00/:15/:30/:45 and the day at midnight UTC.
+
+674 details plus their traces is roughly 1,350 requests. **It is a two-day
+backfill and no constant in this project shortens it.** A larger batch would
+mean fewer button presses for the same ~490 activities per day. Recorded so the
+next person to look at `batchSize = 30` and think it is conservative does not
+spend a patch finding out.
+
+**Consequence for anything read during those two days:** every parity slice
+touching details or recordings will report large gaps that are the drain, not
+data loss. The Database screen says so on its face since 331.
+
+## 12.79 Getting the diagnostic off the phone — patch 332
+
+The diagnostics paste has existed since 203 and has exactly one exit: the
+clipboard. Getting it to a Mac meant pasting it into Notes and waiting for
+iCloud, every time, and during the 9 August rebuild that was several times an
+hour.
+
+332 adds a second button beside Copy. It writes the same text to
+`sub4-diagnostics-<day>-p<patch>.txt` in the temporary directory and hands the
+URL to `ShareSheet` — so AirDrop, Save to Files, Mail and Messages all appear.
+
+### 12.79.1 `ShareSheet`, and the reason it exists at all
+
+`ShareSheet.swift` already wraps `UIActivityViewController`, and its header
+records why the obvious thing does not work:
+
+> *"SwiftUI's `ShareLink` would do this in one line, but it needs its item at
+> view construction time. The notes CSV does not exist until the button is
+> pressed — writing it on every redraw of the settings screen would be absurd —
+> so the file is produced first and the sheet is presented with it afterwards."*
+
+And `DataControlsView` records the cost of learning it: *"the ShareLink shipped
+in 183 rendered and did nothing at all when tapped."*
+
+**332 is the second caller and wrote no new plumbing.** That is the whole point
+of the note: the wrapper, the `ShareItem` identity wrapper, and the temporary-
+file convention were all built for the notes CSV and all fitted unchanged.
+§12.43's rule — *do not reimplement a rule, call it* — usually applies to
+derivations. It applies to transports too.
+
+### 12.79.2 The filename is the part that will still matter next year
+
+`sub4-diagnostics-2026-08-09-p332.txt`. The day and the patch, in the name.
+
+Every capture in this project's history so far has been a wall of text in a
+chat log whose build has to be inferred from whatever the paste's first line
+happened to say. A file that names its own build is a file that can be filed,
+diffed against the next one, and read in six months without archaeology. The
+transport was the request; the name is the thing worth having.
+
+### 12.79.3 Temporary, and a failure that says so
+
+The file goes to `NSTemporaryDirectory()` with `FileProtection.options`, the
+same class as the stores it describes. Every number in it derives from data
+still on the phone, so nothing is lost when iOS reclaims it — and a diagnostic
+that accumulated dated copies inside the container would be a store nobody
+declared, which is a thing this project has now been bitten by from the other
+direction (§12.78).
+
+The write can fail, and a button that silently does nothing is indistinguishable
+from a button nobody wired up. One row appears on failure, naming the fallback
+that still works. §12.15, and small enough that it would have been easy to skip.
+
 ## 12.74 A plan revision, and the drift it uncovered — patch 329a
 
 Week 2's long run moved from Saturday 8 August to Sunday 9 August; Saturday
