@@ -64,7 +64,8 @@ struct ReconcileTests {
                                               newDetail: "8 km easy", skip: false,
                                               evidence: "TSB −22 for 5 days",
                                               reason: "Freshness is deep")],
-                              watchFor: ["Sleep"], confidence: 70),
+                              // PATCH 334 — 1–5 is the contract now. §12.82.
+                              watchFor: ["Sleep"], confidence: 4),
               appVersion: "1.0 (1) · patch 274",
               model: "rehearsal")
     }

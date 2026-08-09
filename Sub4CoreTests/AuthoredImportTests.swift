@@ -43,7 +43,10 @@ struct AuthoredImportTests {
               proposal: .init(verdict: .easier,
                               summary: "Ease the next week.",
                               reasoning: "Freshness has been deep for five days.",
-                              changes: changes, watchFor: watchFor, confidence: 70),
+                              // PATCH 334. Was 70 since patch 225 — a value the
+                              // column admitted and the screen could not draw.
+                              // §12.82.
+                              changes: changes, watchFor: watchFor, confidence: 4),
               appVersion: "1.0 (1) · patch 225",
               model: "claude-opus-5")
     }

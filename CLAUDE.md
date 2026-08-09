@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 332 (2026-08-09).** Patch 318 installed this file with its state
+**Current at patch 334 (2026-08-09).** Patch 318 installed this file with its state
 sections still describing patch 278c — forty patches behind — which is the failure
 this file exists to prevent. §5 is the part that goes stale; if the patch number in
 its heading is far behind `Sub4/AppVersion.swift`, trust the ADR and the code, not §5.
@@ -110,6 +110,15 @@ the way it is. ADR §12 supersedes all three.
   change, not an edit. Read §12.76 before adding rows to it. 331 added a Section by
   putting it inside an existing group and splitting its rows into two functions — the
   screen's depth did not move.
+- **A count derived from a cache answers a question about the cache** (§12.81.4). Both of
+  333's defects were this. `DetailStore.pending` is not persisted and is rebuilt only at the
+  end of a sync, so `backfillRemaining = pending.count` read **0 on a fresh launch with 475
+  traces outstanding** — and `Fetch now` greyed itself out. A report's `lookedAtSomething`
+  answers *did this compare anything*; a load's `isTrustworthy` answers *did the read
+  happen* — passing the first where the second belonged reported "could not look" over a
+  database that had been read perfectly and simply held nothing. Both were correct
+  properties read for the wrong question. **Derive a backlog from the predicate, not from
+  the work list.** §12.81.
 - **A computed diagnostic behind a `@State` precondition is not a diagnostic** (§12.77.5).
   It is one for whoever pressed the button, in the launch they pressed it, and for nobody
   afterwards. `TraceCoverage` counted 674 activities into five buckets from patch 277 and
@@ -266,7 +275,7 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 332, 2026-08-09
+## 5. State — patch 334, 2026-08-09
 
 **The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c COMPLETE — all eight
 slices, at 330. D7 has not started, and nothing in the app reads the database yet.**
@@ -286,7 +295,7 @@ it does not prove a store *fed from* the database would behave identically, and 
 provable. Repointing each store's load path is the substance of D7 and is covered by no
 slice completed so far.
 
-- **Eleven migrations**, 51 tables, ~214,000 rows, ~37 MB on the phone. On the device:
+- **Twelve migrations**, 51 tables, ~214,000 rows, ~37 MB on the phone. On the device:
   674 activities, 674 details, 649 recordings, ~194,000 trace samples, 7,986 splits,
   4,700 laps, 582 weather, 11 gear, 15 resting months, 5 HR zones, 7 notes,
   4 corrections, 3 rejections.
@@ -464,10 +473,18 @@ test.
 - **Two identities for one review** (§12.71.12) — `Record.id` vs `(accountID, ranUTC)` at
   one-second resolution, no unique constraint. Eleven rehearsal records became eight rows.
   **Decided 8 August: recorded, not fixed.** Revisit if `review` gains a second writer.
-- **`confidence` has two live contracts** (§12.71.4) — the type says 1–5, the column's
-  CHECK says 0–100, and 70 has been written since patch 225. The device reads `3`.
-- `content_revision` — **probably has no correct occupant** among the preference keys. Its
-  real first occupant is likely the plan's content hash. Settle before building.
+- ~~**`confidence` has two live contracts**~~ **Closed at 334.** `2026-08-13-confidence-scale`
+  rebuilds `proposal` with `CHECK (confidence >= 1 AND confidence <= 5)`; an out-of-range
+  value becomes NULL, because 70 out of 100 is not 4 out of 5. Five fixture write sites
+  across three test files went 70 → 4, and `theConfidenceRangeIsReported` **inverted** —
+  it asserted the contradiction on purpose since 327 and now asserts the refusal. §12.82.
+- `content_revision` — **reserved and unoccupied, decided at 334.** The occupant this file
+  used to guess at already exists: `plan_version.contentHash`, written by
+  `Sub4Import+Plan.contentHash(of:)` and checked on every seed. Filling it with the same
+  hash would be two answers to one question. Its real subject is per-ACTIVITY hashes so a
+  re-sync can skip unchanged rows — an optimisation, and the last full import of 677
+  activities took 0.254 s. Revisit when the import is slow enough to be worth a cache.
+  §12.82.6.
 - `lateArrivals` has been computed since patch 45 and is displayed nowhere.
 - ~~**The protected snapshot goes stale.**~~ **Closed 9 August** — and closed the hard way.
   The button shipped at 247 and had never been pressed, so a hand-delete of the app took
@@ -497,6 +514,25 @@ from the database** — every other one holds it from the app and lets `PlanRoun
 it — so it holds only the match decisions, which makes it the closest thing on that screen
 to what D7 does. §12.75.
 
+**333a corrected two counters that could not say why they were zero**, both found on the
+device within an hour of 333 shipping and both the defect 333 existed to prevent. The trace
+backlog and the roll-up's blind-read test are now derived from the predicate and from
+`isTrustworthy` rather than from a transient array and a mis-read property. The roll-up has
+**four** states — agreed, differed, could not look, nothing to compare — and two verdicts:
+`isHealthy` (no differences, no blind reads) and **`provesSomething`**, which additionally
+requires that every read-back looked at something. **`provesSomething` is what D7's gate
+needs**, and today it is false: the wipe left notes, commutes and reviews empty on both
+sides. §12.81.
+
+**333 closed the last pre-D7 item that is not a slice.** `ReadBacks` holds the nine reads
+(two callers now: the write-through's `onChange`, one at a time, and the roll-up, all nine)
+and `ReadBackRollUp.shared` holds the verdict, shaped like `ShadowParity` and outliving the
+sheet. **It was §12.57 nine times over and nobody had counted** — every read-back's report
+lived in a `@State` property and died with the screen. The summary names **three** states,
+not two: agreed, differed, and could not look, because *"eight of nine agree"* said over a
+read that failed is the sentence somebody would quote as the reason it was safe to press
+D7. §12.80.
+
 **331 and 332 are the backfill's tooling, not the ladder.** 331 pulled the trace account out
 from behind `if let importReport` so `Still to fetch` is readable without pressing Import,
 and drew every row unconditionally — §12.77. 332 added **Share diagnostics** beside Copy:
@@ -504,12 +540,23 @@ same text, written to `sub4-diagnostics-<day>-p<patch>.txt` and handed to the ex
 `ShareSheet`, so it AirDrops to the Mac and the capture names its own build — §12.79.
 Neither touches the database.
 
-**Next:** D7. Before it is pressed, two things that are not slices: fold the nine read-backs
-into one roll-up with a durable result, and refresh the protected snapshot. Then D7 activate, D8, and 4A. Before D7 is pressed,
-two things that are not slices: fold the nine read-backs into one roll-up with a durable
-result — §12.57 corrected `@State`-evaporation for `ShadowParity` and never for the
-read-backs, and nine buttons that must each be pressed is not a gate anybody can lean on —
-and refresh the protected snapshot, which is still `2026-08-05-202320` from patch 279.
+**Next, and in this order.** Both pre-D7 items that are not slices are now DONE — the
+roll-up at 333, the snapshot on 9 August. What remains before D7:
+
+1. **Finish the backfill** — `Still to fetch: 0`, `unexplained: 0`, `fetching now: no`.
+2. **Second protected snapshot**, once the details are in. The 9 August one holds 33.
+3. **Press the roll-up** and get `provesSomething` — not merely healthy. On the rebuilt
+   data that needs at least one session note and one commute decision to exist, because
+   `nothing on either side` is an absence of evidence and D7 is where absences stop being
+   acceptable. The pre-wipe evidence died with the pre-wipe data.
+4. **Verify** — `migration_run` back to `verified`, not `pending`.
+5. **Compare** — eight parity slices, zero unexplained, complete database.
+6. **`content_revision`** — a table created at `Sub4Migrations+Domain.swift:596` and
+   referenced nowhere else in the app. No writer, no reader, 0 rows. Decide the occupant.
+7. ~~**`confidence`**~~ — done at 334, and ~~**`content_revision`**~~ — decided at 334.
+8. **`review_evidence_source`** — write it, or record that ADR-0002's lineage purge does
+   not function until 4A. The last one open.
+
 Then D7 activate — `Sub4Launch.migrationFailureBlocksTheApp` flips to `true`. Then D8,
 stabilise one release window and remove the JSON writers. Phase 4A (Apple Health canonical)
 cannot start before D7's exit gate.

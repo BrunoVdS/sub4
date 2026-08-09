@@ -160,12 +160,36 @@ final class DetailStore {
         noStreams.contains(activityId)
     }
 
-    var backfillRemaining: Int { pending.count }
+    /// PATCH 333a — DERIVED, NOT COUNTED OFF THE QUEUE.
+    ///
+    /// It was `pending.count` from the day it was written until 9 August, and
+    /// `pending` is NOT PERSISTED: it is rebuilt only by `refreshQueue()`,
+    /// which runs only from `enqueueAndDrain()`, which runs only at the end of
+    /// a sync. So on a fresh launch it is empty, and this read zero while 475
+    /// activities were still waiting for a trace.
+    ///
+    /// **Zero because it is finished and zero because nobody has asked yet are
+    /// the same number.** §12.15, in the row patch 331 built to prevent
+    /// exactly that, and it took the `unexplained` residual going to 475 to
+    /// find it. See ADR-0003 §12.81.
+    @MainActor
+    var backfillRemaining: Int {
+        ActivityStore.shared.activities.filter(needsAnything).count
+    }
 
     // MARK: Queue
 
     private func needsDetail(_ a: Activity) -> Bool {
         details[a.id] == nil && !failed.contains(a.id)
+    }
+
+    /// THE ONE DEFINITION OF "STILL TO FETCH" — patch 333a, §12.43.
+    ///
+    /// `refreshQueue` builds the work list from it and `backfillRemaining`
+    /// counts it. Two readers, one rule; before this they were one rule and
+    /// one stale array, and the array is what the screen was reading.
+    private func needsAnything(_ a: Activity) -> Bool {
+        needsDetail(a) || needsStreams(a)
     }
 
     /// Why every activity does or does not have a trace — patch 277.
@@ -175,18 +199,28 @@ final class DetailStore {
     /// it decides nothing, which is what makes the decision testable without
     /// arranging the athlete's actual files on disk.
     ///
-    /// `pending` gets its first reader here. `backfillRemaining` has been
-    /// `pending.count` since it was written and nothing has ever shown it —
-    /// §12.23.7 — so until now "never asked" and "queued and not yet reached"
-    /// were indistinguishable from outside this file.
+    /// PATCH 333a. `queued` is the set that NEEDS a trace, not the set
+    /// currently sitting in `pending`.
+    ///
+    /// Passing `pending` made the residual a function of whether a sync had
+    /// run this launch: on 9 August it read `queued 0 · unexplained 475`,
+    /// which is the account correctly refusing to hide a case it had no name
+    /// for. `needsStreams` is the name it was missing.
+    ///
+    /// The residual keeps its job. It is now zero BY CONSTRUCTION rather than
+    /// by luck — every activity without a trace is refused, answered empty,
+    /// under the threshold, or waiting — so a non-zero `unexplained` from here
+    /// on means `needsStreams` and this classification have drifted apart,
+    /// which is a narrower question and still worth one line.
     @MainActor
     func traceCoverage() -> TraceCoverage {
-        TraceCoverageReport.classify(
-            activities: ActivityStore.shared.activities,
+        let all = ActivityStore.shared.activities
+        return TraceCoverageReport.classify(
+            activities: all,
             hasTrace: { self.streams[$0] != nil },
             refused: failed,
             answeredEmpty: noStreams,
-            queued: Set(pending),
+            queued: Set(all.filter(needsStreams).map(\.id)),
             minDistance: minStreamDistance)
     }
 
@@ -202,7 +236,7 @@ final class DetailStore {
     @MainActor
     func refreshQueue() {
         pending = ActivityStore.shared.activities            // newest first
-            .filter { needsDetail($0) || needsStreams($0) }
+            .filter(needsAnything)
             .map(\.id)
     }
 

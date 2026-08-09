@@ -56,7 +56,7 @@ nonisolated enum Sub4Migrations {
     static let all: [String] = [initial, domain, activityInputs, gearReference,
                                 proposalInputs, openTopZone, zoneFloorZero,
                                 planContent, activityDetail, migrationRun,
-                                runTrigger]
+                                runTrigger, confidenceScale]
 
     static var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()
@@ -72,6 +72,7 @@ nonisolated enum Sub4Migrations {
         registerActivityDetail(&m)  // Sub4Migrations+ActivityDetail.swift
         registerMigrationRun(&m)    // Sub4Migrations+MigrationRun.swift
         registerRunTrigger(&m)      // Sub4Migrations+RunTrigger.swift
+        registerConfidenceScale(&m) // Sub4Migrations+ConfidenceScale.swift
         return m
     }
 

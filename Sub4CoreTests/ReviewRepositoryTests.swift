@@ -65,7 +65,7 @@ struct ReviewRepositoryTests {
                         verdict: ReviewProposal.Verdict = .easier,
                         summary: String = "Ease the next week.",
                         reasoning: String = "Freshness has been deep for five days.",
-                        confidence: Int = 70,
+                        confidence: Int = 4,
                         changes: [ReviewProposal.Change] = [],
                         watchFor: [String] = [],
                         appVersion: String = "1.0 (1) · patch 327",
@@ -473,20 +473,26 @@ struct ReviewRepositoryTests {
         #expect(r.evidenceWithheld == 0)
     }
 
-    /// `ReviewProposal.confidence` documents itself as 1–5. The column's CHECK
-    /// permits 0–100. `AuthoredImportTests` has been writing 70 since patch
-    /// 225 and nothing has ever objected. Printed rather than asserted,
-    /// because deciding which of the two is right is not this patch's job —
-    /// §12.71.4.
+    /// PATCH 334 — THIS TEST INVERTED, AND THAT IS THE POINT OF HAVING HAD IT.
+    ///
+    /// It used to assert the contradiction: `ReviewProposal.confidence`
+    /// documents itself as 1–5, the column's CHECK permitted 0–100, and 70 had
+    /// been written since patch 225 and round-tripped happily. 327 printed
+    /// that rather than deciding it — §12.71.4 — precisely so the day somebody
+    /// decided, a test would change rather than the change going unnoticed.
+    ///
+    /// `2026-08-13-confidence-scale` narrowed the column to 1–5. The same 70
+    /// now refuses at the door, which is what a contract that means something
+    /// looks like.
     @Test("The observed confidence range is reported")
     func theConfidenceRangeIsReported() throws {
         let db = try Sub4Database.inMemory()
-        let r0 = record(confidence: 70)
+        let r0 = record(confidence: 3)
         try imported(db, [r0])
 
         let r = compare(db, [r0])
-        #expect(r.confidenceRange == "70")
-        #expect(r.proposalDifferences.isEmpty, "70 round-trips; it is the CONTRACT that disagrees")
+        #expect(r.confidenceRange == "3")
+        #expect(r.proposalDifferences.isEmpty)
     }
 
     // MARK: Which side is missing, and which of those is a fault

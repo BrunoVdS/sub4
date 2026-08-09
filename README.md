@@ -7,9 +7,9 @@ to state a number it cannot support.
 Built for Operation Sub-4: a 34-week block starting 27 July 2026, targeting a
 sub-4:00 marathon in March 2027.
 
-*Current at patch 319, 8 August 2026. Before that this file had not been touched
-since the 3 August baseline and stated four things that had stopped being true —
-see `docs/ADR-0003-database-contract.md` §12.62.*
+*Current at patch 332, 9 August 2026. Exact live counts and patch decisions belong on the
+Database screen and in `docs/ADR-0003-database-contract.md` §12; this README records the
+current stage without creating a second counter that can drift.*
 
 ## Requirements
 
@@ -50,9 +50,9 @@ test target picks one up without.
 ./scripts/preflight.sh     # test + Release build, before anything destructive
 ```
 
-**931 tests in 88 suites**, well under a second. Run the suite from the command
-line before every device build: ⌘R compiles the app target only, so test-target
-compile errors accumulate invisibly.
+The test script prints and validates the current test/suite count. Run it from the command
+line before every device build: ⌘R compiles the app target only, so test-target compile
+errors accumulate invisibly.
 
 `.github/workflows/ci.yml` runs weekly and on tags rather than on every push.
 **It is not currently a check** — the free Actions allowance is spent until
@@ -84,14 +84,16 @@ signing.
 ```
 Sub4.xcodeproj
 CLAUDE.md              read this first — project state and the rules that cost time
-Sub4/                  the entire application — 159 Swift files, ~56,000 lines
+Sub4/                  the entire application source
   plan.json            the bundled plan seed: 37 weeks, 260 sessions
   manual.html          the in-app manual (stale since patch 284 — see CLAUDE.md §5)
   Assets.xcassets
   Sub4.entitlements
-Sub4CoreTests/         68 files, 931 tests
+Sub4CoreTests/         the complete automated test target
 docs/                  ADRs, groundwork documents, handoffs
   ADR-0003-database-contract.md    the authoritative record; §12 is the running log
+  PLAN-codebase-modernization-and-feature-delivery.md    execution sequence from current state
+  PLAN-post-database-strava-project-restructure.md       restructure and product roadmap
   context/                          project knowledge carried over from Cowork
 scripts/               test.sh, preflight.sh
 tools/                 plan extraction from the source HTML
@@ -105,12 +107,17 @@ place to write the same thing is how two answers to one question start.
 ## Where the project actually is
 
 The persistence rewrite is most of the way through a lettered ladder, D0 to D8.
-**D0–D5, D6a and D6b are complete and verified on the device; D6c is four slices
-of eight.** Eleven migrations, 51 tables, ~213,700 rows, ~37 MB on the phone.
+**D0–D5, D6a, D6b and all eight D6c shadow-parity slices are complete and have been
+verified on the device.** The phone is currently completing the detail/recording backfill
+after the 9 August reinstall; read-back/parity evidence is not treated as final until that
+recovery is settled.
 
-**Nothing in the app reads the database yet.** It still runs entirely off its
-JSON stores, and switching that over is D7. `CLAUDE.md` §5 has the current state
-and the open items; ADR-0003 §12 has the reasoning behind every decision in it.
+**Production still reads the legacy stores.** D6c proves the database can reproduce the
+current records and derivations; switching every production read to the repositories is
+D7. `CLAUDE.md` §5 has the current state and open items; ADR-0003 §12 has the reasoning
+behind every decision. The complete sequence from recovery through D7, Health, D8,
+restructure and feature delivery is in
+`docs/PLAN-codebase-modernization-and-feature-delivery.md`.
 
 ## Known release blockers
 

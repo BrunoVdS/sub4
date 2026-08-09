@@ -8280,6 +8280,313 @@ The write can fail, and a button that silently does nothing is indistinguishable
 from a button nobody wired up. One row appears on failure, naming the fallback
 that still works. §12.15, and small enough that it would have been easy to skip.
 
+## 12.80 Nine buttons are not a gate — patch 333
+
+The last item on the pre-D7 list that is not a slice, and CLAUDE.md has stated
+it in the same words since D6c closed: *"nine buttons that must each be pressed
+is not a gate anybody can lean on."*
+
+### 12.80.1 It was §12.57, nine times, and nobody had counted
+
+313 moved shadow parity's result off `@State` onto its runner because pressing
+Done discarded it, and the diagnostics paste then said *"Not compared since this
+launch"* a minute after a comparison passed — true of the `@State` and false
+about the world.
+
+**Every one of the nine read-backs had the identical defect and none was
+fixed.** `athleteTrip`, `authoredTrip`, `planTrip`, `planExtrasTrip`,
+`weatherGearTrip`, `reviewTrip`, `roundTrip`, `detailTrip`, `recordingTrip` —
+nine `@State` properties on `DatabaseHealthView`, nine results that existed only
+while the sheet that produced them was open, and not one of them reachable from
+the paste with a durable answer.
+
+It stayed comfortable because the six cheap ones re-run on open, so the screen
+always looked current. The three expensive ones are the evidence that matters —
+674 activities, 674 details, ~1.5 million sample comparisons — and those needed
+three presses and a memory.
+
+**9 August removed the comfort.** A wipe destroyed every read-back result this
+project had produced, and the rebuild means proving all nine again on new data.
+
+### 12.80.2 What was built
+
+- **`ReadBacks`** — the nine reads, moved out of the view unchanged. They now
+  have two callers: the write-through's `onChange`, one at a time, and the
+  roll-up, all nine at once. Two callers is what turns a private helper into a
+  rule, and §12.43 says the rule gets one home.
+- **`ReadBackRollUp`** — an `@Observable` singleton shaped exactly like
+  `ShadowParity`: `.never / .ran([Line]) / .noDatabase / .readFailed`, a `runs`
+  counter, `diagnosticLines`. The result outlives the sheet. The spinner does
+  not, and stays in the view — a spinner that outlives its screen is a lie of a
+  different kind.
+- **One Section**, above the nine it summarises, for `verdictSection`'s reason:
+  a verdict assembled by the reader from nine sections further down is a verdict
+  that gets skimmed.
+
+### 12.80.3 Three states, and the third is the point
+
+`Line.couldNotLook` is a **sentence, not a bool**, and it is counted apart from
+a line that looked and disagreed. The summary reads `1 of 3 agree · 1 differ ·
+1 could not look` rather than `1 of 3`.
+
+**"Eight of nine agree" said over a read that failed is the single most
+expensive sentence this screen could produce**, because it is exactly what
+somebody would quote as the reason it was safe to press D7. §12.15, and the
+first instance where the sentence being wrong would license an irreversible
+step rather than a wrong number.
+
+The tests are aimed there rather than at the happy path:
+`aLineThatCouldNotLookIsNotHealthyEvenWithNoDifferences`,
+`anEmptyRunIsNotHealthy`, `oneBlindLineIsEnoughToFailTheWhole`.
+
+### 12.80.4 The one exception, and why it is not a hole
+
+`emptyIsCorrect` exists for a single read-back: the review trail holds nothing
+on either side until 24 August 2026, and `ReviewRoundTrip`'s own
+`lookedAtSomething` already says `totalCompared > 0 || bothSidesAreEmpty`. The
+roll-up does not decide this — it reads the report's opinion and carries it. A
+red row every day until the first real review is a row that stops being read,
+which is §12.54.2 pointing the other way for once.
+
+### 12.80.5 Three reports that predate the convention
+
+`ActivityRoundTrip` (289), `DetailRoundTrip` (291) and `RecordingRoundTrip`
+(294) carry `compared`, `missing`, `differences` and `excluded`; the six written
+later carry `totalCompared`, `unexplained`, `lookedAtSomething` and
+`isHealthy`. The extensions that give the older three the newer shape state what
+their own sections have drawn red since the day they shipped — differences and
+unexplained absences count, deliberate exclusions do not, and a failed read is
+not a passed comparison.
+
+**They are in `ReadBackRollUp.swift` rather than on the types, and that is a
+compromise, recorded as one.** Putting them where they belong meant touching
+three repository files to add four computed properties each, on a screen that
+had cost three fix-ups in two days. They move the next time those files are
+opened for a reason of their own.
+
+### 12.80.6 And the control that was on the wrong screen
+
+331 made the trace backlog readable and left the only thing that moves it in
+Settings → Strava → Check now. Within the hour the athlete pressed **Import**
+instead — which copies the app's stores INTO the database and never speaks to
+Strava — and got `0 new` of everything, `Took 0.254 s`, and a queue that had not
+moved in thirty minutes.
+
+Nothing was broken. `enqueueAndDrain()` has exactly one caller,
+`ActivityStore.sync()`, so the queue advances on a sync and on nothing else, and
+no sync had run since the last relaunch.
+
+**A number with no control beside it invites the nearest button.** 333 puts
+*Fetch now* in the section that shows the backlog, calling the drain directly —
+which also saves the activity-list request a full sync spends out of the same
+hundred per fifteen minutes.
+
+## 12.81 Two counters that could not say why they were zero — patch 333a
+
+333 shipped in the morning and the device found both defects within the hour.
+They are the same defect twice, in a patch whose stated purpose was to prevent
+it, which is the part worth keeping.
+
+### 12.81.1 `Still to fetch: 0` while 475 were still waiting
+
+The paste at 12:10 read:
+
+```
+Traces still to fetch: 0
+  queued, not yet reached: 0
+  activities with no trace: 497 of 677
+    unexplained: 475
+```
+
+`DetailStore.pending` is **not persisted**. It is rebuilt only by
+`refreshQueue()`, which runs only from `enqueueAndDrain()`, which runs only at
+the end of a sync. The app had been relaunched for the 333 build and no sync had
+run since — so `pending` was empty because *nothing had asked*, and
+`backfillRemaining` (which had been `pending.count` since the day it was
+written) reported that as a finished backfill.
+
+**Zero because it is done and zero because nobody has asked yet are the same
+number.** §12.15, in the row 331 built to prevent exactly that, and restated in
+333's own footer as *"it reaches zero when the backfill is done"*. The rule was
+written down three times and applied to the wrong quantity each time.
+
+#### What found it
+
+`unexplained`, and nothing else could have. Five counters can each be right
+while the set is missing a case; a residual cannot hide one. It went from 0 to
+475 the moment the case appeared, and it is the only reason the wrong zero was
+not read as good news. **An account beats a list**, on the first day it
+mattered.
+
+#### The fix
+
+`backfillRemaining` and `traceCoverage`'s `queued` set are now **derived from
+the predicate**, not from the array:
+
+- `needsAnything(_:)` is the single definition of "still to fetch";
+  `refreshQueue` builds the work list from it and `backfillRemaining` counts it.
+  Two readers, one rule — §12.43.
+- `traceCoverage` passes `Set(activities.filter(needsStreams).map(\.id))` rather
+  than `Set(pending)`.
+
+`unexplained` is now zero **by construction** rather than by luck: every
+activity without a trace is refused, answered empty, under the threshold, or
+waiting. It keeps its job in a narrower form — a non-zero residual from here on
+means `needsStreams` and `TraceCoverageReport.classify` have drifted apart,
+which is still worth one line.
+
+It also un-breaks the button: `Fetch now` was `.disabled(backfillRemaining == 0)`
+and therefore greyed out on a fresh launch with 475 outstanding.
+
+### 12.81.2 "Could not look" said over a database that had been read perfectly
+
+The same run reported:
+
+```
+Notes and commutes: 0 notes, 0 commute decisions.
+```
+
+in red, counted under *could not look*. That sentence is `AuthoredLoad.line` —
+the load's own description of a database it read successfully and found empty.
+
+333's adapter passed the report's `lookedAtSomething` where it needed the
+load's `isTrustworthy`. **Those answer different questions.**
+`lookedAtSomething` answers *did this compare anything*; `isTrustworthy` answers
+*did the read happen*. Collapsing them turns every empty comparison into a
+failed one.
+
+Every load type carries `isTrustworthy` — all eight, plus
+`RecordingRoundTrip.Report` — so the honest input was available the whole time
+and the adapter simply reached for the wrong property.
+
+#### And the same run overstated the other way
+
+`Review trail: nothing on either side` was counted **inside** the eight that
+agreed. Zero compared to zero agrees perfectly and proves nothing; folding it
+into the agreement count is the mirror image of the first mistake.
+
+### 12.81.3 Four states, not three
+
+- **agreed** — compared something, no differences.
+- **differed** — compared something, found differences.
+- **could not look** — the read did not happen. Not zero differences; no answer.
+- **nothing to compare** — the read happened, both sides were empty.
+
+The summary prints all four terms **always**, including at zero, because a term
+that disappears cannot be told from a term nobody wired in — and because "8 of
+9 agree" hid two different facts on the first device run.
+
+Only the middle two turn a line red. An empty comparison is dim: it is an
+absence of evidence rather than evidence of a fault, and a permanently red row
+is a row that stops being read.
+
+**Two properties on the outcome, deliberately.** `isHealthy` is false on a
+difference or a blind read. `provesSomething` additionally requires that every
+read-back looked at something — and **that is the one D7's gate needs.** Today
+the roll-up is healthy and proves nothing about notes, commutes or reviews,
+because the wipe left all three empty on both sides.
+
+### 12.81.4 The rule
+
+**§12.81.4 — a count derived from a cache answers a question about the cache.**
+`pending.count` answers "how long is the queue", not "how much is left".
+`lookedAtSomething` answers "did this compare anything", not "did the read
+happen". Both were correct properties, read for the wrong question, on a screen
+whose entire purpose is to distinguish those two things.
+
+The tests written at 333 all passed while both defects shipped, because they
+tested the type and the defects were in the callers. 333a's additions state the
+distinctions directly — `aReadThatSucceededAndFoundNothingIsNotBlind`,
+`anEmptyComparisonIsNotAFaultAndIsNotProof` — but the device found them first,
+and on this project it usually does.
+
+## 12.82 One column, one contract — patch 334
+
+`proposal.confidence` has had two contracts since patch 225. 334 ends that, and
+the decision was Bruno's: **1–5 wins, the column narrows.**
+
+### 12.82.1 What the three places said
+
+| where | contract |
+|---|---|
+| `2026-08-06-proposal-inputs` | `CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 100))` |
+| `ProposalView:121` | `i <= proposal.confidence` over `1...5` — five pips |
+| `ReviewRehearsalTests:107` | `#expect(p.confidence >= 1 && p.confidence <= 5)` |
+| `AuthoredImportTests`, `ReconcileTests`, `ReviewRepositoryTests` | wrote **70** |
+
+Two of the four already believed 1–5. The column admitted everything, and a
+CHECK that never refuses anything never complains — which is why this stood for
+109 patches.
+
+§12.71.4 recorded it at 327 and explicitly declined to decide, on the grounds
+that it was not that patch's job. That was the right call and it is why there
+was a test to invert today rather than a surprise.
+
+### 12.82.2 Why 1–5
+
+Nothing anywhere reads a percentage. Nothing draws one. The model is asked for
+a level and the athlete is shown five pips. The 0–100 range was a column
+written wider than its subject — the easy direction to get wrong, because the
+cost of a too-wide constraint is invisible until something writes into the gap.
+
+### 12.82.3 The rebuild, and the two things it does not do
+
+SQLite cannot alter a CHECK, so `proposal` is rebuilt — create, copy, drop,
+rename. Two deliberate choices:
+
+**It copies rather than drops.** `Sub4Migrations+ZoneFloorZero` dropped
+`hr_zone` outright because it held zero rows on the only device with that
+schema, verified rather than assumed. `proposal`, `proposal_change` and
+`proposal_watch` all read zero on this device today — the 9 August wipe took
+the eleven rehearsal records — and this migration still copies, because a
+migration runs on whatever database reaches it and *"it was empty on the
+machine I wrote it on"* is a fact about that machine.
+
+**`foreignKeyChecks: .deferred` is load-bearing.** `proposal_change` and
+`proposal_watch` reference `proposal` with `onDelete: .cascade`. With foreign
+keys enforced, `DROP TABLE proposal` performs an implicit delete and takes
+every child row with it. Deferred checks disable enforcement for the body and
+re-verify at the end, which is the whole reason GRDB offers the parameter.
+
+### 12.82.4 An out-of-range value becomes NULL
+
+70 out of 100 is not 4 out of 5. It is a value written under a contract that
+has been retired, and the honest translation of *"I no longer know what this
+meant"* is NULL — which the column has always permitted and which
+`ReviewRoundTrip` already prints as `confidence range seen: —`.
+
+Nulling silently would be worse than refusing, so it is stated in the
+migration's header, here, and visibly: a proposal whose confidence went from 70
+to nothing shows on the next read-back as a field difference, not as agreement.
+
+### 12.82.5 The test grep is what made this a patch instead of a fix-up
+
+§12.61.9 says grep `Sub4CoreTests/` before the zip when a type's shape changes.
+A CHECK is a shape. The grep found **five write sites of `confidence: 70`
+across three files**, every one of which would have refused at the door — and
+one test, `theConfidenceRangeIsReported`, that **asserted the contradiction on
+purpose**.
+
+That test now inverts rather than breaking: it used to prove 70 round-trips and
+that the disagreement was between the type and the column; it now proves the
+column refuses 70. **That is what recording a contradiction in a test buys** —
+the day somebody decides, a test changes and says so, instead of the change
+going unnoticed. Fourth instance of the shape after 315, 317b and 327a, and the
+first where the grep found the sites before the build rather than after.
+
+### 12.82.6 What this does not settle
+
+`content_revision` stays empty. The occupant CLAUDE.md guessed at — the plan's
+content hash — **already exists**: `plan_version.contentHash`, written by
+`Sub4Import+Plan.contentHash(of:)` and checked on every seed. Filling
+`content_revision` with it would be two answers to one question.
+
+The table's own comment names its real subject: per-**activity** hashes, so a
+re-sync can skip an activity whose content is identical instead of rewriting it
+and every row hanging off it. That is an optimisation, and the last full import
+of 677 activities took **0.254 s**. Recorded as reserved and unoccupied;
+revisit when the import is slow enough to be worth a cache.
+
 ## 12.74 A plan revision, and the drift it uncovered — patch 329a
 
 Week 2's long run moved from Saturday 8 August to Sunday 9 August; Saturday

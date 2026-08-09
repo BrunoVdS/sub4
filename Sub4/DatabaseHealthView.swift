@@ -173,6 +173,14 @@ struct DatabaseHealthView: View {
     @State private var shared: ShareItem?
     @State private var shareFailed = false
 
+    /// PATCH 333. Observed, like `parity` and `writeThrough`. The roll-up's
+    /// RESULT lives on the runner so that pressing Done does not discard it —
+    /// §12.57, which 313 fixed for shadow parity and never for these nine.
+    @State private var rollUp = ReadBackRollUp.shared
+    /// The spinner stays here. A spinner that outlives its screen is a lie of
+    /// a different kind.
+    @State private var rollingUp = false
+
     var body: some View {
         NavigationStack {
             List {
@@ -303,6 +311,10 @@ struct DatabaseHealthView: View {
     /// 1.5 million sample comparisons between them.
     @ViewBuilder
     private func activityReadBackSections(_ db: Sub4Database) -> some View {
+        // PATCH 333. FIRST, and above the nine it summarises, for
+        // `verdictSection`'s reason: a verdict assembled by the reader from
+        // nine sections further down is a verdict that gets skimmed.
+        rollUpSection(db)
         readBackSection(db)
         detailReadBackSection(db)
         recordingReadBackSection(db)
@@ -901,6 +913,164 @@ struct DatabaseHealthView: View {
     /// would be the thing that goes stale after an import.
     private var coverage: TraceCoverage { DetailStore.shared.traceCoverage() }
 
+    // MARK: - The nine, in one press — patch 333
+
+    /// ONE BUTTON, ONE VERDICT, AND IT SURVIVES DONE.
+    ///
+    /// The nine sections below each answer their own question well. What none
+    /// of them could answer is *are all nine green right now*, because the
+    /// three expensive ones need a press, the six cheap ones ran when the
+    /// screen opened, and every result died with the sheet.
+    ///
+    /// EVERY LINE UNCONDITIONAL, and the summary names three states rather
+    /// than two: agreed, differed, and could not look. §12.15 — "eight of
+    /// nine" is not a verdict when the ninth might not have been asked.
+    @ViewBuilder
+    private func rollUpSection(_ db: Sub4Database) -> some View {
+        Section {
+            if rollingUp {
+                HStack { ProgressView(); Text("Reading all nine…").font(.caption) }
+            } else {
+                Button("Read everything back") { runRollUp(db) }
+            }
+
+            LabeledContent("Roll-up", value: rollUp.last.line)
+                .font(.caption)
+                .foregroundStyle(rollUp.last.isHealthy ? Color.dim : .red)
+
+            // PATCH 333a. RED IS FOR A FAULT, not for an absence. A line
+            // that compared nothing is dim and says so — it is unproven, not
+            // broken, and a permanently red row is a row that stops being
+            // read. §12.54.2 cuts both ways.
+            ForEach(rollUp.last.lines) { l in
+                LabeledContent(l.name, value: l.value)
+                    .font(.caption2)
+                    .foregroundStyle(l.isFault ? .red : Color.dim)
+            }
+        } header: {
+            Text("Read-back roll-up")
+        } footer: {
+            Text(Self.rollUpFooter).font(.caption2)
+        }
+    }
+
+    /// Runs all nine and records the verdict.
+    ///
+    /// It assigns the nine `@State` pairs as it goes, so the sections below
+    /// show the same data the roll-up just judged. A roll-up that left the
+    /// detail sections holding older numbers would be two answers to one
+    /// question — §12.29's problem, on the screen that keeps finding it.
+    private func runRollUp(_ db: Sub4Database) {
+        rollingUp = true
+        Task {
+            var lines: [ReadBackRollUp.Line] = []
+
+            let a = await ReadBacks.activities(db)
+            roundTripLoad = a.load; roundTrip = a.report
+            lines.append(Self.line("Activities", a.report?.totalCompared,
+                                   a.report?.unexplained,
+                                   trustworthy: a.load.isTrustworthy && a.report != nil,
+                                   a.load.line))
+
+            let d = await ReadBacks.details(db)
+            detailLoad = d.load; detailTrip = d.report
+            lines.append(Self.line("Details", d.report?.totalCompared,
+                                   d.report?.unexplained,
+                                   trustworthy: d.load.isTrustworthy && d.report != nil,
+                                   d.load.line))
+
+            let rec = await ReadBacks.recordings(db)
+            recordingTrip = rec
+            lines.append(Self.line("Recordings", rec.totalCompared, rec.unexplained,
+                                   trustworthy: rec.isTrustworthy, rec.line))
+
+            let at = await ReadBacks.athlete(db)
+            athleteLoad = at.load; athleteTrip = at.report
+            lines.append(Self.line("Athlete", at.report.totalCompared,
+                                   at.report.unexplained,
+                                   trustworthy: at.load.isTrustworthy, at.load.line))
+
+            let au = await ReadBacks.authored(db)
+            authoredLoad = au.load; authoredTrip = au.report
+            lines.append(Self.line("Notes and commutes", au.report.totalCompared,
+                                   au.report.unexplained,
+                                   trustworthy: au.load.isTrustworthy, au.load.line))
+
+            let pl = await ReadBacks.plan(db)
+            planLoad = pl.load; planTrip = pl.report
+            planExtrasLoad = pl.extrasLoad; planExtrasTrip = pl.extrasReport
+            lines.append(Self.line("Plan", pl.report.totalCompared,
+                                   pl.report.unexplained,
+                                   trustworthy: pl.load.isTrustworthy, pl.load.line))
+            lines.append(Self.line("Plan trimmings", pl.extrasReport.totalCompared,
+                                   pl.extrasReport.unexplained,
+                                   trustworthy: pl.extrasLoad.isTrustworthy,
+                                   pl.extrasLoad.line))
+
+            let wg = await ReadBacks.weatherGear(db)
+            weatherGearLoad = wg.load; weatherGearTrip = wg.report
+            lines.append(Self.line("Weather and gear", wg.report.totalCompared,
+                                   wg.report.unexplained,
+                                   trustworthy: wg.load.isTrustworthy, wg.load.line))
+
+            let rv = await ReadBacks.review(db)
+            reviewLoad = rv.load; reviewTrip = rv.report
+            lines.append(Self.line("Review trail", rv.report.totalCompared,
+                                   rv.report.unexplained,
+                                   trustworthy: rv.load.isTrustworthy, rv.load.line))
+
+            rollUp.record(lines)
+            rollingUp = false
+        }
+    }
+
+    /// ONE PLACE THAT TURNS A REPORT INTO A VERDICT.
+    ///
+    /// PATCH 333a — `trustworthy` COMES FROM THE LOAD, NOT FROM THE REPORT.
+    /// 333 passed `lookedAtSomething` here, which answers *did this compare
+    /// anything*, and used it to decide *did the read happen*. Those are
+    /// different questions and the device answered them differently within the
+    /// hour: `Notes and commutes` reported "could not look" over a database
+    /// that had been read perfectly well and simply held nothing.
+    ///
+    /// Every load type carries `isTrustworthy` — all eight of them, plus
+    /// `RecordingRoundTrip.Report` — so the honest input was there the whole
+    /// time. §12.81.
+    private static func line(_ name: String,
+                             _ compared: Int?,
+                             _ unexplained: Int?,
+                             trustworthy: Bool,
+                             _ whyNot: @autoclosure () -> String) -> ReadBackRollUp.Line {
+        guard trustworthy, let compared, let unexplained else {
+            return .init(name: name, compared: 0, unexplained: 0,
+                         couldNotLook: whyNot())
+        }
+        return .init(name: name, compared: compared, unexplained: unexplained,
+                     couldNotLook: nil)
+    }
+
+    private static let rollUpFooter =
+        "Runs all nine read-backs in one press and keeps the answer. Every "
+      + "record the migration wrote, read back out of the database and "
+      + "compared field by field against the store it came from.\n\n"
+      + "FOUR STATES, NOT TWO. A line can agree, disagree, fail to look, or "
+      + "look and find nothing on either side. The last two are not the same "
+      + "fact: a read that failed is a question nobody answered, and an empty "
+      + "comparison is an answer that proves nothing. Zero compared to zero "
+      + "agrees perfectly.\n\n"
+      + "Only a difference or a failed read turns this red. An empty "
+      + "comparison is counted on its own and left dim, because a row that is "
+      + "permanently red is a row that stops being read — and because whether "
+      + "an absence is acceptable is a decision for a person. Before D7 it is "
+      + "not.\n\n"
+      + "The result survives this sheet being closed and reaches the "
+      + "diagnostics paste, which the nine sections below could never do — "
+      + "their reports lived and died with the screen. ADR-0003 §12.80.\n\n"
+      + "The three activity read-backs are the slow part: 674 activities, "
+      + "674 details, and roughly 1.5 million sample comparisons across the "
+      + "recordings. During a backfill they will legitimately report less "
+      + "than the store holds — check Traces still to fetch first."
+
     // MARK: - What Strava has not sent yet — patch 331
 
     /// PATCH 331 — THE BACKLOG, VISIBLE WITHOUT PRESSING ANYTHING.
@@ -939,6 +1109,26 @@ struct DatabaseHealthView: View {
     /// The three rows somebody watching a backfill actually wants.
     @ViewBuilder
     private var backlogHeadlineRows: some View {
+        // PATCH 333. THE CONTROL, BESIDE THE NUMBER.
+        //
+        // 331 made the backlog readable and left the only thing that moves it
+        // on another screen — Settings, Strava, Check now. The predictable
+        // happened within the hour: Import was pressed instead, which copies
+        // the app's stores INTO the database and never speaks to Strava, so it
+        // reported 0 new of everything and looked like a stall. A number with
+        // no control beside it invites the nearest button.
+        //
+        // This calls the drain directly rather than a full sync, which also
+        // saves the activity-list request a sync spends out of the same
+        // hundred-per-fifteen-minutes.
+        if detailStore.isFetching {
+            HStack { ProgressView(); Text("Fetching…").font(.caption) }
+        } else {
+            Button("Fetch now") { DetailStore.shared.enqueueAndDrain() }
+                .disabled(detailStore.backfillRemaining == 0
+                          || Self.isLimited(detailStore.rateLimitedUntil))
+        }
+
         LabeledContent("Still to fetch", value: "\(detailStore.backfillRemaining)")
             .font(.caption)
             .foregroundStyle(detailStore.backfillRemaining == 0 ? Color.dim : Color.ink)
@@ -1494,11 +1684,10 @@ struct DatabaseHealthView: View {
 
     private func runRecordingReadBack(_ db: Sub4Database) {
         readingBackRecording = true
-        let store = Array(DetailStore.shared.streams.values)
         Task {
             // OFF the main actor, unlike the two above — 645 read transactions
             // and ~1.5 million comparisons. See `compareOffMain`.
-            recordingTrip = await RecordingRoundTrip.compareOffMain(db, store: store)
+            recordingTrip = await ReadBacks.recordings(db)
             readingBackRecording = false
         }
     }
@@ -1961,28 +2150,11 @@ struct DatabaseHealthView: View {
     /// Same shape as `reloadAuthored`: the read off the main actor, the
     /// comparison on it, because `PlanStore` is a main-actor singleton.
     private func reloadPlan(_ db: Sub4Database) async {
-        let load = await Task.detached(priority: .utility) {
-            PlanRepository.load(db)
-        }.value
-        planLoad = load
-        let store = PlanStore.shared
-        planTrip = PlanRoundTrip.compare(storeMeta: store.plan.meta,
-                                         storeWeeks: store.plan.weeks,
-                                         storeSessions: store.plan.sessions,
-                                         database: load)
-
-        // PATCH 326. A second read rather than one that returns everything:
-        // the trimmings are a separate claim and a separate report, so a red
-        // row says which half broke. Same actor shape as above.
-        let extras = await Task.detached(priority: .utility) {
-            PlanExtrasRepository.load(db)
-        }.value
-        planExtrasLoad = extras
-        planExtrasTrip = PlanExtrasRoundTrip.compare(
-            storeFuel: store.plan.fuel,
-            storeWarmup: store.plan.warmup,
-            storeExercises: store.plan.exercises,
-            database: extras)
+        let r = await ReadBacks.plan(db)
+        planLoad = r.load
+        planTrip = r.report
+        planExtrasLoad = r.extrasLoad
+        planExtrasTrip = r.extrasReport
     }
 
     /// PATCH 324 — the seventh read-back, D6c slice 6, ADR-0003 §12.67.
@@ -2132,26 +2304,9 @@ struct DatabaseHealthView: View {
     /// The activity roster goes in as a `Set` so the comparison can tell a
     /// reading the database refused from a reading it lost.
     private func reloadWeatherGear(_ db: Sub4Database) async {
-        let load = await Task.detached(priority: .utility) {
-            WeatherGearRepository.load(db)
-        }.value
-        weatherGearLoad = load
-        weatherGearTrip = WeatherGearRoundTrip.compare(
-            storeWeather: Array(WeatherStore.shared.byActivity.values),
-            // `allGear`, NOT `shoes` — patch 325a, and the bug it fixes is
-            // instructive. `AthleteStore` holds `shoes`, `bikes` and `retired`
-            // separately and exposes `allGear` as the sum. 324 passed `shoes`,
-            // so the comparison saw six items against the database's eleven and
-            // reported five as "kept after the source dropped it". Four of those
-            // ids begin with `b`: they are bikes the app holds, in a property
-            // nobody handed to the comparison. §12.68.6.
-            //
-            // The importer has always been given all eleven — `11 known` on the
-            // import panel is the number that says so, and it was on screen the
-            // whole time.
-            storeGear: AthleteStore.shared.allGear,
-            knownActivityIDs: Set(ActivityStore.shared.activities.map(\.id)),
-            database: load)
+        let r = await ReadBacks.weatherGear(db)
+        weatherGearLoad = r.load
+        weatherGearTrip = r.report
     }
 
     /// PATCH 327 — the ninth read-back, D6c slice 7, ADR-0003 §12.71.
@@ -2388,41 +2543,29 @@ struct DatabaseHealthView: View {
     /// exactly one collection, which is why this one is safe — recorded so the
     /// next reader knows it was checked rather than assumed.
     private func reloadReview(_ db: Sub4Database) async {
-        let load = await Task.detached(priority: .utility) {
-            ReviewRepository.load(db)
-        }.value
-        reviewLoad = load
-        reviewTrip = ReviewRoundTrip.compare(
-            storeRecords: ProposalStore.shared.records,
-            database: load)
+        let r = await ReadBacks.review(db)
+        reviewLoad = r.load
+        reviewTrip = r.report
     }
 
     /// Same shape as `reloadAthlete`: the read off the main actor, the
     /// comparison on it, because the stores it compares against are main-actor
     /// singletons.
     private func reloadAuthored(_ db: Sub4Database) async {
-        let load = await Task.detached(priority: .utility) {
-            AuthoredRepository.load(db)
-        }.value
-        authoredLoad = load
-        authoredTrip = AuthoredRoundTrip.compare(
-            storeNotes: Array(NotesStore.shared.all.values),
-            storeCommutes: Array(CommuteStore.shared.decisions.values),
-            database: load)
+        let r = await ReadBacks.authored(db)
+        authoredLoad = r.load
+        authoredTrip = r.report
     }
 
     /// The read off the main actor, the comparison on it — the stores it
     /// compares against are main-actor singletons and the database read is not
     /// this screen's to block on, however small it is.
     private func reloadAthlete(_ db: Sub4Database) async {
-        let load = await Task.detached(priority: .utility) {
-            AthleteRepository.load(db)
-        }.value
-        athleteLoad = load
-        athleteTrip = AthleteRoundTrip.compare(store: ConstantsStore.shared.c,
-                                               storeFTP: AthleteStore.shared.ftp,
-                                               storeZones: AthleteStore.shared.hrZones,
-                                               database: load)
+        // PATCH 333. The read moved to `ReadBacks`; this is one of its two
+        // callers. §12.43 — the roll-up runs the same nine.
+        let r = await ReadBacks.athlete(db)
+        athleteLoad = r.load
+        athleteTrip = r.report
     }
 
     /// The precise names, trimmed. `laps[*].averageHR` in the tally says WHAT;
@@ -2435,26 +2578,20 @@ struct DatabaseHealthView: View {
 
     private func runDetailReadBack(_ db: Sub4Database) {
         readingBackDetail = true
-        let store = Array(DetailStore.shared.details.values)
         Task {
-            let load = ActivityDetailRepository.all(db)
-            detailLoad = load
-            detailTrip = load.details.map {
-                DetailRoundTrip.compare(store: store, database: $0)
-            }
+            let r = await ReadBacks.details(db)
+            detailLoad = r.load
+            detailTrip = r.report
             readingBackDetail = false
         }
     }
 
     private func runReadBack(_ db: Sub4Database) {
         readingBack = true
-        let store = ActivityStore.shared.activities
         Task {
-            let load = ActivityRepository.all(db)
-            roundTripLoad = load
-            roundTrip = load.activities.map {
-                ActivityRoundTrip.compare(store: store, database: $0)
-            }
+            let r = await ReadBacks.activities(db)
+            roundTripLoad = r.load
+            roundTrip = r.report
             readingBack = false
         }
     }
@@ -2985,6 +3122,12 @@ struct DatabaseHealthView: View {
         lines.append("    asked, nothing there: \(coverage.answeredEmpty)")
         lines.append("    the source refused it: \(coverage.refused)")
         lines.append("    unexplained: \(coverage.unexplained)")
+        // PATCH 333. The roll-up, and it is the only place in this paste where
+        // all nine read-backs are answered together. Unconditional — §12.54.2,
+        // and `.never` says "not rolled up since this launch" rather than
+        // being absent.
+        lines.append("")
+        lines.append(contentsOf: rollUp.last.diagnosticLines)
         // PATCH 312, BOTH SLICES AT 313. Only after a run — this one costs a
         // database read and two full derivations, so there is nothing to print
         // until somebody presses the button. `Outcome.diagnosticLines` says
