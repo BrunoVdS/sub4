@@ -502,13 +502,21 @@ struct DatabaseHealthView: View {
                                value: ByteCountFormatter.string(
                                 fromByteCount: Int64(m.totalBytes), countStyle: .file))
                     .font(.caption)
-                if m.missingCount > 0 {
-                    // Not red. A declared file that is not there is a normal
-                    // answer on a fresh install, and the row exists so the
-                    // number is visible rather than inferred from a total.
-                    LabeledContent("Declared but not present", value: "\(m.missingCount)")
-                        .font(.caption).foregroundStyle(Color.dim)
-                }
+                // PATCH 336. UNCONDITIONAL, and split — §12.54.2 and §12.54.3.
+                //
+                // It was gated on `> 0` and stood alone, so on 9 August it read
+                // "5" over three lost stores and two retired formats, and a
+                // reader had no way to tell which five. `details.json` and
+                // `streams.json` were replaced by the `details/` and `streams/`
+                // directories, so they cannot exist on any install after the
+                // per-activity split — **the total has a floor of two and only
+                // the second number can reach zero.** §12.84.
+                LabeledContent("Declared but not present", value: "\(m.missingCount)")
+                    .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("  retired formats", value: "\(m.retiredFormatsAbsent)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("  stores not written", value: "\(m.storesNotWritten)")
+                    .font(.caption2).foregroundStyle(Color.dim)
                 if m.failureCount > 0 {
                     LabeledContent("Failed to copy", value: "\(m.failureCount)")
                         .font(.caption).foregroundStyle(.red)
@@ -2350,9 +2358,22 @@ struct DatabaseHealthView: View {
       + "proposal has to survive a plan revision that renumbers the week it "
       + "names — so nothing but this resolves it against the sessions the "
       + "database holds.\n\n"
-      + "Three approved differences, all structural, and one finding that is "
-      + "not approved: review_evidence_source is written by nothing, so "
-      + "ADR-0002's lineage purge has no rows to query. ADR-0003 §12.71."
+      + "TWO approved differences since patch 337, and the one that went was "
+      + "Record.id. It claimed the app's key and the database's key could "
+      + "differ harmlessly; on 9 August two reviews written in the same second "
+      + "proved otherwise, and one review's evidence and proposal were "
+      + "overwritten by the other's. review.recordKey now carries the app's "
+      + "own record id, and the run time is an ordinary field. Two rows here "
+      + "show it landed: paired by record key, and paired by run time — the "
+      + "second is the one-import fallback for rows written before the "
+      + "migration and should read zero afterwards.\n\n"
+      + "Two records sharing a run time is no longer a fault and is no longer "
+      + "red. It is still counted, because that count is what found the loss.\n\n"
+      + "The lineage is written since patch 335 — one row per source the "
+      + "review builder consults, so ADR-0002's purge has something to query. "
+      + "It reads zero until a review exists, which before 24 August 2026 "
+      + "means it reads zero unless the rehearsal has been run. ADR-0003 "
+      + "§12.71, §12.83 and §12.85."
 
     @ViewBuilder
     private var reviewReadBackSection: some View {
@@ -2389,10 +2410,7 @@ struct DatabaseHealthView: View {
                 LabeledContent("Only in the database",
                                value: "\(r.reviewsOnlyInDatabase.count)")
                     .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("App records sharing a run time",
-                               value: "\(r.duplicateRunTimes.count)")
-                    .font(.caption)
-                    .foregroundStyle(r.duplicateRunTimes.isEmpty ? Color.dim : .red)
+                Self.reviewKeyRows(r)
                 LabeledContent("Fields that differ",
                                value: "\(r.reviewDifferences.count)")
                     .font(.caption)
@@ -2420,15 +2438,22 @@ struct DatabaseHealthView: View {
                 // back, this is where it shows.
                 LabeledContent("Built and withheld", value: "\(r.evidenceWithheld)")
                     .font(.caption2).foregroundStyle(Color.dim)
-                // NOT A COUNT — A STATEMENT. See §12.71.3: nothing in the app
-                // writes review_evidence_source, so ADR-0002's lineage purge
-                // has nothing to query. Worded so the zero cannot be read as
-                // "checked, and clean".
-                LabeledContent("Lineage rows",
-                               value: r.evidenceSourceRows == 0
-                                      ? "0 — nothing writes this table"
-                                      : "\(r.evidenceSourceRows)")
-                    .font(.caption2).foregroundStyle(Color.dim)
+                // PATCH 335b. STILL NOT A COUNT — BUT A DIFFERENT STATEMENT.
+                //
+                // Until 335 this read "0 — nothing writes this table", which
+                // was true and is now false: `Sub4Import+Authored` writes one
+                // row per source in `ReviewLineage`. 335 wrote the writer and
+                // left the sentence describing its absence, which is §12.15
+                // pointing the other way — a zero with a confident and wrong
+                // explanation is worse than a bare one.
+                //
+                // THREE ZEROS THAT ARE NOT THE SAME ZERO, and only the middle
+                // one is a fault: no review yet (correct, and the state until
+                // 24 August), reviews stored but no lineage (the writer did
+                // not run), and rows present (what it should say).
+                LabeledContent("Lineage rows", value: Self.lineageLine(r))
+                    .font(.caption2)
+                    .foregroundStyle(Self.lineageIsAFault(r) ? .red : Color.dim)
                 LabeledContent("Fields that differ",
                                value: "\(r.evidenceDifferences.count)")
                     .font(.caption)
@@ -2566,6 +2591,70 @@ struct DatabaseHealthView: View {
         let r = await ReadBacks.athlete(db)
         athleteLoad = r.load
         athleteTrip = r.report
+    }
+
+    /// PATCH 335b. Which of the three zeros this is.
+    ///
+    /// `evidenceSourceRows` counts the whole table. Zero means *no review has
+    /// been stored yet* when the database holds none — the correct state until
+    /// 24 August — and means *the writer did not run* when it holds some. One
+    /// number, two facts, and only the second is a defect.
+    /// PATCH 337 — FIVE ROWS WHERE ONE STOOD, AND NET ZERO CHILDREN in the
+    /// caller's block. §12.76: the review section's `@ViewBuilder` is already
+    /// near its depth budget, so the row this replaces is swapped for one
+    /// function rather than four more siblings.
+    ///
+    /// WHAT EACH ROW IS FOR
+    /// --------------------
+    /// The first two are the pairing rules, both printed, because "5 paired"
+    /// cannot tell a device that has adopted the new key from one that has
+    /// not. `by run time` and `awaiting a key` are the pre-337 state; both go
+    /// to zero after one import and stay there.
+    ///
+    /// `awaiting a key` is amber rather than red: before the first import
+    /// after 337 it is the correct and expected answer, and a row that is red
+    /// while it is right is a row its reader learns to ignore — §12.40.1
+    /// measured that cost once already.
+    ///
+    /// The run-time row IS NO LONGER RED AT ANY VALUE. It was red because the
+    /// run time was the key; it is not, and the honest reading of two records
+    /// in one second is now "that happened" rather than "something is wrong".
+    /// The two key-collision rows below it are the ones that cannot fire
+    /// without a bug, and those are red.
+    @ViewBuilder
+    private static func reviewKeyRows(_ r: ReviewRoundTrip.Report) -> some View {
+        LabeledContent("Paired by record key", value: "\(r.pairedByRecordKey)")
+            .font(.caption).foregroundStyle(Color.dim)
+        LabeledContent("  paired by run time, not yet keyed",
+                       value: "\(r.pairedByRunTime)")
+            .font(.caption2).foregroundStyle(Color.dim)
+        LabeledContent("Rows awaiting a record key",
+                       value: "\(r.reviewsAwaitingAKey)")
+            .font(.caption)
+            .foregroundStyle(r.reviewsAwaitingAKey == 0 ? Color.dim : .orange)
+        LabeledContent("App records sharing a run time",
+                       value: "\(r.duplicateRunTimes.count)")
+            .font(.caption).foregroundStyle(Color.dim)
+        LabeledContent("Records or rows sharing a record key",
+                       value: "\(r.duplicateRecordKeys.count + r.duplicateStoredKeys.count)")
+            .font(.caption)
+            .foregroundStyle(r.duplicateRecordKeys.isEmpty
+                             && r.duplicateStoredKeys.isEmpty ? Color.dim : .red)
+    }
+
+    private static func lineageLine(_ r: ReviewRoundTrip.Report) -> String {
+        if r.evidenceSourceRows > 0 {
+            return "\(r.evidenceSourceRows) — one per source in ReviewLineage"
+        }
+        return r.reviewsInDatabase == 0
+            ? "0 — no review stored yet"
+            : "0 — but \(r.reviewsInDatabase) reviews are stored"
+    }
+
+    /// Red only for the middle case. A row that is permanently red until
+    /// August is a row that stops being read.
+    private static func lineageIsAFault(_ r: ReviewRoundTrip.Report) -> Bool {
+        r.evidenceSourceRows == 0 && r.reviewsInDatabase > 0
     }
 
     /// The precise names, trimmed. `laps[*].averageHR` in the tally says WHAT;
@@ -3041,7 +3130,20 @@ struct DatabaseHealthView: View {
         }
         lines.append("Prepared: \(Sub4Launch.shared.database != nil ? "at launch" : "by this screen")")
         lines.append("Tables: \(counts.count), imported rows: \(importedRows), total: \(totalRows)")
-        for row in counts where row.rows > 0 {
+        // PATCH 336. EVERY TABLE, INCLUDING THE EMPTY ONES.
+        //
+        // This said `where row.rows > 0` from the day it was written, so the
+        // header claimed 51 tables and the list printed 38. The thirteen it
+        // hid are `review_evidence_source`, `content_revision`,
+        // `match_decision`, `user_note`, `correction` and their neighbours —
+        // which is to say, every table this project has spent a week arguing
+        // about, invisible in the one artefact that gets read later by
+        // somebody who cannot see the screen.
+        //
+        // §12.54.2, in the place it costs most: a row that vanishes at zero
+        // cannot be told from a row nobody wired in. The screen has always
+        // drawn all 51. The paste now agrees with it.
+        for row in counts {
             lines.append("  \(row.table): \(row.rows)")
         }
         // Patch 248. The five numbers on screen cannot say WHICH files are

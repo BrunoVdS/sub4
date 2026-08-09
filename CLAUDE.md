@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 334 (2026-08-09).** Patch 318 installed this file with its state
+**Current at patch 337 (2026-08-09).** Patch 318 installed this file with its state
 sections still describing patch 278c — forty patches behind — which is the failure
 this file exists to prevent. §5 is the part that goes stale; if the patch number in
 its heading is far behind `Sub4/AppVersion.swift`, trust the ADR and the code, not §5.
@@ -167,9 +167,17 @@ the way it is. ADR §12 supersedes all three.
   327a (a fix-up reworded a printed string while rebuilding the function around it).
   **A fix-up is a patch** — 327a followed this rule when 327 was written and skipped it
   when fixing 327.
-  Both times `Sub4/*.swift` was swept and the test target was not. The three shapes that
-  carry assertions elsewhere are **a function's arity, an array's length, and a printed
-  string's content**.
+  Both times `Sub4/*.swift` was swept and the test target was not. The shapes that carry
+  assertions elsewhere are **a function's arity, an array's length, a printed string's
+  content — and a type's NAME**. 335 grepped for the first three and declared
+  `ReviewLineageTests`, which `DomainSchemaTests` had used since the schema was written:
+  `invalid redeclaration`, and a fix-up. Grep the name you are about to declare, not only
+  the names you are about to change.
+  **A fifth shape, from 337: a value a FIXTURE DERIVES rather than states.**
+  `ReviewRepositoryTests.record()` built its `id` from the window days, so the moment the
+  id became the pairing key, the test that changes `endDay` to provoke a field difference
+  was changing the key instead. Invisible to a grep for the field's name, because the
+  field's name does not appear. §12.85.7.
 - **A grep tells you where a symbol appears, not what the line does with it.** 328 counted
   the copies of a rule from `grep isDone` output and treated one hit as a call site without
   opening it; it was a sixth copy, and a seventh only appeared under `grep isRest`. If the
@@ -275,7 +283,7 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 334, 2026-08-09
+## 5. State — patch 337, 2026-08-09
 
 **The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c COMPLETE — all eight
 slices, at 330. D7 has not started, and nothing in the app reads the database yet.**
@@ -295,7 +303,7 @@ it does not prove a store *fed from* the database would behave identically, and 
 provable. Repointing each store's load path is the substance of D7 and is covered by no
 slice completed so far.
 
-- **Twelve migrations**, 51 tables, ~214,000 rows, ~37 MB on the phone. On the device:
+- **Thirteen migrations**, 51 tables, ~214,000 rows, ~37 MB on the phone. On the device:
   674 activities, 674 details, 649 recordings, ~194,000 trace samples, 7,986 splits,
   4,700 laps, 582 weather, 11 gear, 15 resting months, 5 HR zones, 7 notes,
   4 corrections, 3 rejections.
@@ -466,13 +474,28 @@ test.
   until D7 settles that answer rather than writing it twice.
 - **`SUB4_CURRENT_PEER_REVIEW_AND_REMEDIATION_PLAN.md` is untouched since the baseline**
   (3 August). Deferred until the D-ladder finishes, for the same reason.
-- `review_evidence_source` — **nothing writes it**, so ADR-0002's lineage purge has no rows
-  to query (§12.71.3). Confirmed on the device at 327b: `0 — nothing writes this table`.
-  Separately, the proposals import stays unverified against a REAL review until
-  **24 August 2026**.
-- **Two identities for one review** (§12.71.12) — `Record.id` vs `(accountID, ranUTC)` at
-  one-second resolution, no unique constraint. Eleven rehearsal records became eight rows.
-  **Decided 8 August: recorded, not fixed.** Revisit if `review` gains a second writer.
+- ~~`review_evidence_source` — **nothing writes it**~~ **Closed at 335.** One row per source
+  in `ReviewLineage.sourceIDs` — `authored`, `bundled`, `strava` — written beside the
+  evidence row. **A property of the BUILDER, not of the pack:** a review that consulted
+  Strava and found nothing is still derived from Strava, so deriving the set per instance
+  would under-report the exact case the purge exists for. That decision also kept it out of
+  `ProposalStore.Record` and its persisted `Codable`. Frozen literals rather than
+  `DataSource` cases, following `Sub4Migrations`' precedent and avoiding a MainActor value
+  read from the nonisolated importer. §12.83. **Still unproved against a REAL review until
+  24 August 2026** — that limit is unchanged.
+- ~~**Two identities for one review**~~ **Closed at 337, by the failure it predicted.**
+  `(accountID, ranUTC)` was never a key: one-second resolution, no unique constraint. On
+  9 August the rehearsal wrote six records, two in the same second, and the importer's
+  UPDATE branch **replaced one review's evidence, lineage, proposal, changes and watch
+  items with another's** — silently, `review: 5` looking perfectly reasonable. The only
+  thing that noticed was `duplicateRunTimes`, written at 327 for exactly this and never
+  fired until then. `2026-08-14-review-record-key` gives `review` a nullable `recordKey`
+  carrying `ProposalStore.Record.id` — a value already unique since 269, already `Codable`,
+  already in every `proposals.json` — with a partial unique index. The importer **adopts**:
+  a keyless row whose run time matches claims a record's key, once. The sixth review comes
+  BACK on the next import rather than merely stopping it recurring. `Record.id` was
+  **deleted** from the approved-difference list, not reworded: when the harm arrives an
+  approved difference gets a column, not a caveat. §12.85.
 - ~~**`confidence` has two live contracts**~~ **Closed at 334.** `2026-08-13-confidence-scale`
   rebuilds `proposal` with `CHECK (confidence >= 1 AND confidence <= 5)`; an out-of-range
   value becomes NULL, because 70 out of 100 is not 4 out of 5. Five fixture write sites
@@ -514,6 +537,43 @@ from the database** — every other one holds it from the app and lets `PlanRoun
 it — so it holds only the match decisions, which makes it the closest thing on that screen
 to what D7 does. §12.75.
 
+**337 removed the key that could lose a review, and it is the last code item before D7.**
+The 9 August rehearsal collided two records in one second and one review's whole subtree
+was overwritten by another's. `review.recordKey` now carries the app's own record id;
+pairing is by that, with the run time surviving as a one-import ADOPTION fallback for the
+five rows already on the device. **Two pairing counts are printed, not one** — "5 paired"
+cannot tell a migrated device from an un-migrated one, and `paired by run time: 0` is what
+says the window shut. `duplicateRunTimes` left `unexplained` and stopped being red: the run
+time is no longer the key, so a collision is a fact about the clock. **Fourth test inverted
+in three days**, all four written by the patch that found a problem and declined to fix it.
+§12.85.
+
+**336 cleaned the two zeros the paste could not show, so D7 starts on a readable one.**
+The diagnostics listed 38 tables under a header saying 51 — `for row in counts where
+row.rows > 0` — and the thirteen it hid are every table this project has argued about:
+`review_evidence_source`, `content_revision`, `match_decision`, `user_note`, `correction`.
+And `Declared but not present: 5` counted three lost stores beside two RETIRED FILE
+FORMATS: `details.json` and `streams.json` cannot exist on an install after the
+per-activity split, so **that row has a floor of two** and read as five losses when it was
+three. Both §12.54.2, both in the artefact read later by somebody who cannot see the
+screen. §12.84.
+
+**335b fixed a zero whose explanation was wrong.** 335 wrote the writer and left the
+Database screen saying `0 — nothing writes this table`, plus a footer calling it an
+unapproved finding. Both true before the patch, both false after it. Three zeros now, and
+only the middle one is red: *no review stored yet* (correct until 24 August), *reviews
+stored but no lineage* (the writer did not run), *N — one per source*. **Found while
+writing the manual campaign, by asking where on the screen the number appears.** §12.83.6.
+
+**335 wrote the lineage, and it is the third test inverted in one day.**
+`review_evidence_source` had held zero rows since the schema was built, leaving ADR-0002's
+purge with nothing to query. `nothingWritesEvidenceLineage` asserted that absence on
+purpose since 327; it is now `theEvidenceLineageIsWritten`. Same shape as 327b's
+`noPlanMeansNoResolution` and 334's `theConfidenceRangeIsReported` — **all three were
+written by the patch that found the problem and declined to solve it, and all three changed
+on the day somebody decided.** That is the argument for recording a finding as a test
+rather than a comment. §12.83.
+
 **333a corrected two counters that could not say why they were zero**, both found on the
 device within an hour of 333 shipping and both the defect 333 existed to prevent. The trace
 backlog and the roll-up's blind-read test are now derived from the predicate and from
@@ -551,11 +611,18 @@ roll-up at 333, the snapshot on 9 August. What remains before D7:
    acceptable. The pre-wipe evidence died with the pre-wipe data.
 4. **Verify** — `migration_run` back to `verified`, not `pending`.
 5. **Compare** — eight parity slices, zero unexplained, complete database.
-6. **`content_revision`** — a table created at `Sub4Migrations+Domain.swift:596` and
-   referenced nowhere else in the app. No writer, no reader, 0 rows. Decide the occupant.
-7. ~~**`confidence`**~~ — done at 334, and ~~**`content_revision`**~~ — decided at 334.
-8. **`review_evidence_source`** — write it, or record that ADR-0002's lineage purge does
-   not function until 4A. The last one open.
+6. ~~**`confidence`**~~ done at 334 · ~~**`content_revision`**~~ decided at 334 ·
+   ~~**`review_evidence_source`**~~ written at 335 · ~~the paste's hidden tables and the
+   snapshot's absence floor~~ cleaned at 336 · ~~**two identities for one review**~~
+   closed at 337.
+
+**Step 1 now has a companion: press Import once after installing 337.** The five review
+rows on the device carry no `recordKey` until an import adopts them, and the sixth review
+— the one overwritten on 9 August — comes back on that same press. `database rows awaiting
+a record key: 0` and `reviews paired by run time, not yet keyed: 0` are what say it worked.
+
+**Every pre-D7 item that is code is now done.** What remains is steps 1–5: the backfill,
+the snapshot, and three button presses on complete data.
 
 Then D7 activate — `Sub4Launch.migrationFailureBlocksTheApp` flips to `true`. Then D8,
 stabilise one release window and remove the JSON writers. Phase 4A (Apple Health canonical)

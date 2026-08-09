@@ -110,9 +110,45 @@ extension Sub4Import {
             report.reviewsSeen += 1
             let ranUTC = iso8601(record.ranAt)
 
-            let existing = try String.fetchOne(d, sql: """
-                SELECT id FROM review WHERE accountID = ? AND ranUTC = ?
-                """, arguments: [accountID, ranUTC])
+            // PATCH 337 — LOOKED UP BY THE APP'S OWN KEY, NOT BY RUN TIME.
+            //
+            // `ranUTC` held this job from 327 until the rehearsal wrote two
+            // records in the same second on 9 August 2026, at which point this
+            // lookup found the wrong row, took the UPDATE branch, and replaced
+            // one review's evidence and proposal with another's. See
+            // `Sub4Migrations+ReviewRecordKey` for the whole account.
+            //
+            // TWO QUERIES, IN ORDER, AND THE ORDER IS THE ADOPTION RULE:
+            //
+            //   1. the row already carrying this record's key — the steady
+            //      state, and the only branch that runs after one import;
+            //   2. a row written before 337, which has no key at all, whose
+            //      run time matches. It claims this record's key here and can
+            //      never be claimed again, because step 1 will find it next
+            //      time and `recordKey IS NULL` excludes it from step 2.
+            //
+            // The `IS NULL` in the second query is what keeps two records
+            // sharing a run time from both adopting the same row: the first
+            // one through writes the key, and the second finds nothing and
+            // inserts — which is how the sixth review the rehearsal wrote comes
+            // back on the next import rather than staying lost.
+            let recordKey = record.id
+
+            let keyed = try String.fetchOne(d, sql: """
+                SELECT id FROM review WHERE accountID = ? AND recordKey = ?
+                """, arguments: [accountID, recordKey])
+
+            // AN `if`, NOT A TERNARY. `try` may not appear to the right of a
+            // non-assignment operator, and `a == nil ? try b : nil` is exactly
+            // that shape — it does not compile.
+            var existing = keyed
+            if existing == nil {
+                existing = try String.fetchOne(d, sql: """
+                    SELECT id FROM review
+                     WHERE accountID = ? AND ranUTC = ? AND recordKey IS NULL
+                     ORDER BY id LIMIT 1
+                    """, arguments: [accountID, ranUTC])
+            }
 
             do {
                 try d.inSavepoint {
@@ -121,20 +157,29 @@ extension Sub4Import {
                     if existing == nil {
                         try d.execute(sql: """
                             INSERT INTO review
-                              (id, accountID, ranUTC, windowStartDayKey,
-                               windowEndDayKey, provider, model, appVersion)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                            """, arguments: [reviewID, accountID, ranUTC,
+                              (id, accountID, recordKey, ranUTC,
+                               windowStartDayKey, windowEndDayKey,
+                               provider, model, appVersion)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, arguments: [reviewID, accountID, recordKey,
+                                             ranUTC,
                                              record.startDay, record.endDay,
                                              reviewProvider, record.model,
                                              record.appVersion])
                     } else {
+                        // `recordKey` and `ranUTC` are both written on the
+                        // update path. The key because an adopted row does not
+                        // have one yet; the run time because it is now an
+                        // ordinary field, and a field the writer skips is one
+                        // that silently keeps whatever it had.
                         try d.execute(sql: """
                             UPDATE review
-                            SET windowStartDayKey = ?, windowEndDayKey = ?,
+                            SET recordKey = ?, ranUTC = ?,
+                                windowStartDayKey = ?, windowEndDayKey = ?,
                                 provider = ?, model = ?, appVersion = ?
                             WHERE id = ?
-                            """, arguments: [record.startDay, record.endDay,
+                            """, arguments: [recordKey, ranUTC,
+                                             record.startDay, record.endDay,
                                              reviewProvider, record.model,
                                              record.appVersion, reviewID])
                     }
@@ -153,12 +198,41 @@ extension Sub4Import {
                     // which is where §12.7's "not carried" judgement was wrong:
                     // there was a column for it after all, and it says what the
                     // pack covers better than a derived string would.
+                    let evidenceID = UUID().uuidString
                     try d.execute(sql: """
                         INSERT INTO review_evidence
                           (id, reviewID, sectionKey, title, body, wasSent)
                         VALUES (?, ?, 'pack', ?, ?, 1)
-                        """, arguments: [UUID().uuidString, reviewID,
+                        """, arguments: [evidenceID, reviewID,
                                          record.windowLabel, record.evidence])
+
+                    // PATCH 335 — THE LINEAGE, WRITTEN AT LAST.
+                    //
+                    // `review_evidence_source` has held zero rows on every
+                    // device since the schema was built, which left ADR-0002's
+                    // purge with nothing to query — an obligation unmet by
+                    // construction. §12.71.3 recorded that at 327 and declined
+                    // to fix it; 335 fixes it.
+                    //
+                    // The set comes from `ReviewLineage`, beside the builder
+                    // that consults those stores. It is deliberately NOT
+                    // derived from this record's contents — see that type's
+                    // header: a pack that consulted Strava and found nothing is
+                    // still derived from Strava.
+                    //
+                    // `source` is seeded by `2026-08-03-initial` and its rows
+                    // are a frozen vocabulary, so these references cannot
+                    // dangle. The FK is `onDelete: .restrict` on purpose: a
+                    // source with evidence hanging off it is not deletable
+                    // without deciding what happens to the evidence, which is
+                    // the whole point of the table.
+                    for sourceID in ReviewLineage.sourceIDs {
+                        try d.execute(sql: """
+                            INSERT INTO review_evidence_source
+                              (evidenceID, sourceID)
+                            VALUES (?, ?)
+                            """, arguments: [evidenceID, sourceID])
+                    }
 
                     let p = record.proposal
                     let proposalID = UUID().uuidString

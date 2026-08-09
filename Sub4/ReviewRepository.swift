@@ -70,7 +70,7 @@
 //    review                 written · 5 comparable fields
 //    review_evidence        written · EXACTLY ONE row per review, sectionKey
 //                           always 'pack', wasSent always true
-//    review_evidence_source NOTHING WRITES IT — see below
+//    review_evidence_source written since 335 · one row per source per pack
 //    proposal               written · 5 comparable fields, and `decision` and
 //                           `decidedUTC` are columns with no app-side field
 //    proposal_change        written · 6 comparable fields
@@ -83,11 +83,16 @@
 //  standing — which is a query, so lineage has to be queryable. The schema
 //  comment argues that at length and it is right.
 //
-//  Nothing writes it. Not the importer, not the review runner, not the
-//  rehearsal. Its only INSERT in the entire project is inside
-//  `DomainSchemaTests`. So it holds zero rows on every device, and will hold
-//  zero rows on 24 August too, and the lineage obligation ADR-0002 records is
-//  presently unmet by construction rather than by accident.
+//  Nothing wrote it until patch 335. Not the importer, not the review runner,
+//  not the rehearsal — its only INSERT in the entire project was inside
+//  `DomainSchemaTests`, so it held zero rows on every device and the lineage
+//  obligation ADR-0002 records was unmet by construction rather than by
+//  accident.
+//
+//  335 writes it: one row per source in `ReviewLineage.sourceIDs`, per pack.
+//  The set is a property of the BUILDER rather than of the record — a pack
+//  that consulted Strava and found nothing is still derived from Strava — and
+//  that type's header carries the argument. §12.83.
 //
 //  §12.54.2 is why this gets a line of its own that prints whether or not it is
 //  zero, and why that line is worded as a statement about the writer rather
@@ -192,12 +197,17 @@ nonisolated enum ReviewTrailLoad: Sendable {
         let title: String
         let body: String
         let wasSent: Bool
-        /// From `review_evidence_source`. Empty on every device — §12.71.3.
+        /// From `review_evidence_source`. Empty on every device until patch
+        /// 335 wrote it; sorted by the query, so it compares as a sequence.
         let sourceIDs: [String]
     }
 
     struct StoredReview: Sendable {
         let id: String
+        /// `ProposalStore.Record.id`, carried since patch 337. NULL on a row
+        /// written before that migration and not yet adopted by an import —
+        /// a real, expected, temporary state, counted rather than coalesced.
+        let recordKey: String?
         let ranUTC: String
         let windowStartDayKey: String
         let windowEndDayKey: String
@@ -292,11 +302,18 @@ nonisolated enum ReviewRoundTrip {
         var why: String
     }
 
+    // `Record.id` WAS THE FIRST ENTRY HERE AND WAS REMOVED AT PATCH 337.
+    //
+    // Its reason read "No column, and none is wanted — patch 327", and on
+    // 9 August 2026 the key it defended absorbed one review into another. An
+    // approved difference is a claim that a gap is deliberate and harmless;
+    // when the harm arrives, the entry does not get a caveat, it gets deleted
+    // and the column gets built. `review.recordKey` is that column.
+    //
+    // Left as a comment rather than removed silently: an entry that vanishes
+    // between two builds with no trace is indistinguishable from one nobody
+    // ever wrote — the same reasoning that keeps zeroed rows on the screen.
     static let approved: [ApprovedDifference] = [
-        .init(field: "Record.id",
-              why: "the app keys a review by window label and run count; the "
-                 + "database mints a UUID and keys on (accountID, ranUTC). "
-                 + "No column, and none is wanted — patch 327."),
         .init(field: "review.provider",
               why: "the app stores a model but no provider. The importer "
                  + "writes the constant Sub4Import.reviewProvider rather than "
@@ -370,6 +387,10 @@ nonisolated enum ReviewRoundTrip {
         /// Rows in `review_evidence_source`, across the whole table. Printed
         /// whether or not it is zero, and worded as a fact about the writer.
         var evidenceSourceRows = 0
+        /// PATCH 335. Lineage rows compared against `ReviewLineage.sourceIDs`.
+        /// Its own denominator, because "3 differences" over an unknown number
+        /// of comparisons is not evidence — §12.54.3.
+        var evidenceSourcesCompared = 0
         /// Proposals carrying a decision. Structurally zero.
         var proposalsCarryingADecision = 0
 
@@ -397,18 +418,48 @@ nonisolated enum ReviewRoundTrip {
         var changeDifferences: [String] = []
         var watchDifferences: [String] = []
 
-        /// Keyed by `ranUTC`, so these are ISO timestamps and nothing else.
+        /// `ProposalStore.Record.id` since patch 337 — these were ISO
+        /// timestamps until the run time stopped being the key.
         var reviewsOnlyInApp: [String] = []
+        /// The database row's own `id`. A row that paired with nothing may have
+        /// no `recordKey` to name it by.
         var reviewsOnlyInDatabase: [String] = []
-        /// Two app records with the same `ranAt`. Reported rather than one of
-        /// them being dropped by the dictionary that keys them.
+
+        /// Two app records with the same `ranAt`. INFORMATIONAL SINCE 337 and
+        /// deliberately not part of `unexplained`: the run time no longer
+        /// identifies anything, so a collision costs nothing. The row stays
+        /// because this is the counter that caught the 9 August loss.
         var duplicateRunTimes: [String] = []
+        /// `ProposalStore` minting the same id twice. Cannot happen — kept
+        /// because §12.69 says a guard that cannot fail has not been tested.
+        var duplicateRecordKeys: [String] = []
+        /// Two rows carrying one key. The unique index from
+        /// `2026-08-14-review-record-key` forbids it; same reasoning.
+        var duplicateStoredKeys: [String] = []
+
+        /// PAIRED HOW — patch 337, and the pair of them is the point.
+        ///
+        /// `pairedByRunTime` is the pre-337 fallback: a database row with no
+        /// `recordKey` yet, matched on run time so it can still be compared
+        /// during the one import that adopts it. It should read zero on any
+        /// device that has imported once since 337, and a single "paired: N"
+        /// could not have shown that.
+        var pairedByRecordKey = 0
+        var pairedByRunTime = 0
+        /// Database rows still carrying a NULL `recordKey`. Expected before the
+        /// first import after 337 and a fault after it — which is a judgement
+        /// the screen makes, not this type.
+        var reviewsAwaitingAKey = 0
 
         var rowsSkipped = 0
 
+        /// PATCH 335 adds `evidenceSourcesCompared`. A denominator that does
+        /// not roll up is a place for a comparison to hide: the lineage rows
+        /// contribute differences to `unexplained`, so they contribute to the
+        /// count those differences are measured against.
         var totalCompared: Int {
             reviewsCompared + evidenceCompared + proposalsCompared
-            + changesCompared + watchCompared
+            + changesCompared + watchCompared + evidenceSourcesCompared
         }
 
         /// A review the database holds and the app does not is NOT red.
@@ -422,7 +473,12 @@ nonisolated enum ReviewRoundTrip {
             + proposalDifferences.count + changeDifferences.count
             + watchDifferences.count
             + reviewsOnlyInApp.count
-            + duplicateRunTimes.count
+            // `duplicateRunTimes` LEFT THIS SUM AT 337. It was here because the
+            // run time was the key; it is not, so a collision is now a fact
+            // about the clock rather than a difference between two sides.
+            // These two replace it, and neither can fire without a bug.
+            + duplicateRecordKeys.count
+            + duplicateStoredKeys.count
             + (changesResolvable - changesNamingAKnownSession)
             + rowsSkipped
         }
@@ -505,17 +561,37 @@ nonisolated enum ReviewRoundTrip {
             lines.append("  watch items compared: \(watchCompared)")
 
             // WORDED AS A FACT ABOUT THE WRITER, not as a count — §12.54.2.
+            // The writer arrived at 335; the wording says what it writes so a
+            // reader can tell three-because-three-sources from three-by-luck.
             lines.append("  evidence lineage rows: \(evidenceSourceRows) "
-                         + "(nothing in the app writes review_evidence_source)")
+                         + "(one per source in ReviewLineage: "
+                         + ReviewLineage.sourceIDs.joined(separator: ", ") + ")")
+            lines.append("  lineage rows compared: \(evidenceSourcesCompared)")
             lines.append("  proposals carrying a decision: "
                          + "\(proposalsCarryingADecision) "
                          + "(no screen offers the choice)")
+
+            // PATCH 337. Three unconditional lines: how each pairing rule did,
+            // and how many rows have not been adopted yet. A device that has
+            // imported since 337 reads `paired by run time: 0` and `awaiting a
+            // key: 0`, and one that has not says so instead of looking the
+            // same — §12.54.2, for the sixth time on this ladder.
+            lines.append("  reviews paired by record key: \(pairedByRecordKey)")
+            lines.append("  reviews paired by run time, not yet keyed: "
+                         + "\(pairedByRunTime)")
+            lines.append("  database rows awaiting a record key: "
+                         + "\(reviewsAwaitingAKey)")
 
             lines.append("  reviews only in the app: \(reviewsOnlyInApp.count)")
             lines.append("  reviews only in the database: "
                          + "\(reviewsOnlyInDatabase.count)")
             lines.append("  app records sharing a run time: "
-                         + "\(duplicateRunTimes.count)")
+                         + "\(duplicateRunTimes.count) "
+                         + "(not a fault since 337 — the run time is not the key)")
+            lines.append("  app records sharing a record key: "
+                         + "\(duplicateRecordKeys.count)")
+            lines.append("  database rows sharing a record key: "
+                         + "\(duplicateStoredKeys.count)")
 
             lines.append("  review fields that differ: \(reviewDifferences.count)")
             lines.append("  evidence fields that differ: \(evidenceDifferences.count)")
@@ -536,6 +612,8 @@ nonisolated enum ReviewRoundTrip {
                 lines.append("    only in the database: \(d)")
             }
             for d in duplicateRunTimes.prefix(4) { lines.append("    \(d)") }
+            for d in duplicateRecordKeys.prefix(4) { lines.append("    \(d)") }
+            for d in duplicateStoredKeys.prefix(4) { lines.append("    \(d)") }
             for d in reviewDifferences.prefix(6) { lines.append("    \(d)") }
             for d in evidenceDifferences.prefix(6) { lines.append("    \(d)") }
             for d in proposalDifferences.prefix(6) { lines.append("    \(d)") }
@@ -595,34 +673,109 @@ nonisolated enum ReviewRoundTrip {
             partial + review.proposals.filter { $0.decision != nil }.count
         }
 
-        // MARK: Pairing, by run time
+        // MARK: Pairing, by the app's own key — patch 337
 
-        // KEYED BY `ranUTC`, WHICH IS WHAT THE IMPORTER LOOKS UP. A collision
-        // is reported rather than resolved: `uniquingKeysWith` would keep one
-        // silently and the count of compared reviews would quietly stop
-        // matching the count in the app.
+        // WHAT CHANGED, AND WHY THE OLD RULE IS STILL HERE.
+        //
+        // Until 337 both sides were keyed by `ranUTC`, and on 9 August two app
+        // records shared one. `Sub4Migrations+ReviewRecordKey` has the account.
+        // The app's key is `ProposalStore.Record.id`, unique by construction
+        // since 269, and the database now carries it in `review.recordKey`.
+        //
+        // A row written before 337 has no key until an import adopts it, so
+        // the run-time rule survives as a FALLBACK and both are counted. One
+        // number saying "5 paired" could not tell a migrated device from an
+        // un-migrated one; two numbers can, and `pairedByRunTime` going to zero
+        // is what says the window has closed.
+
+        // The app side. A duplicate here would mean `ProposalStore` produced
+        // the same id twice, which its UUID suffix exists to prevent — kept
+        // because a guard that cannot fail has not been tested (§12.69), and
+        // because the last thing this project assumed could not collide did.
         var mine: [String: ProposalStore.Record] = [:]
+        var appOrder: [ProposalStore.Record] = []
         for record in storeRecords {
-            let key = Sub4Import.iso8601(record.ranAt)
-            if mine[key] != nil {
-                r.duplicateRunTimes.append("two app records ran at \(key)")
+            if mine[record.id] != nil {
+                r.duplicateRecordKeys.append(
+                    "two app records share the key \(record.id)")
             } else {
-                mine[key] = record
+                mine[record.id] = record
+                appOrder.append(record)
             }
         }
-        let theirs = Dictionary(stored.map { ($0.ranUTC, $0) },
-                                uniquingKeysWith: { a, _ in a })
 
-        let mineKeys = Set(mine.keys)
-        let theirKeys = Set(theirs.keys)
-        r.reviewsOnlyInApp = mineKeys.subtracting(theirKeys).sorted()
-        r.reviewsOnlyInDatabase = theirKeys.subtracting(mineKeys).sorted()
+        // The database side, split by whether the row has been adopted yet.
+        // The unique index makes a duplicate key impossible; it is reported
+        // rather than resolved for the same reason as above.
+        var theirs: [String: ReviewTrailLoad.StoredReview] = [:]
+        var unkeyed: [ReviewTrailLoad.StoredReview] = []
+        for review in stored {
+            guard let key = review.recordKey else { unkeyed.append(review); continue }
+            if theirs[key] != nil {
+                r.duplicateStoredKeys.append(
+                    "two database rows carry the key \(key)")
+            } else {
+                theirs[key] = review
+            }
+        }
+        r.reviewsAwaitingAKey = unkeyed.count
 
-        for key in mineKeys.intersection(theirKeys).sorted() {
-            guard let a = mine[key], let b = theirs[key] else { continue }
+        // First unkeyed row per run time — the same row the importer's
+        // adoption query would pick, and picked the same way (`ORDER BY id`
+        // there, `reviewSQL`'s `ORDER BY ranUTC, id` here) so the comparison
+        // pairs what the next import will actually claim.
+        var byRunTime: [String: ReviewTrailLoad.StoredReview] = [:]
+        for review in unkeyed where byRunTime[review.ranUTC] == nil {
+            byRunTime[review.ranUTC] = review
+        }
+
+        // Sorted so the walk does not depend on the order records happen to sit
+        // in `proposals.json`: which of two records claims an unkeyed row has
+        // to be the same answer twice in a row or the read-back is not a test.
+        var claimed = Set<String>()
+        var pairedRowIDs = Set<String>()
+        for record in appOrder.sorted(by: { $0.id < $1.id }) {
+            let ran = Sub4Import.iso8601(record.ranAt)
+            var partner: ReviewTrailLoad.StoredReview?
+
+            if let hit = theirs[record.id] {
+                partner = hit
+                r.pairedByRecordKey += 1
+            } else if let hit = byRunTime[ran], !claimed.contains(hit.id) {
+                claimed.insert(hit.id)
+                partner = hit
+                r.pairedByRunTime += 1
+            }
+
+            guard let b = partner else {
+                r.reviewsOnlyInApp.append(record.id)
+                continue
+            }
+            pairedRowIDs.insert(b.id)
             r.reviewsCompared += 1
-            compareReview(key: key, app: a, database: b,
+            compareReview(key: record.id, app: record, database: b,
                           planSessionUIDs: database.planSessionUIDs, into: &r)
+        }
+
+        // Keyed by the database row's own id, because a row that paired with
+        // nothing may have no `recordKey` to name it by.
+        r.reviewsOnlyInDatabase = stored.map(\.id)
+            .filter { !pairedRowIDs.contains($0) }.sorted()
+
+        // NOT PART OF `unexplained` SINCE 337. Two records in one second is a
+        // thing that happens and no longer costs anything; the row stays so a
+        // reader can see it happened, which is how the 9 August loss was found
+        // in the first place.
+        // BUILT IN TWO STATEMENTS, not one chained expression. §12.71.9 — this
+        // file is where "unable to type-check in reasonable time" first
+        // appeared outside a SwiftUI body.
+        var runTimes: [String: Int] = [:]
+        for record in storeRecords {
+            runTimes[Sub4Import.iso8601(record.ranAt), default: 0] += 1
+        }
+        for ran in runTimes.keys.sorted() where (runTimes[ran] ?? 0) > 1 {
+            let n = runTimes[ran] ?? 0
+            r.duplicateRunTimes.append("\(n) app records ran at \(ran)")
         }
 
         return r
@@ -689,6 +842,24 @@ nonisolated enum ReviewRoundTrip {
             lengthDiff("\(tag) · evidence body", a.evidence, e.body),
             diff("\(tag) · evidence wasSent", true, e.wasSent)
         ].compactMap { $0 }
+
+        // PATCH 335. THE LINEAGE, COMPARED — and the app side of it is a
+        // constant, which is unlike every other field here and is the point:
+        // `ReviewLineage.sourceIDs` is what the builder consulted, so the
+        // database agreeing with it is the evidence that the writer ran and
+        // wrote the right set rather than some set.
+        //
+        // Both sides sorted — `evidenceSourceSQL` orders by `sourceID` and
+        // `ReviewLineage.sourceIDs` sorts — so this is a sequence comparison
+        // and a reordering is not a difference.
+        let expected = ReviewLineage.sourceIDs
+        r.evidenceSourcesCompared += expected.count
+        if e.sourceIDs != expected {
+            r.evidenceDifferences.append(
+                "\(tag) · evidence lineage (app "
+                + "\(expected.joined(separator: "/")), database "
+                + "\(e.sourceIDs.isEmpty ? "none" : e.sourceIDs.joined(separator: "/")))")
+        }
     }
 
     // MARK: Proposals, changes and watch items
@@ -852,6 +1023,12 @@ nonisolated enum ReviewRepository {
                                                       skipped: &skipped)
                     reviews.append(ReviewTrailLoad.StoredReview(
                         id: id,
+                        // NOT in the `guard` above. A NULL here is a row that
+                        // predates 337, not a row the reader could not read,
+                        // and skipping it would turn the adoption window into
+                        // "rows the reader could not read: 5" — a fault
+                        // reported where there is none. §12.15.
+                        recordKey: row["recordKey"] as String?,
                         ranUTC: ranUTC,
                         windowStartDayKey: start,
                         windowEndDayKey: end,
@@ -958,9 +1135,9 @@ nonisolated enum ReviewRepository {
     // MARK: SQL — every list ordered, because every list is a sequence
 
     private static let reviewSQL = """
-        SELECT id, ranUTC, windowStartDayKey, windowEndDayKey,
+        SELECT id, recordKey, ranUTC, windowStartDayKey, windowEndDayKey,
                provider, model, appVersion
-          FROM review WHERE accountID = ? ORDER BY ranUTC
+          FROM review WHERE accountID = ? ORDER BY ranUTC, id
         """
 
     private static let evidenceSQL = """

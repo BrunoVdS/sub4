@@ -57,7 +57,17 @@ struct ReviewRepositoryTests {
               evidence: "TSB −22 for 5 days", reason: reason)
     }
 
-    private func record(ranAt: Double = 1_780_100_000,
+    /// `id` GAINED AN OVERRIDE AT PATCH 337, and the reason is the patch.
+    ///
+    /// The default still derives from the window, which is what
+    /// `ProposalStore.add` does. But the record id is now the key both sides
+    /// pair on, so a test that changes the window to provoke a FIELD
+    /// difference was, from 337 onward, changing the key instead — two
+    /// unpaired reviews rather than one compared review with a differing
+    /// field. `aChangedWindowIsADifference` passes an explicit id so its
+    /// subject stays the comparator rather than the pairing.
+    private func record(id: String? = nil,
+                        ranAt: Double = 1_780_100_000,
                         startDay: String = "2026-06-01",
                         endDay: String = "2026-06-28",
                         windowLabel: String = "1–28 June",
@@ -70,7 +80,7 @@ struct ReviewRepositoryTests {
                         watchFor: [String] = [],
                         appVersion: String = "1.0 (1) · patch 327",
                         model: String = "claude-opus-5") -> ProposalStore.Record {
-        .init(id: "\(startDay)→\(endDay)-1",
+        .init(id: id ?? "\(startDay)→\(endDay)-1",
               ranAt: Date(timeIntervalSince1970: ranAt),
               windowLabel: windowLabel,
               startDay: startDay, endDay: endDay,
@@ -200,7 +210,9 @@ struct ReviewRepositoryTests {
         #expect(r.changesCompared == 3)
         #expect(r.changeFieldsCompared == 18, "6 per change × 3")
         #expect(r.watchCompared == 2)
-        #expect(r.totalCompared == 1 + 1 + 1 + 3 + 2)
+        // PATCH 335 adds the three lineage rows. A denominator that does not
+        // move when a comparison is added is a denominator nobody can read.
+        #expect(r.totalCompared == 1 + 1 + 1 + 3 + 2 + 3)
     }
 
     @Test("Changes and watch items keep their order")
@@ -223,9 +235,12 @@ struct ReviewRepositoryTests {
     @Test("A changed window is reported")
     func aChangedWindowIsADifference() throws {
         let db = try Sub4Database.inMemory()
-        try imported(db, [record()])
+        // ONE ID ON BOTH SIDES — see the fixture's header. Without it, 337's
+        // key would read this as two different reviews and the comparator
+        // under test would never run.
+        try imported(db, [record(id: "one-window-1")])
 
-        let r = compare(db, [record(endDay: "2026-06-30")])
+        let r = compare(db, [record(id: "one-window-1", endDay: "2026-06-30")])
         #expect(r.reviewDifferences.contains { $0.hasSuffix("window end") })
         #expect(r.unexplained == 1)
     }
@@ -422,29 +437,58 @@ struct ReviewRepositoryTests {
     /// ADR-0002's purge has to find every piece of evidence with Strava lineage
     /// and remove it while leaving the verdict standing. There is nothing to
     /// find, because nothing writes the table.
-    @Test("Nothing writes review_evidence_source, and the report says so")
-    func nothingWritesEvidenceLineage() throws {
+    /// PATCH 335 — THIS TEST INVERTED, AND THAT IS THE THIRD TIME TODAY.
+    ///
+    /// It used to assert that NOTHING wrote `review_evidence_source`: zero
+    /// rows, and a diagnostic line worded as a fact about the writer so that a
+    /// bare 0 could not be mistaken for agreement. 327 recorded the unmet
+    /// obligation rather than fixing it, precisely so the day somebody wrote
+    /// the lineage, a test would change and say so.
+    ///
+    /// It is written now — one row per source in `ReviewLineage`, per pack.
+    @Test("The evidence lineage is written, one row per source")
+    func theEvidenceLineageIsWritten() throws {
         let db = try Sub4Database.inMemory()
         let r0 = record(changes: [change("a")], watchFor: ["x"])
         try imported(db, [r0], plan: plan(sessionUids: ["a"]))
 
         let rows = try db.queue.read { d in
-            try Int.fetchOne(d, sql: "SELECT COUNT(*) FROM review_evidence_source")
+            try String.fetchAll(d, sql: """
+                SELECT sourceID FROM review_evidence_source ORDER BY sourceID
+                """)
         }
-        #expect(rows == 0)
+        #expect(rows == ReviewLineage.sourceIDs)
+        #expect(rows == ["authored", "bundled", "strava"])
 
         let r = compare(db, [r0])
-        #expect(r.evidenceSourceRows == 0)
-        // THE EXACT SHIPPED WORDING. 327a rewrote this line while rebuilding
-        // `diagnosticLines` and this assertion went red — which is the point:
-        // "a printed string's content" is one of the three shapes CLAUDE.md
-        // names as carrying assertions elsewhere, and the fix-up changed one
-        // without grepping the test target. §12.61.9, violated in the patch
-        // that was fixing something else.
+        #expect(r.evidenceSourceRows == 3)
+        #expect(r.evidenceSourcesCompared == 3)
+        // THE EXACT SHIPPED WORDING, still — "a printed string's content" is
+        // one of the three shapes CLAUDE.md names as carrying assertions
+        // elsewhere, and 327a broke this assertion by rewording the line while
+        // rebuilding the function around it. §12.61.9.
         #expect(r.diagnosticLines.contains {
-            $0.contains("nothing in the app writes review_evidence_source")
-        }, "a bare 0 cannot say which kind of 0 it is")
-        #expect(r.unexplained == 0, "an unmet obligation is a finding, not a difference")
+            $0.contains("one per source in ReviewLineage: authored, bundled, strava")
+        }, "a bare 3 cannot say which three")
+        #expect(r.unexplained == 0)
+    }
+
+    /// A LINEAGE THAT CANNOT DISAGREE IS NOT A COMPARISON. The rows are
+    /// deleted behind the reader's back; the report must notice.
+    @Test("A missing lineage row is a difference")
+    func aMissingLineageRowIsADifference() throws {
+        let db = try Sub4Database.inMemory()
+        let r0 = record(changes: [change("a")], watchFor: ["x"])
+        try imported(db, [r0], plan: plan(sessionUids: ["a"]))
+
+        try db.queue.write { d in
+            try d.execute(sql: "DELETE FROM review_evidence_source WHERE sourceID = 'strava'")
+        }
+
+        let r = compare(db, [r0])
+        #expect(r.evidenceSourceRows == 2)
+        #expect(r.unexplained > 0)
+        #expect(r.evidenceDifferences.contains { $0.contains("evidence lineage") })
     }
 
     @Test("No proposal carries a decision, because no screen offers the choice")
@@ -519,19 +563,94 @@ struct ReviewRepositoryTests {
         #expect(r.unexplained == 1)
     }
 
-    /// A dictionary keyed by run time would keep one and drop the other, and
-    /// `reviewsCompared` would quietly stop matching `reviewsInApp`.
-    @Test("Two app records sharing a run time are reported, not silently merged")
-    func twoAppRecordsAtTheSameRunTimeAreReported() throws {
+    // MARK: The run time stopped being the key — patch 337
+
+    /// INVERTED AT 337, AND THE INVERSION IS THE POINT.
+    ///
+    /// This test was written at 327 to assert that a run-time collision is
+    /// REPORTED rather than silently merged, and it passed for ten patches
+    /// because nothing ever collided. On 9 August 2026 the rehearsal wrote two
+    /// records in one second, the importer's `WHERE ranUTC = ?` found the wrong
+    /// row, and one review's evidence and proposal were overwritten by
+    /// another's. The old assertion — `unexplained >= 1` — described a fault
+    /// this patch removes rather than reports.
+    ///
+    /// So the subject is now: BOTH RECORDS SURVIVE THE ROUND TRIP. The
+    /// collision is still counted, and it is no longer a difference.
+    @Test("Two app records sharing a run time both import and both compare")
+    func twoAppRecordsAtTheSameRunTimeBothSurvive() throws {
         let db = try Sub4Database.inMemory()
         let a = record(ranAt: 1_780_100_000, startDay: "2026-06-01")
         let b = record(ranAt: 1_780_100_000, startDay: "2026-05-01")
-        try imported(db, [a])
+        try imported(db, [a, b])
 
         let r = compare(db, [a, b])
         #expect(r.reviewsInApp == 2)
-        #expect(r.duplicateRunTimes.count == 1)
-        #expect(r.unexplained >= 1)
+        #expect(r.reviewsInDatabase == 2, "one row per record, not one per second")
+        #expect(r.reviewsCompared == 2)
+        #expect(r.duplicateRunTimes.count == 1, "still counted, still visible")
+        #expect(r.reviewsOnlyInApp.isEmpty)
+        #expect(r.unexplained == 0, "a shared run time is not a difference")
+    }
+
+    /// THE 9 AUGUST FAILURE, REPRODUCED AGAINST THE OLD BEHAVIOUR'S SHAPE.
+    ///
+    /// Two records, one second, DIFFERENT CONTENT. Before 337 the second
+    /// record's window and proposal landed on the first's row and the first's
+    /// were gone. Reading the window days back proves both are stored, which a
+    /// count of rows alone would not: five rows holding the wrong five packs
+    /// is what actually happened, and `review: 5` looked fine.
+    @Test("Neither record's contents overwrite the other's")
+    func neitherRecordOverwritesTheOther() throws {
+        let db = try Sub4Database.inMemory()
+        let a = record(ranAt: 1_780_100_000, startDay: "2026-06-01",
+                       endDay: "2026-06-28", summary: "Ease the next week.")
+        let b = record(ranAt: 1_780_100_000, startDay: "2026-05-01",
+                       endDay: "2026-05-28", summary: "Hold the volume.")
+        try imported(db, [a, b])
+
+        let windows = try db.queue.read {
+            try String.fetchSet($0, sql: "SELECT windowStartDayKey FROM review")
+        }
+        #expect(windows == ["2026-06-01", "2026-05-01"])
+
+        let summaries = try db.queue.read {
+            try String.fetchSet($0, sql: "SELECT summary FROM proposal")
+        }
+        #expect(summaries == ["Ease the next week.", "Hold the volume."])
+    }
+
+    /// Importing the same record twice must not produce a second row — the
+    /// property `ranUTC` used to provide, now provided by the key that
+    /// replaced it. Without this, 337 would have traded a merge for a
+    /// duplicate.
+    @Test("The same record imported twice stays one row")
+    func reimportingTheSameRecordStaysOneRow() throws {
+        let db = try Sub4Database.inMemory()
+        let a = record()
+        try imported(db, [a])
+        try imported(db, [a])
+
+        let r = compare(db, [a])
+        #expect(r.reviewsInDatabase == 1)
+        #expect(r.pairedByRecordKey == 1)
+        #expect(r.pairedByRunTime == 0)
+        #expect(r.unexplained == 0)
+    }
+
+    /// A fresh database has no pre-337 rows, so the fallback must never fire.
+    /// `pairedByRunTime` reading anything but zero on a device that has
+    /// imported since 337 is the signal that adoption did not happen.
+    @Test("A fresh import pairs by key and never by run time")
+    func aFreshImportNeverPairsByRunTime() throws {
+        let db = try Sub4Database.inMemory()
+        let rs = [record(startDay: "2026-06-01"), record(startDay: "2026-05-01")]
+        try imported(db, rs)
+
+        let r = compare(db, rs)
+        #expect(r.pairedByRecordKey == 2)
+        #expect(r.pairedByRunTime == 0)
+        #expect(r.reviewsAwaitingAKey == 0)
     }
 
     // MARK: The approved list is a decision record
@@ -540,7 +659,14 @@ struct ReviewRepositoryTests {
     /// a hiding place. Same guard as the other read-backs.
     @Test("Every approved difference carries a reason")
     func everyApprovedDifferenceHasAReason() {
-        #expect(ReviewRoundTrip.approved.count == 3)
+        // THREE UNTIL PATCH 337, WHICH DELETED `Record.id`. An approved
+        // difference is a claim that a gap is deliberate and harmless; that
+        // one turned out to be neither, so it became a column rather than a
+        // better-worded excuse. The number is pinned so the list cannot shrink
+        // by accident — the entries left have to be argued out, not dropped.
+        #expect(ReviewRoundTrip.approved.count == 2)
+        #expect(!ReviewRoundTrip.approved.contains { $0.field == "Record.id" },
+                "337 built review.recordKey — the difference is not approved, it is gone")
         for a in ReviewRoundTrip.approved {
             #expect(!a.field.isEmpty)
             #expect(a.why.count > 40, "\(a.field) has no real reason attached")

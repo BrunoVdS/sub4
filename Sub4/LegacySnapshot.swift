@@ -117,6 +117,42 @@ nonisolated struct SnapshotManifest: Codable, Hashable {
     /// the rows it is derived from.
     var isComplete: Bool { failureCount == 0 && copiedCount == presentCount }
 
+    // MARK: Which absences mean something — patch 336
+
+    /// The declared names whose `AppSupportItem` is `.legacyFile`.
+    ///
+    /// DERIVED FROM THE VOCABULARY, NOT STORED ON THE ENTRY. `SnapshotEntry`
+    /// is `Codable` and written to `manifest.json`, so a new field would be
+    /// absent from every manifest already on disk — including the one taken on
+    /// 9 August, which is the only copy this project has. The set is a pure
+    /// function of `LegacyStore`, so reading it works on a manifest written
+    /// before this patch existed. §12.43: do not store what the vocabulary
+    /// already knows.
+    static var retiredFormatNames: Set<String> {
+        var names: Set<String> = []
+        for store in LegacyStore.allCases {
+            if case .legacyFile(let n) = store.item { names.insert(n) }
+        }
+        return names
+    }
+
+    /// `details.json` and `streams.json` — the pre-split monoliths, replaced by
+    /// the `details/` and `streams/` directories.
+    ///
+    /// **THIS IS THE FLOOR OF `missingCount` AND IT CAN NEVER REACH ZERO.** An
+    /// install that has never held the pre-split format cannot produce these
+    /// files, so a snapshot on a perfectly healthy phone reports them absent
+    /// for ever. Counting them beside three genuinely unwritten stores made
+    /// "5 not present" read as five losses when it was three. §12.84.
+    var retiredFormatsAbsent: Int {
+        let retired = Self.retiredFormatNames
+        return entries.filter { !$0.exists && retired.contains($0.declared) }.count
+    }
+
+    /// Declared, not retired, and not on disk. The number that can reach zero,
+    /// and the only one worth reading as an absence.
+    var storesNotWritten: Int { missingCount - retiredFormatsAbsent }
+
     /// The manifest, folded to one line per DECLARED path, for the redacted
     /// diagnostic paste — patch 248.
     ///
@@ -142,7 +178,15 @@ nonisolated struct SnapshotManifest: Codable, Hashable {
         var lines = ["Snapshot \(id) · taken by patch \(appVersion)",
                      "  \(copiedCount) of \(presentCount) copied, "
                      + "\(ByteCountFormatter.string(fromByteCount: Int64(totalBytes), countStyle: .file)), "
-                     + "\(missingCount) not present, \(failureCount) failed"]
+                     + "\(missingCount) not present, \(failureCount) failed",
+                     // PATCH 336. The split, because the total has a floor.
+                     // UNCONDITIONAL, including at zero — §12.54.2. A line
+                     // that appears only when a retired format is absent
+                     // cannot be told from one nobody wired in, and the day
+                     // this reads 0 is the day the vocabulary changed.
+                     "  of those, retired formats: \(retiredFormatsAbsent) "
+                     + "(cannot exist on this install)",
+                     "  of those, stores not written: \(storesNotWritten)"]
 
         // Grouped by declared path, in the order the manifest holds them, so
         // two snapshots produce comparable pastes.

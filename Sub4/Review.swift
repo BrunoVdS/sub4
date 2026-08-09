@@ -177,6 +177,68 @@ struct Review {
     }
 }
 
+// MARK: - Lineage
+
+/// WHICH DATA SOURCES A REVIEW PACK IS DERIVED FROM — patch 335, §12.83.
+///
+/// ADR-0002 requires that every stored piece of review evidence with Strava
+/// lineage can be found and removed while the verdict stands. That is a query,
+/// so lineage has to be queryable, and `review_evidence_source` is where it
+/// goes. Nothing had ever written it: zero rows on every device since
+/// `2026-08-03-initial`, an obligation unmet by construction rather than by
+/// accident. §12.71.3 found it; this closes it.
+///
+/// A PROPERTY OF THE BUILDER, NOT OF THE PACK — and that is the decision worth
+/// recording, because the obvious alternative is wrong.
+///
+/// The obvious version derives the set per review: mark `authored` only if
+/// that month actually had notes, `strava` only if an activity matched. It
+/// reads as more precise and it under-reports the exact case a purge exists
+/// for. **A pack that consulted Strava and found nothing is still derived from
+/// Strava** — "you recorded no runs in this window" is a claim built out of
+/// Strava's data, and deleting that data invalidates it just as surely as it
+/// invalidates a distance. Lineage is about what was CONSULTED, not what was
+/// found.
+///
+/// It is also what keeps this out of `ProposalStore.Record`. A per-instance
+/// set would have to survive `proposals.json`, which means changing a
+/// persisted `Codable` shape whose synthesised `init(from:)` does not use
+/// Swift default values — a decode failure on every existing record, for
+/// precision the purge does not want.
+///
+/// KEEPING IT HONEST. The list below is the stores `ReviewBuilder.build` binds
+/// at its top, one line each, and it sits immediately above them so the two
+/// cannot be read apart. When `build` gains a store, this gains a case in the
+/// same edit or the Database screen's lineage row starts printing a number
+/// that is quietly too small — which is visible, unlike the alternative.
+nonisolated enum ReviewLineage {
+
+    /// `PlanStore`      → `bundled`  — the plan ships inside the app
+    /// `Matcher`        → `strava`   — every matched activity
+    /// `DetailStore`    → `strava`   — splits, laps and traces
+    /// `NotesStore`     → `authored` — what the athlete typed
+    ///
+    /// Not `appleHealth`: `build` reads no Health data today, and claiming a
+    /// source that was never consulted would make the purge delete evidence it
+    /// has no business touching. Not `weatherProvider` or `device` for the
+    /// same reason. This list grows when the builder does, and only then.
+    ///
+    /// LITERALS RATHER THAN `DataSource` CASES, and that is `Sub4Migrations`'
+    /// precedent rather than laziness. Its header makes the argument for
+    /// frozen vocabularies: *"deriving them from the enums looked like the
+    /// drift-proof choice and is the opposite"*, with the agreement asserted
+    /// by test instead. Here there is a second reason on top of that one —
+    /// `DataSource` takes the module's MainActor default, and this is read by
+    /// `Sub4Import`, which is nonisolated end to end. A `rawValue` reached
+    /// across that boundary is the isolation trap CLAUDE.md has recorded five
+    /// times.
+    ///
+    /// Sorted, so the row order in `review_evidence_source` is stable and the
+    /// read-back compares sequences rather than sets.
+    /// `ReviewLineageVocabularyTests` asserts every id is a real `DataSource`.
+    static let sourceIDs: [String] = ["authored", "bundled", "strava"]
+}
+
 // MARK: - Builder
 
 enum ReviewBuilder {

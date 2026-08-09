@@ -8587,6 +8587,382 @@ and every row hanging off it. That is an optimisation, and the last full import
 of 677 activities took **0.254 s**. Recorded as reserved and unoccupied;
 revisit when the import is slow enough to be worth a cache.
 
+## 12.83 The lineage, written at last — patch 335
+
+`review_evidence_source` has held zero rows on every device since
+`2026-08-03-initial`. Nothing wrote it: not the importer, not the review
+runner, not the rehearsal. Its only INSERT in the entire project lived in
+`DomainSchemaTests`.
+
+ADR-0002 requires that every stored piece of review evidence with Strava
+lineage can be found and removed while the verdict stands. **That is a query,
+so lineage has to be queryable** — and it was not, which made the obligation
+unmet by construction rather than by accident. §12.71.3 recorded it at 327 and
+declined to fix it. 335 fixes it: one row per source in `ReviewLineage`, per
+pack, written beside the evidence row it belongs to.
+
+### 12.83.1 A property of the builder, not of the pack
+
+This is the decision worth keeping, because the obvious alternative is wrong.
+
+The obvious version derives the set per review: mark `authored` only if that
+month actually had notes, `strava` only if an activity matched. It reads as
+more precise and it **under-reports the exact case the purge exists for**.
+
+*A pack that consulted Strava and found nothing is still derived from Strava.*
+"You recorded no runs in this window" is a claim built out of Strava's data,
+and deleting that data invalidates it exactly as surely as it invalidates a
+distance. **Lineage is about what was CONSULTED, not what was found.**
+
+It also kept the patch out of `ProposalStore.Record`. A per-instance set would
+have to survive `proposals.json` — a persisted `Codable` whose synthesised
+`init(from:)` does not use Swift default values, so a new non-optional field is
+a decode failure on every existing record. The correct design and the safe one
+turned out to be the same design, which is not always how it goes.
+
+### 12.83.2 Frozen literals, and the second reason for them
+
+`ReviewLineage.sourceIDs` is `["authored", "bundled", "strava"]` — string
+literals, not `DataSource` cases.
+
+`Sub4Migrations` already argues the first reason in its own header: *"deriving
+them from the enums looked like the drift-proof choice and is the opposite"*,
+with the agreement asserted by test instead. The second reason is isolation.
+`DataSource` takes the module's MainActor default; `Sub4Import` is
+`nonisolated` end to end. Reaching `rawValue` across that boundary is the trap
+CLAUDE.md has recorded five times, and there was no reason to make it a sixth.
+
+`ReviewLineageVocabularyTests` is the guard: every id names a real
+`DataSource`, the list is sorted and distinct, and it claims no source the
+builder does not read.
+
+**Not `ReviewLineageTests` — that name was taken**, by the suite in
+`DomainSchemaTests` that exercises ADR-0002's purge as the query it will
+actually be: delete the evidence with Strava lineage, leave the verdict
+standing. The pair is the whole obligation — that one proves the purge works on
+rows, this one proves the rows the importer writes are the right ones.
+
+The collision cost a fix-up and it is §12.61.9 half-applied. 335 grepped
+`Sub4CoreTests/` for the strings and the fields it was changing, and not for
+the type name it was about to declare. **A fourth shape belongs on that list:
+a function's arity, an array's length, a printed string's content — and a
+type's name.**
+
+### 12.83.3 What it deliberately does not claim
+
+Not `appleHealth`. Not `weatherProvider`. Not `device`. `ReviewBuilder.build`
+binds four stores — `PlanStore`, `Matcher`, `DetailStore`, `NotesStore` — and
+reads no Health, weather or device data.
+
+**A lineage that over-reports is worse than one that is absent**, because
+absence is visible and a wrong claim is not: it would make the purge delete
+evidence it has no business touching. The list grows when the builder does, and
+only then.
+
+Nothing can enforce that mechanically — no test can watch what a function
+reads. What `ReviewLineageTests` can do is make the omission cost a red test
+rather than a lineage row that is quietly too small, and the Database screen
+prints the ids rather than a count so a reader can tell three-because-three-
+sources from three-by-luck.
+
+### 12.83.4 The third inverted test in one day
+
+`nothingWritesEvidenceLineage` asserted the absence **on purpose** — zero rows,
+plus the exact diagnostic wording, so that a bare 0 could not be mistaken for
+agreement. It is now `theEvidenceLineageIsWritten`.
+
+That is the third today, after 327b's `noPlanMeansNoResolution` and 334's
+`theConfidenceRangeIsReported`. All three were written by the patch that found
+the problem and declined to solve it, and all three changed on the day somebody
+decided — which is the entire argument for recording a finding as a test rather
+than as a comment. A comment would have been read and nodded at.
+
+`aMissingLineageRowIsADifference` is the negative control the write needed: the
+rows are deleted behind the reader's back and the report has to notice. A
+comparison that cannot fail is not a comparison.
+
+### 12.83.5 It rolls into the total
+
+`evidenceSourcesCompared` is added to `totalCompared`. A denominator that does
+not move when a comparison is added is a place for that comparison to hide —
+the lineage rows contribute differences to `unexplained`, so they contribute to
+the count those differences are measured against. `ReviewRepositoryTests`'
+exact-sum assertion went from `1 + 1 + 1 + 3 + 2` to `+ 3` in the same edit.
+
+### 12.83.6 And the screen still said the old thing — 335b
+
+335 wrote the writer and left the sentence describing its absence. The Database
+screen's review section read:
+
+```
+Lineage rows    0 — nothing writes this table
+```
+
+True when it was written, false the moment 335 shipped. So did the section's
+footer: *"one finding that is not approved: review_evidence_source is written
+by nothing"*.
+
+**§12.15 pointing the other way.** The rule is usually that a zero must say why
+it is zero; this is a zero whose explanation was confident and wrong, which is
+worse than a bare one — a bare zero invites a question, and a wrong sentence
+closes it.
+
+**Three zeros, and only the middle one is a fault:**
+
+| state | reads | colour |
+|---|---|---|
+| no review stored | `0 — no review stored yet` | dim — correct until 24 August |
+| reviews stored, no lineage | `0 — but N reviews are stored` | **red** — the writer did not run |
+| lineage present | `N — one per source in ReviewLineage` | dim |
+
+It was found while writing the manual test campaign, by asking where on the
+screen the number appears. **A campaign that names the row it expects is a
+campaign that reads the row**, which is the second time this week that writing
+down what a screen should say has found what it does say.
+
+### 12.83.7 What is still not proved
+
+The writer has never run against a real review and cannot before **24 August
+2026**. Until then the only evidence is the rehearsal path and these tests.
+What 335 changes is that when the first real review lands, the lineage lands
+with it — instead of the sixth review table being empty for a second month and
+the purge staying inoperable into Phase 4A.
+
+## 12.84 Two zeros the paste could not show — patch 336
+
+Both found while validating 335b, both the same rule, and both in the artefact
+that gets read later by somebody who cannot see the screen.
+
+### 12.84.1 The paste hid every empty table
+
+`DatabaseHealthView`'s diagnostics said:
+
+```
+Tables: 51, imported rows: 99760, total: 99766
+  account: 1
+  activity: 677
+  … 36 more
+```
+
+Thirty-eight lines under a header claiming fifty-one, because the loop read
+`for row in counts where row.rows > 0`.
+
+**The thirteen it hid are the tables this project has spent a week arguing
+about.** `review_evidence_source`, `content_revision`, `match_decision`,
+`user_note`, `correction`, `proposal`, `review` — every one of them a table
+whose emptiness is the finding. A paste discussing whether the lineage is
+written, taken on a device where the lineage table is empty, did not mention
+that the table exists.
+
+§12.54.2, in the place it costs most. The screen has always drawn all 51; the
+paste now agrees with it. `tableCounts()` was never the problem — it returns
+every table and always has.
+
+### 12.84.2 The snapshot's absences had a floor nobody could see
+
+```
+Declared but not present    5
+```
+
+On 9 August that was three stores the wipe took — `notes.json`,
+`commutes.json`, `proposals.json` — and **two file formats retired several
+hundred patches ago**. `details.json` and `streams.json` are the pre-split
+monoliths, replaced by the `details/` and `streams/` directories, and
+`AppSupportItem` has a `.legacyFile` case for exactly this reason.
+
+**They cannot exist on an install that never held the pre-split format.** So
+the row has a floor of two: a perfectly healthy phone reports them absent for
+ever, and "5 not present" reads as five losses when it is three.
+
+Split into two sub-rows, both unconditional:
+
+```
+Declared but not present        5
+  retired formats               2
+  stores not written            3
+```
+
+`missingCount` is unchanged — `LegacySnapshotTests` asserts it and the paste
+header prints it, and the total was never wrong. What was missing is the
+breakdown that makes it readable. §12.54.3: a count beside its own denominator
+is evidence; a count with no account under it is a number somebody has to come
+and ask about.
+
+### 12.84.3 Derived from the vocabulary, not stored on the row
+
+`SnapshotEntry` is `Codable` and written to `manifest.json`. A new field would
+be absent from every manifest already on disk — including `2026-08-09-083914`,
+which is the only protected copy this project has ever taken.
+
+`retiredFormatNames` is instead a pure function of `LegacyStore`: the declared
+names whose `item` is `.legacyFile`. It reads correctly on a manifest written
+before this patch existed, and it follows the vocabulary if a third format is
+ever retired. §12.43, applied to a fact rather than a rule.
+
+### 12.84.4 Why this is the patch before D7 rather than after it
+
+Neither defect changes a number. Both change what a number **means to a reader
+who was not there**, and D7 is the rung where somebody reads a paste and
+decides whether to flip `migrationFailureBlocksTheApp` to `true`.
+
+A paste that omits the empty tables and a snapshot row that overstates its
+losses are both survivable while the person reading them is the person who
+generated them. They stop being survivable the moment the paste is the evidence.
+
+## 12.85 The run time was never the key — patch 337
+
+`review.recordKey`, and the deletion of an approved difference that had been
+wrong since the day it was written.
+
+### 12.85.1 What happened, and how close it came to being invisible
+
+On 9 August 2026 the rehearsal button wrote six review records into
+`ProposalStore`. Two of them carry the same `ranAt`, to the second.
+
+`Sub4Import+Authored.importProposals` looked a review up like this:
+
+    SELECT id FROM review WHERE accountID = ? AND ranUTC = ?
+
+So the sixth record found the fifth's row, took the UPDATE branch, and — because
+the children are replaced wholesale — **deleted that review's evidence row, its
+lineage rows, its proposal, its changes and its watch items, and wrote its own
+in their place.** No error, no refusal, no ledger entry. The diagnostics paste
+read `review: 5`, and five is a perfectly reasonable number.
+
+The only thing in the app that noticed was `ReviewRoundTrip.duplicateRunTimes`,
+written at patch 327 for exactly this and never fired in ten patches. It put one
+line in the paste — `two app records ran at 2026-08-09T12:29:35Z` — and that
+line is the entire reason this is a section rather than a loss.
+
+**That is the argument for reporting a collision rather than resolving it.** The
+alternative shape, `Dictionary(uniquingKeysWith:)`, was available and would have
+kept one silently; §12.71.12 chose to report, and the report is what survived.
+
+### 12.85.2 The approved difference was the bug
+
+`ReviewRoundTrip.approved` carried this entry from 327:
+
+> **Record.id** — the app keys a review by window label and run count; the
+> database mints a UUID and keys on (accountID, ranUTC). No column, and none is
+> wanted — patch 327.
+
+An approved difference is a claim that a gap is **deliberate and harmless**. The
+first half was true; the second was a guess, and it was checked against the
+wrong thing — against whether the two ids could be made to agree, rather than
+against whether `(accountID, ranUTC)` could identify a review.
+
+It cannot. `ranUTC` has one-second resolution and no unique constraint behind
+it. A key with a resolution limit is a key with a collision rate, and the only
+question is how often the writer is fast enough to find it. The rehearsal
+writes a batch in a loop; the answer turned out to be "the first time anybody
+ran it after the wipe".
+
+**The entry was deleted rather than reworded.** When the harm arrives, an
+approved difference does not get a caveat — it gets a column. The comment left
+in its place says so, because an entry that vanishes between two builds with no
+trace is indistinguishable from one nobody ever wrote, which is §12.54.2 applied
+to a decision record instead of a screen row.
+
+### 12.85.3 The app had already solved this, in 2026, and was not asked
+
+`ProposalStore.Record.id` reads `"{startDay}_{endDay}_{n}-{six hex}"`, and its
+own comment from patch 269 explains the suffix:
+
+> UUID suffix, not a running count: deleting record 1 would make the next add
+> produce id 2 again and collide in the list.
+
+So the app identified this exact failure mode for its own in-memory list, fixed
+it, and the database was never told. Nothing is invented by `2026-08-14-review-
+record-key`: a value that is already unique, already `Codable`, and already
+present in every `proposals.json` on disk simply gets a column and an index.
+
+**The general form is worth naming.** When two layers hold the same thing under
+different identities, ask which layer has already had to solve identity for
+itself. That layer's answer is usually the one to carry, and carrying it costs a
+column; minting a second identity costs a class of bug that only appears under
+load.
+
+### 12.85.4 Nullable, and the importer adopts
+
+The five rows on the device were written before this migration and their keys
+live in `proposals.json`, which SQL cannot read. A migration cannot backfill
+them, so the column is nullable and the **importer** adopts:
+
+1. look up the row carrying this record's key — the steady state;
+2. failing that, a row with **no key at all** whose `ranUTC` matches. It takes
+   this record's key here and can never be claimed again, because step 1 finds
+   it next time and `recordKey IS NULL` excludes it from step 2.
+
+The `IS NULL` is what stops two records sharing a run time from both adopting
+one row: the first writes the key, the second finds nothing and inserts. **Which
+is how the sixth review comes back** — `proposals.json` still holds all six, so
+the next import after 337 restores the one that was overwritten, rather than
+merely stopping it happening again.
+
+The unique index is partial — `WHERE recordKey IS NOT NULL`. SQLite treats NULLs
+as distinct in a unique index and would have permitted the unkeyed rows without
+the clause; it is written because a reader should not have to know that rule to
+know the index is not claiming the unkeyed rows are unique.
+
+### 12.85.5 Two pairing counts, not one
+
+`ReviewRoundTrip` now prints `reviews paired by record key`, `reviews paired by
+run time, not yet keyed`, and `database rows awaiting a record key`. All three
+unconditional.
+
+One number would have been enough to pair correctly and useless for reading:
+"5 paired" cannot tell a device that has adopted the new key from one that has
+not, and the adoption window is precisely the state where a wrong answer is
+plausible. `pairedByRunTime` reaching zero is what says the window closed.
+
+`duplicateRunTimes` **left `unexplained` at this patch**. It was in that sum
+because the run time was the key; it is not, so two records in one second is now
+a fact about the clock rather than a difference between two sides. The row stays
+on the screen, no longer red, because it is the counter that caught this.
+
+Two new members replace it in the sum — `duplicateRecordKeys` and
+`duplicateStoredKeys` — and neither can fire without a bug. Kept and tested
+anyway: §12.69, and because the last thing this project assumed could not
+collide is the subject of this section.
+
+### 12.85.6 The fourth test inverted in three days
+
+`twoAppRecordsAtTheSameRunTimeAreReported` asserted, since 327, that a run-time
+collision is reported and counts against `unexplained`. It now asserts that both
+records import, both compare, and the collision costs nothing.
+
+That makes four: 327b's `noPlanMeansNoResolution`, 334's
+`theConfidenceRangeIsReported`, 335's `nothingWritesEvidenceLineage`, and this.
+**All four were written by the patch that found a problem and declined to solve
+it, and all four changed on the day somebody decided.** A finding recorded as a
+test is a finding that cannot be forgotten and cannot be fixed silently; a
+finding recorded as a comment is neither.
+
+### 12.85.7 The fixture change is the §12.61.9 instance
+
+`ReviewRepositoryTests.record()` derived its `id` from the window days. Once the
+id is the pairing key, `aChangedWindowIsADifference` — which changes `endDay` to
+provoke a **field** difference — was changing the **key** instead, and would have
+reported two unpaired reviews rather than one differing field. The test would
+have failed, which is the good case; the bad case is a test like it that still
+passes while measuring something else.
+
+Grepping `Sub4CoreTests/` before the zip caught it. The shape this adds to the
+list in CLAUDE.md: **a value a fixture derives rather than states**. Arity, array
+length, a printed string, a type's name — and now a derived fixture field, which
+is invisible to a grep for the field's name because the field's name does not
+appear.
+
+### 12.85.8 Why this is the last patch before D7 and not the first after it
+
+D7 repoints each store's load path at its repository. After it, `proposals.json`
+stops being the other side of a comparison that runs every launch, and
+`duplicateRunTimes` stops having anything to compare.
+
+A key that can absorb one review into another is survivable exactly as long as a
+second copy exists and something checks it. That is true today and false after
+D7. There was no version of this that could wait.
+
 ## 12.74 A plan revision, and the drift it uncovered — patch 329a
 
 Week 2's long run moved from Saturday 8 August to Sunday 9 August; Saturday
