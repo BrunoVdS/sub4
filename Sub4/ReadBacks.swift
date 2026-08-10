@@ -76,18 +76,36 @@ enum ReadBacks {
         let load = await Task.detached(priority: .utility) {
             PlanRepository.load(db)
         }.value
-        let store = PlanStore.shared
-        let report = PlanRoundTrip.compare(storeMeta: store.plan.meta,
-                                           storeWeeks: store.plan.weeks,
-                                           storeSessions: store.plan.sessions,
+        // PATCH 343 — THE BUNDLE, NOT THE STORE, AND THIS IS THE WHOLE PATCH.
+        //
+        // This read the plan store's own copy. From B1 that store is hydrated
+        // from the database, so comparing the database against it would be
+        // the database against itself: 298 comparisons, guaranteed zero
+        // differences, proving nothing. A check that cannot fail has not been
+        // tested — §12.69 — and this one is in the roll-up that passed D7's
+        // entry gate.
+        //
+        // The bundle is the original source and stays an independent side.
+        // Decoded on a utility task because it is a file read, and the
+        // comparison itself stays on the actor for §12.9c's reason.
+        //
+        // TODAY THIS CHANGES NO NUMBER. The store IS the decoded bundle until
+        // B1 hydrates it, so 298 and 71 must both come back unchanged — which
+        // is exactly what makes this half checkable on its own.
+        let bundled = await Task.detached(priority: .utility) {
+            PlanStore.decodeBundle().plan
+        }.value
+        let report = PlanRoundTrip.compare(storeMeta: bundled.meta,
+                                           storeWeeks: bundled.weeks,
+                                           storeSessions: bundled.sessions,
                                            database: load)
         let extras = await Task.detached(priority: .utility) {
             PlanExtrasRepository.load(db)
         }.value
         let extrasReport = PlanExtrasRoundTrip.compare(
-            storeFuel: store.plan.fuel,
-            storeWarmup: store.plan.warmup,
-            storeExercises: store.plan.exercises,
+            storeFuel: bundled.fuel,
+            storeWarmup: bundled.warmup,
+            storeExercises: bundled.exercises,
             database: extras)
         return (load, report, extras, extrasReport)
     }

@@ -283,7 +283,7 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 342, 2026-08-10
+## 5. State — patch 343, 2026-08-10
 
 **The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c COMPLETE — all eight
 slices, at 330. D7 has not started, and nothing in the app reads the database yet.**

@@ -30,21 +30,21 @@ final class PlanStore {
     // MARK: Load
 
     private init() {
-        guard let url = Bundle.main.url(forResource: "plan", withExtension: "json") else {
-            plan = Plan.empty
-            loadError = "plan.json not found in the app bundle. Check Build Phases → Copy Bundle Resources."
-            return
-        }
-        do {
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            plan = try decoder.decode(Plan.self, from: Data(contentsOf: url))
-            loadError = nil
-        } catch {
-            plan = Plan.empty
-            loadError = "Could not decode plan.json — \(error)"
-            return
-        }
+        // PATCH 343. THE DECODE HAS TWO CALLERS NOW, and that is the whole
+        // point of extracting it.
+        //
+        // `ReadBacks.plan` compared the database against THIS STORE. From B1
+        // the store is hydrated FROM the database, and a comparison of the
+        // database against a store fed by the database is 298 checks that
+        // cannot fail — §12.15 wearing a new costume, on the read-back that
+        // passed D7's entry gate this morning.
+        //
+        // So the read-back does its own decode of the bundle, which is the
+        // ORIGINAL SOURCE and stays an independent side. §12.91.
+        let decoded = Self.decodeBundle()
+        plan = decoded.plan
+        loadError = decoded.error
+        guard decoded.error == nil else { return }
 
         for s in plan.sessions where s.date != nil {
             byDate[s.date!, default: []].append(s)
@@ -53,6 +53,39 @@ final class PlanStore {
             byDate[key]?.sort { $0.seq < $1.seq }
         }
         for w in plan.weeks { weeksByUid[w.uid] = w }
+    }
+
+    // MARK: The bundled plan — patch 343
+
+    /// The bundled plan, decoded, or `Plan.empty` and a sentence saying why not.
+    ///
+    /// STATIC AND INTERNAL so the read-back can call it WITHOUT going through
+    /// the singleton. That independence is the reason it exists: once B1
+    /// hydrates the store from the database, the store stops being a second
+    /// opinion and the bundle has to be one instead.
+    ///
+    /// **THE BUNDLE IS A SEED AND NEVER A FALLBACK.** Nothing may call this
+    /// because a database read failed. It looks harmless — it is the same file
+    /// the importer seeded from — and it is not: the database may hold a
+    /// different plan VERSION, and every note, match decision and review change
+    /// is written against `plan_session.uid` values from the stored version.
+    /// Falling back would resolve those uids against a plan nobody chose.
+    /// §12.91.3.
+    static func decodeBundle() -> (plan: Plan, error: String?) {
+        guard let url = Bundle.main.url(forResource: "plan",
+                                        withExtension: "json") else {
+            return (Plan.empty,
+                    "plan.json not found in the app bundle. "
+                    + "Check Build Phases → Copy Bundle Resources.")
+        }
+        do {
+            let decoder = JSONDecoder()
+            decoder.keyDecodingStrategy = .convertFromSnakeCase
+            return (try decoder.decode(Plan.self, from: Data(contentsOf: url)),
+                    nil)
+        } catch {
+            return (Plan.empty, "Could not decode plan.json — \(error)")
+        }
     }
 
     // MARK: Queries

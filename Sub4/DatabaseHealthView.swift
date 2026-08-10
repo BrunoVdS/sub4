@@ -3271,6 +3271,13 @@ struct DatabaseHealthView: View {
             }
         }
         lines.append("Prepared: \(Sub4Launch.shared.database != nil ? "at launch" : "by this screen")")
+        // PATCH 343. THE VALUE D7 TURNS ON, READABLE OFF THE DEVICE.
+        //
+        // 342 computed it and printed it nowhere, which was defensible while
+        // nothing consumed it — the state was provable by construction. From
+        // B1 it decides what three stores read, and a value that decides that
+        // and cannot be read is the shape §12.54.2 keeps naming. §12.91.
+        lines.append("Reads from: \(Sub4Launch.shared.persistence.line)")
         lines.append("Tables: \(counts.count), imported rows: \(importedRows), total: \(totalRows)")
         // PATCH 336. EVERY TABLE, INCLUDING THE EMPTY ONES.
         //
