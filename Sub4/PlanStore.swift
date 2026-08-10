@@ -2,9 +2,21 @@
 //  PlanStore.swift
 //  Sub4
 //
-//  Loads plan.json from the app bundle once and indexes it for lookup.
-//  Deliberately NOT @Observable: plan data never changes at runtime, so there
-//  is nothing to observe. Logged data (mutable) will get its own store later.
+//  Loads plan.json from the app bundle once and indexes it for lookup — and
+//  from D7 slice B1, takes a stored plan instead.
+//
+//  THE ORIGINAL REASON FOR NOT BEING @Observable IS GONE, AND THE CONCLUSION
+//  SURVIVES IT. This header said "plan data never changes at runtime, so there
+//  is nothing to observe". True while the plan was a bundled resource; false
+//  from 344, when `hydrate(from:)` replaces it with rows written by an importer
+//  that runs after launch.
+//
+//  It is still not @Observable, for a different and stronger reason: hydration
+//  happens inside `Sub4Launch.begin()`, BEFORE `RootView` constructs
+//  `ContentView`, so there is no view in existence to be told. Publishing a
+//  change nothing could observe would advertise a guarantee this type is not
+//  the thing providing. The ordering is the guarantee and it lives in the
+//  launch.
 //
 
 import Foundation
@@ -13,23 +25,57 @@ final class PlanStore {
 
     static let shared = PlanStore()
 
-    let plan: Plan
+    /// `var` SINCE PATCH 344, AND THE HEADER ABOVE IS NOW WRONG ABOUT WHY.
+    ///
+    /// It says the plan "never changes at runtime, so there is nothing to
+    /// observe". That was true while the plan was a bundled resource. From D7
+    /// slice B1 it is a row, written by an importer that runs after launch, and
+    /// `hydrate(from:)` below is the one place it moves.
+    ///
+    /// STILL NOT `@Observable`, and that is not an oversight. Hydration happens
+    /// inside `Sub4Launch.begin()`, before `RootView` constructs `ContentView`
+    /// — so no view exists yet to be told. A store that published a change no
+    /// view could have seen would be advertising a guarantee it is not the
+    /// thing providing; the ORDERING is the guarantee, and it lives in the
+    /// launch.
+    private(set) var plan: Plan
     let loadError: String?
+
+    /// Where the plan this store is serving came from — patch 344.
+    ///
+    /// §12.15, and it is the hazard `decodeBundle`'s comment names: `init`
+    /// decodes the bundle, so a store that was never hydrated still holds a
+    /// perfectly good plan and looks identical to one that was. This is the
+    /// only thing that can tell them apart, and it is why it reaches the
+    /// diagnostic paste rather than staying an implementation detail.
+    private(set) var servedFrom: StoreSource = .files
 
     /// sessions keyed by "yyyy-MM-dd"
     private(set) var byDate: [String: [Session]] = [:]
     private(set) var weeksByUid: [String: Week] = [:]
 
-    /// Patch 239. Derived once from `plan`, which is `let` and read from the
-    /// bundle in `init` — so the answer cannot change and recomputing it per
-    /// week would be 260 filters for a constant. Internal rather than private
-    /// because the derivation lives in `PlanFocus.swift`, next to the rule it
-    /// implements.
+    /// Patch 239. Derived from `plan` rather than recomputed per week, which
+    /// would be 260 filters for an answer that does not move between
+    /// hydrations. Internal rather than private because the derivation lives in
+    /// `PlanFocus.swift`, next to the rule it implements.
+    ///
+    /// PATCH 344 — THIS USED TO SAY THE ANSWER "CANNOT CHANGE", because `plan`
+    /// was `let`. It can now, exactly once per launch, and `rebuildIndexes`
+    /// clears this cache in the same breath as it rebuilds `byDate` and
+    /// `weeksByUid`. A cache that survived a hydration would answer about a
+    /// plan the store no longer holds — internally consistent, describing
+    /// nothing, and invisible to any test that only checked `plan`.
     var focusCache: PlanFocus?
 
     // MARK: Load
 
-    private init() {
+    /// INTERNAL SINCE 344, so a test can hold an instance that is NOT the app's.
+    ///
+    /// `hydrate` mutates, 1267 tests share one process, and Swift Testing runs
+    /// suites in parallel — a test that hydrated `shared` would be changing the
+    /// plan under `PlanCoverageTests` and `PlanFocusTests` while they read it.
+    /// `shared` remains the only instance production ever constructs.
+    init() {
         // PATCH 343. THE DECODE HAS TWO CALLERS NOW, and that is the whole
         // point of extracting it.
         //
@@ -45,6 +91,40 @@ final class PlanStore {
         plan = decoded.plan
         loadError = decoded.error
         guard decoded.error == nil else { return }
+        rebuildIndexes()
+    }
+
+    // MARK: Hydration — D7 slice B1, patch 344
+
+    /// Replaces the bundled plan with the stored one.
+    ///
+    /// FOUR THINGS MOVE TOGETHER OR THE STORE IS WORSE THAN EITHER HALF.
+    /// `byDate`, `weeksByUid` and `focusCache` are all derived from `plan` and
+    /// none of them knows it. A `byDate` built for last week's sessions over
+    /// this week's plan is internally consistent on both sides and describes
+    /// nothing — which is why the rebuild is one function with two callers
+    /// rather than four assignments here. §12.43.
+    ///
+    /// IT DOES NOT WRITE. Under a slice under test the JSON file is still the
+    /// legacy side's only copy, and saving database-derived values over it
+    /// would destroy the independent second opinion the whole stage is checked
+    /// against. Nothing in this method touches disk, and the apply script that
+    /// installed it refuses to if it does.
+    func hydrate(from stored: Plan) {
+        plan = stored
+        servedFrom = .database
+        rebuildIndexes()
+    }
+
+    /// The three derived things, from `plan`, in one place.
+    ///
+    /// Cleared before it is rebuilt rather than merged into: hydration can
+    /// REMOVE a day, and a merge would leave the old sessions behind on a date
+    /// the new plan does not have.
+    private func rebuildIndexes() {
+        byDate = [:]
+        weeksByUid = [:]
+        focusCache = nil
 
         for s in plan.sessions where s.date != nil {
             byDate[s.date!, default: []].append(s)

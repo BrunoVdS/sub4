@@ -171,11 +171,17 @@ extension PlanStore {
     /// Derived once into `focusCache`, declared on the class in
     /// `PlanStore.swift`.
     ///
-    /// `PlanStore.init` is private and reads the bundle, so there is exactly
-    /// one store and no way to build another with a different plan. That is why
-    /// `PlanFocus.derive` is static and takes its inputs: the rule can be
+    /// `PlanFocus.derive` is static and takes its inputs, so the rule can be
     /// tested against a run-heavy, a triathlon and a cycling plan without a
     /// store existing for any of them.
+    ///
+    /// UNTIL 344 THIS SAID `PlanStore.init` IS PRIVATE, "so there is exactly
+    /// one store and no way to build another with a different plan". Both
+    /// halves stopped being true in the same patch: `init` is internal so a
+    /// test can hydrate an instance that is not the app's, and `hydrate(from:)`
+    /// builds a store with a different plan on purpose. The argument for a
+    /// static `derive` survives the correction intact — it never depended on
+    /// there being one store, only on not needing one.
     var focus: PlanFocus {
         if let cached = focusCache { return cached }
         let f = PlanFocus.derive(sessions: plan.sessions, weeksByUid: weeksByUid)

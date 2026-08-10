@@ -100,6 +100,28 @@ nonisolated enum AthleteLoad: Sendable {
         }
     }
 
+    /// WHETHER THE READ SUCCEEDED — patch 344, §12.92.
+    ///
+    /// THIS ENUM IS WHERE THE SPLIT WAS FOUND. `isTrustworthy` above answers
+    /// the launch's question ("did the read work"), and `PlanLoad`'s answers
+    /// the comparison's ("is there anything to compare") — the same word, two
+    /// meanings, on sibling types that a bootstrap has to `&&` together. Both
+    /// are kept, unchanged, because twelve files depend on the existing
+    /// readings; what is new is that the question is now in the name.
+    var wasReadCleanly: Bool {
+        switch self {
+        case .loaded, .missing:     true
+        case .unavailable, .failed: false
+        }
+    }
+
+    /// Whether there is a profile here to hydrate from. `.missing` is a clean
+    /// read of a database nobody has imported into: true above, false here.
+    var holdsContent: Bool {
+        if case .loaded = self { return true }
+        return false
+    }
+
     var constants: AthleteConstants? {
         if case .loaded(let c, _, _) = self { return c }
         return nil
@@ -161,6 +183,29 @@ nonisolated enum AthleteRoundTrip {
                   + "the athlete. There is no sensible column for it.",
             patch: "317")
     ]
+
+    /// THE APPROVED LIST IS THE HYDRATION-EXCLUSION LIST — patch 344.
+    ///
+    /// An approved difference is a field THE DATABASE CANNOT REPRODUCE. That is
+    /// a statement about the schema, not about the comparison, and it has a
+    /// second consequence nobody needed until B1: hydrating the store from rows
+    /// would overwrite the app's value with whatever the absent column
+    /// defaults to.
+    ///
+    /// `version` is the whole list today and it is not hypothetical.
+    /// `constants.json` holds 2; `AthleteRepository.load` omits the field, so
+    /// `AthleteConstants()` supplies its default of 1; and
+    /// `LoadStore.currentSignature` interpolates `"v\(c.version)"`. A hydration
+    /// that took the default would roll the counter back, and any later
+    /// `save()` would write the rolled-back value into the file that is the
+    /// legacy side's only copy.
+    ///
+    /// ONE LIST, TWO CONSUMERS — §12.43, twelfth application. Held equal to
+    /// `approved` by test, so an entry added to one and not the other is a
+    /// failure rather than a field that silently starts being overwritten.
+    /// A `Set<String>` rather than reflection, for the reason the memberwise
+    /// initialiser above gives: reflection would also silently skip something.
+    static let preservedOnHydrate: Set<String> = ["version"]
 
     struct Report: Sendable {
 

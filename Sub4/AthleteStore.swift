@@ -61,6 +61,9 @@ final class AthleteStore {
     private(set) var lastFetch: Date?
     private(set) var lastError: String?
 
+    /// Where this store's data came from — patch 344. See `PlanStore`'s.
+    private(set) var servedFrom: StoreSource = .files
+
     /// When the button was last PRESSED, as opposed to when data last arrived
     /// — patch 233.
     ///
@@ -221,7 +224,8 @@ final class AthleteStore {
 
     // MARK: Init
 
-    private init() {
+    /// Internal since 344 — see `PlanStore.init` for why.
+    init() {
         let dir = (try? FileManager.default.url(for: .applicationSupportDirectory,
                                                 in: .userDomainMask,
                                                 appropriateFor: nil, create: true))
@@ -572,6 +576,33 @@ final class AthleteStore {
         var retired: [Shoe]?
         var fetched: Date?
         var ftp: Int?
+    }
+
+    // MARK: Hydration — D7 slice B1, patch 344
+
+    /// Zones and FTP from the database. GEAR IS NOT TOUCHED — it is B5.
+    ///
+    /// A HALF-HYDRATED STORE IS A STATE, NOT AN OVERSIGHT, and `servedFrom`
+    /// below is what keeps it from being one. `AthleteRepository` reads the
+    /// profile, the resting months and the zones; shoes, bikes and retired gear
+    /// come from `WeatherGearRepository`, which the slice order puts at B5
+    /// because gear distance is a Strava refresh rather than a store write
+    /// (§12.68.4). The two halves share no invariant, so serving one from rows
+    /// and one from the file is safe — but it must be READABLE, which is why
+    /// this sets `.partial` and names both sides.
+    ///
+    /// `separate` IS APPLIED, exactly as on the way out of the cache. The store
+    /// normalises what it holds regardless of where it came from, and
+    /// `hydrationIsIdempotentOnSeparatedZones` asserts the property this relies
+    /// on: applying it to already-separated zones changes nothing, so hydration
+    /// cannot move the read-back's answer.
+    ///
+    /// IT DOES NOT WRITE — see `PlanStore.hydrate`.
+    func hydrate(zones: [HRZone], ftp: Int?) {
+        hrZones = Self.separate(zones)
+        self.ftp = ftp
+        servedFrom = .partial(fromDatabase: "zones and FTP",
+                              fromFiles: "gear, until slice B5")
     }
 
     private func load() {

@@ -126,9 +126,13 @@ final class ConstantsStore {
     /// figure should be looked at before it is believed.
     private(set) var hrMaxRoseFrom: Int?
 
+    /// Where these constants came from — patch 344. See `PlanStore`'s.
+    private(set) var servedFrom: StoreSource = .files
+
     private let fileURL: URL
 
-    private init() {
+    /// Internal since 344 — see `PlanStore.init` for why.
+    init() {
         let dir = (try? FileManager.default.url(for: .applicationSupportDirectory,
                                                 in: .userDomainMask,
                                                 appropriateFor: nil, create: true))
@@ -378,6 +382,40 @@ final class ConstantsStore {
               let decoded = try? JSONDecoder().decode(AthleteConstants.self, from: data)
         else { return }
         c = decoded
+    }
+
+    // MARK: Hydration — D7 slice B1, patch 344
+
+    /// The stored constants, with every approved difference PRESERVED.
+    ///
+    /// AN APPROVED DIFFERENCE IS A FIELD THE DATABASE CANNOT REPRODUCE. The
+    /// list exists so the read-back can say "understood, not a bug"; hydration
+    /// gives it a second and sharper meaning — these are the fields that must
+    /// survive the assignment, because taking the database's answer means
+    /// taking the struct's default.
+    ///
+    /// Today the list is one entry long and the loss would be real:
+    /// `constants.json` holds `version: 2`, the schema has no column, and
+    /// `LoadStore.currentSignature` reads the counter. See
+    /// `AthleteRoundTrip.preservedOnHydrate`, which this must stay equal to and
+    /// is held equal by test.
+    ///
+    /// NAMED ASSIGNMENT RATHER THAN REFLECTION, for the reason
+    /// `AthleteRepository.load`'s memberwise initialiser gives: reflection
+    /// would also silently skip something. The test is what makes adding an
+    /// entry to `approved` fail loudly here.
+    ///
+    /// IT DOES NOT WRITE — see `PlanStore.hydrate`. A save here would put
+    /// database-derived values into `constants.json`, which under a slice
+    /// under test is the legacy side's only copy.
+    ///
+    /// `hrMaxRoseFrom` is deliberately untouched. It signals that an OBSERVED
+    /// maximum rose and wants looking at; a hydration is not an observation.
+    func hydrate(from stored: AthleteConstants) {
+        var next = stored
+        next.version = c.version
+        c = next
+        servedFrom = .database
     }
 
 

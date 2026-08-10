@@ -8834,6 +8834,253 @@ A paste that omits the empty tables and a snapshot row that overstates its
 losses are both survivable while the person reading them is the person who
 generated them. They stop being survivable the moment the paste is the evidence.
 
+## 12.92 One word, three meanings — patch 344, D7 slice B1
+
+### 12.92.1 The finding, and a test produced it
+
+343 gave `DatabaseBootstrap` a single verdict:
+
+```swift
+var isTrustworthy: Bool {
+    plan.isTrustworthy && extras.isTrustworthy && athlete.isTrustworthy
+}
+```
+
+Its own test failed on a freshly migrated in-memory database, and the failure
+was not a typo. **The three sibling loads do not agree about what the word
+means.**
+
+| load | on an empty, migrated database | `isTrustworthy` |
+|---|---|---|
+| `AthleteLoad` | `.missing` | **true** |
+| `PlanLoad` | `.noActiveVersion(versionsPresent: 0)` | **false** |
+| `PlanExtrasLoad` | `.noActiveVersion(versionsPresent: 0)` | **false** |
+
+Same database. Opposite answers. `AthleteLoad`'s own comment states its choice —
+*"No profile row. A fresh database, not a fault."* — and `PlanLoad` never made
+that call because nothing had ever asked it to.
+
+Neither is wrong where it sits. `ReadBacks` asks each load exactly one question,
+*is there something here to compare*, and for that question a clean read of an
+empty database and a failed read genuinely do share an answer: no. Twelve files
+read `.isTrustworthy` that way.
+
+What cannot survive is `&&`-ing three of them. **A launch has a different
+question and it has two halves with opposite consequences:**
+
+- *the plan could not be READ* → a hydration must not happen
+- *there is no plan YET* → a fresh install, and hydration must not happen either,
+  but nothing is wrong and nothing should stop
+
+A boolean that conflates those is a boolean a launch cannot act on. The file's
+own header claimed to keep them apart while the code collapsed them, which is
+§12.15 written by the person who wrote §12.15.
+
+### 12.92.2 The resolution, and what was deliberately not changed
+
+343c **removed** the verdicts rather than ship them meaning neither thing. There
+was no caller — `DatabaseBootstrap` had none outside its own tests until 345 —
+and §12.69 makes shipping an unreachable verdict the worse option: a guard that
+cannot fail has not been tested, and one that cannot be *called* is worse still.
+
+344 brings them back as two properties with two names, on all three loads and on
+the value that carries them:
+
+```
+wasReadCleanly    did the read succeed        false stops a hydration
+holdsContent      is there data here          false is a fresh install
+```
+
+`isTrustworthy` is **untouched on all three types.** Changing `PlanLoad`'s
+reading would silently alter what the nine-of-nine roll-up means, and the
+roll-up is the evidence D7's entry gate was passed on. `theSiblingLoadsDisagree`
+pins all three implementations so that resolving the older ambiguity has to be a
+visible decision rather than a quiet edit.
+
+`.noActiveVersion(versionsPresent: 3)` is **not** a clean read. Three versions
+stored and none active is a state somebody has to resolve, which is why the case
+carries the count instead of being a bare `.empty` — §12.15's eleventh instance
+paying for itself two patches later.
+
+### 12.92.3 The approved list is the hydration-exclusion list
+
+**An approved difference is a field the database cannot reproduce.** That is a
+statement about the schema, and it has a second consequence nobody needed until
+a store started taking rows: hydrating would overwrite the app's value with
+whatever the absent column's default happens to be.
+
+`AthleteRoundTrip.approved` holds one entry and the loss is not hypothetical:
+
+- `constants.json` holds `version: 2`
+- `AthleteRepository.load` omits the field, so `AthleteConstants()` supplies its
+  default of **1**
+- `LoadStore.currentSignature` interpolates `"v\(c.version)"`
+- every mutator on `ConstantsStore` calls `save()`, so one later edit writes the
+  rolled-back value into the file that is the legacy side's **only** copy
+
+So `preservedOnHydrate` is declared beside `approved` and held equal to it by
+test. One list, two consumers — §12.43, twelfth application. Adding an approved
+difference in B2 through B8 now fails a test until somebody decides what
+hydration does with it, and those lists are longer:
+`user_note.activityID`, `user_note.planVersionID`, `Shoe.primary`,
+`gear.retiredUTC`, `review.provider`, `proposal.decision`.
+
+A named assignment rather than reflection, for the reason
+`AthleteRepository.load`'s memberwise initialiser already gives: reflection
+would also silently skip something.
+
+### 12.92.4 Two loads, one store
+
+`PlanRepository` reads the meta, weeks and sessions. `PlanExtrasRepository`
+reads the fuelling, the warm-up and the exercises. They are two families in
+`fieldCount` because they are two reads that can fail separately — and they feed
+**one** `PlanStore`.
+
+Hydrating with half of them would blank the Fuelling & race-day screen while
+every other figure on every other tab stayed correct. That is worse than not
+hydrating at all, because it looks fine.
+
+`DatabaseBootstrap.hydratablePlan` is therefore all-or-nothing, in one place,
+and a caller cannot assemble half a plan without writing the `Plan` constructor
+itself. The coupling is structural rather than a comment somebody has to read.
+
+### 12.92.5 Four things move together, or the store is worse than either half
+
+`PlanStore` holds three things derived from `plan` — `byDate`, `weeksByUid` and
+`focusCache` — and **none of them knows it is derived.** A hydration that moved
+`plan` without rebuilding all three leaves a store whose index describes a plan
+it no longer holds: internally consistent on both sides, describing nothing, and
+invisible to any test that only checked `plan`.
+
+`rebuildIndexes` is one function with two callers, and it **clears before it
+fills**. Hydration can REMOVE a day; a merge would leave old sessions on dates
+the stored plan does not have, and every one of those answers would look like
+real plan data.
+
+Three comments were corrected rather than left to be believed, all three having
+stopped being true in this patch: `PlanStore`'s header (*"plan data never
+changes at runtime"*), `focusCache`'s (*"the answer cannot change"*), and
+`PlanFocus`'s (*"`PlanStore.init` is private, so there is exactly one store"*).
+The conclusion each of them supported survives; the reason given for it did not.
+
+`PlanStore` is still not `@Observable`, for a stronger reason than the one it
+used to give: hydration completes inside `Sub4Launch.begin()`, before `RootView`
+constructs `ContentView`, so no view exists to be told. **The ordering is the
+guarantee and it lives in the launch** — which is why the next patch has to fix
+the ordering.
+
+### 12.92.6 Why the slice is two patches, and the defect 345 must fix
+
+344 is the machinery: the loads, the bootstrap, three `hydrate` methods, and a
+`StoreSource` that makes "this store was never hydrated" distinguishable from
+"this store was". Nothing calls any of it. `sliceUnderTest` is still nil, the
+launch is untouched, and the acceptance criterion is that every figure on the
+device is unchanged — the same criterion 342 and 343 had.
+
+345 is the wiring, and it is small enough to reason about because 344 is not in
+it.
+
+**One defect found while reading, and it is 345's to fix.** `Sub4Launch.begin()`
+sets `state = .ready` **before** it derives `persistence`:
+
+```
+self.database = db
+self.state = .ready          ← RootView may construct ContentView from here
+let activated = …
+self.persistence = …
+```
+
+It is correct today only by accident: the remaining statements run to completion
+on the main actor before the run loop turns, so SwiftUI never gets a chance to
+build the view in between. Add the bootstrap's reads — which suspend, because
+they belong off the main actor — and `ContentView` is constructed with
+un-hydrated stores. Under `.databaseAuthoritative` after B9 that is the legacy
+plan served for a frame and then replaced, which is exactly the class of failure
+`Sub4Launch`'s own header calls the worst this app has available.
+
+The hydration must complete before `.ready`, not after. `PlanStore` not being
+`@Observable` depends on it.
+
+## 12.91 A read-back that stops being evidence — patch 343, D7 slice B1a
+
+### 12.91.1 The finding, and it is about all eight slices
+
+`ReadBacks.plan` compared `PlanStore.shared.plan` against `PlanRepository`.
+298 comparisons, 0 unexplained, on every device run since the wipe — and one of
+the nine lines that passed D7's entry gate on 10 August.
+
+**The moment B1 hydrates that store from the database, the comparison is the
+database against itself.** 298 checks, guaranteed to agree, proving nothing.
+§12.69's rule at the worst possible moment: a guard that cannot fail has not
+been tested.
+
+And it is not one slice. B2 does it to `AuthoredRoundTrip`, B3 to
+`ActivityRoundTrip`, B4, B5 and B7 to theirs. **The nine-of-nine roll-up would
+go tautological one slice at a time**, each slice reporting a clean pass while
+proving less than the one before it, and the entry-gate evidence eroding as D7
+proceeded. Nothing in the master plan names this consequence; it says "freeze
+the legacy result and the repository result using the existing round-trip
+type", which only works if BOTH reads still happen.
+
+### 12.91.2 The decision, 10 August 2026
+
+**The store serves the database; the read-back keeps its own legacy read.**
+
+The screens show database-backed values — which is the thing D6c cannot prove
+and D7 exists to establish — and the comparison gets its other half from the
+original source rather than from the store. For the plan that source is the
+bundle; for later slices it is the JSON file each store used to read.
+
+The cost is owned: the legacy read still runs on every roll-up during the
+shadow window, and one more reader of `plan.json` exists until D8. That is the
+price of the read-back continuing to mean something, and it is worth paying —
+the alternative options were to prove only what D6c already proved, or to
+retire the read-backs one by one and watch the gate evidence decay.
+
+### 12.91.3 The bundle is a seed and never a fallback
+
+The sharpest hazard in B1, and `PlanStore.decodeBundle` carries it in its own
+header.
+
+If `PlanRepository.load` returns `.failed`, nothing may read the bundle
+instead. It looks harmless — the same file the importer seeded from — and it is
+not: **the database may hold a different plan VERSION**, and every note, match
+decision and review change is written against `plan_session.uid` values from
+the stored version. A silent fall back would resolve those uids against a plan
+nobody chose, and the screens would look entirely normal while doing it.
+
+Under `.legacyAuthoritative` the bundle IS the source and that is correct.
+Under `shadow(B1)` or `databaseAuthoritative`, a failed plan read is a failed
+launch.
+
+### 12.91.4 Why this is its own patch
+
+343 changes what the read-back compares and nothing else. Today the store IS
+the decoded bundle, so **298 and 71 must come back unchanged** — the acceptance
+criterion is that no number moves, which makes the half checkable on its own.
+
+344 then hydrates the stores. By then the read-back is already independent, so
+a figure that moves is a finding rather than an ambiguity. Doing both at once
+would mean changing the measurement and the thing measured in one step, and
+this project has a §12.34-shaped history with exactly that.
+
+### 12.91.5 `DatabaseBootstrap`, and `PersistenceMode` becomes readable
+
+`DatabaseBootstrap` is `AppStores` in the read direction, with the same
+argument: §12.45's twenty defaulted parameters, where a forgotten one was not a
+compile error but a table that quietly stopped being imported. A forgotten one
+here is a store that hydrates from nothing. Three families at B1, `fieldCount`
+pinned by test, growing by slice.
+
+It decides nothing — it reads and hands over the loads intact. Whether a
+`.failed` load is survivable is `PersistenceMode`'s question and the store's. A
+bootstrap that substituted an empty value for a failed read would be the defect
+the whole stage exists to prevent.
+
+`PersistenceMode` also gains its line in the paste. At 342 printing it nowhere
+was defensible, because nothing consumed the value and the state was provable
+by construction. From B1 it decides what three stores read.
+
 ## 12.90 Where the app reads from, decided once — patch 342, D7 slice B0
 
 ### 12.90.1 The decision this implements

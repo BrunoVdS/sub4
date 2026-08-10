@@ -82,6 +82,28 @@ nonisolated enum PlanExtrasLoad: Sendable {
         return false
     }
 
+    /// See `PlanLoad.wasReadCleanly` — patch 344, §12.92. Same cases, same
+    /// answers, because this load has the same five shapes.
+    var wasReadCleanly: Bool {
+        switch self {
+        case .loaded:                      true
+        case .noActiveVersion(let n):      n == 0
+        case .ambiguousActiveVersion:      false
+        case .unavailable, .failed:        false
+        }
+    }
+
+    /// Whether there are trimmings here to hydrate from.
+    ///
+    /// TRUE FOR `.loaded(fuel: nil, warmup: nil, exercises: [])`, and that is
+    /// deliberate: a plan version with no fuelling section is a real state — see
+    /// the note on `fuel` below — and it is content the store must be given, not
+    /// an absence to fall back from.
+    var holdsContent: Bool {
+        if case .loaded = self { return true }
+        return false
+    }
+
     /// Nil on every unhappy path, and `.loaded(fuel: nil, …)` is a DIFFERENT
     /// answer from that: it means the read worked and the plan carries no
     /// fuelling section, which is a real state for a plan.json produced before

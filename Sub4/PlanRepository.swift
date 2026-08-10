@@ -139,6 +139,42 @@ nonisolated enum PlanLoad: Sendable {
         return false
     }
 
+    /// WHETHER THE READ SUCCEEDED — patch 344, ADR-0003 §12.92.
+    ///
+    /// NOT the same question as `isTrustworthy`, and 343c is the record of what
+    /// it cost to discover that. `ReadBacks` asks each load "is there anything
+    /// here to compare", and for THAT question a clean read of an empty
+    /// database and a failed read have the same answer. Twelve files rely on
+    /// that reading and it is correct for them.
+    ///
+    /// A LAUNCH ASKS A DIFFERENT QUESTION. "The plan could not be read" must
+    /// stop a hydration; "no plan has been imported yet" must not. So the two
+    /// are separate properties with separate names, and `AthleteLoad` — which
+    /// answered the launch's question under the comparison's name — now answers
+    /// both explicitly.
+    ///
+    /// `.noActiveVersion(versionsPresent: 0)` is a clean read of an empty
+    /// database. `.noActiveVersion(versionsPresent: 3)` is NOT: three versions
+    /// stored and none active is a state somebody has to resolve, which is why
+    /// the case carries the count instead of being a bare `.empty`.
+    var wasReadCleanly: Bool {
+        switch self {
+        case .loaded:                      true
+        case .noActiveVersion(let n):      n == 0
+        case .ambiguousActiveVersion:      false
+        case .unavailable, .failed:        false
+        }
+    }
+
+    /// Whether there is a plan here to hydrate a store FROM.
+    ///
+    /// False for an empty database, and that is not a fault — it is the reason
+    /// this is a second property rather than a second reading of the first.
+    var holdsContent: Bool {
+        if case .loaded = self { return true }
+        return false
+    }
+
     /// Nil rather than `[]` on every unhappy path — a caller must not reach the
     /// comparison without deciding what the absence means.
     var weeks: [Week]? {
