@@ -51,3 +51,4 @@ playground.xcworkspace
 *.p12
 *.mobileprovision
 secrets.plist
+scripts/apply-*.py

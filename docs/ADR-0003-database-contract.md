@@ -8834,6 +8834,188 @@ A paste that omits the empty tables and a snapshot row that overstates its
 losses are both survivable while the person reading them is the person who
 generated them. They stop being survivable the moment the paste is the evidence.
 
+## 12.89 The last three things behind the glass — patch 341
+
+### 12.89.1 The adapter that had already been wrong once
+
+`ReadBackRollUpTests.swift` carries this in its own header, written at 333a:
+
+> *"333 shipped three states and collapsed two of them in the adapter. These
+> tests did not catch it, because they tested the type and the defect was in
+> the caller: every test below passed while the device reported 'could not
+> look' over a database it had read perfectly."*
+
+It documented the untested seam and left it untested, because the caller was a
+`private static func` on `DatabaseHealthView` and no test can reach a SwiftUI
+view's private members. The function that turns nine reports into nine verdicts
+— the one that decides whether an empty comparison is a blind read — had
+fifteen sibling tests and zero of its own.
+
+341 moves it to `ReadBackRollUp.line`, body identical, and
+`RollUpAdapterTests` states the three transitions. The one with teeth is
+`aTrustworthyReadOfAnEmptyDatabaseIsNotBlind`: a read that succeeded over an
+empty database must be `.nothingToCompare`, never `.couldNotLook`. That is
+precisely what 333 got wrong and only the device could tell.
+
+**Stage A2 item 7 asked for "a negative-control fixture whose mismatch makes
+the roll-up fail". This is it, and it could not be written before the move.**
+
+### 12.89.2 The import report was the last block trapped behind the screen
+
+313 moved shadow parity's result off `@State`. 333 did it for the nine
+read-backs. 340 did it for the verifier. The import report was still there:
+`@State private var importReport`, drawn in the Import section, referenced
+**nowhere** in `diagnosticsText`.
+
+So the counts a person most wants to send — *Notes: 1 new*, *Gear: 0 new, 11
+known, 1 refreshed* — were reachable only by screenshot. They were
+screenshotted twice on 10 August, which is how the gap was found. Fifth
+instance of §12.57 and, on this screen, the last one.
+
+`LastImport.shared` holds it. **It is deliberately not folded into
+`DatabaseWriteThrough.last`**, which holds a report too: that one answers *is
+the automatic trigger firing and did it fail*, is fed only by backgrounding,
+returning and the background refresh, and the Import button never touches it.
+Collapsing them would make the write-through's health line move when a person
+pressed a button — §12.39.2's confusion, in the other direction.
+
+`Report.diagnosticLines` is counts only. `Refusal.externalID` is a Strava
+activity id and §12.7 promises the paste carries none, so refusals reach it as
+a number and their detail stays on screen — the same rule the verifier's
+`detail` field follows.
+
+### 12.89.3 The authored export, and why a snapshot was never a backup
+
+Stage A1 item 5, in the athlete's own words in the plan: *"A snapshot inside
+the app container is recovery input, not an off-device backup."*
+
+On 9 August the app was deleted by hand during a crash loop. It took
+`notes.json` — thirteen months of what the athlete thought after each session —
+and `commutes.json`, the only source the `correction` table has. Both were
+inside the protected snapshot, and the snapshot was inside the container the
+delete removed. **The protection worked exactly as designed and protected
+nothing, because everything it protected lived in the same place as the thing
+it was protecting against.** Strava sent the activities back. It cannot send
+these.
+
+`AuthoredExport` writes one JSON document holding five stores verbatim, each
+with its byte count and SHA-256, plus the app version and the moment. Five and
+not all of them: `activities.json`, `weather.json`, `details/` and `streams/`
+are 19 MB of things a source can send again, and including them makes an export
+nobody presses. The complete artefact remains the database, taken off by
+container download, which is a different operation with a different cost and is
+written down in the A1 campaign rather than hidden behind a button.
+
+**One document rather than an archive**, because there is no zip in the SDK
+worth three hundred lines for twelve kilobytes — and because a document can
+carry what an archive cannot: which build wrote it, when, and a hash per file,
+so a copy that has rotted can be told from one that has not. The same argument
+`SnapshotManifest` makes.
+
+**The contents go in as text, not re-encoded.** Decoding and re-encoding would
+put this file's opinion of the shape between the athlete and his own data, and
+the hash beside each entry would then describe the copy rather than the
+original.
+
+An absent store and an unreadable one stay different: a device with no commute
+decisions has no `commutes.json` and that is an answer, while a file that
+exists and will not read is a loss. `AuthoredExportEntry.error` is nil for the
+first and a sentence for the second — §12.15, and the distinction 9 August was
+about.
+
+## 12.88 A verified run nobody could find — patch 340
+
+### 12.88.1 The gate's own sentence had no reader
+
+D7's entry criterion is *"a verified run exists over the current data"*. On
+10 August 2026, reading the source for steps 3, 4 and 5 of the entry gate, that
+sentence turned out to be unreadable on this device by any means.
+
+`LedgerCensus` counted five things — the total, the four triggers, the
+unrecorded rows, the runs open now and the interrupted ones — and `verified` was
+not among them. `MigrationRun` carries the state, but the Import ledger card
+draws only the NEWEST run, and every import, every backgrounding and every
+return to the app opens a newer one. So the fact survived in the table and had
+no path to a screen or a paste.
+
+The verifier's own report was worse. `verification` and `verifyLedgerNote` were
+`@State` on `DatabaseHealthView`, so the whole verification block left the
+diagnostics paste the moment the sheet was dismissed. **That is §12.57 for the
+fourth time** — 313 fixed it for shadow parity, 333 for the nine read-backs,
+and the one control the entire ladder turns on was never moved.
+
+The practical shape of the defect: press Verify, get a clean report, press
+Done — and there is now no artefact anywhere stating that it happened.
+
+### 12.88.2 Two halves, and neither can replace the other
+
+`LedgerCensus.everVerified` and `LedgerCensus.newestVerified` are the DURABLE
+half. They survive every launch, they are printed unconditionally, and they
+answer *has the verifier ever succeeded on this database*.
+
+`VerificationResult.shared` is the CURRENT half, shaped exactly like
+`ShadowParity.shared` and `ReadBackRollUp.shared`. It survives the sheet, dies
+with the launch, and answers *what did the last press find*. It is deliberately
+not persisted, for §12.29's reason: a stored verdict from three launches ago is
+a second answer to a question the current data already settles.
+
+### 12.88.3 `activated` is counted as verified, and that is not a conflation
+
+`activateVerified` refuses every source state but `verified`, so an activated
+run is a verified run that went one rung further. A census counting only
+`verified` would print **"never"** over a database that had just passed the
+gate — §12.54.2 arriving on schedule rather than by surprise, and arriving
+during the one patch where somebody is reading that line to make the D7
+decision.
+
+### 12.88.4 The row, not the note column
+
+`verifyPending` accepts a nil note, so a verified run that recorded nothing and
+no verified run at all both produce nil from `String.fetchOne(note)`. Two
+opposite facts wearing one appearance — §12.87's shape, which cost patch 339 —
+so the census fetches the whole row and the paste says `no note recorded` for
+the first case and `never` for the second.
+
+### 12.88.5 `runs opened since it` is the honest currentness figure, and it is
+only half the question
+
+A verified row proves nothing about today unless nothing has happened since.
+The census now says how many runs have been opened after the newest verified
+one, computed as `MAX(sequence) - sequence` rather than as a count of rows —
+`sequence` is `AUTOINCREMENT`, so the figure survives the retention prune that
+deletes the rows it would otherwise be counting.
+
+**What it does not say, stated here so nobody reads it as more than it is.**
+Zero runs since means the LEDGER has not moved. It does not mean the stores
+have not: Import and Verify each read `AppStores.current()` live, and nothing
+binds a run to a fingerprint of the dataset it checked. That work is §5 step 5
+of `CLAUDE.md` and it is still open. This patch closes the gap between *the
+ledger knows* and *a person can read it*, and closes nothing else.
+
+### 12.88.6 What else the step 3–5 reading found
+
+Three things worth recording, none of which needed code:
+
+**The Compare button runs SIX slices, not eight.** `ShadowParity.Outcome.ran`
+carries `activities, volume, load, details, matches, summaries`. Slices 5b, 6,
+6b, 6c and 7 in §12's D6c table are READ-BACKS, run by the roll-up. A gate
+document written from the table told the athlete to look for two sections that
+do not exist.
+
+**The note and the commute controls are not where the gate document said.**
+`ActivityDetailVerdict.noteCard` draws only when the activity is matched to a
+plan session — `NoteEditorView(session:)` is keyed by session uid, so an
+unmatched extra has nowhere to hang a note. `ActivityDetailView.commuteSection`
+draws only for `discipline == .bike`, as a row labelled *Commute* with an ⓘ and
+a bicycle, not as a header glyph.
+
+**A commute decision recorded by one tap moves training data.**
+`setCommute(!activity.isCommuteRide)` inverts whatever the distance rule
+currently says, which changes that ride's training volume and its plan
+eligibility. Two taps on a short ride leave an explicit `correction` row that
+AGREES with the rule — one row for the read-back, and no figure moved. The
+gate needs a decision to exist; it does not need the decision to be a change.
+
 ## 12.87 Verification is a guarded transition, not a historical count — patch 338
 
 The captured database has 53 `pending`, three `running`, and zero `verified`

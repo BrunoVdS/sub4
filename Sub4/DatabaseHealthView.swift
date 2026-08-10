@@ -67,8 +67,19 @@ struct DatabaseHealthView: View {
     /// Patch 218 — 3.3.2. Manual for now: the import is a button, not a launch
     /// step, until 3.3.3 makes the database authoritative.
     @State private var importing = false
-    @State private var importReport: Sub4Import.Report?
+    /// PATCH 341. OBSERVED RATHER THAN OWNED, like `parity`, `rollUp`,
+    /// `writeThrough` and `verification`.
+    ///
+    /// This was `@State private var importReport`, drawn in the Import section
+    /// and referenced nowhere in `diagnosticsText` — so the counts a person
+    /// actually wants to send were reachable only by screenshot, and died with
+    /// the sheet. §12.57, and the last block on this screen that had it.
+    /// §12.89.
+    @State private var lastImport = LastImport.shared
     @State private var importError: String?
+    /// The authored export's own outcome. Nil until the button is pressed;
+    /// the file itself goes out through `shared`, like the diagnostics.
+    @State private var authoredExported: String?
 
     /// Patch 247 — migration contract item 3. Manual for now, like the import
     /// above it: launch ownership belongs to the migration engine, and wiring a
@@ -133,10 +144,16 @@ struct DatabaseHealthView: View {
     @State private var reviewLoad: ReviewTrailLoad?
     @State private var reviewTrip: ReviewRoundTrip.Report?
     @State private var verifying = false
+    /// PATCH 340. OBSERVED RATHER THAN OWNED, like `parity`, `writeThrough`
+    /// and `rollUp` below.
+    ///
     /// A passing comparison and a durable ledger transition are separate
-    /// facts. This states why the second did or did not happen.
-    @State private var verifyLedgerNote: String?
-    @State private var verification: VerificationReport?
+    /// facts, and both used to be `@State` on this view — so the one piece of
+    /// evidence D7's entry gate turns on did not survive pressing Done, and
+    /// the diagnostics paste omitted the whole block unless it was taken from
+    /// inside the sheet that produced it. §12.57, fourth instance, on the
+    /// control that matters most. §12.88.
+    @State private var verification = VerificationResult.shared
 
     /// D6c — patch 312, moved off `@State` at 313.
     ///
@@ -591,14 +608,14 @@ struct DatabaseHealthView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let r = importReport, r.activitiesSeen == 0 {
+            if let r = lastImport.last.report, r.activitiesSeen == 0 {
                 // Patch 220. All-zero counts read exactly like a broken button —
                 // which is how a first run against empty stores looked.
                 Text("The app's stores are empty, so there was nothing to copy. "
                      + "Open Today and let the sync finish first.")
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-            } else if let r = importReport {
+            } else if let r = lastImport.last.report {
                 LabeledContent("Activities seen", value: "\(r.activitiesSeen)")
                     .font(.caption)
                 LabeledContent("Imported", value: "\(r.activitiesInserted)")
@@ -1025,55 +1042,55 @@ struct DatabaseHealthView: View {
 
             let a = await ReadBacks.activities(db)
             roundTripLoad = a.load; roundTrip = a.report
-            lines.append(Self.line("Activities", a.report?.totalCompared,
+            lines.append(ReadBackRollUp.line("Activities", a.report?.totalCompared,
                                    a.report?.unexplained,
                                    trustworthy: a.load.isTrustworthy && a.report != nil,
                                    a.load.line))
 
             let d = await ReadBacks.details(db)
             detailLoad = d.load; detailTrip = d.report
-            lines.append(Self.line("Details", d.report?.totalCompared,
+            lines.append(ReadBackRollUp.line("Details", d.report?.totalCompared,
                                    d.report?.unexplained,
                                    trustworthy: d.load.isTrustworthy && d.report != nil,
                                    d.load.line))
 
             let rec = await ReadBacks.recordings(db)
             recordingTrip = rec
-            lines.append(Self.line("Recordings", rec.totalCompared, rec.unexplained,
+            lines.append(ReadBackRollUp.line("Recordings", rec.totalCompared, rec.unexplained,
                                    trustworthy: rec.isTrustworthy, rec.line))
 
             let at = await ReadBacks.athlete(db)
             athleteLoad = at.load; athleteTrip = at.report
-            lines.append(Self.line("Athlete", at.report.totalCompared,
+            lines.append(ReadBackRollUp.line("Athlete", at.report.totalCompared,
                                    at.report.unexplained,
                                    trustworthy: at.load.isTrustworthy, at.load.line))
 
             let au = await ReadBacks.authored(db)
             authoredLoad = au.load; authoredTrip = au.report
-            lines.append(Self.line("Notes and commutes", au.report.totalCompared,
+            lines.append(ReadBackRollUp.line("Notes and commutes", au.report.totalCompared,
                                    au.report.unexplained,
                                    trustworthy: au.load.isTrustworthy, au.load.line))
 
             let pl = await ReadBacks.plan(db)
             planLoad = pl.load; planTrip = pl.report
             planExtrasLoad = pl.extrasLoad; planExtrasTrip = pl.extrasReport
-            lines.append(Self.line("Plan", pl.report.totalCompared,
+            lines.append(ReadBackRollUp.line("Plan", pl.report.totalCompared,
                                    pl.report.unexplained,
                                    trustworthy: pl.load.isTrustworthy, pl.load.line))
-            lines.append(Self.line("Plan trimmings", pl.extrasReport.totalCompared,
+            lines.append(ReadBackRollUp.line("Plan trimmings", pl.extrasReport.totalCompared,
                                    pl.extrasReport.unexplained,
                                    trustworthy: pl.extrasLoad.isTrustworthy,
                                    pl.extrasLoad.line))
 
             let wg = await ReadBacks.weatherGear(db)
             weatherGearLoad = wg.load; weatherGearTrip = wg.report
-            lines.append(Self.line("Weather and gear", wg.report.totalCompared,
+            lines.append(ReadBackRollUp.line("Weather and gear", wg.report.totalCompared,
                                    wg.report.unexplained,
                                    trustworthy: wg.load.isTrustworthy, wg.load.line))
 
             let rv = await ReadBacks.review(db)
             reviewLoad = rv.load; reviewTrip = rv.report
-            lines.append(Self.line("Review trail", rv.report.totalCompared,
+            lines.append(ReadBackRollUp.line("Review trail", rv.report.totalCompared,
                                    rv.report.unexplained,
                                    trustworthy: rv.load.isTrustworthy, rv.load.line))
 
@@ -1082,30 +1099,10 @@ struct DatabaseHealthView: View {
         }
     }
 
-    /// ONE PLACE THAT TURNS A REPORT INTO A VERDICT.
-    ///
-    /// PATCH 333a — `trustworthy` COMES FROM THE LOAD, NOT FROM THE REPORT.
-    /// 333 passed `lookedAtSomething` here, which answers *did this compare
-    /// anything*, and used it to decide *did the read happen*. Those are
-    /// different questions and the device answered them differently within the
-    /// hour: `Notes and commutes` reported "could not look" over a database
-    /// that had been read perfectly well and simply held nothing.
-    ///
-    /// Every load type carries `isTrustworthy` — all eight of them, plus
-    /// `RecordingRoundTrip.Report` — so the honest input was there the whole
-    /// time. §12.81.
-    private static func line(_ name: String,
-                             _ compared: Int?,
-                             _ unexplained: Int?,
-                             trustworthy: Bool,
-                             _ whyNot: @autoclosure () -> String) -> ReadBackRollUp.Line {
-        guard trustworthy, let compared, let unexplained else {
-            return .init(name: name, compared: 0, unexplained: 0,
-                         couldNotLook: whyNot())
-        }
-        return .init(name: name, compared: compared, unexplained: unexplained,
-                     couldNotLook: nil)
-    }
+    // THE ADAPTER MOVED TO `ReadBackRollUp` AT 341, unchanged. It lived here
+    // as a private static on a view, which is why the function that shipped
+    // 333's defect had no test until Stage A2 item 7 asked for one. See
+    // `ReadBackRollUp.line` and `RollUpAdapterTests`. §12.89.
 
     private static let rollUpFooter =
         "Runs all nine read-backs in one press and keeps the answer. Every "
@@ -1295,7 +1292,8 @@ struct DatabaseHealthView: View {
                 // fails closed on — beside the fields it is about, because a
                 // name MISSING from that list makes reconciliation more likely
                 // to run, and reconciliation deletes.
-                importReport = try Sub4Import.run(
+                let at = Sub4Import.iso8601(Date())
+                let report = try Sub4Import.run(
                     into: db,
                     stores: AppStores.current(),
                     appVersion: AppVersion.patchLabel,
@@ -1310,10 +1308,13 @@ struct DatabaseHealthView: View {
                     // that none was.
                     snapshotID: snapshot?.id,
                     trigger: .manual)
+                lastImport.record(report, trigger: .manual, atUTC: at)
                 await recheck(db)
                 await reloadLedger(db)
             } catch {
                 importError = String(describing: error)
+                lastImport.recordFailure(String(describing: error),
+                                         atUTC: Sub4Import.iso8601(Date()))
                 // The ledger recorded the failure inside `run`. Read it back so
                 // the screen shows `failed` rather than the previous run.
                 await reloadLedger(db)
@@ -1483,7 +1484,7 @@ struct DatabaseHealthView: View {
                 Button("Verify against the app's stores") { runVerify(db) }
             }
 
-            if let v = verification {
+            if let v = verification.last.report {
                 LabeledContent("Verdict",
                                value: v.passed ? "everything agreed"
                                                : "\(v.failures.count) disagreed")
@@ -1491,10 +1492,13 @@ struct DatabaseHealthView: View {
                     .foregroundStyle(v.passed ? Color.dim : .red)
                 LabeledContent("Compared", value: "\(v.checks.count) things")
                     .font(.caption).foregroundStyle(Color.dim)
-                LabeledContent("Ledger",
-                               value: verifyLedgerNote ?? "the run is marked verified")
+                // THE SAME ROW COUNT AS BEFORE. This screen's budget is DEPTH
+                // and a `@ViewBuilder` block is built pairwise, so swapping a
+                // row is free and adding one is not. §12.76.
+                LabeledContent("Ledger", value: verification.last.ledgerLine)
                     .font(.caption2)
-                    .foregroundStyle(verifyLedgerNote == nil ? Color.dim : .red)
+                    .foregroundStyle(verification.last.ledgerAgreed
+                                     ? Color.dim : .red)
 
                 ForEach(v.checks) { check in
                     LabeledContent("  \(check.name)",
@@ -2741,33 +2745,36 @@ struct DatabaseHealthView: View {
 
     private func runVerify(_ db: Sub4Database) {
         verifying = true
-        verifyLedgerNote = nil
         Task {
             // The same gathered value the import uses — 301. The verifier
             // reads a subset of it on purpose; see the overload's comment.
             let report = SemanticVerifier.attempt(db, stores: AppStores.current())
-            verification = report
             // A passing run moves the ledger to `verified`. A failing one
             // leaves it where it is — `SemanticVerifier.record` is what
             // refuses, not this screen.
+            //
+            // PATCH 340. The four sentences moved into
+            // `VerificationResult.Ledger` unchanged. They are the same words;
+            // what is new is that they have a type, so a test can assert each
+            // one and the paste can print it after this sheet is gone.
             if let runID = lastRun?.id {
+                let outcome: VerificationResult.Ledger
                 do {
                     let moved = try SemanticVerifier.record(report, for: runID, in: db)
                     if moved {
-                        verifyLedgerNote = nil
+                        outcome = .marked
                     } else if !report.passed {
-                        verifyLedgerNote = "the report did not pass, so no run was changed"
+                        outcome = .reportDidNotPass
                     } else {
-                        verifyLedgerNote = "not recorded — import again, then verify the "
-                                         + "newest completed pending run"
+                        outcome = .notTheNewestRun
                     }
                 } catch {
-                    verifyLedgerNote = "the run could not be marked verified: "
-                                     + String(describing: error)
+                    outcome = .failed(String(describing: error))
                 }
+                verification.record(report, ledger: outcome)
                 await reloadLedger(db)
             } else {
-                verifyLedgerNote = "no run to mark — the ledger is empty"
+                verification.record(report, ledger: .noRun)
             }
             verifying = false
         }
@@ -2857,9 +2864,11 @@ struct DatabaseHealthView: View {
             // the day and the patch — which is worth more than the transport,
             // because a capture that names its own build is a capture that can
             // still be read next week. §12.79.
-            Button("Share diagnostics") {
-                shared = writeDiagnostics().map(ShareItem.init(url:))
-            }
+            // PATCH 341. TWO BUTTONS IN ONE CHILD, not two children.
+            // This screen's budget is DEPTH and a `@ViewBuilder` block is
+            // built pairwise, so a group costs nothing and a sibling costs a
+            // level. §12.76, which this screen has now learned three times.
+            exportButtons
             if shareFailed {
                 Text("The file could not be written. Copy diagnostics still works.")
                     .font(.caption2).foregroundStyle(.red)
@@ -2880,6 +2889,56 @@ struct DatabaseHealthView: View {
                  + "in it are not stored anywhere.")
                 .font(.caption2)
         }
+    }
+
+    /// The two things that leave the phone — patch 341.
+    ///
+    /// The diagnostics file is counts about the data. The authored export is
+    /// the data: `notes.json`, `commutes.json`, `proposals.json`,
+    /// `athlete.json` and `constants.json`, the five stores no source can send
+    /// again. On 9 August a hand-delete took all of them AND the protected
+    /// snapshot that held them, because the snapshot lives inside the
+    /// container. Stage A1 item 5 exists for exactly that, and until now it
+    /// could only be done by downloading the whole container from Xcode.
+    @ViewBuilder
+    private var exportButtons: some View {
+        Button("Share diagnostics") {
+            shared = writeDiagnostics().map(ShareItem.init(url:))
+        }
+        Button("Export the notes and decisions") {
+            writeAuthoredExport()
+        }
+        if let authoredExported {
+            Text(authoredExported).font(.caption2).foregroundStyle(Color.dim)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Builds the authored export and hands it to the share sheet.
+    ///
+    /// The summary is counts only — five small files, and a note's text is the
+    /// athlete writing about his own training. §12.7 applies to this screen's
+    /// captions as much as to the paste.
+    private func writeAuthoredExport() {
+        authoredExported = nil
+        let document = AuthoredExport.build(appVersion: AppVersion.patchLabel)
+        do {
+            let url = try AuthoredExport.write(document, day: Self.exportDay())
+            shared = ShareItem(url: url)
+            authoredExported = "Exported \(document.summary)."
+        } catch {
+            shareFailed = true
+            authoredExported = "The export could not be written."
+        }
+    }
+
+    /// `yyyyMMdd`, for the filename. Its own formatter rather than `DayKey`'s,
+    /// which is `nonisolated(unsafe)` and documented as never to be mutated.
+    private static func exportDay(_ now: Date = Date()) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyyMMdd"
+        return f.string(from: now)
     }
 
     /// PATCH 332. Written on the press, never on a redraw.
@@ -3244,6 +3303,12 @@ struct DatabaseHealthView: View {
         // in the table counts above is what made this patch necessary, and a
         // tally that only appeared when something was wrong would repeat
         // §12.54.2 in the same week it was written down.
+        // PATCH 341. The report the Import section draws, in the file for the
+        // first time. UNCONDITIONAL — `.never` says no import has run this
+        // launch rather than the block being absent, §12.54.2 — and counts
+        // only, because a refusal names an activity. §12.89.
+        lines.append("")
+        lines.append(contentsOf: lastImport.last.diagnosticLines)
         lines.append("")
         lines.append("Last import: \(lastRun?.line ?? "no import has been recorded")")
         lines.append("Runs open right now: \(staleRuns)")
@@ -3273,12 +3338,18 @@ struct DatabaseHealthView: View {
         }
         // Patch 263. Counts, table names and verdicts — the `detail` on each
         // check can carry an activity id, and that stays on the screen.
-        if let v = verification {
-            lines.append("")
-            lines.append(contentsOf: v.diagnosticLines)
-            lines.append("  ledger: "
-                         + (verifyLedgerNote ?? "the run is marked verified"))
-        }
+        //
+        // PATCH 340. UNCONDITIONAL, unlike the survey above it. This block used
+        // to appear only after a press AND only while the sheet that produced
+        // it was open, which made the one fact D7 acts on the one fact this
+        // paste could not carry. `.never` says "not run since this launch"
+        // rather than being absent — §12.54.2.
+        //
+        // The DURABLE half of the same question is in the ledger census
+        // higher up: `runs ever verified` survives every launch, and this says
+        // what the last press found.
+        lines.append("")
+        lines.append(contentsOf: verification.last.diagnosticLines)
         // Patch 266c. UNCONDITIONAL, unlike the two above it. Those are nil
         // until a button is pressed; the journal always has an answer, and
         // "none" is that answer said out loud. A section that simply vanished

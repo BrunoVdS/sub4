@@ -283,7 +283,7 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 338, 2026-08-10
+## 5. State — patch 341, 2026-08-10
 
 **The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c COMPLETE — all eight
 slices, at 330. D7 has not started, and nothing in the app reads the database yet.**
@@ -677,10 +677,36 @@ Neither touches the database.
    snapshot's absence floor~~ cleaned at 336 · ~~**two identities for one review**~~
    closed at 337.
 
-**Step 1 now has a companion: press Import once after installing 338.** The five review
-rows on the device carry no `recordKey` until an import adopts them, and the sixth review
-— the one overwritten on 9 August — comes back on that same press. `database rows awaiting
-a record key: 0` and `reviews paired by run time, not yet keyed: 0` are what say it worked.
+**340 gave the gate's own sentence a reader, and it had none.** D7's criterion is *"a
+verified run exists over the current data"*, and on 10 August nothing on the device could
+state it: `LedgerCensus` did not count the state, the ledger card draws only the NEWEST run
+— and every import, backgrounding and return opens a newer one — while the verifier's
+report was `@State` and left the diagnostics paste the moment the sheet was dismissed.
+**§12.57 for the fourth time**, after 313 and 333, on the one control the whole ladder
+turns on. The census now prints three unconditional lines — `runs ever verified`, the
+newest one named, and `runs opened since it` — and `VerificationResult.shared` holds the
+report the way `ShadowParity` and `ReadBackRollUp` hold theirs. **It does not close step
+5's currentness question**: zero runs since a verified row means the LEDGER has not moved,
+not that the stores have not. §12.88.
+
+**Compare runs SIX slices, not eight.** `ShadowParity.Outcome.ran` carries `activities,
+volume, load, details, matches, summaries`. Slices 5b, 6, 6b, 6c and 7 in the D6c table
+above are READ-BACKS, run by the roll-up. Any gate document counting eight parity sections
+is counting the table rather than the code. §12.88.6.
+
+**The two authored controls, exactly where they are.** The session-note card draws only on
+an activity MATCHED to a plan session — `NoteEditorView(session:)` is keyed by session uid,
+so an unmatched extra has nowhere to hang a note. The commute control is a row labelled
+*Commute* with an ⓘ and a bicycle, drawn only for `discipline == .bike`, not a header
+glyph. **One tap moves training data**: `setCommute(!activity.isCommuteRide)` inverts
+whatever the distance rule says, changing that ride's volume and its plan eligibility. Two
+taps on a short ride leave an explicit `correction` row that AGREES with the rule — one row
+for the read-back, and nothing moved. §12.88.6.
+
+~~**Step 1 now has a companion: press Import once after installing 338.**~~ **Done.** The
+adoption import ran on 10 August and the 339 paste reads `reviews paired by record key: 6`,
+`reviews paired by run time, not yet keyed: 0`, `database rows awaiting a record key: 0`.
+The sixth review came back. §12.85.
 
 **D7 still contains code work.** Repoint store/front-end loads to database repositories;
 fail closed on database-open failure; provide a readable authoritative database export;

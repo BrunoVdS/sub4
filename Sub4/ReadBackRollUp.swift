@@ -194,6 +194,43 @@ final class ReadBackRollUp {
     /// answers "did the press do anything at all", which is about now.
     private(set) var runs = 0
 
+    // MARK: - The adapter — patch 341
+
+    /// ONE PLACE THAT TURNS A REPORT INTO A VERDICT.
+    ///
+    /// MOVED HERE FROM `DatabaseHealthView` AT 341, UNCHANGED. It was a
+    /// `private static func` on a SwiftUI view, which meant no test could
+    /// reach it — and it is the function that shipped a defect at 333 and was
+    /// corrected on the device at 333a. `ReadBackRollUpTests`' own header says
+    /// so: *"these tests did not catch it, because they tested the type and
+    /// the defect was in the caller"*. It documented the untested seam and
+    /// could not close it. This is the move that closes it; the body is
+    /// identical and `RollUpAdapterTests` is the negative control Stage A2
+    /// item 7 asks for.
+    ///
+    /// `trustworthy` COMES FROM THE LOAD, NOT FROM THE REPORT. 333 passed
+    /// `lookedAtSomething` here, which answers *did this compare anything*,
+    /// and used it to decide *did the read happen*. Those are different
+    /// questions and the device answered them differently within the hour:
+    /// `Notes and commutes` reported "could not look" over a database that had
+    /// been read perfectly well and simply held nothing.
+    ///
+    /// Every load type carries `isTrustworthy` — all eight of them, plus
+    /// `RecordingRoundTrip.Report` — so the honest input was there the whole
+    /// time. §12.81, §12.89.
+    static func line(_ name: String,
+                     _ compared: Int?,
+                     _ unexplained: Int?,
+                     trustworthy: Bool,
+                     _ whyNot: @autoclosure () -> String) -> Line {
+        guard trustworthy, let compared, let unexplained else {
+            return .init(name: name, compared: 0, unexplained: 0,
+                         couldNotLook: whyNot())
+        }
+        return .init(name: name, compared: compared, unexplained: unexplained,
+                     couldNotLook: nil)
+    }
+
     func record(_ lines: [Line]) {
         last = .ran(lines)
         runs += 1

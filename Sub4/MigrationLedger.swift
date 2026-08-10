@@ -195,12 +195,93 @@ nonisolated struct MigrationRun: Identifiable, Hashable, Sendable {
 /// and a number with no breakdown is the thing that made it invisible for three
 /// days. Every trigger is named every time, including at zero — §12.54.2, and
 /// `total` is the denominator that makes each of them evidence (§12.54.3).
+/// The newest run the verifier blessed — patch 340.
+///
+/// A WHOLE ROW RATHER THAN A NOTE STRING, and that is §12.15's rule applied to
+/// the one fact D7's gate is written against. `verifyPending` is allowed to
+/// record a nil note, so `String.fetchOne(note)` would return nil for a
+/// verified run that simply said nothing — which is indistinguishable from
+/// there being no verified run at all. Two opposite facts wearing one
+/// appearance is the shape that cost this project patch 339.
+nonisolated struct VerifiedRun: Equatable, Sendable {
+    /// The monotonic insertion sequence. Carried so the census can say how
+    /// much has happened since, and it is not printed.
+    let sequence: Int64
+    let startedUTC: String
+    let appVersion: String
+    /// `verified`, or `activated` once D7 has moved it on.
+    let state: MigrationRunState
+    /// What the verifier recorded, or nil when it recorded nothing. NOT the
+    /// same as there being no verified run — see the header.
+    let note: String?
+
+    init(sequence: Int64, startedUTC: String, appVersion: String,
+         state: MigrationRunState, note: String?) {
+        self.sequence = sequence
+        self.startedUTC = startedUTC
+        self.appVersion = appVersion
+        self.state = state
+        self.note = note
+    }
+
+    init?(row r: Row) {
+        guard let sequence = r["sequence"] as Int64?,
+              let started = r["startedUTC"] as String?,
+              let version = r["appVersion"] as String?,
+              let raw = r["state"] as String?,
+              let state = MigrationRunState(rawValue: raw) else { return nil }
+        self.init(sequence: sequence, startedUTC: started, appVersion: version,
+                  state: state, note: r["note"] as String?)
+    }
+
+    /// One line for the paste. The timestamp is when an import ran and the
+    /// note is the verifier's own count sentence — nothing from the athlete's
+    /// history, so §12.7's promise is untouched.
+    var line: String {
+        var said = "no note recorded"
+        if let note, !note.isEmpty { said = note }
+        return "\(startedUTC) · \(state.rawValue) · patch \(appVersion) · \(said)"
+    }
+}
+
 nonisolated struct LedgerCensus: Equatable, Sendable {
     let total: Int
     /// Rows still open in this launch.
     let openNow: Int
     /// Prior-process runs recovered into the terminal interrupted state.
     let interrupted: Int
+    /// RUNS THAT REACHED `verified`, INCLUDING ANY LATER ACTIVATED — patch 340,
+    /// and this is the sentence D7's entry gate is written against.
+    ///
+    /// Nothing in this app could state it before 340. The census counted five
+    /// things and this was not one of them, so *"a verified run exists over the
+    /// current data"* was readable only from the newest row — and every import,
+    /// every backgrounding and every return to the app writes a newer one.
+    ///
+    /// `activated` IS COUNTED HERE, and that is not a conflation.
+    /// `activateVerified` refuses every source state but `verified`, so an
+    /// activated run is a verified run that went one rung further. Counting
+    /// only `verified` would make this read "never" the moment D7 succeeds,
+    /// which is §12.54.2 arriving on schedule rather than by surprise.
+    let everVerified: Int
+    /// The newest of them, or nil when there is none.
+    let newestVerified: VerifiedRun?
+    /// How many runs have been OPENED since that one, or nil when there is no
+    /// verified run.
+    ///
+    /// FROM THE SEQUENCE, NOT FROM A COUNT OF ROWS. `sequence` is
+    /// AUTOINCREMENT and never reuses a value, so this figure survives the
+    /// retention prune that deletes the rows themselves. Counting rows would
+    /// under-report by exactly the number pruned, on the one line whose job is
+    /// to say whether the verification still describes the newest thing the
+    /// ledger knows about.
+    ///
+    /// WHAT IT DOES NOT SAY, and §12.87 is emphatic: zero runs since means the
+    /// LEDGER has not moved. It does not mean the stores have not. Import and
+    /// Verify each read the stores live, so binding a run to a dataset
+    /// fingerprint is still open work and this line is not a substitute for
+    /// it — it is the ledger half of the question, said out loud.
+    let runsSinceVerified: Int?
     /// Rows whose trigger is NULL.
     let unrecorded: Int
     /// Keyed by raw value, so an unknown string in the column would show up as
@@ -216,6 +297,16 @@ nonisolated struct LedgerCensus: Equatable, Sendable {
         lines.append("  trigger not recorded: \(unrecorded)")
         lines.append("  open right now: \(openNow)")
         lines.append("  interrupted, recovered at a later launch: \(interrupted)")
+        // PATCH 340. UNCONDITIONAL, all three, and the second says "never"
+        // rather than being absent — §12.54.2. These three lines are the only
+        // durable answer to D7's entry criterion.
+        lines.append("  runs ever verified: \(everVerified)")
+        lines.append("  newest verified run: "
+                     + (newestVerified?.line
+                        ?? "never — nothing on this database has been verified"))
+        lines.append("  runs opened since it: "
+                     + (runsSinceVerified.map { "\($0)" }
+                        ?? "not applicable — none verified"))
         lines.append("  retention: newest \(MigrationLedger.keepAutomaticRuns) "
                      + "successful automatic runs and newest "
                      + "\(MigrationLedger.keepAutomaticInterruptedRuns) automatic "
@@ -524,9 +615,39 @@ nonisolated enum MigrationLedger {
                     SELECT COUNT(*) FROM migration_run WHERE state = ?
                     """, arguments: [state.rawValue]) ?? 0
             }
+            // THE ROW, NOT THE NOTE COLUMN. See `VerifiedRun`'s header:
+            // a verified run that recorded no note and no verified run at all
+            // are opposite facts, and reading the column alone gives both of
+            // them nil.
+            let newestVerified = try Row.fetchOne(d, sql: """
+                SELECT sequence, startedUTC, appVersion, state, note
+                  FROM migration_run
+                 WHERE state IN (?, ?)
+                 ORDER BY sequence DESC
+                 LIMIT 1
+                """, arguments: [MigrationRunState.verified.rawValue,
+                                 MigrationRunState.activated.rawValue])
+                .flatMap(VerifiedRun.init(row:))
+
+            // FROM THE SEQUENCE, so the prune cannot flatter it. See
+            // `runsSinceVerified`.
+            let topSequence = try Int64.fetchOne(d, sql: """
+                SELECT MAX(sequence) FROM migration_run
+                """) ?? 0
+            let runsSince = newestVerified.map { Int(topSequence - $0.sequence) }
+
+            // HOISTED. `try` may not appear to the right of a non-assignment
+            // operator, so `try count(.verified) + try count(.activated)` does
+            // not compile — the same rule 337 hit with a ternary.
+            let verifiedRows = try count(.verified)
+            let activatedRows = try count(.activated)
+
             return LedgerCensus(total: total,
                                 openNow: try count(.running),
                                 interrupted: try count(.interrupted),
+                                everVerified: verifiedRows + activatedRows,
+                                newestVerified: newestVerified,
+                                runsSinceVerified: runsSince,
                                 unrecorded: unrecorded, byTrigger: byTrigger)
         }
     }

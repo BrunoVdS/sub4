@@ -272,6 +272,95 @@ nonisolated enum Sub4Import {
 
         var isClean: Bool { refusals.isEmpty }
 
+        /// WHAT THE IMPORT DID, FOR THE PASTE — patch 341, renamed at 341a.
+        ///
+        /// `redactedLines`, NOT `diagnosticLines`, AND THE NAME IS THE POINT.
+        /// This type already has a `diagnosticLines` that lists every refusal
+        /// by `externalID` — a Strava activity id — which is why it has never
+        /// been called from `diagnosticsText` and never should be. §12.7
+        /// promises that file carries no identifiers from the athlete's
+        /// history.
+        ///
+        /// `SnapshotManifest` made the same split at 248 and the paste already
+        /// calls its `redactedLines`. Two functions, two audiences, one
+        /// convention. 341 tried to add a second `diagnosticLines` instead and
+        /// the compiler refused it — which is the cheapest way this could have
+        /// been found.
+        ///
+        /// This report was drawn on the Database screen from the day it was
+        /// written and reached the diagnostics file NEVER. It lived in a
+        /// `@State` property, so the only way to send somebody "Notes: 1 new"
+        /// was a screenshot — which is what happened twice on 10 August, and
+        /// is how the gap was found. §12.57, fifth instance, and the last
+        /// block on that screen still trapped behind it.
+        ///
+        /// COUNTS ONLY, AND THAT IS NOT A STYLE CHOICE. `refusals` carries a
+        /// `Refusal.externalID` — a Strava activity id — and §12.7 promises
+        /// this paste carries none, so the refusals arrive here as a number
+        /// and their detail stays on the screen. Same rule the verifier's
+        /// `detail` follows.
+        ///
+        /// BUILT WITH `append`, NOT AS ONE ARRAY LITERAL. A list of forty
+        /// interpolated strings is an expression, and 327a lost a build to
+        /// exactly that — "unable to type-check in reasonable time" in a plain
+        /// `[String]`. §12.71.9.
+        var redactedLines: [String] {
+            var l: [String] = []
+            l.append("  activities: \(activitiesSeen) seen, "
+                     + "\(activitiesInserted) new, \(activitiesUpdated) refreshed")
+            l.append("  gear: \(gearInserted) new, \(gearAlreadyPresent) known, "
+                     + "\(gearRefreshed) refreshed, \(gearUnresolved) unresolved")
+            l.append("  notes: \(notesSeen) seen, \(notesImported) new, "
+                     + "\(notesUpdated) refreshed, \(notesRemoved) removed")
+            l.append("  reviews: \(reviewsSeen) seen, \(reviewsImported) new, "
+                     + "\(reviewsUpdated) refreshed, \(reviewsRemoved) removed")
+            l.append("  match decisions: \(matchDecisionsSeen) seen, "
+                     + "\(matchDecisionsImported) new, "
+                     + "\(matchDecisionsUpdated) refreshed, "
+                     + "\(matchDecisionsRemoved) removed")
+            l.append("    ignored: \(matchDecisionsIgnored), "
+                     + "unresolved: \(matchDecisionsUnresolved)")
+            l.append("  commute decisions: \(correctionsSeen) seen, "
+                     + "\(correctionsImported) new, \(correctionsUpdated) refreshed, "
+                     + "\(correctionsRemoved) removed")
+            l.append("    ignored: \(correctionsIgnored), "
+                     + "unresolved: \(correctionsUnresolved)")
+            l.append("  weather: \(weatherSeen) seen, \(weatherImported) new, "
+                     + "\(weatherUpdated) refreshed")
+            l.append("    unmatched: \(weatherUnmatched), ignored: \(weatherIgnored)")
+            l.append("  traces: \(recordingsSeen) seen, \(recordingsImported) new, "
+                     + "\(recordingsUpdated) replaced, "
+                     + "\(recordingsUnchanged) unchanged")
+            l.append("    unmatched: \(recordingsUnmatched), "
+                     + "too short: \(recordingsShort), ignored: \(recordingsIgnored)")
+            l.append("  trace samples written: \(samplesImported)")
+            l.append("  details: \(detailsSeen) seen, \(detailsImported) new, "
+                     + "\(detailsUpdated) replaced, \(detailsUnchanged) unchanged")
+            l.append("    unmatched: \(detailsUnmatched), ignored: \(detailsIgnored)")
+            l.append("  splits, laps, efforts written: \(splitsImported), "
+                     + "\(lapsImported), \(effortsImported)")
+            l.append("  refused recordings: \(rejectionsSeen) seen, "
+                     + "\(rejectionsImported) new, \(rejectionsUpdated) refreshed")
+            l.append("  stopped asking: \(workItemsSeen) seen, "
+                     + "\(workItemsImported) new, \(workItemsUpdated) refreshed, "
+                     + "\(workItemsRemoved) removed")
+            l.append("  athlete: profile \(profileImported) new / "
+                     + "\(profileUpdated) refreshed, zones \(zonesImported), "
+                     + "resting months \(restingImported) new / "
+                     + "\(restingUpdated) refreshed")
+            l.append("  sync position: \(syncStateImported) new, "
+                     + "\(syncStateUpdated) refreshed")
+            l.append("  plan: \(planUnchanged > 0 ? "unchanged" : "written") — "
+                     + "\(planWeeks) weeks, \(planSessions) sessions, "
+                     + "\(planBlocks) blocks")
+            l.append("  reconciled: \(reconciled.isRunning ? "yes" : "no")")
+            l.append("  rows removed in total: \(removedTotal)")
+            // A NUMBER, NOT A LIST. Each refusal names an activity.
+            l.append("  refused: \(refusals.count)")
+            l.append(String(format: "  took: %.3f s", seconds))
+            return l
+        }
+
         /// What the ledger stores about this run — patch 255.
         ///
         /// COUNTS ONLY. The ledger is read back into the redacted diagnostic
