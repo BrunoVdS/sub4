@@ -691,6 +691,12 @@ enum LegacySnapshot {
         var pruned: [SnapshotReceipt] = []
         var warnings: [String] = []
 
+        // PATCH 339. Folders 338b emptied are adopted into receipts before the
+        // candidates are chosen; they are invisible to `verifiedFullSnapshots`
+        // by construction and would otherwise never be reachable again.
+        warnings += adoptFoldersPrunedBeforeReceipts(appVersion: appVersion,
+                                                     base: base, fm: fm)
+
         // A capture may have an id older than folders already on disk if the
         // device clock was corrected or a future-dated backup was restored.
         // The snapshot that triggered retention is always one of the retained
@@ -827,6 +833,106 @@ enum LegacySnapshot {
 
     /// A manifest saying "complete" is historical evidence. Before it can
     /// justify deletion of another copy, the payload it names is re-hashed.
+    /// Folders emptied by patch 338b's retention, which removed the copies and
+    /// left the manifest in place with a `pruned.json` beside it.
+    ///
+    /// THE RECEIPT SCHEME THAT REPLACED IT CANNOT SEE THEM. `verifiedFullSnapshots`
+    /// requires the payload to match the manifest, so a folder with no payload
+    /// never becomes a candidate and can never be receipted. Three folders on
+    /// the device sat outside both designs: counted as full, holding nothing,
+    /// and unreachable by retention for ever.
+    ///
+    /// ABSENT IS NOT CORRUPT, AND THAT DISTINCTION IS THE SAFETY OF THIS.
+    /// A folder whose copies are WRONG is evidence of corruption, and deleting
+    /// it would destroy the evidence. A folder whose copies are ABSENT is a
+    /// prune that completed under an older scheme and is missing only its
+    /// paperwork. Only the second is adopted. The first is left in place and
+    /// reported, which is the same choice `enforceRetention` makes when a
+    /// receipt will not verify.
+    ///
+    /// The manifest is the whole record — every declared path, its size and its
+    /// SHA-256 — so a receipt built from it says exactly what a receipt written
+    /// at prune time would have said. Only `prunedByAppVersion` differs, and it
+    /// names 338b rather than claiming this build removed copies that were
+    /// already gone.
+    private nonisolated static func adoptFoldersPrunedBeforeReceipts(
+        appVersion: String,
+        base: URL,
+        fm: FileManager
+    ) -> [String] {
+        let root = base.appendingPathComponent(directoryName, isDirectory: true)
+        var warnings: [String] = []
+
+        for id in ids(base: base, fm: fm) {
+            let folder = root.appendingPathComponent(id, isDirectory: true)
+            let manifestURL = folder.appendingPathComponent("manifest.json")
+            guard let data = try? Data(contentsOf: manifestURL),
+                  let manifest = try? JSONDecoder().decode(SnapshotManifest.self,
+                                                           from: data),
+                  manifest.id == id
+            else { continue }
+
+            let copies = manifest.entries.filter { $0.exists && $0.copied }
+            guard !copies.isEmpty else { continue }
+            let present = copies.filter {
+                fm.fileExists(atPath: folder
+                    .appendingPathComponent($0.relativePath).path)
+            }
+            // Every copy still there: a live snapshot, and none of this
+            // function's business.
+            if present.count == copies.count { continue }
+            // Some there and some not: not a completed prune. Left alone.
+            if !present.isEmpty {
+                warnings.append("\(id) holds \(present.count) of "
+                                + "\(copies.count) copies and was left in full.")
+                continue
+            }
+
+            let capturedUTC = manifest.createdDate.map(iso8601)
+                ?? date(fromStamp: id).map(iso8601)
+                ?? manifest.createdUTC
+            let receipt = SnapshotReceipt(
+                schemaVersion: receiptSchemaVersion,
+                id: id,
+                capturedUTC: capturedUTC,
+                appVersion: manifest.appVersion,
+                copiedCount: manifest.copiedCount,
+                presentCount: manifest.presentCount,
+                missingCount: manifest.missingCount,
+                failureCount: manifest.failureCount,
+                totalBytes: manifest.totalBytes,
+                manifestSHA256: hex(data),
+                manifest: manifest,
+                prunedUTC: iso8601(Date()),
+                prunedByAppVersion: "338b, adopted at \(appVersion)")
+            let url = receiptURL(id: id, base: base)
+
+            do {
+                guard !fm.fileExists(atPath: url.path) else {
+                    throw SnapshotRetentionError.receiptAlreadyExists(id)
+                }
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                let bytes = try encoder.encode(receipt)
+                try bytes.write(to: url, options: FileProtection.options)
+                let readBack = try Data(contentsOf: url)
+                let decoded = try JSONDecoder().decode(SnapshotReceipt.self,
+                                                       from: readBack)
+                guard readBack == bytes, decoded == receipt else {
+                    throw SnapshotRetentionError.receiptDidNotVerify(id)
+                }
+                // The folder goes only after the receipt has been read back
+                // byte for byte, and the receipt goes if the folder will not.
+                do { try fm.removeItem(at: folder) }
+                catch { try? fm.removeItem(at: url); throw error }
+            } catch {
+                warnings.append("\(id) was kept in full: "
+                                + error.localizedDescription)
+            }
+        }
+        return warnings
+    }
+
     private nonisolated static func verifiedFullSnapshots(
         base: URL,
         fm: FileManager
