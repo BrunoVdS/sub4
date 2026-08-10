@@ -8834,6 +8834,82 @@ A paste that omits the empty tables and a snapshot row that overstates its
 losses are both survivable while the person reading them is the person who
 generated them. They stop being survivable the moment the paste is the evidence.
 
+## 12.90 Where the app reads from, decided once — patch 342, D7 slice B0
+
+### 12.90.1 The decision this implements
+
+A3 §2.2, settled 10 August 2026: every D7 slice keeps a selectable legacy path,
+the flag flips at B9, and the choice is made by an explicit persistence mode
+derived from the ledger — **never by a repository returning empty**.
+
+That last clause is the whole of the risk. After activation an empty database
+IS the answer and must be shown as one. A fallback triggered by emptiness would
+serve an empty training history as though it were real, which `Sub4Launch`'s
+own header names as the worst failure this app has available.
+
+`PersistenceAuthority.derive` is therefore a pure function of three facts, and
+not one of them is a repository result.
+
+### 12.90.2 The hole the plan left, and the shape of the patch
+
+The plan says one activation authority: the newest verified `migration_run`
+becomes `activated` in a checked transaction, and no preference may
+independently claim activation. Correct, and incomplete.
+
+**A database that will not open cannot tell you whether it was activated.** The
+ledger is inside the thing that failed. So at the one moment the distinction
+matters most — an activated install with a corrupt database — `.blocked` and
+`.legacyAuthoritative` are indistinguishable from the ledger alone.
+
+`PersistenceAuthority.everActivated` is a `UserDefaults` mirror written only
+AFTER the ledger transaction commits. It is not a second authority, and the
+property that makes that true is asserted by test: **it can only ever make the
+outcome more conservative.** It can turn a failed open into `.blocked`. It can
+never produce `.databaseAuthoritative` — that branch requires `databaseOpened`
+and the ledger row.
+
+The direction is the argument. A mirror that could grant permission would be
+the second authority the plan forbids. One that can only withhold it fails
+towards refusing to serve data, which is the harmless side — the same reasoning
+`MigrationLedger.prunableTriggers` uses about a leak and a shredder.
+
+The key is namespaced and asserted, because `DataLifecycle` must remove it with
+everything else: a flag surviving "Delete local data" would block a reinstalled
+app over a database that no longer exists.
+
+### 12.90.3 Four states, eight inputs, one table
+
+Two of the four states have never occurred on any device and one of them never
+should, which is exactly why `derive` is pure — every combination is driven
+from a test. `everyCombinationIsCovered` states all eight answers, so a branch
+added later without a decision appears as a mismatch rather than as a state
+nobody named. An account beats a list.
+
+### 12.90.4 What B0 deliberately does not do
+
+Nothing reads the value. No store changes, no screen changes, no behaviour
+change of any kind — `b0DoesNotFlipTheFlag` asserts the flag is still false.
+A value nothing consumes can be wrong without consequence, and that is what
+makes this slice checkable on its own.
+
+`Sub4Launch`'s header was corrected in the same patch. It has said since it was
+written that the flag flips at the first slice; that is not the design being
+built, and a comment that is confidently wrong about the next rung is worse
+than no comment. §12.34, on the file that owns the launch.
+
+### 12.90.5 What B1 needs that does not exist yet
+
+Recorded here so the next session does not rediscover it:
+
+- **`RootView` has no failure branch.** Sixty-nine lines, one condition, and
+  `isFinished` is `state != .opening` — so `.failed` reaches `ContentView()`
+  today. That is correct while the database is a shadow. B9 does not extend a
+  recovery screen; it has to design one.
+- **`match_decision` and `rejection` have a table and no reader.** B2 writes
+  both.
+- **`ActivityRoster.settle` has exactly two production call sites**, both in
+  `ActivityStore`. B3 repoints those two and must not create a third.
+
 ## 12.89 The last three things behind the glass — patch 341
 
 ### 12.89.1 The adapter that had already been wrong once

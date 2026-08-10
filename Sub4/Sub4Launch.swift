@@ -68,9 +68,36 @@ final class Sub4Launch {
     /// second `DatabaseQueue` against the same file.
     private(set) var database: Sub4Database?
 
-    /// See the header. Flip in 3.3.3, when a store first reads from the
-    /// database, and change `RootView` to hold at the failure screen.
+    /// See the header — AND THE HEADER IS NOW OUT OF DATE, corrected here at
+    /// 342 rather than left to be believed.
+    ///
+    /// It says this must become `true` "the moment the first store reads its
+    /// data from the database". That describes a design that was considered
+    /// and NOT adopted. A3 §2.2 settled the other one on 10 August 2026: every
+    /// D7 slice keeps a selectable legacy path, and the flip happens at **B9**,
+    /// after all eight slices, together with the first call to
+    /// `MigrationLedger.activateVerified`.
+    ///
+    /// What makes that safe is not this flag. It is `PersistenceMode`, which
+    /// decides where reads come from ONCE, from facts about the database, and
+    /// can never be reached by a repository returning empty. This flag governs
+    /// only what a failed MIGRATION does; that type governs what a failed OPEN
+    /// does, and the second is the one D7 turns on.
     nonisolated static let migrationFailureBlocksTheApp = false
+
+    /// WHERE PRODUCTION READS COME FROM THIS LAUNCH — D7 slice B0, patch 342.
+    ///
+    /// Computed once, in `begin()`, on both the success and the failure branch.
+    /// Nothing consumes it yet: B1 is the first slice to act on it, and that
+    /// is deliberate — a value nothing reads is a value that can be wrong
+    /// without consequence, which is what makes B0 checkable on its own.
+    ///
+    /// `.legacyAuthoritative` before it is computed rather than an optional,
+    /// because every caller from B1 onward wants an answer and "not yet known"
+    /// is not one of the four states the app can be in. The window in which it
+    /// holds that value is `RootView`'s `preparing` screen, which serves
+    /// nothing. §12.90.
+    private(set) var persistence: PersistenceMode = .legacyAuthoritative
 
     /// How many runs this launch found open and closed — patch 338. Zero on
     /// every clean launch, and the number is worth having rather than merely
@@ -147,8 +174,28 @@ final class Sub4Launch {
                 }
                 self.database = db
                 self.state = .ready
+                // PATCH 342. AFTER the ledger recovery above, because an
+                // activated run is a ledger fact and the ledger has just been
+                // touched. Read through `census`, which 340 gave the
+                // activated-or-verified query — §12.43, do not write a second
+                // one.
+                let activated = (try? MigrationLedger.census(db))?
+                    .newestVerified?.state == .activated
+                self.persistence = PersistenceAuthority.derive(
+                    activatedRun: activated,
+                    databaseOpened: true,
+                    everActivated: PersistenceAuthority.everActivated())
             case .threw(let message):
                 self.state = .failed(message)
+                // THE DATABASE DID NOT OPEN, so the ledger cannot be asked
+                // whether this install was activated. The mirror is the only
+                // thing that can say so, and it may only withhold — it turns
+                // this into `.blocked` and can never produce
+                // `.databaseAuthoritative`. See `PersistenceMode`'s header.
+                self.persistence = PersistenceAuthority.derive(
+                    activatedRun: false,
+                    databaseOpened: false,
+                    everActivated: PersistenceAuthority.everActivated())
             }
         }
         // Assigned with no suspension point between, so on the main actor this
