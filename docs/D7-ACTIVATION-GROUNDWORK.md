@@ -127,11 +127,32 @@ nothing", the app serves an empty profile as though it were real. That is the
 §12.15 failure with the highest possible stakes, and it is what
 `AthleteLoad.failed` versus `.loaded(empty)` exists to prevent.
 
-**Decision 1, and it is yours:** does each slice keep a selectable legacy path
-through D7 (plan's B9), or does the flag flip at B1 and a failed open block the
-app from the first slice (source comment)? I recommend the plan's version with
-one amendment: the fallback is chosen by an explicit **persistence mode** read
-once at launch, never by a repository returning empty. §3 below.
+### 2.2 DECISION 1 — SETTLED 10 August 2026
+
+**Every slice keeps a selectable legacy path through D7. The flag flips at B9.
+The choice is made by an explicit `PersistenceMode`, read once at launch and
+derived from the migration ledger — never by a repository returning empty.**
+
+The plan's ordering, with the amendment. What this buys: each slice is
+reversible on its own, and a database problem in the middle of D7 leaves a
+working app on the phone Bruno trains with.
+
+What it costs, stated plainly because it is the whole risk of this stage: the
+mode has to be right. The moment anything derives "read from JSON" from *the
+database gave me nothing*, the app serves an empty profile as real data — and
+an empty history that looks like real data is, in `Sub4Launch`'s own words, the
+worst failure this app has available.
+
+**`Sub4Launch`'s header is therefore now wrong** and says so in a comment that
+has been correct since it was written. It describes flipping at the first
+slice, which is not the design being built. B1 must correct that comment in the
+same patch that first reads a store from the database, or the next person to
+read it will believe the flag is late.
+
+**The negative control this decision requires**, and it is not optional: a test
+that forces a failed open under `databaseAuthoritative` and asserts the app
+does NOT reach normal content. §12.69 — a guard that cannot fail has not been
+tested, and this is the guard the whole stage rests on.
 
 ---
 
@@ -150,6 +171,11 @@ PersistenceMode
   ├─ shadow(slice)          the slice under test reads both, compares, serves legacy
   └─ databaseAuthoritative  an activated run exists and the database opened
 ```
+
+**Settled at decision 1.** `shadow(slice)` is the state the app lives in for the
+whole of D7: the slice under test hydrates from the repository, the comparison
+runs, and production is served from whichever side the mode names. `B9` is the
+single transition to `databaseAuthoritative`, and it is the only one.
 
 Read once, at launch, into a value every store is handed. Three properties it
 must have and today's code has none of them:
@@ -273,7 +299,20 @@ Named so the next session does not treat this document as complete:
 > No production read or launch failure can switch ownership accidentally or
 > fall back to a misleading empty state.
 
-That is not met yet and cannot be until decision 1 is made, because the
-fallback rule is the thing being decided. Everything else in this document is
-inventory, and the inventory is complete for the eleven readers and nine
-repositories named in §1.
+**Decision 1 is made (§2.2), so the rule now exists.** The gate is met when
+three things are true, and none of them is true today:
+
+1. `PersistenceMode` exists, is derived from the ledger, and is read in exactly
+   one place — asserted by a test that fails if a second reader appears.
+2. A failed open under `databaseAuthoritative` cannot reach normal content —
+   asserted by the negative control named in §2.2.
+3. No repository's empty result can select the legacy path. The way to test
+   this is to make a repository return `.loaded(empty)` and assert the app
+   shows an empty screen rather than silently reading JSON, because after
+   activation an empty database IS the answer and must be shown as one.
+
+Everything else in this document is inventory, and the inventory is complete
+for the eleven readers and nine repositories named in §1.
+
+**B1 may not begin until those three exist.** They are `B0` in the plan's
+numbering, and B0 is now the next patch.
