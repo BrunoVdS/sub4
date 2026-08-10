@@ -569,12 +569,10 @@ enum SemanticVerifier {
     @discardableResult
     static func record(_ report: VerificationReport,
                        for runID: String,
-                       in db: Sub4Database,
-                       now: String = Sub4Import.iso8601(Date())) throws -> Bool {
+                       in db: Sub4Database) throws -> Bool {
         guard report.passed else { return false }
-        try MigrationLedger.finish(db, id: runID, state: .verified,
-                                   note: report.ledgerNote, now: now)
-        return true
+        return try MigrationLedger.verifyPending(db, id: runID,
+                                                 note: report.ledgerNote)
     }
 
     // MARK: Small

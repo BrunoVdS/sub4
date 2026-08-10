@@ -72,6 +72,15 @@ final class Sub4Launch {
     /// database, and change `RootView` to hold at the failure screen.
     nonisolated static let migrationFailureBlocksTheApp = false
 
+    /// How many runs this launch found open and closed — patch 338. Zero on
+    /// every clean launch, and the number is worth having rather than merely
+    /// the act: three of these accumulated unremarked before an off-device read
+    /// of the container found them.
+    private(set) var interruptedAtLaunch = 0
+    /// Non-fatal because the database is still a shadow read source, but never
+    /// silent: Settings and the diagnostic paste surface the exact failure.
+    private(set) var ledgerRecoveryFailure: String?
+
     var isFinished: Bool { state != .opening }
 
     var failureMessage: String? {
@@ -114,6 +123,28 @@ final class Sub4Launch {
 
             switch outcome {
             case .opened(let db):
+                // PATCH 338 — THE ONE MOMENT `running` IS UNAMBIGUOUS.
+                //
+                // Every `migration_run` row still open belongs to a process
+                // that no longer exists: this launch has not opened one yet,
+                // and no previous launch survives. So the rows can be closed as
+                // `interrupted` with no timeout, no clock comparison and no
+                // guess. Anywhere later in the app this call would close the
+                // live run instead — which is why it is here and not in a
+                // maintenance routine somebody could move. §12.86.
+                //
+                do {
+                    self.interruptedAtLaunch =
+                        try MigrationLedger.closeInterrupted(db).count
+                    self.ledgerRecoveryFailure = nil
+                } catch {
+                    // The database is still a shadow source before D7, so this
+                    // bookkeeping failure does not block training screens. It
+                    // is retained as an explicit health finding rather than
+                    // disappearing behind `try?`.
+                    self.interruptedAtLaunch = 0
+                    self.ledgerRecoveryFailure = String(describing: error)
+                }
                 self.database = db
                 self.state = .ready
             case .threw(let message):

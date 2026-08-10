@@ -20,9 +20,10 @@
 //
 //  WHAT IT REFUSES TO DO
 //  ---------------------
-//  COPY, NEVER MOVE. The legacy stores keep working during and after a
+//  COPY, NEVER MOVE. The live legacy stores keep working during and after a
 //  snapshot, and contract item 12 keeps them for at least one proven release
-//  window. Nothing here removes or renames a byte the athlete owns.
+//  window. Retention may remove an older verified COPY after preserving its
+//  complete manifest receipt; it never removes or renames a live input.
 //
 //  A MISSING FILE IS RECORDED AS MISSING. Not skipped. `notes.json` absent
 //  from a fresh install and `notes.json` absent because something deleted it
@@ -31,9 +32,12 @@
 //  file that was never expected — which is precisely how `details.json`
 //  survived four versions of this app unlisted.
 //
-//  NOTHING IS DECODED. The snapshot runs before any store is asked what it
-//  holds, because item 3 says "before decoding" and because a decoder is the
-//  one thing that can turn a damaged file into an empty one.
+//  NO LEGACY FILE IS DECODED. The snapshot runs before any store is asked what
+//  it holds, because item 3 says "before decoding" and because a decoder is the
+//  one thing that can turn a damaged file into an empty one. UserDefaults is a
+//  separate API-backed store: its declared keys are losslessly serialised into
+//  `preferences.plist` because copying the physical preferences file is neither
+//  scoped nor safe while the process owns it.
 //
 //  THE SNAPSHOT IS NOT AN INPUT TO ITSELF
 //  --------------------------------------
@@ -72,7 +76,7 @@ import CryptoKit
 ///
 /// `exists == false` is a normal and expected row. Every other field is nil in
 /// that case, and the absence of a hash is not a failure — it is the fact.
-nonisolated struct SnapshotEntry: Codable, Hashable {
+nonisolated struct SnapshotEntry: Codable, Hashable, Sendable {
     /// The name `DataLifecycle` uses: `notes.json`, or `details` for a whole
     /// directory of per-activity files.
     let declared: String
@@ -97,7 +101,7 @@ nonisolated struct SnapshotEntry: Codable, Hashable {
 
 /// What one capture found and saved. Written to `manifest.json` beside the
 /// copies, so the folder is self-describing without the app that made it.
-nonisolated struct SnapshotManifest: Codable, Hashable {
+nonisolated struct SnapshotManifest: Codable, Hashable, Sendable {
     /// The folder name, which is the timestamp: `2026-08-05-141233`.
     let id: String
     let createdUTC: String
@@ -105,6 +109,19 @@ nonisolated struct SnapshotManifest: Codable, Hashable {
     /// change is a different artefact and has to be recognisable as one.
     let appVersion: String
     let entries: [SnapshotEntry]
+
+    /// `createdUTC` parsed, or nil for a manifest written before patch 338 —
+    /// where the field holds `id` rather than a timestamp.
+    ///
+    /// NIL RATHER THAN A FALLBACK TO `id`'s TIME. The id encodes the same
+    /// instant and it would parse, but a reader asking this question is asking
+    /// what the manifest RECORDED, and the honest answer for an old one is that
+    /// it recorded nothing. §12.15.
+    var createdDate: Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: createdUTC)
+    }
 
     var presentCount: Int  { entries.filter(\.exists).count }
     var missingCount: Int  { entries.filter { !$0.exists }.count }
@@ -233,6 +250,50 @@ nonisolated struct SnapshotManifest: Codable, Hashable {
     }
 }
 
+/// A generated migration input that is not an Application Support file. The
+/// current instance is `preferences.plist`: a filtered, lossless copy of the
+/// UserDefaults keys declared by `DataLifecycle`, never the whole preferences
+/// domain and never Keychain data.
+nonisolated struct SnapshotSupplement: Hashable, Sendable {
+    let declared: String
+    let relativePath: String
+    let data: Data
+}
+
+/// Small audit record retained after an old full snapshot is pruned. This is
+/// not a backup: it preserves the exact manifest and its digest, but not the
+/// payload bytes needed for a restore.
+nonisolated struct SnapshotReceipt: Codable, Hashable, Sendable {
+    let schemaVersion: Int
+    let id: String
+    let capturedUTC: String
+    let appVersion: String
+    let copiedCount: Int
+    let presentCount: Int
+    let missingCount: Int
+    let failureCount: Int
+    let totalBytes: Int
+    let manifestSHA256: String
+    /// The complete per-path inventory. Keeping only its hash would prove that
+    /// some bytes once existed without retaining the details Bruno asked to
+    /// inspect later.
+    let manifest: SnapshotManifest
+    let prunedUTC: String
+    let prunedByAppVersion: String
+}
+
+nonisolated struct SnapshotRetentionReport: Equatable, Sendable {
+    let fullSnapshots: Int
+    let receipts: Int
+    let pruned: [SnapshotReceipt]
+    let warnings: [String]
+}
+
+nonisolated struct SnapshotCaptureResult: Sendable {
+    let manifest: SnapshotManifest
+    let retention: SnapshotRetentionReport
+}
+
 // MARK: - Taking one
 
 /// `nonisolated` for the same reason `AppSupportItem` is: it is thrown out of
@@ -242,6 +303,8 @@ nonisolated enum SnapshotError: LocalizedError {
     case alreadyExists(String)
     case couldNotCreate(String)
     case couldNotWriteManifest(String)
+    case invalidStamp(String)
+    case unsafePath(String)
 
     var errorDescription: String? {
         switch self {
@@ -252,6 +315,25 @@ nonisolated enum SnapshotError: LocalizedError {
             + "overwritten — that is the point of them."
         case .couldNotCreate(let why):  "The snapshot folder could not be created: \(why)"
         case .couldNotWriteManifest(let why): "The manifest could not be written: \(why)"
+        case .invalidStamp(let value): "\(value) is not a snapshot timestamp."
+        case .unsafePath(let value): "\(value) is not a safe snapshot-relative path."
+        }
+    }
+}
+
+private nonisolated enum SnapshotRetentionError: LocalizedError {
+    case receiptDidNotVerify(String)
+    case receiptAlreadyExists(String)
+    case newSnapshotDidNotReverify(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .receiptDidNotVerify(let id):
+            "The retention receipt for \(id) did not read back exactly."
+        case .receiptAlreadyExists(let id):
+            "An audit receipt already reserves snapshot id \(id)."
+        case .newSnapshotDidNotReverify(let id):
+            "The new snapshot \(id) did not pass the independent retention re-check."
         }
     }
 }
@@ -348,8 +430,38 @@ enum LegacySnapshot {
 
     // MARK: Taking it
 
+    /// Production entry point. One instant derives both the folder identifier
+    /// and the manifest timestamp, so the two cannot drift.
+    @discardableResult
+    nonisolated static func capture(at capturedAt: Date,
+                                    appVersion: String,
+                                    base: URL? = AppSupportItem.container,
+                                    items: [AppSupportItem],
+                                    supplements: [SnapshotSupplement] = [],
+                                    fm: FileManager = .default) throws -> SnapshotCaptureResult {
+        try capture(stamp: stamp(for: capturedAt),
+                    createdUTC: iso8601(capturedAt),
+                    appVersion: appVersion, base: base, items: items,
+                    supplements: supplements, fm: fm)
+    }
+
+    /// Compatibility helper for the existing fixed-folder tests. The timestamp
+    /// is parsed from the supplied id rather than read from a second clock.
+    @discardableResult
+    nonisolated static func capture(stamp: String,
+                                    appVersion: String,
+                                    base: URL? = AppSupportItem.container,
+                                    items: [AppSupportItem],
+                                    fm: FileManager = .default) throws -> SnapshotManifest {
+        guard let date = date(fromStamp: stamp) else {
+            throw SnapshotError.invalidStamp(stamp)
+        }
+        return try capture(at: date, appVersion: appVersion, base: base,
+                           items: items, fm: fm).manifest
+    }
+
     /// Copy everything the inventory declares into `snapshots/<stamp>/`, verify
-    /// each copy by hash, and write the manifest beside them.
+    /// each copy by hash, write the manifest, then apply retention.
     ///
     /// `stamp` is a parameter rather than read from a clock, so a test can ask
     /// for a known folder name and so two captures in the same second cannot
@@ -360,17 +472,56 @@ enum LegacySnapshot {
     /// site — which for this function is inside a detached task. Passing the
     /// list in forces the read to happen where it is legal and makes the
     /// dependency visible instead of hidden in a signature.
-    @discardableResult
-    nonisolated static func capture(stamp: String,
-                                    appVersion: String,
-                                    base: URL? = AppSupportItem.container,
-                                    items: [AppSupportItem],
-                                    fm: FileManager = .default) throws -> SnapshotManifest {
+    private nonisolated static func capture(stamp: String,
+                                            createdUTC: String,
+                                            appVersion: String,
+                                            base: URL?,
+                                            items: [AppSupportItem],
+                                            supplements: [SnapshotSupplement],
+                                            fm: FileManager) throws -> SnapshotCaptureResult {
         guard let base else { throw SnapshotError.applicationSupportUnreachable }
         let snapshots = base.appendingPathComponent(directoryName, isDirectory: true)
         let folder = snapshots.appendingPathComponent(stamp, isDirectory: true)
 
-        if fm.fileExists(atPath: folder.path) { throw SnapshotError.alreadyExists(stamp) }
+        if fm.fileExists(atPath: folder.path)
+            || fm.fileExists(atPath: receiptURL(id: stamp, base: base).path) {
+            throw SnapshotError.alreadyExists(stamp)
+        }
+
+        // Resolve and validate every destination before creating the folder.
+        // The production inventory is fixed code, but supplements are an API
+        // boundary and no future caller should be able to escape the dated
+        // folder or overwrite its manifest.
+        var planned = plan(base: base, items: items, fm: fm)
+        var supplementalByPath: [String: SnapshotSupplement] = [:]
+        for entry in planned {
+            guard payloadPathIsSafe(entry.relativePath) else {
+                throw SnapshotError.unsafePath(entry.relativePath)
+            }
+        }
+        for supplement in supplements.sorted(by: { $0.relativePath < $1.relativePath }) {
+            guard payloadPathIsSafe(supplement.relativePath) else {
+                throw SnapshotError.unsafePath(supplement.relativePath)
+            }
+            guard supplementalByPath[supplement.relativePath] == nil,
+                  !planned.contains(where: { $0.relativePath == supplement.relativePath })
+            else {
+                throw SnapshotError.couldNotCreate(
+                    "two inputs use \(supplement.relativePath)")
+            }
+            supplementalByPath[supplement.relativePath] = supplement
+            planned.append(.init(declared: supplement.declared,
+                                 relativePath: supplement.relativePath,
+                                 exists: true, bytes: supplement.data.count,
+                                 modifiedUTC: createdUTC,
+                                 sha256: hex(supplement.data), copied: false,
+                                 error: nil))
+        }
+        guard Set(planned.map(\.relativePath)).count == planned.count else {
+            throw SnapshotError.couldNotCreate("the source inventory contains duplicate paths")
+        }
+        planned.sort { $0.relativePath < $1.relativePath }
+
         do {
             try fm.createDirectory(at: folder, withIntermediateDirectories: true)
         } catch {
@@ -381,12 +532,11 @@ enum LegacySnapshot {
         FileProtection.protect(directory: snapshots, using: fm)
         FileProtection.protect(directory: folder, using: fm)
 
-        let planned = plan(base: base, items: items, fm: fm)
         var written: [SnapshotEntry] = []
         written.reserveCapacity(planned.count)
 
         for entry in planned {
-            guard entry.exists, entry.sha256 != nil else {
+            guard entry.exists else {
                 // Missing, or unreadable and already carrying its error. Kept
                 // in the manifest exactly as found.
                 written.append(entry)
@@ -400,7 +550,29 @@ enum LegacySnapshot {
                     try fm.createDirectory(at: parent, withIntermediateDirectories: true)
                     FileProtection.protect(directory: parent, using: fm)
                 }
-                try fm.copyItem(at: source, to: destination)
+
+                if let supplement = supplementalByPath[entry.relativePath] {
+                    try supplement.data.write(to: destination,
+                                              options: FileProtection.options)
+                } else {
+                    var isDirectory: ObjCBool = false
+                    if fm.fileExists(atPath: source.path, isDirectory: &isDirectory),
+                       isDirectory.boolValue {
+                        // A declared empty directory is a real input. The old
+                        // path left it `copied == false`, making an otherwise
+                        // healthy snapshot permanently incomplete.
+                        try fm.createDirectory(at: destination,
+                                               withIntermediateDirectories: true)
+                        FileProtection.protect(directory: destination, using: fm)
+                        written.append(with(entry, copied: true, error: nil))
+                        continue
+                    }
+                    guard entry.sha256 != nil else {
+                        written.append(entry)
+                        continue
+                    }
+                    try fm.copyItem(at: source, to: destination)
+                }
 
                 // The second hash. A copy that differs from its source is the
                 // one failure a snapshot must never keep quiet about.
@@ -418,10 +590,36 @@ enum LegacySnapshot {
             }
         }
 
+        // PATCH 338 — `createdUTC` NOW HOLDS A UTC TIMESTAMP.
+        //
+        // It held `stamp` from the day it was written, so `id` and `createdUTC`
+        // were the same string — `"2026-08-09-143235"` — in every manifest on
+        // disk. The field name promised ISO-8601 and delivered a folder name,
+        // which is §12.48's "a timestamp that is a name is not a time" arriving
+        // from the other direction.
+        //
+        // THE KEY IS NOT RENAMED. Four manifests already on disk carry it, one
+        // of them the only copy of stores this project has already lost once,
+        // and `SnapshotManifest` is `Codable` with a non-optional field: a
+        // rename makes every existing manifest undecodable. Old manifests keep
+        // decoding, their value is simply the id — which `createdDate` reads
+        // back as nil rather than as a wrong date.
         let manifest = SnapshotManifest(id: stamp,
-                                        createdUTC: stamp,
+                                        createdUTC: createdUTC,
                                         appVersion: appVersion,
                                         entries: written)
+        // THE PRUNE RIDES ALONG — patch 338, and for `MigrationLedger`'s reason
+        // (§12.59.6): a step that can be skipped without symptom will be. A
+        // caller that forgot to prune would produce a phone that fills up and
+        // a screen that says nothing is wrong.
+        //
+        // GUARDED ON `isComplete`, which is `failureCount == 0 && copiedCount
+        // == presentCount` — every file that existed was copied AND its copy
+        // re-hashed to the same value. Pruning on anything weaker would remove
+        // a good snapshot on the strength of a bad one.
+        //
+        // AFTER the manifest is written, so a crash between the two leaves the
+        // old copies intact rather than leaving no readable snapshot at all.
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
@@ -431,7 +629,308 @@ enum LegacySnapshot {
         } catch {
             throw SnapshotError.couldNotWriteManifest(error.localizedDescription)
         }
-        return manifest
+        let retention = manifest.isComplete
+            ? enforceRetention(protectedID: manifest.id,
+                               appVersion: appVersion, base: base, fm: fm)
+            : retentionReport(base: base, fm: fm)
+        return SnapshotCaptureResult(manifest: manifest, retention: retention)
+    }
+
+    // MARK: Retention — patch 338
+
+    /// How many complete snapshots keep their payload files. Older verified
+    /// copies become compact audit receipts; incomplete/unreadable folders are
+    /// preserved rather than counted as safe fallbacks.
+    ///
+    /// TWO, NOT ONE, AND THE REASON IS THE SEQUENCE RATHER THAN THE SIZE. The
+    /// obvious policy — delete the previous snapshot as the new one is written
+    /// — destroys the only good copy at the exact moment the new one is
+    /// unproven. A phone that runs out of disk halfway through 958 files would
+    /// be left with a half-written snapshot and nothing behind it, and this
+    /// project has already lost every store once.
+    ///
+    /// So: prune AFTER `isComplete`, and keep the one before it. On 9 August
+    /// four snapshots held 40.6 MB against a 27 MB database and 14 MB of live
+    /// stores — two of them byte-identical, taken fifty-eight seconds apart —
+    /// and nothing in this file removed anything. §12.86.
+    nonisolated static let keepSnapshots = 2
+    /// Full manifests are roughly 300 KB for the current 958-file package.
+    /// Keeping them all would merely replace one unbounded store with a slower
+    /// one, so audit history has its own explicit ceiling.
+    nonisolated static let keepReceipts = 20
+    nonisolated static let receiptSchemaVersion = 2
+
+    private nonisolated static let receiptPrefix = "receipt-"
+
+    nonisolated static func hasReceipt(_ id: String,
+                                       base: URL? = AppSupportItem.container,
+                                       fm: FileManager = .default) -> Bool {
+        guard let base else { return false }
+        return fm.fileExists(atPath: receiptURL(id: id, base: base).path)
+    }
+
+    /// Retain two VERIFIED full snapshots: the capture that triggered cleanup
+    /// and the newest other verified copy. Incomplete and undecodable folders
+    /// are not candidates and are never deleted. Before a
+    /// full folder is removed, a small receipt is atomically written and read
+    /// back byte-for-byte. Any problem leaves the full folder in place and is
+    /// returned as a non-fatal warning beside the successful new capture.
+    @discardableResult
+    nonisolated static func enforceRetention(
+        keeping: Int = keepSnapshots,
+        protectedID: String? = nil,
+        appVersion: String,
+        base: URL? = AppSupportItem.container,
+        fm: FileManager = .default
+    ) -> SnapshotRetentionReport {
+        guard let base else {
+            return .init(fullSnapshots: 0, receipts: 0, pruned: [],
+                         warnings: ["Application Support was unavailable for retention."])
+        }
+        let verified = verifiedFullSnapshots(base: base, fm: fm)
+        var pruned: [SnapshotReceipt] = []
+        var warnings: [String] = []
+
+        // A capture may have an id older than folders already on disk if the
+        // device clock was corrected or a future-dated backup was restored.
+        // The snapshot that triggered retention is always one of the retained
+        // copies, independent of lexical ordering. If it cannot be reverified,
+        // delete nothing.
+        if let protectedID,
+           !verified.contains(where: { $0.id == protectedID }) {
+            warnings.append(
+                SnapshotRetentionError.newSnapshotDidNotReverify(protectedID)
+                    .localizedDescription)
+            return retentionReport(base: base, fm: fm, warnings: warnings)
+        }
+
+        var retained = Set<String>()
+        if let protectedID { retained.insert(protectedID) }
+        let otherSlots = max(0, max(0, keeping) - retained.count)
+        for candidate in verified where candidate.id != protectedID {
+            if retained.count >= otherSlots + (protectedID == nil ? 0 : 1) { break }
+            retained.insert(candidate.id)
+        }
+
+        for candidate in verified where !retained.contains(candidate.id) {
+            let capturedUTC = candidate.manifest.createdDate.map(iso8601)
+                ?? date(fromStamp: candidate.id).map(iso8601)
+                ?? candidate.manifest.createdUTC
+            let receipt = SnapshotReceipt(
+                schemaVersion: receiptSchemaVersion,
+                id: candidate.id,
+                capturedUTC: capturedUTC,
+                appVersion: candidate.manifest.appVersion,
+                copiedCount: candidate.manifest.copiedCount,
+                presentCount: candidate.manifest.presentCount,
+                missingCount: candidate.manifest.missingCount,
+                failureCount: candidate.manifest.failureCount,
+                totalBytes: candidate.manifest.totalBytes,
+                manifestSHA256: hex(candidate.manifestData),
+                manifest: candidate.manifest,
+                prunedUTC: iso8601(Date()),
+                prunedByAppVersion: appVersion)
+            let receiptURL = receiptURL(id: candidate.id, base: base)
+
+            do {
+                guard !fm.fileExists(atPath: receiptURL.path) else {
+                    throw SnapshotRetentionError.receiptAlreadyExists(candidate.id)
+                }
+                let encoder = JSONEncoder()
+                encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+                let receiptData = try encoder.encode(receipt)
+                try receiptData.write(to: receiptURL, options: FileProtection.options)
+                let readBack = try Data(contentsOf: receiptURL)
+                let decoded = try JSONDecoder().decode(SnapshotReceipt.self,
+                                                       from: readBack)
+                guard readBack == receiptData, decoded == receipt else {
+                    throw SnapshotRetentionError.receiptDidNotVerify(candidate.id)
+                }
+                do {
+                    try fm.removeItem(at: candidate.folder)
+                } catch {
+                    try? fm.removeItem(at: receiptURL)
+                    throw error
+                }
+                pruned.append(receipt)
+            } catch {
+                warnings.append("\(candidate.id) was kept in full: "
+                                + error.localizedDescription)
+            }
+        }
+
+        warnings += pruneOldReceipts(keeping: keepReceipts,
+                                     base: base, fm: fm)
+
+        return retentionReport(base: base, fm: fm,
+                               pruned: pruned, warnings: warnings)
+    }
+
+    /// Delete only receipts that decode, identify their own file name, retain
+    /// a manifest whose digest still agrees, and no longer have a full folder.
+    /// Corrupt/unknown receipts are left for inspection and never authorise a
+    /// deletion merely because their name sorts old.
+    private nonisolated static func pruneOldReceipts(
+        keeping: Int,
+        base: URL,
+        fm: FileManager
+    ) -> [String] {
+        let root = base.appendingPathComponent(directoryName, isDirectory: true)
+        let fullIDs = Set(ids(base: base, fm: fm))
+        let names = ((try? fm.contentsOfDirectory(atPath: root.path)) ?? [])
+            .filter { $0.hasPrefix(receiptPrefix) && $0.hasSuffix(".json") }
+            .sorted(by: >)
+        var verified: [(name: String, url: URL)] = []
+        for name in names {
+            let start = name.index(name.startIndex, offsetBy: receiptPrefix.count)
+            let end = name.index(name.endIndex, offsetBy: -".json".count)
+            let id = String(name[start..<end])
+            let url = root.appendingPathComponent(name)
+            guard !fullIDs.contains(id),
+                  let data = try? Data(contentsOf: url),
+                  let receipt = try? JSONDecoder().decode(SnapshotReceipt.self,
+                                                          from: data),
+                  receipt.schemaVersion == receiptSchemaVersion,
+                  receipt.id == id, receipt.manifest.id == id,
+                  receipt.manifestSHA256 == encodedManifestHash(receipt.manifest)
+            else { continue }
+            verified.append((name, url))
+        }
+
+        var warnings: [String] = []
+        for receipt in verified.dropFirst(max(0, keeping)) {
+            do {
+                try fm.removeItem(at: receipt.url)
+            } catch {
+                warnings.append("Old audit receipt \(receipt.name) was kept: "
+                                + error.localizedDescription)
+            }
+        }
+        return warnings
+    }
+
+    private nonisolated static func encodedManifestHash(
+        _ manifest: SnapshotManifest
+    ) -> String? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(manifest) else { return nil }
+        return hex(data)
+    }
+
+    private nonisolated struct VerifiedSnapshot {
+        let id: String
+        let folder: URL
+        let manifest: SnapshotManifest
+        let manifestData: Data
+    }
+
+    /// A manifest saying "complete" is historical evidence. Before it can
+    /// justify deletion of another copy, the payload it names is re-hashed.
+    private nonisolated static func verifiedFullSnapshots(
+        base: URL,
+        fm: FileManager
+    ) -> [VerifiedSnapshot] {
+        let root = base.appendingPathComponent(directoryName, isDirectory: true)
+        return ids(base: base, fm: fm).compactMap { id in
+            let folder = root.appendingPathComponent(id, isDirectory: true)
+            let manifestURL = folder.appendingPathComponent("manifest.json")
+            guard let data = try? Data(contentsOf: manifestURL),
+                  let manifest = try? JSONDecoder().decode(SnapshotManifest.self,
+                                                           from: data),
+                  manifest.id == id, manifest.isComplete,
+                  manifest.entries.contains(where: { $0.exists && $0.copied }),
+                  manifestPathsAreSafeAndUnique(manifest),
+                  payloadMatches(manifest, in: folder, fm: fm)
+            else { return nil }
+            return VerifiedSnapshot(id: id, folder: folder,
+                                    manifest: manifest, manifestData: data)
+        }
+    }
+
+    private nonisolated static func manifestPathsAreSafeAndUnique(
+        _ manifest: SnapshotManifest
+    ) -> Bool {
+        let paths = manifest.entries.map(\.relativePath)
+        guard Set(paths).count == paths.count else { return false }
+        return paths.allSatisfy(payloadPathIsSafe)
+    }
+
+    private nonisolated static func payloadPathIsSafe(_ path: String) -> Bool {
+        guard !path.isEmpty, !path.hasPrefix("/"), path != "manifest.json" else {
+            return false
+        }
+        return path.split(separator: "/", omittingEmptySubsequences: false)
+            .allSatisfy { $0 != "." && $0 != ".." && !$0.isEmpty }
+    }
+
+    private nonisolated static func payloadMatches(_ manifest: SnapshotManifest,
+                                                    in folder: URL,
+                                                    fm: FileManager) -> Bool {
+        for entry in manifest.entries where entry.exists {
+            let url = folder.appendingPathComponent(entry.relativePath)
+            if let expected = entry.sha256 {
+                guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+                      hex(data) == expected else { return false }
+            } else {
+                var isDirectory: ObjCBool = false
+                guard entry.copied, entry.bytes == 0,
+                      fm.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                      isDirectory.boolValue else { return false }
+            }
+        }
+        return true
+    }
+
+    private nonisolated static func receiptURL(id: String, base: URL) -> URL {
+        base.appendingPathComponent(directoryName, isDirectory: true)
+            .appendingPathComponent("\(receiptPrefix)\(id).json")
+    }
+
+    private nonisolated static func receiptCount(base: URL,
+                                                 fm: FileManager) -> Int {
+        let root = base.appendingPathComponent(directoryName, isDirectory: true)
+        return ((try? fm.contentsOfDirectory(atPath: root.path)) ?? [])
+            .filter { $0.hasPrefix(receiptPrefix) && $0.hasSuffix(".json") }
+            .count
+    }
+
+    private nonisolated static func retentionReport(
+        base: URL?,
+        fm: FileManager,
+        pruned: [SnapshotReceipt] = [],
+        warnings: [String] = []
+    ) -> SnapshotRetentionReport {
+        guard let base else {
+            return .init(fullSnapshots: 0, receipts: 0, pruned: pruned,
+                         warnings: warnings)
+        }
+        return .init(fullSnapshots: ids(base: base, fm: fm).count,
+                     receipts: receiptCount(base: base, fm: fm),
+                     pruned: pruned, warnings: warnings)
+    }
+
+    /// What the snapshots folder costs, and how it is divided. Unconditional,
+    /// including at zero — the paste is where somebody reads this and a line
+    /// that vanishes when nothing is pruned cannot be told from one nobody
+    /// wired in. §12.54.2.
+    nonisolated static func retentionLines(base: URL? = AppSupportItem.container,
+                                           fm: FileManager = .default) -> [String] {
+        let all = ids(base: base, fm: fm)
+        let receipts = base.map { receiptCount(base: $0, fm: fm) } ?? 0
+        var bytes = 0
+        if let base {
+            let root = base.appendingPathComponent(directoryName, isDirectory: true)
+            let w = fm.enumerator(at: root, includingPropertiesForKeys: [.fileSizeKey])
+            while let url = w?.nextObject() as? URL {
+                bytes += ((try? fm.attributesOfItem(atPath: url.path))?[.size]
+                          as? Int) ?? 0
+            }
+        }
+        return ["Full snapshot folders: \(all.count), retention target \(keepSnapshots)",
+                "  audit receipts for pruned copies: \(receipts), target \(keepReceipts)",
+                "  total size: "
+                + ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)]
     }
 
     // MARK: Reading them back
@@ -458,7 +957,13 @@ enum LegacySnapshot {
         guard let base else { return [] }
         let dir = base.appendingPathComponent(directoryName, isDirectory: true)
         let names = (try? fm.contentsOfDirectory(atPath: dir.path)) ?? []
-        return names.filter { !$0.hasPrefix(".") }.sorted(by: >)
+        return names.filter { name in
+            guard !name.hasPrefix(".") else { return false }
+            var isDirectory: ObjCBool = false
+            return fm.fileExists(atPath: dir.appendingPathComponent(name).path,
+                                 isDirectory: &isDirectory)
+                && isDirectory.boolValue
+        }.sorted(by: >)
     }
 
     nonisolated static func latest(base: URL? = AppSupportItem.container,
@@ -468,6 +973,30 @@ enum LegacySnapshot {
 
     // MARK: Small shared things
 
+    /// Losslessly serialises only the preference keys declared by the data
+    /// inventory. The physical preferences plist may contain framework state
+    /// and is not copied; Keychain is deliberately outside this boundary.
+    @MainActor
+    static func preferenceSupplement(keys: [String],
+                                     values: [String: Any]) throws -> SnapshotSupplement {
+        let declared = keys.sorted()
+        var selected: [String: Any] = [:]
+        for key in declared {
+            if let value = values[key] { selected[key] = value }
+        }
+        let archive: [String: Any] = [
+            "schemaVersion": 1,
+            "declaredKeys": declared,
+            "values": selected
+        ]
+        let data = try PropertyListSerialization.data(fromPropertyList: archive,
+                                                      format: .binary,
+                                                      options: 0)
+        return SnapshotSupplement(declared: "UserDefaults",
+                                  relativePath: "preferences.plist",
+                                  data: data)
+    }
+
     /// `2026-08-05-141233` — sorts chronologically as a string, which is what
     /// `ids()` relies on, and contains nothing that needs escaping in a path.
     nonisolated static func stamp(for date: Date) -> String {
@@ -476,6 +1005,15 @@ enum LegacySnapshot {
         f.timeZone = TimeZone(secondsFromGMT: 0)
         f.dateFormat = "yyyy-MM-dd-HHmmss"
         return f.string(from: date)
+    }
+
+    nonisolated static func date(fromStamp stamp: String) -> Date? {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.dateFormat = "yyyy-MM-dd-HHmmss"
+        f.isLenient = false
+        return f.date(from: stamp)
     }
 
     nonisolated static func hex(_ data: Data) -> String {

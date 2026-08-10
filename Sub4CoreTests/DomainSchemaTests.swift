@@ -126,12 +126,22 @@ struct DomainVocabularyTests {
 
     @Test("The state vocabulary lists exactly the states an import can be in")
     func migrationRunStatesMatch() {
-        // Patch 255. The migration body freezes five literals; this is what
-        // makes adding a sixth a red build and a new migration rather than an
-        // edit to history.
-        #expect(Set(Sub4Migrations.migrationRunStates)
+        // Patch 255 froze five literals here and said adding a sixth should be
+        // a red build and a new migration rather than an edit to history.
+        // PATCH 338 IS THAT SIXTH, and it worked exactly as designed: this
+        // assertion failed, `2026-08-15-interrupted-run` was written, and the
+        // list this reads moved to the newest migration's.
+        //
+        // `Sub4Migrations.migrationRunStates` IS DELIBERATELY NOT UPDATED. It
+        // is what the 11 August body wrote and it is history — the assertion
+        // below is what the CURRENT schema admits, and the line after it is
+        // what makes the old list still mean something.
+        #expect(Set(Sub4Migrations.migrationRunStatesWithInterrupted)
                 == Set(MigrationRunState.allCases.map(\.rawValue)),
-                "got \(Sub4Migrations.migrationRunStates)")
+                "got \(Sub4Migrations.migrationRunStatesWithInterrupted)")
+        #expect(Set(Sub4Migrations.migrationRunStates)
+                    .isSubset(of: Set(Sub4Migrations.migrationRunStatesWithInterrupted)),
+                "a rebuild may add states, never drop one a device has stored")
     }
 
     @Test("The trigger vocabulary lists exactly the ways a run can start")

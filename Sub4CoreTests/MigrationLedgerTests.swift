@@ -55,8 +55,28 @@ struct MigrationLedgerTests {
                            state: MigrationRunState = .pending) throws -> String {
         let id = try MigrationLedger.open(d, appVersion: "311-test",
                                           snapshotID: nil, trigger: trigger, now: at)
-        if state.isFinished {
+        switch state {
+        case .running:
+            break
+        case .pending, .failed:
             try MigrationLedger.finish(d, id: id, state: state, note: nil, now: at)
+        case .interrupted:
+            _ = try MigrationLedger.closeInterrupted(d, now: at)
+        case .verified:
+            try MigrationLedger.finish(d, id: id, state: .pending, note: nil, now: at)
+            let moved = try MigrationLedger.verifyPending(d, id: id, note: nil)
+            guard moved else {
+                throw MigrationLedgerError.invalidTransition(id: id, target: state)
+            }
+        case .activated:
+            try MigrationLedger.finish(d, id: id, state: .pending, note: nil, now: at)
+            let verified = try MigrationLedger.verifyPending(d, id: id, note: nil)
+            let activated = verified
+                ? try MigrationLedger.activateVerified(d, id: id)
+                : false
+            guard activated else {
+                throw MigrationLedgerError.invalidTransition(id: id, target: state)
+            }
         }
         return id
     }
@@ -96,6 +116,133 @@ struct MigrationLedgerTests {
         #expect(run.state == .pending)
         #expect(run.finishedUTC == t1)
         #expect(run.note == "661 activities")
+    }
+
+    @Test("Import completion cannot bypass verification or activation")
+    func finishAcceptsOnlyImportOutcomes() throws {
+        for forbidden in [MigrationRunState.verified, .activated, .interrupted] {
+            let d = try db()
+            let id = try MigrationLedger.open(d, appVersion: "338",
+                                              snapshotID: nil, now: t0)
+            #expect(throws: MigrationLedgerError.self) {
+                try MigrationLedger.finish(d, id: id, state: forbidden,
+                                           note: nil, now: t1)
+            }
+            let latest = try MigrationLedger.latest(d)
+            let run = try #require(latest)
+            #expect(run.state == .running)
+            #expect(run.finishedUTC == nil)
+        }
+    }
+
+    @Test("Verification preserves the import finish time")
+    func verificationIsASeparateGuardedTransition() throws {
+        let d = try db()
+        let id = try MigrationLedger.open(d, appVersion: "338",
+                                          snapshotID: nil, now: t0)
+        try MigrationLedger.finish(d, id: id, state: .pending,
+                                   note: "import complete", now: t1)
+        let moved = try MigrationLedger.verifyPending(d, id: id,
+                                                      note: "semantic checks agreed")
+        #expect(moved)
+        let latest = try MigrationLedger.latest(d)
+        let run = try #require(latest)
+        #expect(run.state == .verified)
+        #expect(run.finishedUTC == t1,
+                "verification must not turn import duration into verification delay")
+        #expect(run.note == "semantic checks agreed")
+    }
+
+    @Test("Only the newest completed pending run can be verified")
+    func verificationRefusesEveryOtherShape() throws {
+        // Running.
+        do {
+            let d = try db()
+            let id = try MigrationLedger.open(d, appVersion: "338",
+                                              snapshotID: nil, now: t0)
+            let moved = try MigrationLedger.verifyPending(d, id: id, note: nil)
+            #expect(!moved)
+        }
+
+        // Failed.
+        do {
+            let d = try db()
+            let id = try closedRun(d, at: t1, trigger: .manual, state: .failed)
+            let moved = try MigrationLedger.verifyPending(d, id: id, note: nil)
+            #expect(!moved)
+        }
+
+        // Interrupted.
+        do {
+            let d = try db()
+            let id = try closedRun(d, at: t1, trigger: .manual,
+                                   state: .interrupted)
+            let moved = try MigrationLedger.verifyPending(d, id: id, note: nil)
+            #expect(!moved)
+        }
+
+        // Unknown id.
+        do {
+            let d = try db()
+            let moved = try MigrationLedger.verifyPending(d, id: "not-a-run",
+                                                          note: nil)
+            #expect(!moved)
+        }
+
+        // Already verified or activated.
+        for state in [MigrationRunState.verified, .activated] {
+            let d = try db()
+            let id = try closedRun(d, at: t1, trigger: .manual, state: state)
+            let moved = try MigrationLedger.verifyPending(d, id: id, note: nil)
+            #expect(!moved)
+        }
+
+        // A newer row supersedes an otherwise valid pending result.
+        do {
+            let d = try db()
+            let older = try closedRun(d, at: t0, trigger: .manual)
+            _ = try MigrationLedger.open(d, appVersion: "338",
+                                         snapshotID: nil, now: t1)
+            let moved = try MigrationLedger.verifyPending(d, id: older, note: nil)
+            #expect(!moved)
+        }
+    }
+
+    @Test("Insertion sequence orders runs that started in the same second")
+    func sameSecondRunsHaveADeterministicNewest() throws {
+        let d = try db()
+        let first = try closedRun(d, at: t0, trigger: .manual)
+        let second = try closedRun(d, at: t0, trigger: .manual)
+        let rows = try MigrationLedger.all(d)
+        #expect(rows.map(\.id) == [second, first])
+        #expect(rows[0].sequence > rows[1].sequence)
+    }
+
+    @Test("Activation advances only the newest verified run")
+    func activationCannotSkipOrUseAStaleVerification() throws {
+        let d = try db()
+        let pending = try closedRun(d, at: t0, trigger: .manual)
+        let skipped = try MigrationLedger.activateVerified(d, id: pending)
+        #expect(!skipped)
+
+        let verified = try MigrationLedger.verifyPending(d, id: pending,
+                                                         note: "agreed")
+        #expect(verified)
+        let activated = try MigrationLedger.activateVerified(d, id: pending)
+        #expect(activated)
+        let latest = try MigrationLedger.latest(d)
+        let activeRow = try #require(latest)
+        #expect(activeRow.state == .activated)
+        #expect(activeRow.finishedUTC == t0)
+
+        let olderVerified = try closedRun(d, at: t1, trigger: .manual,
+                                          state: .verified)
+        _ = try MigrationLedger.open(d, appVersion: "338",
+                                     snapshotID: nil, now: t1)
+        let stale = try MigrationLedger.activateVerified(d, id: olderVerified)
+        let unknown = try MigrationLedger.activateVerified(d, id: "not-a-run")
+        #expect(!stale)
+        #expect(!unknown)
     }
 
     @Test("A run with no snapshot says so rather than pretending")
@@ -352,8 +499,8 @@ struct MigrationLedgerTests {
                 "a failure is the reason anybody reads this table")
     }
 
-    @Test("A prune never removes an interrupted run")
-    func interruptedRunsSurvive() throws {
+    @Test("A prune never removes a currently open run")
+    func currentlyOpenRunsSurvive() throws {
         let d = try db()
         let killed = try MigrationLedger.open(d, appVersion: "311", snapshotID: nil,
                                               trigger: .backgrounded, now: stamp(0))
@@ -362,6 +509,45 @@ struct MigrationLedgerTests {
         let left = try MigrationLedger.all(d, limit: 100).map(\.id)
         #expect(left.contains(killed),
                 "the only evidence the app was killed mid-write")
+    }
+
+    @Test("Automatic interruptions are bounded independently")
+    func automaticInterruptedRetentionIsBounded() throws {
+        let d = try db()
+        var ids: [String] = []
+        for n in 0 ..< 8 {
+            let id = try MigrationLedger.open(d, appVersion: "338",
+                                              snapshotID: nil,
+                                              trigger: .backgrounded,
+                                              now: stamp(n))
+            ids.append(id)
+            _ = try MigrationLedger.closeInterrupted(d, now: stamp(n))
+        }
+        let removed = try MigrationLedger.prune(d, keeping: 200,
+                                                keepingInterrupted: 3)
+        let rows = try MigrationLedger.all(d, limit: 100)
+        #expect(removed == 5)
+        #expect(rows.map(\.id) == Array(ids.suffix(3).reversed()))
+        #expect(rows.allSatisfy { $0.state == .interrupted })
+    }
+
+    @Test("Manual interruptions are retained outside the automatic cap")
+    func manualInterruptedEvidenceSurvives() throws {
+        let d = try db()
+        let manual = try MigrationLedger.open(d, appVersion: "338",
+                                              snapshotID: nil,
+                                              trigger: .manual, now: stamp(0))
+        _ = try MigrationLedger.closeInterrupted(d, now: stamp(0))
+        for n in 1 ... 5 {
+            _ = try MigrationLedger.open(d, appVersion: "338",
+                                         snapshotID: nil,
+                                         trigger: .foregrounded, now: stamp(n))
+            _ = try MigrationLedger.closeInterrupted(d, now: stamp(n))
+        }
+        _ = try MigrationLedger.prune(d, keeping: 200, keepingInterrupted: 2)
+        let ids = try MigrationLedger.all(d, limit: 100).map(\.id)
+        #expect(ids.contains(manual))
+        #expect(ids.count == 3, "one manual plus two automatic interruptions")
     }
 
     @Test("A prune never removes a verified or activated run")
@@ -494,7 +680,8 @@ struct MigrationLedgerTests {
         #expect(c.byTrigger["foregrounded"] == 1)
         #expect(c.byTrigger["backgroundRefresh"] == nil)
         #expect(c.unrecorded == 1)
-        #expect(c.interrupted == 1, "the foregrounded one is still open")
+        #expect(c.openNow == 1, "the foregrounded one is still open")
+        #expect(c.interrupted == 0)
         #expect(c.diagnosticLines.contains("  backgroundRefresh: 0"))
     }
 
@@ -512,11 +699,7 @@ struct MigrationLedgerTests {
     func everyStateIsStorable() throws {
         let d = try db()
         for state in MigrationRunState.allCases {
-            let id = try MigrationLedger.open(d, appVersion: "255",
-                                              snapshotID: nil, now: t0)
-            if state.isFinished {
-                try MigrationLedger.finish(d, id: id, state: state, note: nil, now: t1)
-            }
+            let id = try closedRun(d, at: t1, trigger: .manual, state: state)
             // Computed into a local first: `#expect`/`#require` decompose into
             // a `rethrows` call and an inline `try` inside one is a compile
             // error this project has hit before.

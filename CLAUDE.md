@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 337 (2026-08-09).** Patch 318 installed this file with its state
+**Current at patch 338 (2026-08-10).** Patch 318 installed this file with its state
 sections still describing patch 278c — forty patches behind — which is the failure
 this file exists to prevent. §5 is the part that goes stale; if the patch number in
 its heading is far behind `Sub4/AppVersion.swift`, trust the ADR and the code, not §5.
@@ -283,18 +283,18 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 337, 2026-08-09
+## 5. State — patch 338, 2026-08-10
 
 **The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c COMPLETE — all eight
 slices, at 330. D7 has not started, and nothing in the app reads the database yet.**
 
 **Two sentences belong together in the D7 decision, and §12.75.8 states them:** D6c proves
-the database can feed the app — every record round-trips and every derivation agrees from
-either side. It does **not** prove the app is right; §12.72 found seven copies of one rule
-disagreeing for 230 patches, and no slice could have caught it, because every slice compares
-the app against the database and that was the app disagreeing with itself.
+the explicitly mapped operational fields can feed the app and the covered derivations agree
+from either side. It does **not** prove a lossless round trip or that the app is right. The
+9 August external audit found unmodelled fields and list order that the in-app checks do not
+ask about; §12.86 records that exact boundary.
 
-**That last clause is the whole of what is left, and it is worth restating because the
+**That last clause is the core of the remaining read-path work, and it is worth restating because the
 read-backs make it easy to forget.** All nine repositories are reachable only from
 `DatabaseHealthView` and the parity types. `ActivityStore.load()` still opens
 `activities.json`; so does every other store. D6c proves the data can be *reconstituted*;
@@ -303,19 +303,24 @@ it does not prove a store *fed from* the database would behave identically, and 
 provable. Repointing each store's load path is the substance of D7 and is covered by no
 slice completed so far.
 
-- **Thirteen migrations**, 51 tables, ~214,000 rows, ~37 MB on the phone. On the device:
-  674 activities, 674 details, 649 recordings, ~194,000 trace samples, 7,986 splits,
-  4,700 laps, 582 weather, 11 gear, 15 resting months, 5 HR zones, 7 notes,
-  4 corrections, 3 rejections.
-- **1005 tests in 92 suites** at 322b, plus `PlanRepository` (323) and
-  `WeatherGearRepository` (324). The run prints the current total. 165 Swift files in
-  `Sub4/`, ~60,000 lines.
-- **`migration_run` reaches `verified`.** The semantic verifier compares per-table counts,
-  sync state, identity, an activity fingerprint and the domain checks. **The number of
-  comparisons is printed on the Database screen — it is not restated here**, because a
-  second answer to a question the screen already answers is how §12.29's problem starts.
+- **The source now defines fourteen migrations; the captured phone had thirteen.** The
+  off-device package at 9 August 14:35Z held 678 activities, 483 details, 470 recordings,
+  140,790 trace samples, 5,941 splits, 1,771 laps, 586 weather, 11 gear, 15 resting months,
+  5 HR zones, no notes or corrections, and 3 rejections. The older 674/674/649 figures
+  below are explicitly pre-wipe evidence, not the current captured state.
+- **1,218 tests in 105 suites pass** at patch 338. The run prints the current total.
+  165 Swift files in `Sub4/`, ~60,000 lines.
+- **`migration_run` CAN reach `verified` and on this database never has.** That sentence
+  used to read "reaches", and it described the PRE-WIPE database — an off-device read of the
+  container on 9 August found 53 `pending`, 3 `running` and **zero `verified`, ever**.
+  Nothing but the Verify button writes it: `SemanticVerifier.record` is the only writer and
+  the ledger deliberately stops at `pending`, so an import can never produce it. The
+  verifier compares per-table counts, sync state, identity, an activity fingerprint and the
+  domain checks; **the number of comparisons is printed on the screen and is not restated
+  here.** Every import opens a NEW row at `pending`, so a verified run is immediately
+  buried — **verify LAST**, after the backfill and the final snapshot. §12.86.4.
 
-**D6a — seven repositories, every field compared.**
+**D6a — nine repositories, mapped fields compared.**
 `ActivityRepository` (289), `ActivityDetailRepository` (291), `RecordingRepository` (294),
 `AthleteRepository` (317), `AuthoredRepository` (322), `PlanRepository` (323),
 `WeatherGearRepository` (324), `PlanExtrasRepository` (326), `ReviewRepository` (327). Each returns a load type that distinguishes *nothing there*
@@ -351,7 +356,7 @@ readings, 11 gear. **Gone for good:** 7 session notes with their sRPEs (`notes.j
 4 commute decisions (`commutes.json`, which is what fills the `correction` table — the
 `DataCorrections` overrides are source and survived). Also gone: the eleven review
 rehearsal records, which had to be deleted before 24 August anyway. **The first protected
-snapshot in this project's history was taken at 09:39 UTC on 9 August** — 67 of 67 files,
+snapshot in this project's history was taken at 08:39:14 UTC on 9 August** — 67 of 67 files,
 zero failures, `2026-08-09-083914`. D0 contract item 3 had been open since patch 246.
 
 **The detail backfill is a two-day job and that is Strava's ceiling, not ours.**
@@ -427,14 +432,13 @@ all zero; 518 days matched, 252 sessions, 10 matched and 664 extras — and
 lines shortened at 323 because `plan_session` is read back. The match decisions are the
 only held input still uncorroborated, and `match_decision` holding zero rows is why.
 
-**The approved-difference list has exactly five entries** — `AthleteConstants.version`
-(317), a local cache counter with no column; `user_note.activityID` and
-`user_note.planVersionID` (322), two columns the writer has never populated; and
-`Shoe.primary` and `gear.retiredUTC` (324), the only two that are structural rather than
-a value left NULL. A test pins each count. An entry nobody can justify is a bug that has
-been given a hiding place — and **an entry nothing exercises is a suppression nobody has
-checked**, which 324 tests for the first time. 317's and 322's entries still have no such
-test.
+**The in-app approved-difference list has five entries, but it is not a field-coverage
+inventory.** It names `AthleteConstants.version`, two currently unwritten note-link fields,
+`Shoe.primary`, and `gear.retiredUTC`. The external audit found additional mappings that
+never reach that list at all: bike-vs-shoe and active-vs-retired gear membership, athlete
+fetch time, rejection `label`/`dateIsKnown`, match-decision `dateIsKnown`, plan
+`meta.source`, top-level session/exercise order, and fractional fetch-time precision.
+Those are D7 decisions or fixes; a green current verifier does not waive them.
 
 ### Still open, and the first one is Bruno's call
 
@@ -466,14 +470,21 @@ test.
   the ledger during the 320 device run. Patch 307's path works; iOS had simply never woken
   the app. Open from 311 to 320 on evidence that was an absence, which is §12.54.2's
   shape.
-- **`Interrupted runs: 1`** as of 331, from that morning's ⌘R cycles. Should not climb on a
-  day with no rebuilds.
+- ~~**`Interrupted runs` only ever climbs**~~ **Closed at 338.** `running` meant two
+  things — open right now, and open when the process was killed — and no column could
+  separate them: the container held three, one of them opened 46 seconds before capture and
+  genuinely live. `2026-08-15-interrupted-run` adds a sixth state; `Sub4Launch` closes every
+  open row as `interrupted` immediately after the database opens, which is the one moment
+  the ambiguity resolves for free. The census prints **two** numbers now — `open right now`
+  and `interrupted, recovered at a later launch`. Automatic interruption evidence is
+  bounded to the newest 20; manual and unclassified rows remain. §12.86.2.
 - **`Sub4/manual.html` is 38 patches stale** — last touched at 284, and it has zero
   mentions of the Database screen, shadow parity, write-through, GRDB or migrations. It is
   a *user* document and §11 "Where the data lives" is the part that will be wrong; deferred
   until D7 settles that answer rather than writing it twice.
-- **`SUB4_CURRENT_PEER_REVIEW_AND_REMEDIATION_PLAN.md` is untouched since the baseline**
-  (3 August). Deferred until the D-ladder finishes, for the same reason.
+- ~~**`SUB4_CURRENT_PEER_REVIEW_AND_REMEDIATION_PLAN.md` was the 2 August baseline**~~
+  **Updated at 338** from the external package audit. It now separates mapped parity,
+  information-loss decisions, D7 database activation and the later HealthKit/Strava exit.
 - ~~`review_evidence_source` — **nothing writes it**~~ **Closed at 335.** One row per source
   in `ReviewLineage.sourceIDs` — `authored`, `bundled`, `strava` — written beside the
   evidence row. **A property of the BUILDER, not of the pack:** a review that consulted
@@ -509,15 +520,40 @@ test.
   activities took 0.254 s. Revisit when the import is slow enough to be worth a cache.
   §12.82.6.
 - `lateArrivals` has been computed since patch 45 and is displayed nowhere.
-- ~~**The protected snapshot goes stale.**~~ **Closed 9 August** — and closed the hard way.
+- **The protected snapshot is operationally stale.** The mechanism first worked on 9 August
+  — and was learned the hard way.
   The button shipped at 247 and had never been pressed, so a hand-delete of the app took
-  every store AND the thing that would have protected them. The phone now holds
-  `2026-08-09-083914`, 67 of 67 files. **Take a second one when `Still to fetch` reaches
-  zero**, because the current copy holds 33 of ~674 details. §12.78.
+  every store AND the thing that would have protected them. All four current copies omit
+  UserDefaults and the backfill was incomplete. **Close this only after a post-338,
+  preferences-inclusive capture when `Still to fetch` reaches zero.** §12.78.
+- ~~**Snapshots accumulate for ever**~~ **Closed at 338.** Four copies held 40.6 MB against a
+  27 MB database and 14 MB of live stores, two of them byte-identical and taken 58 seconds
+  apart, and `LegacySnapshot` had no prune of any kind. It now keeps **two**, pruning only
+  after `isComplete` — every file copied AND its copy re-hashed equal. **Deleting the old
+  one as the new one is written is the wrong policy**: it destroys the only good copy at the
+  moment the new one is unproven. An older full folder becomes a root audit receipt that
+  embeds its complete manifest (every name, size and SHA-256) plus the digest of the exact
+  original manifest bytes; payload bytes are removed. The newest 20 understood, verified
+  receipts are retained. Invalid/unknown receipts and incomplete folders are deliberately
+  never auto-deleted, remain visible in diagnostics, and require manual review if they
+  accumulate. §12.86.5.
+- ~~**Snapshots omitted UserDefaults-backed migration inputs**~~ **Closed for new captures
+  at 338.** The four existing snapshots protect the file stores only. New captures add a
+  filtered, lossless `preferences.plist` containing every key declared by `DataLifecycle`,
+  including Data-valued rejection/match payloads; they do not copy the process-owned
+  physical plist or Keychain. A fresh post-338 snapshot is therefore required. §12.86.5.
+- ~~**`SnapshotManifest.createdUTC` was not a UTC time**~~ **Closed at 338.** It held the
+  folder name — `id` and `createdUTC` were the same string in all four manifests. §12.48
+  from the other direction. The key is NOT renamed (four manifests on disk, non-optional
+  `Codable` field); the value becomes a real timestamp and `createdDate` returns nil for the
+  old shape rather than inventing a date nobody recorded. §12.86.6.
 - **`ActivityStore.load()` still has the two-`try?` shape** patch 273 fixed on the four
   authored stores. Left deliberately: it is a cache and re-fetchable.
-- **STRAVA IS BEING SWITCHED OFF.** Once the database holds everything, the import stops
-  and the same data arrives from Apple Health and Workout data — ADR-0002's Phase 4A, and
+- **STRAVA IS PLANNED TO BE SWITCHED OFF, BUT MUST REMAIN CONNECTED TODAY.** Production
+  activity ingestion still calls Strava, and every captured activity has Strava provenance;
+  disconnecting now stops new activity ingestion. After D7/D8, Phase 4A must first build
+  and prove the HealthKit adapter, source priority/deduplication, moving-time, route, gear
+  and local-zone replacements before revocation. That is ADR-0002's Phase 4A, and
   the athlete's stated intent as of 325. Two consequences that change how patches are
   judged: **a cache that stops being refreshed is harmless until it becomes the only
   copy**, so any importer-fed column freezing an old value is a permanent loss with a
@@ -537,7 +573,18 @@ from the database** — every other one holds it from the app and lets `PlanRoun
 it — so it holds only the match decisions, which makes it the closest thing on that screen
 to what D7 does. §12.75.
 
-**337 removed the key that could lose a review, and it is the last code item before D7.**
+**338 came from reading the container from outside the app.** The .xcappdata was pulled
+off the phone and the JSON stores compared against `sub4.sqlite` by code sharing nothing
+with Sub4. It found **zero differences among the mapped and normalised fields** for 678
+activities, 586 weather records, 483 details (5,941 splits, 1,771 laps, 599 efforts), 470
+traces (140,790 samples), six rehearsal review rows and the bundled plan. It also verified
+2,709 snapshot files by SHA-256. This is strong operational parity evidence, not a claim of
+literal information identity: gear classification/status, rejection and match-date
+metadata, plan source/top-level order, and fractional fetch-time precision are not fully
+preserved. It also found four housekeeping defects and the snapshot-input boundary,
+addressed in this patch but still awaiting installation and device proof. §12.86.
+
+**337 removed the key that could lose a review.**
 The 9 August rehearsal collided two records in one second and one review's whole subtree
 was overwritten by another's. `review.recordKey` now carries the app's own record id;
 pairing is by that, with the run time surviving as a one-import ADOPTION fallback for the
@@ -600,33 +647,48 @@ same text, written to `sub4-diagnostics-<day>-p<patch>.txt` and handed to the ex
 `ShareSheet`, so it AirDrops to the Mac and the capture names its own build — §12.79.
 Neither touches the database.
 
-**Next, and in this order.** Both pre-D7 items that are not slices are now DONE — the
-roll-up at 333, the snapshot on 9 August. What remains before D7:
+**Next, and in this order.** What remains before D7:
 
 1. **Finish the backfill** — `Still to fetch: 0`, `unexplained: 0`, `fetching now: no`.
-2. **Second protected snapshot**, once the details are in. The 9 August one holds 33.
+2. **Fresh post-338 protected snapshot**, once the details are in. Four pre-338 snapshots
+   already exist; all omit UserDefaults. The new capture must include `preferences.plist`
+   and will retain two verified full copies — the new capture and the newest other verified
+   copy — plus bounded understood audit receipts.
 3. **Press the roll-up** and get `provesSomething` — not merely healthy. On the rebuilt
    data that needs at least one session note and one commute decision to exist, because
    `nothing on either side` is an absence of evidence and D7 is where absences stop being
    acceptable. The pre-wipe evidence died with the pre-wipe data.
-4. **Verify** — `migration_run` back to `verified`, not `pending`.
-5. **Compare** — eight parity slices, zero unexplained, complete database.
+4. **Import once manually, then Verify immediately** — this is the FIRST verification on
+   this database, not a re-run. Patch 338 recovers the three captured `running` rows as
+   interrupted, so an older pending run is intentionally ineligible. Watch the new
+   `Ledger` row beside the verdict: until 338 the write that moves the run to `verified` sat
+   behind a `try?`, so a passing report over a failed ledger write looked identical to a
+   clean pass. The guarded transition accepts only the newest completed pending run and
+   preserves its original finish time. §12.86.4.
+5. **Bind currentness, then compare with explicit field coverage** — today `snapshotID` is
+   only an association: Import and Verify each read live stores. Add a dataset/manifest
+   fingerprint (or import directly from the snapshot), hold automatic writers during the
+   final window, then require the same fingerprint at import and verification. Run all
+   parity slices clean, plus a reproducible
+   external audit whose coverage matrix accounts for every source field. A historical
+   `verified` count is not proof that today's dataset is verified.
 6. ~~**`confidence`**~~ done at 334 · ~~**`content_revision`**~~ decided at 334 ·
    ~~**`review_evidence_source`**~~ written at 335 · ~~the paste's hidden tables and the
    snapshot's absence floor~~ cleaned at 336 · ~~**two identities for one review**~~
    closed at 337.
 
-**Step 1 now has a companion: press Import once after installing 337.** The five review
+**Step 1 now has a companion: press Import once after installing 338.** The five review
 rows on the device carry no `recordKey` until an import adopts them, and the sixth review
 — the one overwritten on 9 August — comes back on that same press. `database rows awaiting
 a record key: 0` and `reviews paired by run time, not yet keyed: 0` are what say it worked.
 
-**Every pre-D7 item that is code is now done.** What remains is steps 1–5: the backfill,
-the snapshot, and three button presses on complete data.
-
-Then D7 activate — `Sub4Launch.migrationFailureBlocksTheApp` flips to `true`. Then D8,
-stabilise one release window and remove the JSON writers. Phase 4A (Apple Health canonical)
-cannot start before D7's exit gate.
+**D7 still contains code work.** Repoint store/front-end loads to database repositories;
+fail closed on database-open failure; provide a readable authoritative database export;
+replace whole-folder disconnect with lineage-aware row removal that preserves authored,
+Health and bundled data; close/reopen the GRDB handle around destructive lifecycle work;
+and implement/test rollback before activation. Retain and exercise that rollback through
+the D8 release window, then retire JSON writers. Phase 4A (Apple Health canonical) follows and must pass its own live
+new-workout ingestion test before Strava credentials or Strava lineage are removed.
 
 ---
 

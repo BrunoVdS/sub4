@@ -61,7 +61,7 @@
 import Foundation
 import GRDB
 
-/// The five states of an import. Frozen in the migration body as a CHECK, and
+/// The six states of an import. Frozen in migration bodies as CHECKs, and
 /// held to this enum by `migrationRunStatesMatch`.
 nonisolated enum MigrationRunState: String, CaseIterable, Codable, Sendable {
     /// The write is open. A row left here is an interrupted run.
@@ -75,23 +75,35 @@ nonisolated enum MigrationRunState: String, CaseIterable, Codable, Sendable {
     case activated
     /// The write threw. `note` carries what it said.
     case failed
+    /// The previous process died with the write open. A later launch records
+    /// when it recovered the row; the unknowable finish time stays nil.
+    case interrupted
 
     var label: String {
         switch self {
-        case .running:   "Running"
-        case .pending:   "Imported, not verified"
-        case .verified:  "Verified"
-        case .activated: "Active"
-        case .failed:    "Failed"
+        case .running:     "Running"
+        case .pending:     "Imported, not verified"
+        case .verified:    "Verified"
+        case .activated:   "Active"
+        case .failed:      "Failed"
+        case .interrupted: "Interrupted"
         }
     }
 
-    /// Whether the run is over. Drives the schema's own invariant: a finished
-    /// run has a finish time and an unfinished one does not.
+    /// Whether import execution is no longer open. Pending and verified rows
+    /// may still advance through later gate states; an interrupted run is over
+    /// even though its exact finish instant is unknowable.
     var isFinished: Bool {
         switch self {
-        case .running:                              false
+        case .running: false
+        case .pending, .verified, .activated, .failed, .interrupted: true
+        }
+    }
+
+    var recordsFinishTime: Bool {
+        switch self {
         case .pending, .verified, .activated, .failed: true
+        case .running, .interrupted: false
         }
     }
 }
@@ -138,9 +150,11 @@ nonisolated enum MigrationRunTrigger: String, CaseIterable, Codable, Sendable {
 }
 
 nonisolated struct MigrationRun: Identifiable, Hashable, Sendable {
+    let sequence: Int64
     let id: String
     let startedUTC: String
     let finishedUTC: String?
+    let recoveredUTC: String?
     let state: MigrationRunState
     /// The protected snapshot taken before this run, if there was one. The link
     /// between contract items 3 and 11: a run whose inputs were not copied
@@ -183,7 +197,9 @@ nonisolated struct MigrationRun: Identifiable, Hashable, Sendable {
 /// `total` is the denominator that makes each of them evidence (§12.54.3).
 nonisolated struct LedgerCensus: Equatable, Sendable {
     let total: Int
-    /// Rows still `running`. An interrupted import, not a failure.
+    /// Rows still open in this launch.
+    let openNow: Int
+    /// Prior-process runs recovered into the terminal interrupted state.
     let interrupted: Int
     /// Rows whose trigger is NULL.
     let unrecorded: Int
@@ -198,9 +214,12 @@ nonisolated struct LedgerCensus: Equatable, Sendable {
             lines.append("  \(t.rawValue): \(byTrigger[t.rawValue] ?? 0)")
         }
         lines.append("  trigger not recorded: \(unrecorded)")
-        lines.append("  interrupted (still running): \(interrupted)")
+        lines.append("  open right now: \(openNow)")
+        lines.append("  interrupted, recovered at a later launch: \(interrupted)")
         lines.append("  retention: newest \(MigrationLedger.keepAutomaticRuns) "
-                     + "successful automatic runs; everything else is kept")
+                     + "successful automatic runs and newest "
+                     + "\(MigrationLedger.keepAutomaticInterruptedRuns) automatic "
+                     + "interruptions; manual and unclassified evidence is kept")
         return lines
     }
 }
@@ -216,6 +235,7 @@ nonisolated enum MigrationLedger {
     /// weeks of them. 45 rows appeared in three days; nothing was going to stop
     /// that on its own.
     static let keepAutomaticRuns = 200
+    static let keepAutomaticInterruptedRuns = 20
 
     /// The triggers a SUCCESSFUL run may be pruned for.
     ///
@@ -243,16 +263,26 @@ nonisolated enum MigrationLedger {
     /// The last one means those 45 stay forever. That is a bounded, one-time
     /// cost and the honest reading of a column that says "not recorded".
     @discardableResult
-    static func prune(_ db: Sub4Database, keeping: Int = keepAutomaticRuns) throws -> Int {
-        try db.queue.write { d in try pruneInside(d, keeping: keeping) }
+    static func prune(_ db: Sub4Database,
+                      keeping: Int = keepAutomaticRuns,
+                      keepingInterrupted: Int = keepAutomaticInterruptedRuns) throws -> Int {
+        try db.queue.write {
+            try pruneInside($0, keeping: keeping,
+                            keepingInterrupted: keepingInterrupted)
+        }
     }
 
     /// The same delete, for a caller that already holds a write. `open` uses
     /// this so a row is never inserted without the trim, and so the ledger's
     /// housekeeping does not cost a second transaction on every import.
     @discardableResult
-    fileprivate static func pruneInside(_ d: Database, keeping: Int) throws -> Int {
-        let doomed = try doomedIDs(d, keeping: keeping)
+    fileprivate static func pruneInside(_ d: Database,
+                                        keeping: Int,
+                                        keepingInterrupted: Int) throws -> Int {
+        let successful = try doomedIDs(d, state: .pending, keeping: keeping)
+        let interrupted = try doomedIDs(d, state: .interrupted,
+                                        keeping: keepingInterrupted)
+        let doomed = successful + interrupted
         guard !doomed.isEmpty else { return 0 }
         // Chunked because SQLite's bound-variable limit is finite and this list
         // is not. In steady state it is one id; on the first run after a long
@@ -271,18 +301,20 @@ nonisolated enum MigrationLedger {
     ///
     /// `LIMIT -1 OFFSET n` is SQLite for "all rows after the first n", which is
     /// the query this needs stated once rather than a count and a subtraction.
-    private static func doomedIDs(_ d: Database, keeping: Int) throws -> [String] {
+    private static func doomedIDs(_ d: Database,
+                                  state: MigrationRunState,
+                                  keeping: Int) throws -> [String] {
         let raws = prunableTriggers.map(\.rawValue)
         guard !raws.isEmpty else { return [] }
         let marks = raws.map { _ in "?" }.joined(separator: ", ")
-        var args: [DatabaseValue] = [MigrationRunState.pending.rawValue.databaseValue]
+        var args: [DatabaseValue] = [state.rawValue.databaseValue]
         args += raws.map { $0.databaseValue }
         args.append(max(0, keeping).databaseValue)
         return try String.fetchAll(d, sql: """
             SELECT id FROM migration_run
              WHERE state = ?
                AND triggeredBy IN (\(marks))
-             ORDER BY startedUTC DESC, id DESC
+             ORDER BY sequence DESC
              LIMIT -1 OFFSET ?
             """, arguments: StatementArguments(args))
     }
@@ -313,7 +345,8 @@ nonisolated enum MigrationLedger {
                 VALUES (?, ?, NULL, ?, ?, ?, ?, NULL)
                 """, arguments: [id, now, MigrationRunState.running.rawValue,
                                  snapshotID, appVersion, trigger?.rawValue])
-            try pruneInside(d, keeping: keepAutomaticRuns)
+            try pruneInside(d, keeping: keepAutomaticRuns,
+                            keepingInterrupted: keepAutomaticInterruptedRuns)
         }
         return id
     }
@@ -325,13 +358,64 @@ nonisolated enum MigrationLedger {
                        state: MigrationRunState,
                        note: String?,
                        now: String) throws {
-        precondition(state.isFinished, "finish() called with \(state.rawValue)")
+        // Import execution has exactly two terminal outcomes. Verification is
+        // deliberately a separate pending -> verified transition below; if
+        // this accepted `.verified`, a caller could bypass the semantic gate.
+        guard state == .pending || state == .failed else {
+            throw MigrationLedgerError.invalidTransition(id: id, target: state)
+        }
         try db.queue.write { d in
             try d.execute(sql: """
                 UPDATE migration_run
                    SET finishedUTC = ?, state = ?, note = ?
+                 WHERE id = ? AND state = ?
+                """, arguments: [now, state.rawValue, note, id,
+                                 MigrationRunState.running.rawValue])
+            let changed = try Int.fetchOne(d, sql: "SELECT changes()") ?? 0
+            guard changed == 1 else {
+                throw MigrationLedgerError.invalidTransition(id: id, target: state)
+            }
+        }
+    }
+
+    /// A verifier may bless only the newest run, while it is still a completed
+    /// pending import. The conditional update also closes the race with a newer
+    /// write-through. `finishedUTC` remains the import finish time.
+    @discardableResult
+    static func verifyPending(_ db: Sub4Database,
+                              id: String,
+                              note: String?) throws -> Bool {
+        try db.queue.write { d in
+            try d.execute(sql: """
+                UPDATE migration_run
+                   SET state = ?, note = ?
                  WHERE id = ?
-                """, arguments: [now, state.rawValue, note, id])
+                   AND state = ?
+                   AND finishedUTC IS NOT NULL
+                   AND sequence = (SELECT MAX(sequence) FROM migration_run)
+                """, arguments: [MigrationRunState.verified.rawValue, note, id,
+                                 MigrationRunState.pending.rawValue])
+            return (try Int.fetchOne(d, sql: "SELECT changes()") ?? 0) == 1
+        }
+    }
+
+    /// D7's eventual activation transition. Kept separate from both import
+    /// completion and verification so no API can jump over a rung.
+    @discardableResult
+    static func activateVerified(_ db: Sub4Database,
+                                 id: String,
+                                 note: String? = nil) throws -> Bool {
+        try db.queue.write { d in
+            try d.execute(sql: """
+                UPDATE migration_run
+                   SET state = ?, note = COALESCE(?, note)
+                 WHERE id = ?
+                   AND state = ?
+                   AND finishedUTC IS NOT NULL
+                   AND sequence = (SELECT MAX(sequence) FROM migration_run)
+                """, arguments: [MigrationRunState.activated.rawValue, note, id,
+                                 MigrationRunState.verified.rawValue])
+            return (try Int.fetchOne(d, sql: "SELECT changes()") ?? 0) == 1
         }
     }
 
@@ -341,27 +425,61 @@ nonisolated enum MigrationLedger {
         try all(db, limit: 1).first
     }
 
-    /// Newest first. `startedUTC` is ISO-8601, so it sorts chronologically as
-    /// text — the same property the snapshot stamp relies on.
+    /// Newest first by a monotonic insertion sequence. Same-second imports are
+    /// common enough that UUID lexical order has already returned the wrong row.
     static func all(_ db: Sub4Database, limit: Int = 20) throws -> [MigrationRun] {
         try db.queue.read { d in
             try Row.fetchAll(d, sql: """
-                SELECT id, startedUTC, finishedUTC, state, snapshotID, appVersion,
-                       triggeredBy, note
+                SELECT sequence, id, startedUTC, finishedUTC, recoveredUTC,
+                       state, snapshotID, appVersion, triggeredBy, note
                   FROM migration_run
-                 ORDER BY startedUTC DESC, id DESC
+                 ORDER BY sequence DESC
                  LIMIT ?
                 """, arguments: [limit])
             .compactMap(row)
         }
     }
 
-    /// Runs left `running` — a process that died mid-import.
-    ///
-    /// NOT REPAIRED AUTOMATICALLY. Rewriting them to `failed` on the next
-    /// launch would be tidy and would destroy the only evidence that the app
-    /// was killed while writing. They are counted and shown; what to do about
-    /// one is a decision, and the verifier is what will make it.
+    /// Called once immediately after database open and before this process can
+    /// open a run. At that boundary every existing `running` row belongs to a
+    /// dead process, so no timeout or clock heuristic is needed. The actual
+    /// finish instant remains unknown; `recoveredUTC` records this later fact.
+    @discardableResult
+    static func closeInterrupted(_ db: Sub4Database,
+                                 now: String = Sub4Import.iso8601(Date()),
+                                 note: String = interruptedNote) throws -> [String] {
+        try db.queue.write { d in
+            let ids = try String.fetchAll(d, sql: """
+                SELECT id FROM migration_run
+                 WHERE state = ?
+                 ORDER BY sequence
+                """, arguments: [MigrationRunState.running.rawValue])
+            guard !ids.isEmpty else { return [] }
+            try d.execute(sql: """
+                UPDATE migration_run
+                   SET state = ?, recoveredUTC = ?, note = COALESCE(note, ?)
+                 WHERE state = ?
+                """, arguments: [MigrationRunState.interrupted.rawValue, now, note,
+                                 MigrationRunState.running.rawValue])
+            try pruneInside(d, keeping: keepAutomaticRuns,
+                            keepingInterrupted: keepAutomaticInterruptedRuns)
+            return ids
+        }
+    }
+
+    static let interruptedNote =
+        "the app stopped before this run closed — recovered at the next launch"
+
+    static func interruptedCount(_ db: Sub4Database) throws -> Int {
+        try db.queue.read { d in
+            try Int.fetchOne(d, sql: """
+                SELECT COUNT(*) FROM migration_run WHERE state = ?
+                """, arguments: [MigrationRunState.interrupted.rawValue]) ?? 0
+        }
+    }
+
+    /// Runs currently open. At launch, prior-process rows are first recovered
+    /// into `.interrupted`, so a remaining row belongs to this process.
     ///
     /// A DEFECT FIXED HERE — patch 311. This used to read
     /// `all(db, limit: 100).filter { $0.state == .running }`, which asks the
@@ -376,11 +494,11 @@ nonisolated enum MigrationLedger {
     static func stale(_ db: Sub4Database) throws -> [MigrationRun] {
         try db.queue.read { d in
             try Row.fetchAll(d, sql: """
-                SELECT id, startedUTC, finishedUTC, state, snapshotID, appVersion,
-                       triggeredBy, note
+                SELECT sequence, id, startedUTC, finishedUTC, recoveredUTC,
+                       state, snapshotID, appVersion, triggeredBy, note
                   FROM migration_run
                  WHERE state = ?
-                 ORDER BY startedUTC DESC, id DESC
+                 ORDER BY sequence DESC
                 """, arguments: [MigrationRunState.running.rawValue])
             .compactMap(row)
         }
@@ -401,10 +519,14 @@ nonisolated enum MigrationLedger {
                 total += n
                 if let raw = r["t"] as String? { byTrigger[raw] = n } else { unrecorded = n }
             }
-            let interrupted = try Int.fetchOne(d, sql: """
-                SELECT COUNT(*) FROM migration_run WHERE state = ?
-                """, arguments: [MigrationRunState.running.rawValue]) ?? 0
-            return LedgerCensus(total: total, interrupted: interrupted,
+            func count(_ state: MigrationRunState) throws -> Int {
+                try Int.fetchOne(d, sql: """
+                    SELECT COUNT(*) FROM migration_run WHERE state = ?
+                    """, arguments: [state.rawValue]) ?? 0
+            }
+            return LedgerCensus(total: total,
+                                openNow: try count(.running),
+                                interrupted: try count(.interrupted),
                                 unrecorded: unrecorded, byTrigger: byTrigger)
         }
     }
@@ -417,19 +539,33 @@ nonisolated enum MigrationLedger {
     /// what keeps the CHECK and the enum saying the same four words. If either
     /// of those is ever removed, this line starts lying.
     private static func row(_ r: Row) -> MigrationRun? {
-        guard let id = r["id"] as String?,
+        guard let sequence = r["sequence"] as Int64?,
+              let id = r["id"] as String?,
               let started = r["startedUTC"] as String?,
               let raw = r["state"] as String?,
               let state = MigrationRunState(rawValue: raw),
               let version = r["appVersion"] as String? else { return nil }
-        return MigrationRun(id: id,
+        return MigrationRun(sequence: sequence,
+                            id: id,
                             startedUTC: started,
                             finishedUTC: r["finishedUTC"] as String?,
+                            recoveredUTC: r["recoveredUTC"] as String?,
                             state: state,
                             snapshotID: r["snapshotID"] as String?,
                             appVersion: version,
                             triggeredBy: (r["triggeredBy"] as String?)
                                 .flatMap { MigrationRunTrigger(rawValue: $0) },
                             note: r["note"] as String?)
+    }
+}
+
+nonisolated enum MigrationLedgerError: LocalizedError, Equatable {
+    case invalidTransition(id: String, target: MigrationRunState)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidTransition(let id, let target):
+            "Import run \(id) could not move to \(target.rawValue) from its current state."
+        }
     }
 }

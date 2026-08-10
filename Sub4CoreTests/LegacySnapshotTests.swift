@@ -284,6 +284,355 @@ struct LegacySnapshotTests {
         #expect(first.totalBytes == second.totalBytes)
     }
 
+    @Test("One instant supplies both the folder id and createdUTC")
+    func captureTimeHasOneSource() throws {
+        let base = try makeBase(files: ["notes.json": "{}"])
+        defer { remove(base) }
+        let instant = Date(timeIntervalSince1970: 946_684_800)
+
+        let result = try LegacySnapshot.capture(at: instant, appVersion: "338",
+                                                base: base, items: items)
+        #expect(result.manifest.id == "2000-01-01-000000")
+        #expect(result.manifest.createdUTC == "2000-01-01T00:00:00Z")
+        #expect(result.manifest.createdDate == instant)
+    }
+
+    @Test("A third complete snapshot keeps the newest two and receipts the oldest")
+    func retentionKeepsTwoVerifiedCopies() throws {
+        let base = try makeBase(files: ["notes.json": "one"])
+        defer { remove(base) }
+
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-120000",
+                                       appVersion: "338", base: base, items: items)
+        try Data("two".utf8).write(to: base.appendingPathComponent("notes.json"))
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-130000",
+                                       appVersion: "338", base: base, items: items)
+        let firstManifestURL = base.appendingPathComponent(
+            "snapshots/2026-08-05-120000/manifest.json")
+        let firstManifest = try Data(contentsOf: firstManifestURL)
+
+        try Data("three".utf8).write(to: base.appendingPathComponent("notes.json"))
+        let thirdDate = try #require(
+            LegacySnapshot.date(fromStamp: "2026-08-05-140000"))
+        let third = try LegacySnapshot.capture(at: thirdDate,
+                                               appVersion: "338",
+                                               base: base,
+                                               items: items)
+
+        #expect(third.retention.pruned.map(\.id) == ["2026-08-05-120000"])
+        #expect(LegacySnapshot.ids(base: base)
+                == ["2026-08-05-140000", "2026-08-05-130000"])
+        #expect(!FileManager.default.fileExists(atPath: firstManifestURL.path))
+
+        let receiptURL = base.appendingPathComponent(
+            "snapshots/receipt-2026-08-05-120000.json")
+        let receipt = try JSONDecoder().decode(
+            SnapshotReceipt.self, from: Data(contentsOf: receiptURL))
+        #expect(receipt.manifestSHA256 == LegacySnapshot.hex(firstManifest))
+        #expect(receipt.manifest.id == "2026-08-05-120000")
+        #expect(receipt.manifest.entries.contains {
+            $0.relativePath == "notes.json" && $0.copied
+        })
+        #expect(receipt.capturedUTC == "2026-08-05T12:00:00Z")
+        #expect(receipt.prunedByAppVersion == "338")
+    }
+
+    @Test("Clock rollback cannot prune the snapshot that triggered retention")
+    func aNewCaptureIsAlwaysProtected() throws {
+        let base = try makeBase(files: ["notes.json": "one"])
+        defer { remove(base) }
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-130000",
+                                       appVersion: "338", base: base, items: items)
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-140000",
+                                       appVersion: "338", base: base, items: items)
+
+        // The device clock moved backwards. The new capture sorts older than
+        // both existing folders, but it is the one whose success authorised
+        // retention and therefore may never delete itself.
+        let rolledBack = try #require(
+            LegacySnapshot.date(fromStamp: "2026-08-05-120000"))
+        let result = try LegacySnapshot.capture(at: rolledBack,
+                                                appVersion: "338",
+                                                base: base, items: items)
+        let ids = LegacySnapshot.ids(base: base)
+        #expect(ids.contains(result.manifest.id))
+        #expect(ids == ["2026-08-05-140000", "2026-08-05-120000"])
+        #expect(LegacySnapshot.hasReceipt("2026-08-05-130000", base: base))
+    }
+
+    @Test("A pruned id remains reserved by its audit receipt")
+    func receiptPreventsIDReuse() throws {
+        let base = try makeBase(files: ["notes.json": "one"])
+        defer { remove(base) }
+        for stamp in ["2026-08-05-120000", "2026-08-05-130000",
+                      "2026-08-05-140000"] {
+            _ = try LegacySnapshot.capture(stamp: stamp,
+                                           appVersion: "338",
+                                           base: base, items: items)
+        }
+        #expect(LegacySnapshot.hasReceipt("2026-08-05-120000", base: base))
+        #expect(throws: SnapshotError.self) {
+            _ = try LegacySnapshot.capture(stamp: "2026-08-05-120000",
+                                           appVersion: "338",
+                                           base: base, items: items)
+        }
+    }
+
+    @Test("A decodable empty manifest cannot displace a real fallback")
+    func emptyManifestIsNotVerified() throws {
+        let base = try makeBase(files: ["notes.json": "one"])
+        defer { remove(base) }
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-120000",
+                                       appVersion: "338", base: base, items: items)
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-130000",
+                                       appVersion: "338", base: base, items: items)
+
+        let emptyFolder = base.appendingPathComponent(
+            "snapshots/2026-08-05-150000", isDirectory: true)
+        try FileManager.default.createDirectory(at: emptyFolder,
+                                                withIntermediateDirectories: true)
+        let empty = SnapshotManifest(id: "2026-08-05-150000",
+                                     createdUTC: "2026-08-05T15:00:00Z",
+                                     appVersion: "338", entries: [])
+        try JSONEncoder().encode(empty).write(
+            to: emptyFolder.appendingPathComponent("manifest.json"))
+
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-140000",
+                                       appVersion: "338", base: base, items: items)
+        let ids = LegacySnapshot.ids(base: base)
+        #expect(ids.contains("2026-08-05-150000"),
+                "untrusted folders are retained for inspection")
+        #expect(ids.contains("2026-08-05-140000"))
+        #expect(ids.contains("2026-08-05-130000"),
+                "the newest genuine fallback was not displaced")
+        #expect(LegacySnapshot.hasReceipt("2026-08-05-120000", base: base))
+    }
+
+    @Test("A tampered full snapshot is retained but cannot authorise deletion")
+    func tamperedPayloadDoesNotCountAsFallback() throws {
+        let base = try makeBase(files: ["notes.json": "one"])
+        defer { remove(base) }
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-120000",
+                                       appVersion: "338", base: base, items: items)
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-130000",
+                                       appVersion: "338", base: base, items: items)
+        try Data("changed after capture".utf8).write(to: base.appendingPathComponent(
+            "snapshots/2026-08-05-130000/notes.json"))
+
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-140000",
+                                       appVersion: "338", base: base, items: items)
+        let ids = LegacySnapshot.ids(base: base)
+        #expect(ids.contains("2026-08-05-130000"),
+                "the suspect folder remains available for diagnosis")
+        #expect(ids.contains("2026-08-05-120000"),
+                "a verified fallback is not pruned for a tampered one")
+        #expect(!LegacySnapshot.hasReceipt("2026-08-05-120000", base: base))
+    }
+
+    @Test("A receipt conflict leaves the full snapshot and reports a warning")
+    func receiptConflictIsNonDestructive() throws {
+        let base = try makeBase(files: ["notes.json": "one"])
+        defer { remove(base) }
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-120000",
+                                       appVersion: "338", base: base, items: items)
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-130000",
+                                       appVersion: "338", base: base, items: items)
+        let conflict = base.appendingPathComponent(
+            "snapshots/receipt-2026-08-05-120000.json")
+        try Data("existing audit data".utf8).write(to: conflict)
+
+        let captured = try LegacySnapshot.capture(
+            stamp: "2026-08-05-140000", appVersion: "338",
+            base: base, items: items)
+        #expect(captured.isComplete)
+        #expect(LegacySnapshot.ids(base: base).contains("2026-08-05-120000"))
+        let report = LegacySnapshot.enforceRetention(
+            protectedID: "2026-08-05-140000", appVersion: "338", base: base)
+        #expect(!report.warnings.isEmpty)
+        #expect(LegacySnapshot.ids(base: base).contains("2026-08-05-120000"))
+    }
+
+    @Test("Audit receipts have their own bounded retention")
+    func receiptsDoNotBecomeTheNextUnboundedStore() throws {
+        let base = try makeBase(files: ["notes.json": "same"])
+        defer { remove(base) }
+        for minute in 0 ..< LegacySnapshot.keepReceipts + 3 {
+            let stamp = String(format: "2026-08-05-12%02d00", minute)
+            _ = try LegacySnapshot.capture(stamp: stamp,
+                                           appVersion: "338",
+                                           base: base, items: items)
+        }
+        let root = base.appendingPathComponent("snapshots", isDirectory: true)
+        let names = try FileManager.default.contentsOfDirectory(atPath: root.path)
+        let receipts = names.filter {
+            $0.hasPrefix("receipt-") && $0.hasSuffix(".json")
+        }
+        #expect(receipts.count == LegacySnapshot.keepReceipts)
+        #expect(LegacySnapshot.ids(base: base).count == LegacySnapshot.keepSnapshots)
+    }
+
+    @Test("A future receipt schema is never pruned as if this build understood it")
+    func unknownReceiptVersionsArePreserved() throws {
+        let base = try makeBase(files: ["notes.json": "same"])
+        defer { remove(base) }
+        for minute in 0 ..< 3 {
+            let stamp = String(format: "2026-08-05-12%02d00", minute)
+            _ = try LegacySnapshot.capture(stamp: stamp, appVersion: "338",
+                                           base: base, items: items)
+        }
+
+        let root = base.appendingPathComponent("snapshots", isDirectory: true)
+        let futureURL = root.appendingPathComponent(
+            "receipt-2026-08-05-120000.json")
+        let original = try Data(contentsOf: futureURL)
+        var json = try #require(
+            JSONSerialization.jsonObject(with: original) as? [String: Any])
+        json["schemaVersion"] = 999
+        let future = try JSONSerialization.data(
+            withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
+        try future.write(to: futureURL, options: .atomic)
+
+        for minute in 3 ..< LegacySnapshot.keepReceipts + 5 {
+            let stamp = String(format: "2026-08-05-12%02d00", minute)
+            _ = try LegacySnapshot.capture(stamp: stamp, appVersion: "338",
+                                           base: base, items: items)
+        }
+
+        let names = try FileManager.default.contentsOfDirectory(atPath: root.path)
+        let receipts = names.filter {
+            $0.hasPrefix("receipt-") && $0.hasSuffix(".json")
+        }
+        #expect(FileManager.default.fileExists(atPath: futureURL.path))
+        #expect(receipts.count == LegacySnapshot.keepReceipts + 1,
+                "twenty understood receipts plus the untouched future version")
+    }
+
+    @Test("An unreadable snapshot never displaces or deletes a verified fallback")
+    func corruptSnapshotIsLeftUntouched() throws {
+        let base = try makeBase(files: ["notes.json": "{}"])
+        defer { remove(base) }
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-120000",
+                                       appVersion: "338", base: base, items: items)
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-130000",
+                                       appVersion: "338", base: base, items: items)
+
+        let corrupt = base.appendingPathComponent(
+            "snapshots/2026-08-05-133000", isDirectory: true)
+        try FileManager.default.createDirectory(at: corrupt,
+                                                withIntermediateDirectories: true)
+        try Data("not json".utf8).write(to: corrupt.appendingPathComponent("manifest.json"))
+
+        _ = try LegacySnapshot.capture(stamp: "2026-08-05-140000",
+                                       appVersion: "338", base: base, items: items)
+        #expect(FileManager.default.fileExists(atPath: corrupt.path))
+        #expect(LegacySnapshot.ids(base: base).contains("2026-08-05-133000"))
+        #expect(LegacySnapshot.hasReceipt("2026-08-05-120000", base: base))
+    }
+
+    @Test("A declared empty directory is copied and the snapshot is complete")
+    func emptyDirectoryIsProtected() throws {
+        let base = try makeBase(files: [:], directories: ["streams": [:]])
+        defer { remove(base) }
+        let m = try LegacySnapshot.capture(stamp: "2026-08-05-120000",
+                                           appVersion: "338", base: base,
+                                           items: items)
+        #expect(m.isComplete)
+        let streams = try #require(m.entries.first { $0.declared == "streams" })
+        #expect(streams.copied)
+        var isDirectory: ObjCBool = false
+        let copied = base.appendingPathComponent(
+            "snapshots/2026-08-05-120000/streams")
+        #expect(FileManager.default.fileExists(atPath: copied.path,
+                                               isDirectory: &isDirectory))
+        #expect(isDirectory.boolValue)
+    }
+
+    @Test("Receipt files are not mistaken for snapshot folders")
+    func idsIgnoreReceipts() throws {
+        let base = try makeBase(files: [:])
+        defer { remove(base) }
+        let root = base.appendingPathComponent("snapshots", isDirectory: true)
+        try FileManager.default.createDirectory(at: root,
+                                                withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: root.appendingPathComponent(
+            "receipt-2026-08-05-120000.json"))
+        #expect(LegacySnapshot.ids(base: base).isEmpty)
+    }
+
+    @Test("Declared preferences are preserved losslessly, including Data")
+    @MainActor
+    func preferencesAreProtected() throws {
+        let base = try makeBase(files: [:])
+        defer { remove(base) }
+        let binary = Data([0, 1, 2, 255])
+        let date = Date(timeIntervalSince1970: 946_684_800)
+        let supplement = try LegacySnapshot.preferenceSupplement(
+            keys: ["strava.rejections", "detail.noStreams", "flag", "count",
+                   "when", "absent"],
+            values: ["strava.rejections": binary,
+                     "detail.noStreams": ["16415953236"],
+                     "flag": true, "count": 7, "when": date])
+        let result = try LegacySnapshot.capture(
+            at: Date(timeIntervalSince1970: 946_684_800), appVersion: "338",
+            base: base, items: items, supplements: [supplement])
+        let stored = try Data(contentsOf: base.appendingPathComponent(
+            "snapshots/2000-01-01-000000/preferences.plist"))
+        let plist = try #require(
+            PropertyListSerialization.propertyList(from: stored,
+                                                    options: [], format: nil)
+                as? [String: Any])
+        let values = try #require(plist["values"] as? [String: Any])
+        #expect(values["strava.rejections"] as? Data == binary)
+        #expect((values["detail.noStreams"] as? [String]) == ["16415953236"])
+        #expect(values["flag"] as? Bool == true)
+        #expect(values["count"] as? Int == 7)
+        #expect(values["when"] as? Date == date)
+        #expect(values["absent"] == nil)
+        #expect(result.manifest.entries.contains {
+            $0.relativePath == "preferences.plist" && $0.copied
+        })
+    }
+
+    @Test("A supplement cannot escape or overwrite the snapshot folder")
+    func supplementalPathsAreConfined() throws {
+        let base = try makeBase(files: [:])
+        defer { remove(base) }
+        for path in ["../outside.plist", "/absolute.plist", "manifest.json"] {
+            let supplement = SnapshotSupplement(declared: "test",
+                                                relativePath: path,
+                                                data: Data([1]))
+            #expect(throws: SnapshotError.self) {
+                _ = try LegacySnapshot.capture(
+                    at: Date(timeIntervalSince1970: 946_684_800),
+                    appVersion: "338", base: base, items: items,
+                    supplements: [supplement])
+            }
+            #expect(!FileManager.default.fileExists(atPath: base.appendingPathComponent(
+                "snapshots/2000-01-01-000000").path))
+        }
+    }
+
+    @Test("The production preference inventory is the archive boundary")
+    @MainActor
+    func productionPreferenceInventoryIsDeclared() throws {
+        let supplement = try LegacySnapshot.preferenceSupplement(
+            keys: DataLifecycle.preferenceKeys, values: [:])
+        let plist = try #require(
+            PropertyListSerialization.propertyList(from: supplement.data,
+                                                    options: [], format: nil)
+                as? [String: Any])
+        let declared = try #require(plist["declaredKeys"] as? [String])
+        #expect(declared == DataLifecycle.preferenceKeys.sorted())
+    }
+
+    @Test("Legacy folder-shaped createdUTC remains readable but is not a date")
+    func oldCreatedUTCIsNotInvented() {
+        let old = SnapshotManifest(id: "2026-08-09-143235",
+                                   createdUTC: "2026-08-09-143235",
+                                   appVersion: "337b", entries: [])
+        #expect(old.createdDate == nil)
+    }
+
     // MARK: The stamp
 
     @Test("The stamp sorts chronologically as a string")

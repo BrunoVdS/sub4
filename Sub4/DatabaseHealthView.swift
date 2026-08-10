@@ -77,6 +77,7 @@ struct DatabaseHealthView: View {
     @State private var snapshotting = false
     @State private var snapshot: SnapshotManifest?
     @State private var snapshotError: String?
+    @State private var snapshotNotice: String?
 
     /// Patch 255 — the import ledger. Read on open and after every import.
     @State private var lastRun: MigrationRun?
@@ -132,6 +133,9 @@ struct DatabaseHealthView: View {
     @State private var reviewLoad: ReviewTrailLoad?
     @State private var reviewTrip: ReviewRoundTrip.Report?
     @State private var verifying = false
+    /// A passing comparison and a durable ledger transition are separate
+    /// facts. This states why the second did or did not happen.
+    @State private var verifyLedgerNote: String?
     @State private var verification: VerificationReport?
 
     /// D6c — patch 312, moved off `@State` at 313.
@@ -496,6 +500,13 @@ struct DatabaseHealthView: View {
                 LabeledContent("Last snapshot", value: m.id)
                     .font(.caption)
 
+                LabeledContent("Captured at",
+                               value: m.createdDate.flatMap { _ in
+                                   AppTime.local(m.createdUTC)
+                               } ?? "not recorded by this older manifest")
+                    .font(.caption)
+                    .foregroundStyle(m.createdDate == nil ? Color.secondary : Color.dim)
+
                 LabeledContent("Files copied", value: "\(m.copiedCount) of \(m.presentCount)")
                     .font(.caption)
                 LabeledContent("Size",
@@ -541,13 +552,19 @@ struct DatabaseHealthView: View {
                 Text(e).font(.caption).foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let notice = snapshotNotice {
+                Text(notice).font(.caption2).foregroundStyle(Color.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         } header: {
             Text("Protected snapshot")
         } footer: {
-            Text("A dated copy of every file the app has written, with a "
-                 + "SHA-256 for each, taken before anything reads them. "
-                 + "Copies — nothing is moved or removed. Removed by Delete "
-                 + "local data along with the database.")
+            Text("A dated copy of every legacy file plus the declared "
+                 + "UserDefaults values, with a SHA-256 for each. Live data is "
+                 + "never moved or removed. After a new copy verifies, that copy "
+                 + "and the newest previous verified copy stay in full; older complete "
+                 + "copies become small audit receipts. Incomplete or unreadable "
+                 + "snapshots are never pruned. Delete local data removes all of it.")
         }
     }
 
@@ -884,32 +901,65 @@ struct DatabaseHealthView: View {
     private func runSnapshot() {
         snapshotting = true
         snapshotError = nil
+        snapshotNotice = nil
         // `patchLabel` since 284: a snapshot taken under a fix-up should say
         // so. This string is the manifest's only record of what took it.
         let version = AppVersion.patchLabel
         // Read here, on the main actor, where the inventory lives. Inside the
         // detached task below it would not be reachable.
         let items = DataLifecycle.appSupportItems
+        let capturedAt = Date()
+        let preferenceSupplement: SnapshotSupplement
+        do {
+            let values: [String: Any]
+            if let domain = Bundle.main.bundleIdentifier {
+                values = UserDefaults.standard.persistentDomain(forName: domain) ?? [:]
+            } else {
+                values = UserDefaults.standard.dictionaryRepresentation()
+            }
+            preferenceSupplement = try LegacySnapshot.preferenceSupplement(
+                keys: DataLifecycle.preferenceKeys, values: values)
+        } catch {
+            snapshotError = "The declared preferences could not be protected: "
+                          + error.localizedDescription
+            snapshotting = false
+            return
+        }
         Task {
-            let stamp = LegacySnapshot.stamp(for: Date())
-            let result: Result<SnapshotManifest, Error> = await Task.detached(priority: .userInitiated) {
+            let result: Result<SnapshotCaptureResult, Error> = await Task.detached(priority: .userInitiated) {
                 do {
-                    return .success(try LegacySnapshot.capture(stamp: stamp,
-                                                               appVersion: version,
-                                                               items: items))
+                    return .success(try LegacySnapshot.capture(
+                        at: capturedAt, appVersion: version, items: items,
+                        supplements: [preferenceSupplement]))
                 } catch {
                     return .failure(error)
                 }
             }.value
             switch result {
-            case .success(let m):
+            case .success(let result):
+                let m = result.manifest
                 snapshot = m
+                let archived = result.retention.pruned.count
+                snapshotNotice = archived > 0
+                    ? "Archived \(archived) older full snapshot"
+                      + (archived == 1 ? "" : "s")
+                      + " as detailed audit receipt"
+                      + (archived == 1 ? "" : "s") + ". "
+                      + "\(result.retention.fullSnapshots) full copies and "
+                      + "\(result.retention.receipts) receipts remain."
+                    : "\(result.retention.fullSnapshots) full snapshot"
+                      + (result.retention.fullSnapshots == 1 ? "" : "s")
+                      + " and \(result.retention.receipts) audit receipts retained."
+                var messages = result.retention.warnings
                 if m.failureCount > 0 {
-                    snapshotError = "\(m.failureCount) file\(m.failureCount == 1 ? "" : "s") "
-                                  + "could not be copied or did not verify. The manifest "
-                                  + "in \(m.id) names each one."
+                    messages.insert(
+                        "\(m.failureCount) file\(m.failureCount == 1 ? "" : "s") "
+                        + "could not be copied or did not verify. The manifest "
+                        + "in \(m.id) names each one.", at: 0)
                 }
+                snapshotError = messages.isEmpty ? nil : messages.joined(separator: "\n")
             case .failure(let error):
+                snapshotNotice = nil
                 snapshotError = error.localizedDescription
             }
             snapshotting = false
@@ -1441,6 +1491,10 @@ struct DatabaseHealthView: View {
                     .foregroundStyle(v.passed ? Color.dim : .red)
                 LabeledContent("Compared", value: "\(v.checks.count) things")
                     .font(.caption).foregroundStyle(Color.dim)
+                LabeledContent("Ledger",
+                               value: verifyLedgerNote ?? "the run is marked verified")
+                    .font(.caption2)
+                    .foregroundStyle(verifyLedgerNote == nil ? Color.dim : .red)
 
                 ForEach(v.checks) { check in
                     LabeledContent("  \(check.name)",
@@ -2687,6 +2741,7 @@ struct DatabaseHealthView: View {
 
     private func runVerify(_ db: Sub4Database) {
         verifying = true
+        verifyLedgerNote = nil
         Task {
             // The same gathered value the import uses — 301. The verifier
             // reads a subset of it on purpose; see the overload's comment.
@@ -2696,8 +2751,23 @@ struct DatabaseHealthView: View {
             // leaves it where it is — `SemanticVerifier.record` is what
             // refuses, not this screen.
             if let runID = lastRun?.id {
-                _ = try? SemanticVerifier.record(report, for: runID, in: db)
+                do {
+                    let moved = try SemanticVerifier.record(report, for: runID, in: db)
+                    if moved {
+                        verifyLedgerNote = nil
+                    } else if !report.passed {
+                        verifyLedgerNote = "the report did not pass, so no run was changed"
+                    } else {
+                        verifyLedgerNote = "not recorded — import again, then verify the "
+                                         + "newest completed pending run"
+                    }
+                } catch {
+                    verifyLedgerNote = "the run could not be marked verified: "
+                                     + String(describing: error)
+                }
                 await reloadLedger(db)
+            } else {
+                verifyLedgerNote = "no run to mark — the ledger is empty"
             }
             verifying = false
         }
@@ -2920,6 +2990,9 @@ struct DatabaseHealthView: View {
         }
         do {
             let db = try Sub4Database.open()
+            // The preview/fallback path obeys the same process boundary as
+            // `Sub4Launch`; otherwise it could leave old `running` rows open.
+            _ = try MigrationLedger.closeInterrupted(db)
             opened = .success(db)
             await recheck(db)
             await reloadLedger(db)
@@ -3006,11 +3079,17 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private var ledgerSection: some View {
         Section {
+            if let recoveryFailure = Sub4Launch.shared.ledgerRecoveryFailure {
+                Text("Interrupted-run recovery failed: \(recoveryFailure)")
+                    .font(.caption2).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let r = lastRun {
                 LabeledContent("State") {
                     Text(r.state.label)
                         .font(.callout.weight(.semibold))
-                        .foregroundStyle(r.state == .failed ? Color.red : Color.secondary)
+                        .foregroundStyle((r.state == .failed || r.state == .interrupted)
+                                         ? Color.red : Color.secondary)
                 }
                 // LOCAL, WITH THE RAW STRING AS THE FALLBACK — patch 304.
                 //
@@ -3028,6 +3107,11 @@ struct DatabaseHealthView: View {
 
                     LabeledContent("Finished", value: AppTime.local(f) ?? f).font(.caption)
 
+                }
+                if let recovered = r.recoveredUTC {
+                    LabeledContent("Recovered on next launch",
+                                   value: AppTime.local(recovered) ?? recovered)
+                        .font(.caption)
                 }
                 LabeledContent("By", value: "patch \(r.appVersion)")
                     .font(.caption).foregroundStyle(Color.dim)
@@ -3054,7 +3138,7 @@ struct DatabaseHealthView: View {
                 // an interrupted run sat two days down the table. Two ways to
                 // show nothing, one of them wrong, and no way to tell from a
                 // screenshot.
-                LabeledContent("Interrupted runs", value: "\(staleRuns)")
+                LabeledContent("Runs open right now", value: "\(staleRuns)")
                     .font(.caption)
                     .foregroundStyle(staleRuns > 0 ? Color.red : Color.dim)
             } else {
@@ -3070,15 +3154,14 @@ struct DatabaseHealthView: View {
             // is the sentence the migration's own body still carries. It
             // stopped being true the day the write-through landed.
             Text("A run reaches \"imported, not verified\" when the write "
-                 + "commits; the verifier that can move it to \"verified\" is "
-                 + "the next step, and until it exists nothing may switch its "
-                 + "reads to this database.\n\n"
+                 + "commits. A passing verifier may move only the newest "
+                 + "completed pending run to \"verified\"; interrupted, failed, "
+                 + "older and still-running rows are refused.\n\n"
                  + "Most rows are not you. Leaving the app, coming back, and a "
                  + "background refresh each write one, so the ledger keeps the "
-                 + "newest 200 of those and discards older ones. Runs you "
-                 + "started, runs that failed, and runs that were interrupted "
-                 + "are kept for good — an interrupted run is the only "
-                 + "evidence the app was killed while writing.")
+                 + "newest 200 successful automatic runs and 20 automatic "
+                 + "interruptions. Runs you started, failures, verified runs and "
+                 + "older rows whose trigger was never recorded are kept.")
         }
     }
 
@@ -3153,6 +3236,8 @@ struct DatabaseHealthView: View {
             lines.append("")
             lines.append(contentsOf: m.redactedLines)
         }
+        lines.append("")
+        lines.append(contentsOf: LegacySnapshot.retentionLines())
         // Patch 255. `MigrationRun.line` is counts and timestamps of the import
         // itself — nothing from the athlete's history — so it is safe here.
         // PATCH 311, AND EVERY LINE OF IT IS UNCONDITIONAL. `migration_run: 45`
@@ -3161,7 +3246,11 @@ struct DatabaseHealthView: View {
         // §12.54.2 in the same week it was written down.
         lines.append("")
         lines.append("Last import: \(lastRun?.line ?? "no import has been recorded")")
-        lines.append("Interrupted runs: \(staleRuns)")
+        lines.append("Runs open right now: \(staleRuns)")
+        lines.append("Recovered at launch: \(Sub4Launch.shared.interruptedAtLaunch)")
+        lines.append("Recovery error: "
+                     + (Sub4Launch.shared.ledgerRecoveryFailure == nil
+                        ? "none" : "present — see the on-device screen"))
         if let c = ledgerCensus {
             lines.append(contentsOf: c.diagnosticLines)
         } else {
@@ -3187,6 +3276,8 @@ struct DatabaseHealthView: View {
         if let v = verification {
             lines.append("")
             lines.append(contentsOf: v.diagnosticLines)
+            lines.append("  ledger: "
+                         + (verifyLedgerNote ?? "the run is marked verified"))
         }
         // Patch 266c. UNCONDITIONAL, unlike the two above it. Those are nil
         // until a button is pressed; the journal always has an answer, and

@@ -718,6 +718,12 @@ paragraph instead.
 
 ### 9.7 The legacy JSON stores are migrated ONCE, not dual-written — decided 4 August 2026
 
+**SUPERSEDED BY D6b (patches 302–307).** This was the original cutover decision.
+The project later chose bounded write-through plus parity during the shadow and
+stabilisation window because real-device evidence was worth the temporary second
+writer. The final state is still one SQLite authority; this subsection is
+historical rationale, not the current migration procedure.
+
 Nine stores hold the app's data in JSON under Application Support today:
 `activities.json`, `details/`, `streams/`, `athlete.json`, `constants.json`,
 `notes.json`, `proposals.json`, `weather.json`, plus preference keys. 3.3 moves
@@ -6792,6 +6798,11 @@ six tables and compares every field against the bundled plan the app holds.
 Sixth repository, and the largest: 260 sessions where the athlete's profile was
 27 fields.
 
+**AMENDED AT 338.** The comparison covers fields represented by the plan model,
+not literal JSON identity. `meta.source` is dropped before import and the
+top-level session/exercise arrays have no stored ordinal, so their source order
+is not reproduced. §12.86.7 is the current coverage boundary.
+
 ### 12.66.1 A different claim from every read-back before it
 
 `plan.json` ships in the bundle, is read-only at runtime and is replaced
@@ -6878,6 +6889,10 @@ idea, two implementations, nothing keeping them in step.
 written. So there is no list here, and deliberately not an empty one: a third
 declaration holding nothing would be a type written in anticipation, which is
 what 321 deleted a forwarder to avoid.
+
+**338 qualification:** “every field” above means every field the decoded Swift
+models retain. It excludes source-only `meta.source` and does not prove the
+ordering of top-level collections whose tables have no ordinal.
 
 The screen and the paste still print **"approved differences: none"**, because
 the absence has to be visible — §12.54.2 again. A reader who sees no such line
@@ -7164,6 +7179,12 @@ once the database holds everything; from Phase 4A the same data arrives from
 Apple Health and Workout data, and "absent from Strava's gear list" stops being a
 signal that exists. Building a retirement rule on a source that is going away
 would be a rule with a shelf life shorter than the patch that writes it.
+
+**AMENDED AT 338 — the sentence above described the destination, not current
+capability.** HealthKit does not yet supply the same application package: no
+production adapter, gear replacement or source-priority path exists. The
+decision not to infer retirement from a disappearing Strava list still stands,
+but it cannot be cited as evidence that Strava may already be disconnected.
 
 So the column stays empty and stays on the approved list, and this section is why
 — a decision with a reason, rather than an omission a later reader has to guess
@@ -7833,6 +7854,9 @@ underneath. It is a division of labour, not an oversight: `PlanRoundTrip` (323)
 proves the plan is identical, `MatchParity` (321) proves the matching is
 identical **given** a plan.
 
+**AMENDED AT 338:** `PlanRoundTrip` proves mapped values pair by UID. It does not
+prove source-only metadata or top-level array order; §12.86.7 records both gaps.
+
 **Slice 8 reads the plan from `PlanRepository.load` instead.** Decided
 8 August, after the holding pattern was discovered part-way through designing
 the slice — which is worth recording, because the earlier decision to compare
@@ -7992,9 +8016,10 @@ wants "just a few more rows" reads it first.
 
 Eight slices, nine read-backs, and every one green on the device.
 
-**It proves the database can feed the app.** Every record round-trips, every
-derivation produces the same answer from either side, and the mechanism D7
-switches onto exists and is exercised.
+**It proves the mapped database paths can feed the covered calculations.** The
+covered derivations produce the same answer from either side, and the mechanism
+D7 switches onto exists and is exercised. It does not prove literal record
+round-trip; §12.86.7 records unmapped fields and ordering.
 
 **It does not prove the app is right.** §12.72 is the standing evidence: seven
 copies of "done of total" disagreed for 230 patches, on two screens, and no
@@ -8808,6 +8833,272 @@ decides whether to flip `migrationFailureBlocksTheApp` to `true`.
 A paste that omits the empty tables and a snapshot row that overstates its
 losses are both survivable while the person reading them is the person who
 generated them. They stop being survivable the moment the paste is the evidence.
+
+## 12.87 Verification is a guarded transition, not a historical count — patch 338
+
+The captured database has 53 `pending`, three `running`, and zero `verified`
+rows. That says no run in this database has ever passed through the verifier;
+it does not define the final gate. A historical verified row cannot prove that
+the current source package is the one it checked.
+
+`SemanticVerifier.record` may now move only the newest ledger row, only from
+`pending`, and only when that row already has an import finish time. The update
+is conditional in SQL, so a new write-through opened between comparison and
+recording makes the transition return false. `finishedUTC` is not rewritten:
+it remains the import finish time rather than becoming a misleading duration
+that ends at verification.
+
+`MigrationLedger.finish` accepts only the two outcomes of executing an import:
+`pending` and `failed`. It cannot write `verified` or `activated`; those states
+have separate one-rung transitions. Running, interrupted, failed, already
+verified, activated, unknown, and superseded rows are refused.
+
+The current code still does **not** bind that row to snapshot bytes.
+`snapshotID` is an association passed beside a fresh `AppStores.current()`;
+Verify gathers the live stores again, and automatic writers can run between the
+two. The operational gate therefore owes a dataset/manifest fingerprint (or an
+import directly from the protected snapshot), a quiescent final window, and a
+requirement that import and verification observe the same fingerprint. Only
+then can the newest verified row prove currentness. A historical census alone
+is audit evidence, not that proof.
+
+## 12.86 What the container said that the screen could not — patch 338
+
+On 9 August the app's own container was pulled off the phone and the JSON
+stores were compared against `sub4.sqlite` by code that shares nothing with the
+app. Every explicitly mapped field compared equal after the importer's stated
+normalisations: 678 activities; 586 weather records; 483 details with 5,941
+splits, 1,771 laps and 599 efforts; 470 traces with 140,790 samples; six
+rehearsal review rows; and the bundled plan. This validates the covered
+read-backs. It does **not** mean the database is a literal or complete copy;
+§12.86.7 records the source fields and ordering that the mapping does not retain.
+This was a one-off external audit of the downloaded container; its executable
+and field-coverage report are not yet committed repository artefacts, so making
+the result reproducible is a gate item rather than an established tool.
+
+### 12.86.1 A read from outside is a different instrument
+
+Every check this project has is the app checking itself. That is not a weakness
+of any one of them — it is the shape of all of them at once, and it means a
+question nobody thought to ask has no way to surface.
+
+Five did. The first four are facts about housekeeping; the fifth is a backup
+boundary. Each was invisible from the screen by construction:
+
+1. `migration_run` had **never once** reached `verified`, on this database, ever;
+2. three rows sat in `running`, one of them genuinely live;
+3. the snapshots folder was the largest thing in the container and nothing
+   pruned it;
+4. `SnapshotManifest.createdUTC` held the folder name, not a timestamp.
+5. all four protected snapshots omitted the UserDefaults-backed migration
+   inputs, including the rejection payload and sync/backfill state.
+
+**The general rule: a system that only checks itself cannot find the questions
+it does not ask.** Reading the artefact with a different tool is cheap and is
+now worth doing at each rung of the ladder rather than once.
+
+### 12.86.2 `running` was two facts wearing one word
+
+`MigrationLedger`'s header is right that a ledger which forgets a crash is worse
+than one that records it, and `stale()`'s comment was right to refuse to rewrite
+a crashed run to `failed` — `failed` means the write threw, and a process the OS
+killed threw nothing.
+
+But keeping the fact by keeping the ambiguity is not keeping the fact. `running`
+meant *open right now* and *was open when the process died*, and no column could
+separate them: the container held three, one opened forty-six seconds before
+capture and genuinely live. The screen said `Interrupted runs: 2` and that
+number was neither right nor wrong, because it was answering two questions.
+
+`2026-08-15-interrupted-run` adds a sixth state. It is terminal, and the
+rebuilt schema gives it `finishedUTC = NULL` plus a separate non-null
+`recoveredUTC`. The exact finish time stays unknowable; the later launch time is
+not presented as import duration. Recovery time is not ordered against start
+time because a wall-clock correction between processes is possible and must
+not prevent recovery.
+
+**The ambiguity resolves at launch and only at launch.** No run from a previous
+process can still be open, so every row in `running` at that instant was
+interrupted — with no timeout, no clock comparison and no heuristic.
+`Sub4Launch` closes them immediately after the database opens and before any run
+is opened; the health-screen fallback performs the same boundary operation.
+Recovery failure is non-fatal while the database is a shadow source, but is
+stored and printed rather than swallowed.
+
+The census now prints two numbers where it printed one — `open right now` and
+`interrupted, recovered at a later launch`. Automatic interruption rows retain
+the newest 20; manual and pre-trigger rows remain durable. §12.54.2 again, and
+this is the second time in three patches that one number standing for two
+questions is what let a problem hide.
+
+### 12.86.3 A rebuild rather than a looser CHECK
+
+SQLite cannot alter a CHECK and `migration_run.state` carries three. Same
+twelve-step rebuild as `2026-08-13-confidence-scale`, and cheap for the same
+reason: the table holds tens of rows because `MigrationLedger` prunes it on
+every insert.
+
+Dropping the CHECK instead would have traded one rebuild for a column that can
+hold a typo for ever, which is the opposite of what every frozen vocabulary in
+this schema is for. `triggeredBy`'s constraint — added by a *later* migration
+than the table — is copied into the rebuild verbatim; a rebuild that silently
+dropped a constraint added after the original body is a schema nobody could read
+from the source.
+
+The rebuild also adds an autoincrement `sequence`. `startedUTC` has one-second
+precision and the captured table already contains same-second runs; UUID text
+is not a chronological tie-break. All newest-run, verification and retention
+queries order by insertion sequence. A populated predecessor-table upgrade
+test carries every old state and field across in row order.
+
+**The rows already stuck open are NOT converted in the migration.** A migration
+runs inside the launch that is about to open its own run and cannot tell from
+SQL which open row belongs to the process it is running in. One line, and it
+would have been a guess.
+
+### 12.86.4 A `try?` in front of the one write D7 acts on
+
+`DatabaseHealthView.runVerify` read:
+
+    _ = try? SemanticVerifier.record(report, for: runID, in: db)
+
+If that write threw, the screen showed a passing verification and the ledger
+stayed `pending`, with nothing anywhere saying the two disagreed — and
+`verified` is the state D7 decides on. §12.15 with a `try?` in front of it.
+
+The verdict row now has a `Ledger` row beside it saying which of three things
+happened: the run is marked verified, the report did not pass so the run stays
+where it was, or the write threw and here is what it said. **Two writes, two
+answers.**
+
+The transition itself is now conditional: only the newest completed `pending`
+row may become `verified`. A running, interrupted, failed, activated, unknown or
+superseded row is refused, and the import's `finishedUTC` is preserved. The
+general import-finishing API accepts only `pending` or `failed`, so it cannot
+bypass this gate.
+
+Separately: `verified` has never been reached on this database, and the reason
+is not the ongoing import. Nothing but the Verify button can write it —
+`SemanticVerifier.record` is the only writer and the ledger deliberately stops
+at `pending` — so `0 verified ever` means the button has not been pressed since
+the wipe. CLAUDE.md §5's claim that "`migration_run` reaches `verified`"
+described the pre-wipe database and had been stale for a day.
+
+### 12.86.5 Snapshots had no retention and became the largest thing on disk
+
+    snapshots   40.58 MB   (4 copies, 2 of them byte-identical)
+    database    27.13 MB
+    live stores 14.21 MB
+
+Two of the four were taken fifty-eight seconds apart — 958 files each, every
+file hash-identical. `LegacySnapshot` had no prune, no keep-newest, nothing. At
+~14 MB now and ~25 MB once the trace backfill lands, a habit of pressing the
+button fills the phone, and the screen would say nothing was wrong.
+
+**The obvious policy is wrong and the reason is sequence, not size.** Deleting
+the previous snapshot as the new one is written destroys the only good copy at
+the moment the new one is unproven; a phone that runs out of disk halfway
+through 958 files would be left with a half-written snapshot and nothing behind
+it. This project has already lost every store once.
+
+So: prune only after `isComplete` *and* an independent payload re-hash — every
+file that existed was copied and still hashes equal — and keep two full copies.
+The capture that triggered retention is always protected even if the phone
+clock moved backwards. Incomplete, unreadable, empty-manifest, unsafe-path and
+tampered folders never authorise deletion and are left for inspection.
+
+**The manifest details survive the payload.** Before an older full folder is
+removed, `snapshots/receipt-<id>.json` is atomically written and read back. It
+embeds the complete manifest (every path, size and SHA-256), the digest of the
+exact original manifest bytes, totals, capture time, prune time and app builds.
+It is audit metadata, explicitly not a restorable backup. Existing receipt ids
+cannot be overwritten or reused. Twenty verified receipts are retained; corrupt
+or unknown receipts are never deleted automatically.
+
+The four captures in the audited container protect only Application Support
+files. They omit UserDefaults-backed inputs such as rejection/match payloads,
+sync cursors and backfill state; the in-app text export also rendered Data
+values only as byte counts. Patch 338 adds a filtered binary `preferences.plist`
+containing every key declared by `DataLifecycle`. It is a logical, lossless API
+export rather than a copy of the process-owned physical plist, and it excludes
+Keychain. A new post-338 snapshot is required before the gate.
+
+### 12.86.6 `createdUTC` was not a UTC time
+
+`SnapshotManifest(id: stamp, createdUTC: stamp, ...)` — both fields held
+`"2026-08-09-143235"` in all four manifests. §12.48 records "a timestamp that is
+a name is not a time"; this is the same error arriving from the other side, a
+field whose name promises ISO-8601 and whose value is a folder.
+
+**The key is not renamed.** Four manifests on disk carry it, one of them the
+only copy of stores already lost once, and `SnapshotManifest` is `Codable` with
+a non-optional field — a rename makes every existing manifest undecodable. The
+value becomes a real timestamp and `createdDate` returns nil for the old shape
+rather than parsing the id into a date that was never recorded. A reader asking
+what the manifest recorded gets the honest answer.
+
+Retention receipts make a separate, explicit derivation for old snapshots:
+their `capturedUTC` is parsed from the UTC folder id so an audit record can sort
+and display it. That does not change the old manifest's `createdDate`, which
+remains nil; the receipt's manifest digest preserves the original value.
+
+### 12.86.7 What the comparison could not prove, and said so
+
+Zero differences applies to fields the importer explicitly maps, with its date
+normalisation. It is not information identity. The audit found these source
+facts with no lossless database representation or round-trip check:
+
+- gear is flattened across bike, active-shoe and retired-shoe collections;
+  `primary`, retirement membership and athlete fetch time are not retained;
+- rejection receipts lose their verbatim `label` and `dateIsKnown`; match
+  decisions likewise lose `dateIsKnown`;
+- `plan.json`'s `meta.source` is dropped, and top-level session/exercise array
+  order is not stored because those tables have no ordinal (225 of 261 session
+  positions and all 20 exercise positions differ when read `ORDER BY uid`);
+- fractional seconds in detail, stream, weather and sync fetch timestamps are
+  normalised to whole-second ISO-8601.
+- `AthleteConstants.version` is intentionally excluded as cache invalidation
+  state rather than an athlete fact.
+
+The database also contains useful information the JSON does not: canonical
+identities, source records and aliases, relationship/provenance rows, plan
+version/hash/activation metadata, and the migration ledger. The right model is
+a normalised semantic copy plus provenance, not a byte mirror. Every lossy item
+must either be modelled or explicitly accepted with consumer evidence before
+D7; the current verifier mostly checks counts and cannot approve that decision.
+
+Patch 337's claim that the overwritten sixth review "came back" is true at row
+level and thinner than it looked:
+
+    distinct recordKeys:      6
+    distinct evidence bodies: 1
+    distinct summaries:       1
+
+All six rehearsal reviews carry identical content, and the two that collided
+share a window. So the 9 August overwrite destroyed a row, not any unique text,
+and the recovery restored a row whose contents were already present five times
+over. The fix and its reasoning are unchanged — with a real review the packs
+differ and the loss is permanent — but the device evidence for it is weaker than
+the counts suggested, and the counts were what got reported first.
+
+**A denominator of one is not a denominator.** Six identical fixtures compare
+equal for a reason that has nothing to do with the code under test.
+
+### 12.86.8 Database cutover and Strava exit are separate gates
+
+The database is still a shadow copy. Production stores and screens load JSON,
+`Sub4Launch` still fails open because those reads do not yet depend on GRDB, and
+disconnect currently treats the database directory as disposable local data.
+D7 must repoint reads, fail safely, export the authoritative database, replace
+folder deletion with lineage-aware row removal, close/reopen the database around
+destructive lifecycle actions, and prove rollback for a release window.
+
+Even after D7/D8, disconnecting Strava does not make new activities arrive from
+HealthKit. There is no production workout adapter yet; current activity ingest
+calls Strava and all 678 captured activity source records are Strava. Phase 4A
+still owes source priority/deduplication, moving-time, route/history, gear and
+local-zone replacements plus an on-device fresh-workout ingestion/export test.
+Until those pass, revoking Strava would stop new activity ingestion.
 
 ## 12.85 The run time was never the key — patch 337
 

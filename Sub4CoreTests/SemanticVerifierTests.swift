@@ -327,6 +327,9 @@ struct SemanticVerifierTests {
     func aPassingReportIsRecorded() throws {
         let f = try migrated(label: "verify-ledger-pass")
         let report = try verify(f)
+        let beforeRow = try MigrationLedger.latest(f.db)
+        let before = try #require(beforeRow)
+        let importFinishedUTC = try #require(before.finishedUTC)
         // NO FIXED TIMESTAMP. The first version of this test stamped the
         // verification at a fixed 12:00 and the run had started at whatever
         // o'clock it actually was, so patch 255's CHECK refused a run that
@@ -344,6 +347,8 @@ struct SemanticVerifierTests {
         // Nothing in this app has ever been able to reach this state. Patch
         // 255 built it and said so.
         #expect(run.state == .verified)
+        #expect(run.finishedUTC == importFinishedUTC,
+                "verification must preserve the import's completion time")
         #expect(run.note?.contains("agreed") == true)
     }
 
