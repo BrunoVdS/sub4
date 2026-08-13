@@ -171,7 +171,7 @@ struct PlanFocusTests {
     /// test exists so that happens visibly rather than by surprise.
     @Test("The bundled plan reads as a running plan")
     func theBundledPlanIsARunningPlan() {
-        let f = PlanStore.shared.focus
+        let f = PlanStore().focus
         #expect(f.soleLead == .run)
         #expect(f.supporting == [.bike, .swim])
         let runShare = f.shares[.run] ?? 0
@@ -181,7 +181,7 @@ struct PlanFocusTests {
     /// The header line for a real week, end to end.
     @Test("A real week's lead line names running and a distance")
     func aRealWeekProducesALeadLine() throws {
-        let store = PlanStore.shared
+        let store = PlanStore()
         // Computed into a local first: `#expect`/`#require` decompose a call
         // into `Testing.__checkFunctionCall`, which is `rethrows`, and an
         // inline `first(where:)` then demands a `try` it does not need. Bitten

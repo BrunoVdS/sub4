@@ -132,6 +132,18 @@ nonisolated enum MigrationRunTrigger: String, CaseIterable, Codable, Sendable {
     case foregrounded
     /// iOS woke the app for a `BGAppRefreshTask` — §12.51.
     case backgroundRefresh
+    /// A store holding data the athlete created saved it — patch 348, §12.94.
+    ///
+    /// NOT `manual`, and the distinction is the point. `manual` means somebody
+    /// pressed Import and its successful runs are kept for ever on that basis.
+    /// This is the app noticing a save and catching the database up on its own,
+    /// which is automatic in every sense that matters to retention.
+    ///
+    /// It exists as its own case rather than folding into `backgrounded`
+    /// because the question the census answers — "is the write-through firing
+    /// when I write something" — is unanswerable if the two share a number.
+    /// §12.15, in the row that says whether a mechanism is working.
+    case authored
 
     /// For a screen. Reads after "Started by".
     var label: String {
@@ -140,6 +152,7 @@ nonisolated enum MigrationRunTrigger: String, CaseIterable, Codable, Sendable {
         case .backgrounded:      "leaving the app"
         case .foregrounded:      "coming back to the app"
         case .backgroundRefresh: "a background refresh"
+        case .authored:          "something you wrote"
         }
     }
 
@@ -340,7 +353,7 @@ nonisolated enum MigrationLedger {
     /// asserts the two agree TODAY, so adding a case is a decision somebody has
     /// to make rather than one that gets made for them.
     static let prunableTriggers: [MigrationRunTrigger] =
-        [.backgrounded, .foregrounded, .backgroundRefresh]
+        [.backgrounded, .foregrounded, .backgroundRefresh, .authored]
 
     /// WHAT IS NEVER PRUNED, stated as a list because it is the important half:
     ///

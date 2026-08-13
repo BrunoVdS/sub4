@@ -257,11 +257,23 @@ struct DataLifecycleTests {
     /// a kept category's data lives only in here.
     ///
     /// `migrationFailureBlocksTheApp` is this project's declared marker for
-    /// that moment — "IT MUST BECOME `true` IN 3.3.3, the moment the first
-    /// store reads its data from the database instead of from JSON" — and it is
-    /// a stored constant precisely so that flipping it is a decision somebody
-    /// makes on purpose. This test makes that decision fail the build until
-    /// the disconnect has been taught to delete rows.
+    /// that moment, and it is a stored constant precisely so that flipping it
+    /// is a decision somebody makes on purpose. This test makes that decision
+    /// fail the build until the disconnect has been taught to delete rows.
+    ///
+    /// PATCH 346 — THIS QUOTED THE WRONG SENTENCE, AND THE SENTENCE NO LONGER
+    /// EXISTS. It cited `Sub4Launch`'s header saying the flag "MUST BECOME
+    /// `true` IN 3.3.3, the moment the first store reads its data from the
+    /// database instead of from JSON". Patch 342 corrected that header: A3 §2.2
+    /// settled that every D7 slice keeps a selectable legacy path and the flip
+    /// happens at B9, after all eight.
+    ///
+    /// The distinction is the whole of this test. At 346 three stores DO read
+    /// from the database — and `.removeEverything` is still correct, because
+    /// every row they read also still exists in a file above and every one of
+    /// those files is still written. The rule turns on whether the database
+    /// holds the ONLY copy, not on whether anything reads it. Same conclusion,
+    /// and it now says so for the reason that is actually true.
     ///
     /// So the person who activates the database reads is the same person who
     /// gets told what they now owe. That is the whole design: the act that

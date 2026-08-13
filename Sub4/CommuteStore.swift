@@ -170,6 +170,7 @@ final class CommuteStore {
 
     private func save() throws {
         try StoreWrite.encode(decisions, to: fileURL, store: "commutes.json")
+        DatabaseWriteThrough.shared.noteAuthoredChange("a commute decision was saved")
     }
 
     /// Drops everything held in memory WITHOUT writing to disk — the

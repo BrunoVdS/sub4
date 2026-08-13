@@ -35,10 +35,21 @@ struct LaunchTests {
     ///
     /// This test does not stop that happening. It makes the flip deliberate:
     /// whoever changes the constant has to change this line too, and read why.
+    ///
+    /// PATCH 346a — AND THE INSTRUCTION BELOW USED TO BE WRONG IN A WAY THAT
+    /// MATTERS. It said "flip this in 3.3.3, when the first store reads from
+    /// the database". At 346 three stores read from the database and this flag
+    /// must NOT move: A3 §2.2 settled that every D7 slice keeps a selectable
+    /// legacy path, and the app fails closed only at B9, after all eight, with
+    /// a recovery screen that does not exist yet. Following the old sentence
+    /// today would block the app on a failed migration with nowhere to say so.
+    ///
+    /// Third copy of that sentence to be corrected: 342 fixed `Sub4Launch`'s
+    /// header, 346 fixed `DataLifecycleTests`, this is the last.
     @Test("Migration failure does not block the app — and the condition that changes it")
     func theFailurePolicyIsStatedRatherThanImplied() {
         #expect(Sub4Launch.migrationFailureBlocksTheApp == false,
-                "flip this in 3.3.3, when the first store reads from the database")
+                "flip this at B9, when the database holds the only current copy")
     }
 
     /// Adding a case to a `LocalizedError` and forgetting its description gives

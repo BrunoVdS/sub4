@@ -218,6 +218,9 @@ final class Matcher {
         let list = decisions.values.sorted { $0.sessionUid < $1.sessionUid }
         guard let data = try? JSONEncoder.sub4.encode(list) else { return false }
         defaults.set(data, forKey: Self.decisionsKey)
+        // The other half of the pair `DatabaseWriteThrough`'s header names as
+        // impossible to fetch again. Patch 348, §12.94.
+        DatabaseWriteThrough.shared.noteAuthoredChange("a match decision was saved")
         return true
     }
 

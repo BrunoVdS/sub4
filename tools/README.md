@@ -7,7 +7,7 @@ anything here.**
 
 | File | What it is |
 |---|---|
-| `marathon_plan_sub_4hr.html` | The source training document. 282,720 bytes, SHA-256 `7d267fac`. |
+| `marathon_plan_sub_4hr.html` | The source training document. 283,010 bytes, SHA-256 `5d04c722`. |
 | `extract_plan.py` | The extractor that turned it into `Sub4/plan.json`. 21,648 bytes, SHA-256 `665a6f5b`. |
 
 Usage, as the script itself states:
@@ -35,6 +35,18 @@ of two is still in the source document, so a re-run overwrites both and the week
 headers go back to claiming 125 km and 8 h for week 11 instead of 95 km and 7 h.
 
 ADR-0003 §12.11.5 records this in full.
+
+**Patch 351 (12 Aug 2026) moved the Berlin rest day in BOTH files** (§12.96).
+
+**Patch 350 (12 Aug 2026) moved every run pace +15 s/km through 11 Oct in BOTH
+files** (§12.95) — 18 detail lines, same sync-and-diff procedure as 349.
+
+**Patch 349 (12 Aug 2026) revised weeks 4–6 in BOTH files** (§12.94): the HTML
+cards, popups and phase strip were edited together with `plan.json`, and the
+extractor's session output was diffed against the bundle before shipping —
+sessions agree verbatim; the weekly stat lines of the 34 untouched weeks remain
+the only divergence. The same was done at 329a for week 2 (this inventory line
+was left stale then; it is current again as of 349).
 
 ## Why the files are here at all
 

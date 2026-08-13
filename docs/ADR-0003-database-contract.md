@@ -476,7 +476,26 @@ phone restores. "No sync" means no live reconciliation between two installs, not
 ### 9.2 The seed is `Sub4/plan.json` — the copy inside the target
 
 37 weeks, 261 sessions, 20 exercises, and the `fuel` and `warmup` blocks the app
-actually renders. **279,414 bytes, SHA-256 `0d41f78c1b55175c8cd02c1e78a10eb669ef75577d47d2916e001f067bda8686`.**
+actually renders. **278,546 bytes, SHA-256 `4dfb8b1f2284d6721edba307a3fef662a32d16191ce1aa8ee7819c6250ad05ea`.**
+
+**Amended 12 August 2026, patch 351.** Was 278,870 bytes and 261 sessions,
+SHA-256 `7b0b485704a0815b…`. **260 sessions** — the Berlin rest day moved from
+Sunday 30 August to Tuesday 1 September and the Sunday card was deleted rather
+than duplicated (§12.96). First movement in this constant since 329a, and in
+the other direction.
+
+**Amended 12 August 2026, patch 350.** Same 278,870 bytes, was SHA-256
+`1c10ba914dd05224…`. Every run pace from 14 Aug through 11 Oct moved +15 s/km
+(§12.95) — 18 `detail` strings, every swap the same character count, so the
+byte count held still while the content moved. A size check alone would have
+called this file unchanged; the hash is why §9.2 records both.
+
+**Amended 12 August 2026, patch 349.** Was 279,414 bytes, SHA-256
+`0d41f78c1b55175c8…`. Weeks 4–6 were rebuilt around the changed travel — two
+build-up weeks and a Berlin run block, §12.94 — which leaves the session count
+at 261 while the discipline mix moves: run 105→107, bike 53→52, swim 26→25.
+`PlanSeedTests.Frozen`, `PlanCoverageTests.Expected` and this paragraph were
+updated in the same patch as the file.
 
 **Amended 8 August 2026, patch 329a.** Was 260 sessions, 279,078 bytes, SHA-256
 `a4087101cad4f61e…`. The plan was revised — week 2's long run moved from Saturday
@@ -8833,6 +8852,331 @@ decides whether to flip `migrationFailureBlocksTheApp` to `true`.
 A paste that omits the empty tables and a snapshot row that overstates its
 losses are both survivable while the person reading them is the person who
 generated them. They stop being survivable the moment the paste is the evidence.
+
+## 12.96 A rest card that argued with the session beside it — patch 351
+
+### 12.96.1 What was asked, and the thing it fixed on the way
+
+*"Delete the rest on 30/8 and add a rest on 1/9, so it cuts into the large run
+block."*
+
+Sunday 30 August held **two** cards: `Walk / rest` and `Strength B · core`. Both
+had been correct in isolation since 349 and they contradicted each other on the
+screen — a rest day carrying a training session. Deleting the rest card leaves
+the bodyweight circuit as the day's whole content, which is what the day
+actually is.
+
+Tuesday 1 September's steady run becomes the rest. The Berlin run days were
+Mon–Tue–Wed–Thu, four straight; they are now **Mon | Wed–Thu**, which is what
+"cut into the run block" asks for.
+
+### 12.96.2 The count moves down, and that is the first time
+
+`plan.json` is **278,546 bytes, 260 sessions**, SHA-256 `4dfb8b1f…`. One session
+is deleted outright (the Sunday rest) and one changes discipline in place
+(Tuesday: run → rest), so the total falls by one. Every previous plan revision
+in this project added or held: 329a took it 260 → 261, 349 held it at 261 while
+moving fourteen sessions. **`PlanSeedTests.Frozen.sessions` has never decreased
+before**, and a reader who assumes that constant only grows will misread the
+diff.
+
+Run sessions fall 105 → 104 and parsed 94 → 93, `refused` untouched at 11 — the
+eleven are the by-feel pointers and the field test, and the session that left
+was a fully parsed one.
+
+### 12.96.3 A uid changed without its session changing — and `seq` is why
+
+`wk-05-sun-strength-b-core-1` is now `wk-05-sun-strength-b-core`.
+
+Nothing about that session moved. Its uid carries the `seq` the extractor
+assigns from position within the day, and the `-1` suffix existed only because
+a rest card sat above it. Delete the neighbour and the survivor becomes `seq`
+0, and `extract_plan.py` appends the suffix only when `seq` is non-zero.
+
+**So a session's identity here depends on its SIBLINGS, not only on itself.**
+That is worth writing down because §12.7 already refuses to make
+`user_note.planSessionUID` a foreign key, and this is a second, quieter way the
+reference can dangle: not a renumbered week, but a deleted card two lines
+above. No note, decision or review names it today — the week is in the future —
+and the prior `plan_version` still holds the old uid, which is the mechanism
+§12.11 exists for. `STRENGTH_DATA` is keyed `"Day|Title"` and is unaffected.
+
+### 12.96.4 What moved together
+
+`PlanSeedTests.Frozen` (bytes, sha, sessions), `PlanCoverageTests.Expected`
+(104 / 93 / 11) with the control's comment re-stated at 104 versus the
+database's 103, §9.2 above, the HTML week cards and the section-05 phase strip,
+`tools/README.md` and `docs/context/marathon-plan.md`. AppVersion 351 —
+a numbered patch, so `revision` returns to nil.
+
+## 12.95 Fifteen seconds, bought back — patch 350
+
+### 12.95.1 The instruction, and its window
+
+12 August, the athlete: the set paces sometimes run the heart rate too high —
+add 15 s/km to all times so the running is comfortable, from now until two
+weeks after Japan. The plan is pace + RPE driven with HR as a ceiling
+(ADR-0001; the plan document's own §04); this is the ceiling winning an
+argument with the pace column, which is exactly the precedence the plan
+promises.
+
+The window resolves to **Fri 14 Aug → Sun 11 Oct**: wk-03's two remaining
+runs (nothing already run is rewritten — the 24 Aug review compares against
+the plan as it was trained), then every run through wk-11, the second week
+after the 29 Sep return. wk-12 (from 12 Oct) resumes plan paces.
+
+### 12.95.2 What moved — 18 detail strings, nothing else
+
+Easy 5:45–6:00 → 6:00–6:15 · recovery 6:00–6:15 → 6:15–6:30 · steady blocks
+5:25–5:40 → 5:40–5:55 · long runs 5:35–5:55 → 5:50–6:10 (wk-06's 5:30 floor
+→ 5:45) · wk-10's re-ramp pair likewise · wk-11 tempo 4:55–5:10 → 5:10–5:25
+and the MP finish 5:38–5:43 → 5:53–5:58 — slower than goal MP on purpose;
+real MP returns wk-12.
+
+Untouched, deliberately: the Japan weeks (by-feel pointers carry no numbers),
+swim rep times and bike sessions (the complaint is running HR), strides (feel,
+not pace), week stat lines (km unchanged; the ~ absorbs a few minutes),
+titles — so **every uid is stable this time** — fuel lines, and the section-04
+pace legend, which keeps describing the plan's real bands; a note there, on
+the build-up phase card and on WK 10–19 names the window instead.
+
+### 12.95.3 What moved together, and what did not need to
+
+`PlanSeedTests.Frozen.sha256` and §9.2 — with the byte count standing still,
+see the §9.2 amendment. `PlanCoverageTests` needed nothing: no run session
+was added or removed and every changed line keeps a shape the parser already
+handles, so 105/94/11 stand. Shipped as a patch zip (the App-builder
+convention), not as bridge writes: HTML, plan.json, this file, PlanSeedTests,
+AppVersion 350, tools/README.md, marathon-plan.md.
+
+### 12.95.4 A call site no grep for the value can show you — patch 350a
+
+349 and 350 were installed together and `PlanCoverageTests` failed twice:
+`c.total → 103` against `Expected.runSessions → 105`, and `parsed → 92`
+against `94`. The constants were right. **The measurement was reading the
+database.**
+
+`WorkoutParser.coverage(_ store: PlanStore = .shared)`. Patch 346a converted
+this file to `PlanStore()` for exactly §12.57's reason — since 346 the
+singleton is whatever the app is serving, and in the test host that is the
+simulator's database. It swept for the literal `PlanStore.shared` and
+converted six occurrences. **Five more were sitting in the same tests, inside
+that default argument, and the sweep could not see them**: each test decoded
+the bundle in its `#require` guard and then measured the singleton on the very
+next line.
+
+It passed for four patches because both plans held 103 run sessions. 349 put
+105 in the bundle, the simulator's database still held the plan imported
+before it, and the difference finally had a number.
+
+**The shape, and it is a sixth one for CLAUDE.md's list:** a type's name, a
+function's arity, an array's length, a printed string's content and a value a
+fixture derives were already recorded there. Add **a default argument** — it
+is a call site that carries a value the caller never writes, so no search for
+that value will find it. The check is to grep the FUNCTION's name as well as
+the value's, and to read each hit's signature.
+
+**Every measurement now takes the store its own guard proved**, and
+`coverageAnswersAboutTheStoreItIsGiven` counts the run sessions of that store
+by hand and requires `coverage` to agree. That control fails today if the
+argument is ever dropped again — the two plans differ by two sessions right
+now — and it is deliberately a second derivation, because a control that
+called `coverage` to check `coverage` could not fail. §12.43's exception, and
+the fourth negative control written after the absence of one cost a patch.
+
+**What it says about the device, which is the part worth keeping.** §12.93.2
+states that after B1 a revised `plan.json` reaches the app only through an
+import. This is that sentence with a reproduction: the simulator served a plan
+two sessions out of date, silently, to code that asked the singleton. Nothing
+was wrong with the bundle and nothing was wrong with the database — the
+question simply named neither.
+
+## 12.94 The plan bends around the calendar, not the other way — patch 349
+
+### 12.94.1 What changed, and why the calendar decided it
+
+Three facts arrived on 12 August: the athlete wants two build-up weeks before
+anything hard (the strength habit is still bedding in), the second Berlin stay
+now runs Sat 29 Aug – **Fri 4 Sep** (SN2588 — the plan believed Tue 1 Sep,
+SN2590), and Japan is 6–29 Sep with running and bodyweight work only.
+
+Japan already sits at weeks 7–9 and the race is unmoved, so nothing is
+inserted and nothing renumbers: **weeks 4–6 change content in place.**
+
+- **wk-04, wk-05 — build-up.** The two August quality sessions ("Light tempo
+  (ease in)", "Tempo intro") become steady blocks — 2k easy + 5 km / 6 km
+  @5:25–5:40 + 2k easy. Long runs are capped at 12 km on the athlete's
+  instruction (was 14/12), so the first run past 12 km is now week 10's.
+  Strength placement is untouched: A1/A2 Tuesday, B where it already was.
+  The first threshold work is now week 11's, where the plan re-introduces
+  quality after the trip anyway.
+- **wk-06 — Berlin run block.** Berlin Mon–Fri with no bike and no barbell:
+  five runs instead of three (easy 7 · steady 10 · recovery 5 · easy 8 with
+  strides · long 12 at home Saturday), one bodyweight hotel circuit
+  Wednesday, travel Friday (SN2588), Japan departure Sunday. The Wednesday
+  bike, the Friday pool session and the barbell A1 are gone from the week;
+  the last pool session before Japan is now wk-05 Monday and says so.
+
+Every session keeps the fuel model's own line: easy/recovery runs and swims
+water-only, steady runs ~30 g/hr (½–1 Leppin bottle), long runs ~65 g/hr off
+the 12–14 km ladder rung (750 ml Leppin + 1 ULTRA gel), the remaining rides
+~65 g/hr (bottle + chew per hour).
+
+### 12.94.2 What moved together, per §12.13
+
+`plan.json` is 278,870 bytes, SHA-256 `1c10ba91…`; sessions stay 261 and the
+run mix moves 105→107 (bike 53→52, swim 26→25). Updated in the same patch:
+`PlanSeedTests.Frozen`, `PlanCoverageTests.Expected` (run sessions 103→105,
+parsed 92→94 — every new detail line reuses a shape the parser already
+handles, so refused stays 11), §9.2 above, the HTML source and its
+`tools/README.md` inventory line, and `docs/context/marathon-plan.md`.
+
+The HTML week cards, the section-05 phase strip, `SWIM_DATA` (the "06" entry
+is gone with the pool session; "05" carries the last-swim-before-Japan note)
+and `STRENGTH_DATA` ("06" now holds the Wednesday hotel circuit) were edited
+together with the JSON, so the extractor still reproduces the bundled
+sessions verbatim; the weekly stat lines remain the only extractor output the
+JSON corrects (§12.11.5), and for the three rebuilt weeks card and JSON now
+state the same corrected figures (~86 / ~87 / ~42 km).
+
+### 12.94.3 The uids churn, and §12.7 is why that is fine
+
+Rewritten sessions mint new uids (`wk-04-tue-steady` where
+`wk-04-tue-light-tempo-ease-in` was). No note, match decision or review
+references them yet — the weeks are in the future — and anything that later
+cites the OLD uids resolves against the stored prior `plan_version`, which is
+the exact case that table exists for. On the device this version arrives the
+way §12.93.4 restored: the importer hashes the bundle, finds a new hash,
+mints and activates the version; the prior versions stay.
+
+## 12.93 The write direction reads the stores — patch 347, D7 slice B1
+
+### 12.93.1 What B1 did to a value that had been safe for forty patches
+
+`AppStores.current()` gathers what the app holds into one value, so the importer
+does not take twenty parameters and silently stop writing a table when somebody
+forgets one. §12.45 is the record of what it prevents, and `fieldCount == 17` is
+the test that keeps it honest.
+
+Every field it reads was, until patch 346, a store fed from a file.
+
+346 fed four of them from the database:
+
+```swift
+s.constants = ConstantsStore.shared.c
+s.ftpWatts  = AthleteStore.shared.ftp
+s.zones     = AthleteStore.shared.hrZones
+s.plan      = PlanStore.shared.plan
+```
+
+**So the importer began taking four of its seventeen inputs out of the thing it
+writes into.** Nothing on any screen shows that, no read-back reports it, and
+the roll-up stayed at nine of nine — because every one of those comparisons is
+between a store and the database, and a store fed by the database agrees with
+it by construction. §12.15's shape, in the one direction D7's evidence does not
+look.
+
+### 12.93.2 The certain consequence: the seed path closed
+
+**A revised `plan.json` can no longer reach the database.** The store hydrates
+from rows, `AppStores` reads the store, the importer writes the rows back. The
+bundle is unreachable — and the bundle is the only way a plan revision enters
+this app.
+
+That is not a hypothetical for this project. The plan is authored, revised, and
+re-extracted; `plan_version` exists precisely so a second version can arrive and
+notes written against the first can still be resolved.
+
+### 12.93.3 The duplicate version, and what it actually proved
+
+The first import after the flip wrote a second `plan_version`, doubling every
+plan table: 261 sessions → 522, 634 blocks → 1268, 37 weeks → 74.
+
+`contentHash` is `SHA256` of `JSONEncoder(.sortedKeys)` over the whole `Plan`.
+`.sortedKeys` sorts object KEYS. It does not sort arrays. And the repository
+reads `ORDER BY uid` for weeks, sessions and exercises, while `plan.json` is in
+the plan's own order — within a week, `fri` sorts before `mon`. Same 261
+sessions, different array order, different hash.
+
+**The read-back agreed with that reading and is how the diagnosis was made
+without a debugger:** 298 comparisons, every scalar field of every week,
+session, breakdown and block, `approved differences: none`,
+`unexplained differences: 0`. The two versions are content-identical. The hash
+disagrees about order; the comparison does not look at order.
+
+Verified stable at two versions across a second import — the second hydration
+reads the version that was itself written in uid order, so the hash now matches
+and no third appears. The store's array order is not visible anywhere:
+`WeekView` reads `byDate`, which `rebuildIndexes` sorts by `seq`; `planWeeks`
+sorts by `weekNo`; every `sessions(inWeek:)` caller aggregates.
+
+**This was caught for free, by a check nobody wrote for it.** `importPlan` has
+hashed its input and skipped the write since the plan tables existed. It is a
+better round-trip proof than anything written for B1 — 261 sessions and 634
+blocks compared by code that knows nothing about D7 — and it caught the defect
+on the first import after the flip.
+
+### 12.93.4 The fix, and it repairs a third thing
+
+`AppStores.current()` takes the plan from `PlanStore.decodeBundle()`.
+
+§12.91.3 forbids reaching for the bundle when a database READ fails. It has
+never forbidden seeding a WRITE from it — `decodeBundle`'s own comment calls the
+bundle the seed, and seeding is the only role it has ever had. The guard in the
+apply script moves from two permitted call sites to three, deliberately, so a
+fourth is still a decision somebody makes on purpose.
+
+The third repair is provenance. `Sub4Import.run` stamps every version it writes
+`sourceLabel: "bundled"`. Between 346 and 347 that was false of every version
+written: the plan came out of SQL and was recorded as having come from the app
+bundle. A provenance field that lies is worse than one that is missing, because
+it is the field somebody checks when two versions appear and they want to know
+where the second came from.
+
+After the fix the importer hashes the bundle, finds version 1, and reactivates
+it; the store hydrates from the original file-ordered rows; the next import
+hashes the bundle again and matches. Version 2 is left inactive and orphaned —
+389 KB, no behaviour, and removing it is a maintenance action rather than part
+of this patch.
+
+**The cost, owned rather than hidden:** `AppStores.current()` is `@MainActor` and
+runs on backgrounding and on return, so it decodes 261 sessions of JSON on the
+main actor a handful of times a day. A cached bundled plan in production scope
+was the alternative and was rejected for the reason 346a rejected
+`PlanStore.bundled`: a ready-made bundle sitting in reach is the fallback
+somebody writes the day a database read fails.
+
+### 12.93.5 The debt this does not pay, named so it is not rediscovered
+
+The other three fields have no bundle to seed from. `ConstantsStore` and
+`AthleteStore` are hydrated at launch and then read by the importer, and the
+authored half of that has a window:
+
+- an edit writes `constants.json` synchronously
+- `DatabaseWriteThrough` runs on backgrounding and on return — **not per write**
+- hydration overwrites the store from rows at the next launch, before
+  `runOnReturn` fires
+
+So: edit, then a termination that does not background the app, then a relaunch —
+and the edit is discarded silently, with the newer value sitting in a file
+nothing reads any more.
+
+**Not fixed at 347, and the reason is the size of the window's contents rather
+than the size of the window.** The only fields in `ConstantsStore` that cannot
+be recomputed are `hrMaxOverride` and `restOverride`, both typed by the athlete,
+and both absent from `constants.json` on the only install that exists.
+Everything else is derived — `restByMonth` and `hrMaxObserved` from Health via
+`refreshObserved`, zones and FTP from Strava daily — and a lost value is
+recomputed on the next refresh.
+
+**It closes with the authored-write path, which B9 requires anyway:** after
+activation there is no file to fall back on, so every authored mutator must
+reach the rows directly or the edit is not merely reverted but never stored at
+all. Bolting a file-versus-rows comparison onto hydration would solve the narrow
+case and would have to be removed at B9.
+
+Recorded here rather than in a comment on `hydrate`, because it is a property of
+the write direction as a whole and not of any one store.
 
 ## 12.92 One word, three meanings — patch 344, D7 slice B1
 

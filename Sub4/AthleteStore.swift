@@ -651,5 +651,13 @@ final class AthleteStore {
             try StoreWrite.encode(c, to: fileURL, store: "athlete.json",
                                   encoder: JSONEncoder())
         }
+        // ZONES AND FTP ARE RE-FETCHABLE AND THIS STILL FIRES. The rule is
+        // "every store the app hydrates writes through", not "every store
+        // whose data would be missed" — §12.93.5 already spent the second kind
+        // of reasoning once, on the grounds that the fields at risk were nil,
+        // and spending it twice is how a hole becomes permanent. A Strava
+        // refresh happens at most daily, so the cost is one extra run a day
+        // that the coalescer usually absorbs. Patch 348, §12.94.
+        DatabaseWriteThrough.shared.noteAuthoredChange("the athlete cache was saved")
     }
 }

@@ -99,6 +99,23 @@ final class Sub4Launch {
     /// nothing. §12.90.
     private(set) var persistence: PersistenceMode = .legacyAuthoritative
 
+    /// WHAT THIS LAUNCH READ OUT OF THE DATABASE — D7 slice B1, patch 345.
+    ///
+    /// Assembled on every launch the database opens, whether or not anything is
+    /// hydrated from it, so the paste can answer "would B1 work on this device"
+    /// before B1 is switched on. Nil only when the open failed.
+    private(set) var bootstrap: DatabaseBootstrap?
+
+    /// WHAT THIS LAUNCH DID ABOUT IT, and why — patch 345.
+    ///
+    /// §12.54.2. A launch that decided not to hydrate and said nothing would
+    /// read exactly like one where the hydration was never wired in, which is
+    /// the failure this project keeps finding in its own diagnostics. The
+    /// default carries the reason rather than an empty string, because a launch
+    /// that never reached the decision has still not hydrated.
+    private(set) var hydration: HydrationOutcome =
+        .notWanted("the launch has not decided yet")
+
     /// How many runs this launch found open and closed — patch 338. Zero on
     /// every clean launch, and the number is worth having rather than merely
     /// the act: three of these accumulated unremarked before an off-device read
@@ -173,7 +190,6 @@ final class Sub4Launch {
                     self.ledgerRecoveryFailure = String(describing: error)
                 }
                 self.database = db
-                self.state = .ready
                 // PATCH 342. AFTER the ledger recovery above, because an
                 // activated run is a ledger fact and the ledger has just been
                 // touched. Read through `census`, which 340 gave the
@@ -185,7 +201,53 @@ final class Sub4Launch {
                     activatedRun: activated,
                     databaseOpened: true,
                     everActivated: PersistenceAuthority.everActivated())
+
+                // PATCH 345 — ASSEMBLED ON EVERY LAUNCH, HYDRATED ONLY WHEN
+                // THE MODE ASKS FOR IT.
+                //
+                // Assembling unconditionally costs three repository reads off
+                // the main actor — about 1,200 plan rows, the same reads the
+                // read-back already does on demand — and buys the one thing
+                // that cannot be bought later: the diagnostic paste says on
+                // EVERY launch whether the bootstrap would work on this
+                // device, before anything depends on it. A bootstrap first
+                // exercised on the launch that also starts depending on it is
+                // a bootstrap nobody has seen succeed.
+                let boot = await Task.detached(priority: .userInitiated) {
+                    DatabaseBootstrapReader.read(db)
+                }.value
+                self.bootstrap = boot
+                self.hydration = Self.apply(
+                    HydrationPlanner.decide(mode: self.persistence,
+                                            bootstrap: boot))
+
+                // `.ready` IS LAST, AND THAT IS A DEFECT FIX — ADR §12.92.6.
+                //
+                // It used to be set immediately after `database`, three
+                // statements before `persistence` was derived. That was
+                // correct only by accident: nothing suspended in between, so
+                // the main actor ran to the end of this block before the run
+                // loop turned and `RootView` could build `ContentView`.
+                //
+                // The `await` above breaks that accident. With `.ready` where
+                // it was, `ContentView` — and with it every store's `init` —
+                // would be constructed while the bootstrap was still being
+                // read, so the stores would serve their files and be hydrated
+                // a frame later. Under `.databaseAuthoritative` after B9 that
+                // is the legacy plan shown and then swapped, which
+                // `Sub4Launch`'s own header calls the worst failure this app
+                // has available.
+                //
+                // `PlanStore` not being `@Observable` depends on this line
+                // being here: it publishes nothing because, by the time a view
+                // exists, there is nothing left to publish.
+                self.state = .ready
             case .threw(let message):
+                // NO BOOTSTRAP AND NO HYDRATION — there is no database to read.
+                // `hydration` keeps its `.notWanted` default carrying the mode
+                // derived below, which on this branch is `.legacyAuthoritative`
+                // or `.blocked`; either way the stores keep their files, which
+                // is what they were already doing.
                 self.state = .failed(message)
                 // THE DATABASE DID NOT OPEN, so the ledger cannot be asked
                 // whether this install was activated. The mirror is the only
@@ -204,6 +266,37 @@ final class Sub4Launch {
         await work.value
     }
 
+
+    /// Does what `HydrationPlanner` said, and nothing else.
+    ///
+    /// NO BRANCH OF ITS OWN. Every question — does the mode want it, did the
+    /// reads succeed, is there anything stored — is answered in one pure
+    /// function that a test can drive through all of its outcomes without a
+    /// database. A second place deciding whether to hydrate is a second place
+    /// that can disagree, and this file is where that would be hardest to see.
+    /// §12.43.
+    ///
+    /// THE THREE CALLS ARE THE WHOLE OF IT, and they happen in one main-actor
+    /// step with no suspension between them: three stores cannot be observed
+    /// half-hydrated, because nothing gets to look until this returns and
+    /// `state` becomes `.ready`.
+    ///
+    /// Touching `.shared` here is also what CONSTRUCTS these stores, which is
+    /// the right moment — before `ContentView` exists rather than during its
+    /// initialisation.
+    @MainActor
+    private static func apply(_ instruction: HydrationPlanner.Instruction)
+        -> HydrationOutcome {
+        switch instruction {
+        case .leaveOnFiles(let outcome):
+            return outcome
+        case .hydrate(let plan, let constants, let zones, let ftp):
+            PlanStore.shared.hydrate(from: plan)
+            ConstantsStore.shared.hydrate(from: constants)
+            AthleteStore.shared.hydrate(zones: zones, ftp: ftp)
+            return .hydrated("the plan, its trimmings, the athlete and the constants")
+        }
+    }
 
     private enum Outcome: Sendable {
         case opened(Sub4Database)

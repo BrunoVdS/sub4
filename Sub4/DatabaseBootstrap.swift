@@ -239,3 +239,106 @@ nonisolated enum DatabaseBootstrapReader {
                           athlete: AthleteRepository.load(db))
     }
 }
+
+// MARK: - What a launch does about it
+
+/// What happened to the hydration this launch, in one value that reaches the
+/// paste — patch 345, D7 slice B1.
+///
+/// FOUR OUTCOMES, AND THREE OF THEM ARE "THE STORES KEPT THEIR FILES".
+/// §12.54.2: a launch that decided not to hydrate and said nothing would be
+/// indistinguishable from one where hydration was never wired in. The reason is
+/// carried, not just the fact.
+nonisolated enum HydrationOutcome: Equatable, Sendable {
+
+    /// The mode does not want it. Carries the mode's own sentence, so the paste
+    /// does not have to be read alongside `Reads from:` to make sense.
+    case notWanted(String)
+
+    /// A read did not succeed. THE STORES KEEP THEIR FILES AND THE BUNDLE IS
+    /// NOT A RESCUE — §12.91.3. At B9 this becomes a blocked launch; until then
+    /// it is a finding that has to be impossible to miss.
+    case fault(String)
+
+    /// Every read succeeded and a family holds nothing. A fresh install, not a
+    /// fault, and the difference is the one the whole stage rests on.
+    case nothingStored(String)
+
+    /// It happened. Carries what moved.
+    case hydrated(String)
+
+    var line: String {
+        switch self {
+        case .notWanted(let mode):   "not this launch — \(mode)"
+        case .fault(let why):        "REFUSED, a read did not succeed — \(why)"
+        case .nothingStored(let who): "nothing stored to hydrate from — \(who)"
+        case .hydrated(let what):    "hydrated \(what)"
+        }
+    }
+
+    /// Whether this outcome is something wrong, as opposed to something that
+    /// did not apply. Drives nothing at B1 — it is what B9 blocks on.
+    var isFault: Bool {
+        if case .fault = self { return true }
+        return false
+    }
+}
+
+/// The decision, pure — patch 345.
+///
+/// PURE FOR THE SAME REASON `PersistenceAuthority.derive` IS. Two of the four
+/// outcomes have never occurred on a device and one of them never should; a
+/// decision that can only be exercised by breaking a real database is a
+/// decision nobody checks. Every combination is driven from a test instead.
+///
+/// `Sub4Launch` calls this and then does what it says. It holds no branch of
+/// its own, because a second place deciding whether to hydrate is a second
+/// place that can disagree — §12.43.
+nonisolated enum HydrationPlanner {
+
+    /// Either leave the stores alone and say why, or hand over everything three
+    /// stores need.
+    ///
+    /// **A PARTIAL HYDRATION IS UNREPRESENTABLE.** `.hydrate` carries the whole
+    /// plan and the whole athlete; there is no case that carries some of it. The
+    /// same argument as `AppStores`' seventeen fields and `hydratablePlan`'s
+    /// all-or-nothing: the type refuses what a caller could otherwise get wrong.
+    enum Instruction {
+        case leaveOnFiles(HydrationOutcome)
+        case hydrate(plan: Plan,
+                     constants: AthleteConstants,
+                     zones: [AthleteStore.HRZone],
+                     ftp: Int?)
+    }
+
+    /// ORDER MATTERS AND IT IS THE POINT.
+    ///
+    /// The fault check comes before the content check, so an unreadable plan
+    /// reports as a fault and not as "nothing stored". Those two sentences send
+    /// a reader to completely different places — one to a corrupt database, the
+    /// other to an import that has not run — and getting them the wrong way
+    /// round is §12.15 in the one value a launch publishes about itself.
+    static func decide(mode: PersistenceMode,
+                       bootstrap: DatabaseBootstrap) -> Instruction {
+
+        guard mode.hydratesFromDatabase else {
+            return .leaveOnFiles(.notWanted(mode.line))
+        }
+        if let fault = bootstrap.firstFault {
+            return .leaveOnFiles(.fault(fault))
+        }
+
+        // THE `if let` IS THE CHECK, and there is deliberately no `canHydrate`
+        // guard in front of it. A guard whose failure the next line makes
+        // impossible is §12.69's guard that cannot fail; this binds what it
+        // needs and falls through when it cannot. `canHydrate` earns its keep
+        // in the paste, where a reader wants the answer without the values.
+        if let plan = bootstrap.hydratablePlan,
+           case .loaded(let constants, let ftp, let zones) = bootstrap.athlete {
+            return .hydrate(plan: plan, constants: constants,
+                            zones: zones, ftp: ftp)
+        }
+        return .leaveOnFiles(
+            .nothingStored(bootstrap.firstEmpty ?? "a family this build does not name"))
+    }
+}

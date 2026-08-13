@@ -471,5 +471,11 @@ final class ConstantsStore {
             try StoreWrite.encode(c, to: fileURL, store: "constants.json",
                                   encoder: enc)
         }
+        // UNCONDITIONAL, unlike the two above, and the difference is that
+        // `attempt` swallows the throw. The in-memory value changed whether or
+        // not the file took it, so the database should have it either way —
+        // and a run whose input is a store that failed to save is still the
+        // best copy of that value in existence. Patch 348, §12.94.
+        DatabaseWriteThrough.shared.noteAuthoredChange("an athlete constant was saved")
     }
 }

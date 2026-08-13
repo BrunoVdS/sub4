@@ -52,23 +52,54 @@ struct PersistenceModeTests {
         #expect(!mode.isDatabaseAuthoritative)
     }
 
-    /// B0 ships with no slice under test, and that is asserted rather than
-    /// assumed — a constant that quietly named a slice would put the app in
-    /// shadow mode with nothing shadowing it.
-    @Test("B0 names no slice under test")
-    func b0NamesNoSlice() {
-        #expect(PersistenceAuthority.sliceUnderTest == nil)
+    /// RE-AIMED AT 346, AND THE OLD ASSERTION WAS RIGHT UNTIL THE PATCH THAT
+    /// BROKE IT.
+    ///
+    /// This read `#expect(PersistenceAuthority.sliceUnderTest == nil)`, on the
+    /// stated grounds that "a constant that quietly named a slice would put the
+    /// app in shadow mode with nothing shadowing it". At B0 that was exactly
+    /// right. At 346 the slice is named ON PURPOSE and the constant is the
+    /// patch, so pinning it to nil would pin the project to B0 for ever — and
+    /// deleting the test outright would give up the property it was defending.
+    ///
+    /// The property that survives every slice: the constant is nil, or it names
+    /// something. `shadow("")` is the failure both versions exist to prevent —
+    /// a mode that says a slice is under test and cannot say which reads as a
+    /// bug in the diagnostic rather than as a slice. §12.15.
+    ///
+    /// WHICH slice it names is `B1ActivationTests`' business, and that is the
+    /// suite a later slice edits. This one never needs touching again.
+    @Test("The slice under test is nil or names something")
+    func theSliceUnderTestIsNilOrNamed() {
+        guard let slice = PersistenceAuthority.sliceUnderTest else { return }
+        #expect(!slice.isEmpty,
+                "a shadow mode that cannot say which slice is a broken diagnostic")
+        #expect(PersistenceAuthority.derive(activatedRun: false,
+                                            databaseOpened: true,
+                                            everActivated: false)
+            == .shadow(slice),
+                "and the constant is what the launch actually derives")
     }
 
-    @Test("A slice under test is named, and still serves the legacy side")
+    /// THE NAME OF THIS TEST SAID "AND STILL SERVES THE LEGACY SIDE" UNTIL 346,
+    /// AND THAT IS THE SENTENCE THE PATCH CORRECTED.
+    ///
+    /// `shadow` was documented as leaving production on the files. It does not:
+    /// a slice under test feeds its stores from rows, and every screen reading
+    /// those stores is reading the database. `mayServe` was never about which
+    /// side — it is about whether the app may serve anything at all, which is
+    /// false only for `.blocked`. See `PersistenceMode.shadow`'s own comment.
+    @Test("A slice under test is named, and its stores take rows")
     func aSliceUnderTestIsNamed() {
         let mode = PersistenceAuthority.derive(activatedRun: false,
                                                databaseOpened: true,
                                                everActivated: false,
                                                sliceUnderTest: "B1 plan and athlete")
         #expect(mode == .shadow("B1 plan and athlete"))
-        #expect(mode.mayServe, "a shadow slice still serves the app")
-        #expect(!mode.isDatabaseAuthoritative)
+        #expect(mode.mayServe, "only .blocked refuses to serve")
+        #expect(mode.hydratesFromDatabase, "which is the whole point of a slice")
+        #expect(!mode.isDatabaseAuthoritative,
+                "and it is still not an activated database — that is B9")
         #expect(mode.line.contains("B1 plan and athlete"),
                 "the diagnostic says which slice, or it says nothing useful")
     }

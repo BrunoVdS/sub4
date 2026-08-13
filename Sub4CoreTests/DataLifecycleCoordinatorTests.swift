@@ -288,7 +288,7 @@ struct DataLifecycleCoordinatorTests {
     /// day this and `theDisconnectRuleIsCoupledToActivation` fail together,
     /// which is the correct pair — a database that cannot be exported and
     /// cannot be selectively deleted is not one the app may depend on.
-    @Test("The database may be left out of the export only while nothing reads it")
+    @Test("The database may be left out of the export only while it is a copy")
     func theDatabaseExemptionExpiresWhenItBecomesAuthoritative() throws {
         let entry = try #require(DataLifecycle.entry(.database))
 

@@ -288,6 +288,9 @@ final class NotesStore {
     /// thing in it.
     private func save() throws {
         try StoreWrite.encode(notes, to: fileURL, store: "notes.json")
+        // AFTER the write, so a throw above means no trigger — there is
+        // nothing to catch the database up to. Patch 348, §12.94.
+        DatabaseWriteThrough.shared.noteAuthoredChange("a session note was saved")
     }
 
     /// Migrates forward. Never clears — see the header. A future version 2 adds

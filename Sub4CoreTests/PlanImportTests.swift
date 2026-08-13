@@ -338,7 +338,7 @@ struct PlanImportTests {
     @Test("The bundled plan imports whole")
     func theBundledPlanImportsWhole() throws {
         let db = try Sub4Database.inMemory()
-        let real = PlanStore.shared.plan
+        let real = PlanStore().plan
         let report = try Sub4Import.run(into: db, activities: [], shoes: [], plan: real)
 
         #expect(report.planImported == 1)
@@ -377,7 +377,7 @@ struct PlanImportTests {
     /// knowing separately from the count above.
     @Test("Every session in the bundled plan names a week that exists")
     func everyRealSessionHasItsWeek() {
-        let real = PlanStore.shared.plan
+        let real = PlanStore().plan
         let uids = Set(real.weeks.map(\.uid))
         let orphans = real.sessions.filter { !uids.contains($0.weekUid) }
         #expect(orphans.isEmpty)

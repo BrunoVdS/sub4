@@ -253,7 +253,7 @@ struct TabSummaryTests {
     /// a shorter fuse, so both are asked the same question.
     @Test("The plannedRunKm wrapper agrees with the static it wraps")
     func thePlannedRunKmWrapperAgrees() {
-        let store = PlanStore.shared
+        let store = PlanStore()
         for w in store.planWeeks.prefix(6) {
             let viaInstance = store.plannedRunKm(week: w)
             let viaStatic = PlanStore.plannedRunKm(sessions: store.plan.sessions,
@@ -265,7 +265,7 @@ struct TabSummaryTests {
 
     @Test("The plannedVolume wrapper agrees with the static it wraps")
     func thePlannedVolumeWrapperAgrees() {
-        let store = PlanStore.shared
+        let store = PlanStore()
         for day: String? in [nil, "2026-08-08", "2026-12-31"] {
             let viaInstance = store.plannedVolume(throughDay: day)
             let viaStatic = PlanStore.plannedVolume(sessions: store.plan.sessions,

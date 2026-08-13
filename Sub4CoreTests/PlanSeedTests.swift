@@ -51,25 +51,45 @@ struct PlanSeedTests {
     /// Recorded 5 August 2026 at patch 246, against the seed as corrected by
     /// patches 238 and 242. Mirrored in ADR-0003 §9.2 — the two must agree.
     enum Frozen {
+        /// PATCH 351 — the rest day moved out of Sunday 30 August and into
+        /// Tuesday 1 September, to break up the Berlin run block. Sunday's
+        /// "Walk / rest" card is deleted (the day keeps its bodyweight
+        /// circuit) and Tuesday's steady run becomes that rest — so `sessions`
+        /// drops to 260 and the run count with it. §12.96.
+        ///
+        /// PATCH 350 — every run pace from Fri 14 Aug through Sun 11 Oct
+        /// (wk-03's two remaining runs → wk-11, two weeks after Japan) moved
+        /// +15 s/km — HR was sitting too high at the base paces. 18 session
+        /// `detail` strings changed and nothing else; every swap is
+        /// same-length, so `bytes` DID NOT MOVE while the hash did — the
+        /// reason §9.2 records both. §12.95.
+        ///
+        /// PATCH 349 — weeks 4–6 rebuilt around the changed travel: two
+        /// build-up weeks (the August tempo sessions became steady blocks,
+        /// long runs capped at 12 km), then a Berlin run block — five runs,
+        /// no bike, no pool, return flight now Fri 4 Sep. §12.94. Sessions
+        /// stay 261 (across all sessions: run 105→107, bike 53→52,
+        /// swim 26→25); `weeks` and `exercises` unchanged.
+        ///
         /// PATCH 329a — the plan was revised: week 2's long run moved from
         /// Saturday 8 August to Sunday 9 August, Saturday became a rest day.
         /// §12.74. These three constants and ADR §9.2 were updated in the
         /// SAME patch as the file, which is the whole point of this suite —
         /// the header records the three weeks the ADR spent describing a file
         /// that had already changed.
-        static let bytes = 279_414
+        static let bytes = 278_546
         static let sha256 =
-            "0d41f78c1b55175c8cd02c1e78a10eb669ef75577d47d2916e001f067bda8686"
+            "4dfb8b1f2284d6721edba307a3fef662a32d16191ce1aa8ee7819c6250ad05ea"
 
         /// The counts the shape freeze is actually about. A file can keep its
         /// size and hash only by keeping these, but a future reader wants to
         /// know what the numbers mean without decoding anything.
         static let weeks = 37
-        /// 261 since 329a — 260 plus the rest day that replaced week 2's
-        /// Saturday long run. `weeks` and `exercises` are unchanged, which is
-        /// itself the check: a revision that moved a session must not have
-        /// added a week or lost an exercise.
-        static let sessions = 261
+        /// 260 since 351 — 261 less the Sunday rest card that patch 351
+        /// deleted. `weeks` and `exercises` are unchanged, which is itself the
+        /// check: a revision that moved a session must not have added a week
+        /// or lost an exercise.
+        static let sessions = 260
         static let exercises = 20
 
         /// The stale root copy, deleted from the source tree on 3 August 2026
@@ -127,7 +147,7 @@ struct PlanSeedTests {
 
     @Test("The frozen shape is the shape the app decoded")
     func theShapeIsWhatWasFrozen() throws {
-        let store = PlanStore.shared
+        let store = PlanStore()
         try #require(store.plan.sessions.isEmpty == false,
                      "plan.json did not load — set a host application on Sub4CoreTests")
         #expect(store.plan.weeks.count == Frozen.weeks)
@@ -137,7 +157,7 @@ struct PlanSeedTests {
 
     @Test("Fuel and warm-up are present — the reason the root copy lost")
     func theBlocksTheRootCopyLackedArePresent() throws {
-        let store = PlanStore.shared
+        let store = PlanStore()
         try #require(store.plan.sessions.isEmpty == false)
         // §9.2's stated ground for choosing the nested file. If these ever go
         // nil the bundle has reverted to a pre-238 shape, and the failure

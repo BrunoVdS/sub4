@@ -6,7 +6,9 @@ the plan HTML or regenerating `plan.json`.*
 "Operation Sub-4" — 34-week plan (restart Mon 2026-07-27 → marathon Sun 2027-03-21, target
 4:00:00 / 5:41 per km).
 
-**Source file: `marathon_plan sub_4hr.html`**, currently in `~/Documents/Triathlon/`.
+**Source file: `tools/marathon_plan_sub_4hr.html`** (in this repo since 5 Aug 2026;
+`Sub4/plan.json` is the frozen, hand-corrected seed — see `tools/README.md` before
+regenerating anything).
 A PDF export of section 07 week cards only exists (WeasyPrint); **since Rev 4 the PDF is
 stale** — it lacks the strength cards.
 
@@ -33,6 +35,30 @@ shared the title "Strength A1 · squat (evening)" while prescribing different wo
 Prescriptions unchanged. **Renaming a card means renaming BOTH the static `.ttl` (literal
 "·", not `&middot;`) and the matching `"Day|Title"` key in `STRENGTH_DATA`, or the popup
 silently stops opening.**
+
+**Rev 5 (2026-08-12, patch 349)** — weeks 4–6 rebuilt around the changed travel
+(ADR-0003 §12.94). Wk 4–5 are build-up weeks: the two August tempo sessions became
+steady blocks (2k easy + 5/6 km @5:25–5:40 + 2k easy), long runs capped at **12 km**
+on Bruno's instruction, strength slots untouched. Wk 6 is a Berlin run block —
+Berlin Mon–Fri, no bike, no barbell, no pool: five runs (7 easy · 10 steady ·
+5 recovery · 8 easy + strides · 12 long at home Sat), one bodyweight hotel circuit
+Wed, return flight now **Fri 4 Sep (SN2588)**, Japan departure Sun 6 Sep. Weeks 7–9
+(Japan) and everything later are untouched; race stays 21 Mar 2027. First run past
+12 km: week 10. First tempo: week 11.
+
+**Rev 5.1 (2026-08-12, patch 350)** — every run pace from Fri 14 Aug through Sun
+11 Oct (end of wk 11, two weeks after Japan) moved **+15 s/km**: easy 6:00–6:15,
+recovery 6:15–6:30, steady 5:40–5:55, long 5:50–6:10, wk-11 tempo 5:10–5:25 and MP
+finish 5:53–5:58. HR was running too high at the base paces; plan paces resume wk 12
+(from 12 Oct). Already-run sessions, the Japan by-feel pointers, swim rep times, bike
+and strides untouched. ADR-0003 §12.95.
+
+**Rev 5.2 (2026-08-12, patch 351)** — the Berlin stay is 29 Aug–4 Sep and holds
+**running and bodyweight strength only**. Sunday 30 Aug's "Walk / rest" card is gone
+(the day keeps its bodyweight circuit — a rest card beside a strength session said two
+things at once), and Tuesday 1 Sep is the rest instead, so the four Berlin run days are
+split Mon | Wed–Thu rather than run four days straight. Wk 6 is now 4 runs / ~32 km.
+ADR-0003 §12.96.
 
 ## Companion files
 

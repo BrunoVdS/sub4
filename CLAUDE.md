@@ -173,6 +173,15 @@ the way it is. ADR §12 supersedes all three.
   `ReviewLineageTests`, which `DomainSchemaTests` had used since the schema was written:
   `invalid redeclaration`, and a fix-up. Grep the name you are about to declare, not only
   the names you are about to change.
+  **A sixth shape, from 350a: a DEFAULT ARGUMENT.**
+  `WorkoutParser.coverage(_ store: PlanStore = .shared)`. Patch 346a converted
+  `PlanCoverageTests` off the singleton by sweeping for the literal
+  `PlanStore.shared`, and five call sites in that same file kept reading it
+  through the default — each one on the line after a `#require` that decoded the
+  bundle. It passed for four patches because both plans held 103 run sessions,
+  and failed the day a plan revision made it 105. **A default argument is a call
+  site that carries a value the caller never writes**, so no grep for the value
+  finds it: grep the FUNCTION's name too, and read each hit's signature. §12.95.4.
   **A fifth shape, from 337: a value a FIXTURE DERIVES rather than states.**
   `ReviewRepositoryTests.record()` built its `id` from the window days, so the moment the
   id became the pairing key, the test that changes `endDay` to provoke a field difference

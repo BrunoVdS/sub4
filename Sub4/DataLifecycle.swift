@@ -735,8 +735,14 @@ enum DataLifecycle {
                     + "it. It now holds a copy of nearly everything above — your "
                     + "activities, their traces and routes, the weather, your "
                     + "notes and your corrections — written by the import on the "
-                    + "Database screen. No screen in the app reads from it yet; "
-                    + "they all still read the files above.",
+                    + "Database screen. Since patch 346 the training plan, your "
+                    + "heart-rate zones, your FTP and your resting figures are "
+                    + "READ from it as well: the Plan, Week and Today screens "
+                    + "draw the plan out of these rows rather than out of the "
+                    + "bundled file. Everything else still reads the files "
+                    + "above, and every file above is still written — so the "
+                    + "database remains a copy, and switching back is a "
+                    + "one-line change rather than a recovery.",
             purpose: "Phase 3 replaces the folder of JSON files above with one "
                    + "database, so that a note you wrote against a session "
                    + "still finds it after the source it came from is gone.",
@@ -762,7 +768,24 @@ enum DataLifecycle {
                       // category of its own because a snapshot exists only to
                       // serve the migration and is removed with it — but it is
                       // declared, because it holds copies of everything above.
-                      .applicationSupport(.snapshotDirectory("snapshots"))],
+                      .applicationSupport(.snapshotDirectory("snapshots")),
+                      // PATCH 346, AND IT CLOSES A CLAIM THE CODE ALREADY MADE.
+                      //
+                      // `PersistenceMode`'s header says of this key: "The key
+                      // is namespaced and never reused. `DataLifecycle` must
+                      // remove it with everything else — a flag that survived
+                      // 'Delete local data' would block a reinstalled app over
+                      // a database that no longer exists." Nothing removed it.
+                      //
+                      // Latent rather than harmless: `recordActivation` has no
+                      // caller until B9, so the key is never written yet. But a
+                      // requirement stated in one file and implemented in none
+                      // is exactly the drift this inventory exists to stop, and
+                      // it is cheaper to close now than to remember at B9.
+                      //
+                      // Filed here because it describes the database's own
+                      // state, and it must go when the folder goes.
+                      .preferences([PersistenceAuthority.activationMirrorKey])],
             retention: .indefinite,
             sharedWith: [],
             isExportable: false,
@@ -770,12 +793,18 @@ enum DataLifecycle {
             deletionRule: "Removed by Delete local data — both folders, so the "
                         + "database, its journal files, and every snapshot taken "
                         + "before the migration go together.",
-            gaps: ["A copy, not the original: it holds the rows and nothing "
-                 + "reads them. When step 3.7 makes it the place the app reads "
-                 + "from, a disconnect will have to delete the Strava-derived "
-                 + "ROWS and re-key the ones you wrote, rather than removing "
-                 + "the folder — the disconnect rule is only correct while every row "
-                 + "in here also exists in the files above (ADR-0003 §8).",
+            gaps: ["A copy, not the original — and since patch 346 a copy that "
+                 + "three stores read from. Both halves matter: the plan and "
+                 + "the athlete figures are served out of these rows, and every "
+                 + "one of those rows also still exists in a file above, which "
+                 + "is what keeps the disconnect rule below correct. When the "
+                 + "database becomes the place the app reads from and the files "
+                 + "stop being maintained — step 3.7 in the original numbering, "
+                 + "slice B9 in the D7 plan that replaced it — a disconnect will "
+                 + "have to delete the Strava-derived ROWS and re-key the ones "
+                 + "you wrote, rather than removing the folder. The disconnect "
+                 + "rule is only correct while every row in here also exists in "
+                 + "the files above (ADR-0003 §8).",
                    "Not included in an export, and it is now the only place "
                  + "your whole training record sits together. The export writes "
                  + "JSON and a SQLite file is not JSON, so a readable dump has "
@@ -783,8 +812,13 @@ enum DataLifecycle {
                  + "(ADR-0003 §9.4).",
                    "A disconnect removes the folder while the app still has the "
                  + "database open, so the rows survive in an unlinked file until "
-                 + "you quit the app. Harmless while nothing reads them, and it "
-                 + "has to become a real close before step 3.7 (ADR-0003 §8).",
+                 + "you quit the app. Since patch 346 the plan and the athlete "
+                 + "figures are read from that open handle, so a disconnect "
+                 + "leaves them on screen until the app is quit — at which "
+                 + "point the stores fall back to the files, which the "
+                 + "disconnect has already dealt with under its own rules. It "
+                 + "has to become a real close before the database is the only "
+                 + "copy (ADR-0003 §8).",
                    "Included in your device backup, like everything else under "
                  + "Application Support (ADR-0003 §9.4)."],
             // FLIPPED IN 281, AND IT IS CORRECT ONLY WHILE THIS IS A COPY.

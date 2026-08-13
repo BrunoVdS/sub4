@@ -319,7 +319,7 @@ struct VolumeParityTests {
 
         // And the chart still reads the same figures out of it.
         let weeks = VolumeSeries.weeks(count: 200, metric: .bike, unit: .km,
-                                       activities: acts, store: PlanStore.shared)
+                                       activities: acts, store: PlanStore())
         let drawn = weeks.first { DayKey.key($0.start) == "2026-04-20" }
         #expect(drawn != nil, "the window should reach back to April 2026")
         #expect(abs((drawn?.training ?? 0) - 72.9) < 0.001,

@@ -245,28 +245,67 @@ struct DatabaseBootstrapTests {
         #expect(boot.diagnosticLines.joined(separator: "\n").contains("disk I/O error"))
     }
 
-    // MARK: `decodeBundle` — the independence 345 depends on
+    // MARK: `decodeBundle` — the independence the read-back depends on
 
-    /// THE EQUALITY THAT MAKES 343 A NO-OP.
+    /// THE EQUALITY THAT MADE 343 A NO-OP, RE-AIMED AT 346a.
     ///
-    /// The read-back decodes the bundle itself instead of reading the store.
-    /// Today those must be the same plan, because the store IS the decoded
-    /// bundle — and that is precisely why this can be checked before 345
-    /// changes what the store serves. If this ever fails, the read-back has
-    /// silently started comparing against something else.
+    /// This compared `decodeBundle()` against `PlanStore.shared`, on the
+    /// grounds that "the store IS the decoded bundle". That was the whole
+    /// argument for why 343 could be checked before anything changed what the
+    /// store serves — and 346 is the patch that changed it. The singleton now
+    /// holds rows.
+    ///
+    /// The invariant that survives is the one that was always the point: a
+    /// store built from the bundle holds the bundle, so the read-back's
+    /// independent side and the store's own decode cannot drift apart. It is
+    /// asserted against a store this test constructs, which is what
+    /// `PlanStore.init` was made internal for at 344.
     @MainActor
-    @Test("The extracted decode equals what the store holds")
-    func theDecodeEqualsTheStore() {
+    @Test("The extracted decode equals what a bundle-built store holds")
+    func theDecodeEqualsAFreshStore() {
         let decoded = PlanStore.decodeBundle()
         #expect(decoded.error == nil, "the bundled plan must decode")
 
-        let store = PlanStore.shared
+        let store = PlanStore()
         #expect(store.loadError == nil)
-        #expect(store.servedFrom == .files,
-                "nothing hydrates the singleton until 345 wires the launch")
+        #expect(store.servedFrom == .files, "a store nobody hydrated is on files")
         #expect(decoded.plan.weeks.count == store.plan.weeks.count)
         #expect(decoded.plan.sessions.count == store.plan.sessions.count)
         #expect(decoded.plan.meta.raceDate == store.plan.meta.raceDate)
+    }
+
+    /// THE ONE TEST IN THIS TARGET THAT MAY NAME `PlanStore.shared`, and the
+    /// apply script enforces that.
+    ///
+    /// 346 changed what the singleton means, and it changed it under sixteen
+    /// call sites that were written when `.shared` WAS the bundle. Three failed
+    /// at once — on a stored plan holding 260 sessions where the bundle holds
+    /// 261 — and the other thirteen went on passing while checking the
+    /// simulator's database instead of `plan.json`. They build their own stores
+    /// now.
+    ///
+    /// What this asserts is the pairing, not a value: the store's own account
+    /// of where its plan came from must agree with the launch's account of what
+    /// it did. A hydration that ran and did not reach the store, or a store
+    /// reporting a source it is not serving, is §12.57 exactly — a result that
+    /// is true of the thing you are holding and false about the world — and it
+    /// is invisible to every other test.
+    ///
+    /// `begin()` is idempotent and returns the first caller's result, so this
+    /// waits for the launch rather than racing it.
+    @MainActor
+    @Test("The singleton's source agrees with what the launch says it did")
+    func theStoreIsNoLongerTheBundle() async {
+        await Sub4Launch.shared.begin()
+
+        switch Sub4Launch.shared.hydration {
+        case .hydrated:
+            #expect(PlanStore.shared.servedFrom == .database,
+                    "the launch says it hydrated, so the store must say so too")
+        case .notWanted, .fault, .nothingStored:
+            #expect(PlanStore.shared.servedFrom == .files,
+                    "nothing hydrated it, so it is still serving the bundle")
+        }
     }
 
     /// Two decodes of one resource agree. Cheap, and it is the property the

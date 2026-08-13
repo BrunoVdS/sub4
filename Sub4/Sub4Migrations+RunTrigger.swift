@@ -69,11 +69,17 @@ extension Sub4Migrations {
 
     nonisolated static let runTrigger = "2026-08-12-run-trigger"
 
-    /// The four triggers, frozen at 7 August 2026. Compared against
-    /// `MigrationRunTrigger.allCases` by test; a mismatch means a new migration
-    /// is owed rather than an edit to this line.
-    nonisolated static let migrationRunTriggers =
-        ["manual", "backgrounded", "foregrounded", "backgroundRefresh"]
+    // `migrationRunTriggers` LIVED HERE UNTIL 348a AND HAD TO LEAVE.
+    //
+    // It mirrors the values the schema permits TODAY, and the CHECK below
+    // names the values the schema permitted on 12 August. Those were the same
+    // list for thirty-six patches, which is why one constant could sit beside
+    // one migration and be right about both.
+    //
+    // 348 widened the constraint in `2026-08-17-authored-trigger`, and this
+    // file's SQL correctly did not change — a migration body is history. So
+    // the constant moved to the migration that most recently froze the CHECK,
+    // where the list and the SQL it mirrors are readable in one glance.
 
     nonisolated static func registerRunTrigger(_ m: inout DatabaseMigrator) {
         m.registerMigration(runTrigger) { db in

@@ -71,9 +71,23 @@ nonisolated enum PersistenceMode: Equatable, Sendable {
     /// a shadow — every launch up to and including patch 342.
     case legacyAuthoritative
 
-    /// A slice is under test. Its repository hydrates, its comparison runs,
-    /// and production is still served from the legacy side. The associated
-    /// value names the slice so the diagnostic can say which.
+    /// A slice is under test: ITS STORES ARE FED FROM THE DATABASE, and every
+    /// screen that reads them is reading rows.
+    ///
+    /// CORRECTED AT 345, AND THE CORRECTION IS THE DECISION. This said "its
+    /// comparison runs, and production is still served from the legacy side",
+    /// which describes a mode that proves nothing: the read-back already
+    /// compares the two sides on demand, so a shadow that only compared would
+    /// add a second copy of an existing check and leave the hydration path
+    /// unexercised until B9 turned on nine of them at once.
+    ///
+    /// What makes it safe is not that production is untouched — it is that the
+    /// switch is a compile-time constant, the read-back's other side is a
+    /// fresh decode of the bundle (patch 343) rather than the store, and the
+    /// acceptance criterion for every slice is that no figure on any screen
+    /// moves. Reversible by setting `sliceUnderTest` back to nil.
+    ///
+    /// The associated value names the slice so the diagnostic can say which.
     case shadow(String)
 
     /// An activated run exists and the database opened. Reads come from SQLite.
@@ -88,6 +102,25 @@ nonisolated enum PersistenceMode: Equatable, Sendable {
     case blocked(String)
 
     var isDatabaseAuthoritative: Bool { self == .databaseAuthoritative }
+
+    /// Whether the stores take their data from rows this launch — patch 345.
+    ///
+    /// THE ONE PLACE THAT DECIDES, and it is deliberately not a list of slices.
+    /// Which FAMILIES hydrate is `DatabaseBootstrap`'s contents; this says
+    /// only whether hydration happens at all. Two lists would be two things to
+    /// keep in step, and the one that drifted would be the one nobody read —
+    /// §12.43.
+    ///
+    /// `.blocked` is false, and not because hydrating would be harmful: after
+    /// activation an unreadable database means the app may not serve at all,
+    /// and B9's recovery screen is the answer rather than a store full of
+    /// whatever the failure left behind.
+    var hydratesFromDatabase: Bool {
+        switch self {
+        case .shadow, .databaseAuthoritative: true
+        case .legacyAuthoritative, .blocked:  false
+        }
+    }
 
     /// Whether production may serve anything at all. `false` is the recovery
     /// screen, and B9 is where `RootView` learns to draw one.
@@ -116,7 +149,26 @@ nonisolated enum PersistenceAuthority {
     /// `Sub4Launch.migrationFailureBlocksTheApp` — so moving to the next slice
     /// is a decision somebody makes on purpose and a reviewer can see in the
     /// diff. Nil at B0 because B0 changes no reads.
-    static let sliceUnderTest: String? = nil
+    ///
+    /// SET AT 346. THE PLAN, THE ATHLETE AND THE CONSTANTS NOW COME FROM ROWS.
+    ///
+    /// 345 assembled the bootstrap on every launch and wired the hydration all
+    /// the way to the three stores; this constant was the only thing standing
+    /// between that and the stores actually taking them. On the device at 345
+    /// the bootstrap reported every read succeeded and every family holds data,
+    /// against the real database, one patch before anything depended on it.
+    ///
+    /// **REVERSIBLE BY SETTING THIS BACK TO NIL.** Not by a migration, not by
+    /// a re-import, not by anything that touches the athlete's data: the JSON
+    /// files are still written, still complete, and still the source the
+    /// importer seeds from. That is what makes a slice a slice.
+    ///
+    /// SLICES ACCUMULATE AND THIS IS NOT A LIST OF THEM. Which FAMILIES hydrate
+    /// is `DatabaseBootstrap`'s contents; this says only whether hydration
+    /// happens at all, and carries a label for the diagnostic. B2 adds its
+    /// family to the bootstrap and extends this sentence — it does not replace
+    /// it, and it cannot switch B1 off by editing a string. §12.43.
+    static let sliceUnderTest: String? = "B1 — the plan, the athlete and the constants"
 
     /// The mirror. See the header: it may only ever withhold.
     ///

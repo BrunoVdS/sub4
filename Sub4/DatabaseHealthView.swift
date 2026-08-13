@@ -3278,6 +3278,29 @@ struct DatabaseHealthView: View {
         // B1 it decides what three stores read, and a value that decides that
         // and cannot be read is the shape §12.54.2 keeps naming. §12.91.
         lines.append("Reads from: \(Sub4Launch.shared.persistence.line)")
+        // PATCH 345. WHAT THE LAUNCH READ, AND WHAT IT DID ABOUT IT.
+        //
+        // Every line unconditional, including the ones that say nothing
+        // happened — §12.54.2, whose whole subject is that a row which
+        // disappears when the answer is boring cannot be told from a row
+        // nobody wired in. "Hydration: not this launch" and no hydration line
+        // at all look identical from a paste, and only one of them means the
+        // code is working.
+        //
+        // The three store lines are the §12.15 pair this slice turns on:
+        // `PlanStore.init` decodes the bundle, so a store that was never
+        // hydrated holds a perfectly good plan and is otherwise
+        // indistinguishable from one that was.
+        lines.append("Hydration: \(Sub4Launch.shared.hydration.line)")
+        if let boot = Sub4Launch.shared.bootstrap {
+            lines.append(contentsOf: boot.diagnosticLines)
+        } else {
+            lines.append("Database bootstrap: not assembled — the database did "
+                         + "not open this launch")
+        }
+        lines.append("Plan store reads: \(PlanStore.shared.servedFrom.line)")
+        lines.append("Athlete store reads: \(AthleteStore.shared.servedFrom.line)")
+        lines.append("Constants store reads: \(ConstantsStore.shared.servedFrom.line)")
         lines.append("Tables: \(counts.count), imported rows: \(importedRows), total: \(totalRows)")
         // PATCH 336. EVERY TABLE, INCLUDING THE EMPTY ONES.
         //

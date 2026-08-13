@@ -122,15 +122,15 @@
       "label": "04",
       "date_range": "17–23 Aug",
       "start_date": "2026-08-17",
-      "tag": "Endurance · BER→BRU Mon",
-      "badge": null,
-      "kind": null,
+      "tag": "Build-up · BER→BRU Mon",
+      "badge": "On-ramp",
+      "kind": "cut",
       "logged": false,
       "stats": {
         "runs": 3.0,
         "ride": 1.0,
         "swim": 1.0,
-        "km": 88.0,
+        "km": 86.0,
         "h": 6.5
       }
     },
@@ -140,15 +140,15 @@
       "label": "05",
       "date_range": "24–30 Aug",
       "start_date": "2026-08-24",
-      "tag": "Endurance · settle · BRU→BER Sat",
-      "badge": "Cutback",
+      "tag": "Build-up · BRU→BER Sat",
+      "badge": "On-ramp",
       "kind": "cut",
       "logged": false,
       "stats": {
         "runs": 3.0,
         "ride": 1.0,
         "swim": 1.0,
-        "km": 89.0,
+        "km": 87.0,
         "h": 6.5
       }
     },
@@ -158,16 +158,16 @@
       "label": "06",
       "date_range": "31 Aug–6 Sep",
       "start_date": "2026-08-31",
-      "tag": "Last home week · BER→BRU Tue",
-      "badge": null,
-      "kind": null,
+      "tag": "Berlin run block · BER→BRU Fri",
+      "badge": "Berlin",
+      "kind": "cut",
       "logged": false,
       "stats": {
-        "runs": 3.0,
-        "ride": 1.0,
-        "swim": 1.0,
-        "km": 95.0,
-        "h": 6.5
+        "runs": 4.0,
+        "rides": 0.0,
+        "swims": 0.0,
+        "km": 32.0,
+        "h": 3.5
       }
     },
     {
@@ -1329,7 +1329,7 @@
       "discipline": "run",
       "intensity": "easy",
       "title": "Easy",
-      "detail": "7 km @5:45–6:00 · Berlin",
+      "detail": "7 km @6:00–6:15 · Berlin",
       "fuel": "Water only",
       "prep": null,
       "seq": 0
@@ -1409,7 +1409,7 @@
       "discipline": "run",
       "intensity": "long",
       "title": "Long run",
-      "detail": "12 km @5:35–5:55 · Berlin",
+      "detail": "12 km @5:50–6:10 · Berlin",
       "fuel": "~65 g/hr · Leppin + gels — see ladder",
       "prep": null,
       "seq": 0
@@ -1441,15 +1441,15 @@
       "seq": 0
     },
     {
-      "uid": "wk-04-tue-light-tempo-ease-in",
+      "uid": "wk-04-tue-steady",
       "week_uid": "wk-04",
       "day": "Tue",
       "date": "2026-08-18",
       "discipline": "run",
-      "intensity": "threshold",
-      "title": "Light tempo (ease in)",
-      "detail": "2k WU + 3×5min @5:10–5:20 (2min float) + CD",
-      "fuel": "~60 g/hr · 1 ULTRA gel + 500 ml Leppin",
+      "intensity": "long",
+      "title": "Steady",
+      "detail": "2k easy + 5 km @5:40–5:55 + 2k easy",
+      "fuel": "~30 g/hr · ½–1 Leppin bottle",
       "prep": null,
       "seq": 0
     },
@@ -1535,7 +1535,7 @@
       "discipline": "run",
       "intensity": "easy",
       "title": "Easy + strides",
-      "detail": "8 km @5:45–6:00 + 4×20s strides",
+      "detail": "8 km @6:00–6:15 + 4×20s strides",
       "fuel": "Water only",
       "prep": null,
       "seq": 0
@@ -1633,7 +1633,7 @@
       "discipline": "run",
       "intensity": "long",
       "title": "Long run",
-      "detail": "14 km @5:35–5:55",
+      "detail": "12 km @5:50–6:10",
       "fuel": "~65 g/hr · Leppin + gels — see ladder",
       "prep": null,
       "seq": 0
@@ -1693,7 +1693,7 @@
       "swim_detail": {
         "total": "1500 m",
         "tag": "Kick phase 2 · build & integrate",
-        "focus": "Drill session (cutback week): the 6-kick-switch links the kick to your body roll — this is the week’s technique centrepiece.",
+        "focus": "Drill session, and the last pool session before Japan: the 6-kick-switch links the kick to your body roll. Next structured swim is Wk 11.",
         "blocks": [
           {
             "d": "300 m",
@@ -1719,15 +1719,15 @@
       }
     },
     {
-      "uid": "wk-05-tue-tempo-intro",
+      "uid": "wk-05-tue-steady",
       "week_uid": "wk-05",
       "day": "Tue",
       "date": "2026-08-25",
       "discipline": "run",
-      "intensity": "threshold",
-      "title": "Tempo intro",
-      "detail": "3k WU + 3×6min @4:55–5:10 (2min float @6:00–6:15) + 3k CD",
-      "fuel": "~60 g/hr · 1 ULTRA gel + 500 ml Leppin",
+      "intensity": "long",
+      "title": "Steady",
+      "detail": "2k easy + 6 km @5:40–5:55 + 2k easy",
+      "fuel": "~30 g/hr · ½–1 Leppin bottle",
       "prep": null,
       "seq": 0
     },
@@ -1819,7 +1819,7 @@
       "discipline": "run",
       "intensity": "easy",
       "title": "Easy",
-      "detail": "6 km @5:45–6:00",
+      "detail": "6 km @6:00–6:15",
       "fuel": "Water only",
       "prep": null,
       "seq": 0
@@ -1832,7 +1832,7 @@
       "discipline": "run",
       "intensity": "long",
       "title": "Long run",
-      "detail": "12 km @5:35–5:55 · deliberate cutback, moved off the flight",
+      "detail": "12 km @5:50–6:10 · moved off the flight",
       "fuel": "~65 g/hr · Leppin + gels — see ladder",
       "prep": null,
       "seq": 0
@@ -1851,20 +1851,7 @@
       "seq": 0
     },
     {
-      "uid": "wk-05-sun-walk-rest",
-      "week_uid": "wk-05",
-      "day": "Sun",
-      "date": "2026-08-30",
-      "discipline": "rest",
-      "intensity": null,
-      "title": "Walk / rest",
-      "detail": "City walk or full rest · Berlin",
-      "fuel": null,
-      "prep": null,
-      "seq": 0
-    },
-    {
-      "uid": "wk-05-sun-strength-b-core-1",
+      "uid": "wk-05-sun-strength-b-core",
       "week_uid": "wk-05",
       "day": "Sun",
       "date": "2026-08-30",
@@ -1874,7 +1861,7 @@
       "detail": "Berlin · easy circuit · ~20 min",
       "fuel": null,
       "prep": null,
-      "seq": 1,
+      "seq": 0,
       "strength_detail": {
         "total": "~20 min",
         "tag": "On-ramp · core",
@@ -1949,157 +1936,154 @@
       }
     },
     {
-      "uid": "wk-06-mon-steady",
+      "uid": "wk-06-mon-easy",
       "week_uid": "wk-06",
       "day": "Mon",
       "date": "2026-08-31",
       "discipline": "run",
-      "intensity": "long",
-      "title": "Steady",
-      "detail": "10 km @5:25–5:40 · Berlin",
-      "fuel": "~30 g/hr · ½–1 Leppin bottle",
+      "intensity": "easy",
+      "title": "Easy",
+      "detail": "7 km @6:00–6:15 · Berlin",
+      "fuel": "Water only",
       "prep": null,
       "seq": 0
     },
     {
-      "uid": "wk-06-tue-travel-ber-bru",
+      "uid": "wk-06-tue-walk-rest",
       "week_uid": "wk-06",
       "day": "Tue",
       "date": "2026-09-01",
       "discipline": "rest",
       "intensity": null,
-      "title": "Travel · BER→BRU",
-      "detail": "SN2590 · rest day",
+      "title": "Walk / rest",
+      "detail": "City walk or full rest · Berlin · the break in the run block",
       "fuel": null,
       "prep": null,
       "seq": 0
     },
     {
-      "uid": "wk-06-wed-bike-aerobic-evening",
+      "uid": "wk-06-wed-recovery",
       "week_uid": "wk-06",
       "day": "Wed",
       "date": "2026-09-02",
-      "discipline": "bike",
+      "discipline": "run",
       "intensity": "easy",
-      "title": "Bike · aerobic (evening)",
-      "detail": "2 h outdoor Z2",
-      "fuel": "~65 g/hr · 1 Leppin bottle + 1 chew /hr",
+      "title": "Recovery",
+      "detail": "5 km @6:15–6:30 · Berlin",
+      "fuel": "Water only",
       "prep": null,
       "seq": 0
     },
     {
-      "uid": "wk-06-wed-strength-a1-squat-after-the-ride-1",
+      "uid": "wk-06-wed-strength-b-hotel-circuit-1",
       "week_uid": "wk-06",
       "day": "Wed",
       "date": "2026-09-02",
       "discipline": "strength",
       "intensity": null,
-      "title": "Strength A1 · squat (after the ride)",
-      "detail": "Last barbell session before Japan · moderate · ~35 min",
+      "title": "Strength B · hotel circuit",
+      "detail": "Berlin · bodyweight, evening · ~20 min",
       "fuel": null,
       "prep": null,
       "seq": 1,
       "strength_detail": {
-        "total": "~30 min",
-        "tag": "Last home week",
-        "focus": "Last time under the bar for a month — moderate, satisfying, nothing sore on the plane. Next barbell session: Wk 11.",
+        "total": "~20 min",
+        "tag": "Berlin run block",
+        "focus": "Hotel-room circuit in Berlin — zero kit, ~20 minutes, evening. Five run days this week, so keep it snappy: 2–3 easy rounds, nothing to failure. Last barbell session was Wk 5; next is Wk 11.",
         "blocks": [
           {
-            "d": "8′",
+            "d": "5′",
             "t": "Warm-up",
-            "x": "Easy spin or brisk walk, hips and ankles loose; then 2 lighter ramp-up sets of the first lift before the work sets."
+            "x": "Easy movement — leg swings, hip circles, a flight of stairs."
           },
           {
-            "d": "3×8",
-            "t": "Back squat",
-            "x": "Technique loads — crisp and comfortable, 3×8–10.",
-            "u": "https://www.youtube.com/watch?v=bEv6CCg2BC8"
+            "d": "×10/leg",
+            "t": "Split squat",
+            "x": "Slow and controlled; back knee kisses the floor.",
+            "u": "https://www.youtube.com/watch?v=4bNQITw0VdY"
           },
           {
-            "d": "2×8",
-            "t": "Romanian deadlift",
-            "x": "Hinge, soft knees, bar close to the legs; hamstrings load the descent — stop where the back would round.",
-            "u": "https://www.youtube.com/watch?v=_oyxCn2iSjU"
+            "d": "×10/leg",
+            "t": "Single-leg glute bridge",
+            "x": "Drive through the heel, squeeze at the top.",
+            "u": "https://www.youtube.com/watch?v=VUl8R0kn6v4"
           },
           {
-            "d": "2×8/leg",
-            "t": "Box step-up · KB/DB",
-            "x": "Onto the jump box or bench; drive through the top leg, control the way down.",
-            "u": "https://www.youtube.com/watch?v=elhu-WC1qk4"
+            "d": "×8/leg",
+            "t": "Single-leg RDL reach",
+            "x": "Balance + hamstrings; reach long, hips square.",
+            "u": "https://www.youtube.com/watch?v=Zfr6wizR8rs"
           },
           {
-            "d": "3×10",
-            "t": "Standing calf raise · bar",
-            "x": "Slow 3-second lowering, full stretch at the bottom — long-run insurance at your mileage.",
+            "d": "×15",
+            "t": "Calf raise off a step",
+            "x": "Slow 3-second lowering below the step edge.",
             "u": "https://www.youtube.com/watch?v=unJ50MjqhBs"
           },
           {
-            "d": "3×30 m",
-            "t": "Suitcase carry",
-            "x": "One heavy kettlebell, walk tall, don’t lean — the obliques do the work.",
-            "u": "https://www.youtube.com/watch?v=Q1GjhRDAil0"
+            "d": "×8/side",
+            "t": "Copenhagen plank",
+            "x": "Short-lever version on a chair or bench is fine — groin insurance.",
+            "u": "https://www.youtube.com/watch?v=5Hs7AfiMXgs"
           },
           {
-            "d": "2×30 s",
-            "t": "Side plank",
-            "x": "Per side — hips stacked and high.",
+            "d": "30 s/side",
+            "t": "Side plank + leg lift",
+            "x": "The top-leg lift makes the hip work.",
             "u": "https://www.youtube.com/watch?v=XeN4pEZZJNI"
+          },
+          {
+            "d": "×10",
+            "t": "Dead bug",
+            "x": "Low back stays glued to the floor.",
+            "u": "https://www.youtube.com/watch?v=GbSC02oU3To"
+          },
+          {
+            "d": "×8/side",
+            "t": "Bird dog",
+            "x": "Slow, no wobble — opposite arm and leg.",
+            "u": "https://www.youtube.com/watch?v=ZdAHe9_HeEw"
+          },
+          {
+            "d": "×20",
+            "t": "Plank shoulder taps",
+            "x": "Hips quiet — anti-rotation.",
+            "u": "https://www.youtube.com/watch?v=gKA5LBy7WAI"
+          },
+          {
+            "d": "2×15",
+            "t": "Pogo hops",
+            "x": "Skip these the day before a long run.",
+            "u": "https://www.youtube.com/watch?v=p1co7wVEnJk"
           }
         ]
       }
     },
     {
-      "uid": "wk-06-thu-easy",
+      "uid": "wk-06-thu-easy-strides",
       "week_uid": "wk-06",
       "day": "Thu",
       "date": "2026-09-03",
       "discipline": "run",
       "intensity": "easy",
-      "title": "Easy",
-      "detail": "8 km @5:45–6:00",
+      "title": "Easy + strides",
+      "detail": "8 km @6:00–6:15 + 4×20s strides · Berlin",
       "fuel": "Water only",
       "prep": null,
       "seq": 0
     },
     {
-      "uid": "wk-06-fri-swim-no-buoy",
+      "uid": "wk-06-fri-travel-ber-bru",
       "week_uid": "wk-06",
       "day": "Fri",
       "date": "2026-09-04",
-      "discipline": "swim",
+      "discipline": "rest",
       "intensity": null,
-      "title": "Swim · no-buoy",
-      "detail": "1600 m · 6×150 swim + 4×50 kick/swim",
-      "fuel": "Water only",
+      "title": "Travel · BER→BRU",
+      "detail": "SN2588 · rest day",
+      "fuel": null,
       "prep": null,
-      "seq": 0,
-      "swim_detail": {
-        "total": "1600 m",
-        "tag": "Kick phase 2 · build & integrate",
-        "focus": "Last home session before Japan — consolidate, don’t push. Next structured swim is Wk 11.",
-        "blocks": [
-          {
-            "d": "300 m",
-            "t": "Warm-up · no buoy",
-            "x": "200 easy + 2×50 as 25 single-arm drill / 25 swim."
-          },
-          {
-            "d": "900 m",
-            "t": "Main · 6×150 @1:50–2:00 (r20)",
-            "x": "Steady, rhythmic — IM feel on the quicker ones. Light constant kick throughout."
-          },
-          {
-            "d": "200 m",
-            "t": "Kick · 4×50 as 25 kick / 25 swim (r15)",
-            "x": "Pointed toes. Kick from the hip, not the knee: loose ankles, pointed toes, small fast amplitude — just enough to lift the hips. The point is feel, not effort."
-          },
-          {
-            "d": "200 m",
-            "t": "Cool-down",
-            "x": "Easy — leave the pool loose; on the trip, easy technique swims only if you reach water."
-          }
-        ]
-      }
+      "seq": 0
     },
     {
       "uid": "wk-06-sat-long-run",
@@ -2109,7 +2093,7 @@
       "discipline": "run",
       "intensity": "long",
       "title": "Long run",
-      "detail": "16 km @5:30–5:55",
+      "detail": "12 km @5:45–6:10",
       "fuel": "~65 g/hr · Leppin + gels — see ladder",
       "prep": null,
       "seq": 0
@@ -2873,7 +2857,7 @@
       "discipline": "run",
       "intensity": "easy",
       "title": "Ease back in",
-      "detail": "6–8 km easy @5:45–6:00",
+      "detail": "6–8 km easy @6:00–6:15",
       "fuel": "Water only",
       "prep": null,
       "seq": 0
@@ -2886,7 +2870,7 @@
       "discipline": "run",
       "intensity": "long",
       "title": "Rebuild long",
-      "detail": "14–16 km @5:35–5:55 · steady, no MP yet",
+      "detail": "14–16 km @5:50–6:10 · steady, no MP yet",
       "fuel": "~65 g/hr · Leppin + gels — see ladder",
       "prep": null,
       "seq": 0
@@ -2952,7 +2936,7 @@
       "discipline": "run",
       "intensity": "threshold",
       "title": "Tempo",
-      "detail": "2k WU + 2×15min @4:55–5:10 (3min float) + CD",
+      "detail": "2k WU + 2×15min @5:10–5:25 (3min float) + CD",
       "fuel": "~60 g/hr · 1 ULTRA gel + 500 ml Leppin",
       "prep": null,
       "seq": 0
@@ -3045,7 +3029,7 @@
       "discipline": "run",
       "intensity": "easy",
       "title": "Easy",
-      "detail": "8 km @5:45–6:00",
+      "detail": "8 km @6:00–6:15",
       "fuel": "Water only",
       "prep": null,
       "seq": 0
@@ -3143,7 +3127,7 @@
       "discipline": "run",
       "intensity": "marathon_pace",
       "title": "Long + MP finish",
-      "detail": "18 km, last 5 km @5:38–5:43",
+      "detail": "18 km, last 5 km @5:53–5:58",
       "fuel": "~80 g/hr · race fuel — see ladder",
       "prep": null,
       "seq": 0
@@ -8308,21 +8292,21 @@
       "name": "Split squat",
       "video_url": "https://www.youtube.com/watch?v=4bNQITw0VdY",
       "cue": "Slow and controlled; back knee kisses the floor.",
-      "uses": 26
+      "uses": 27
     },
     {
       "uid": "single-leg-glute-bridge",
       "name": "Single-leg glute bridge",
       "video_url": "https://www.youtube.com/watch?v=VUl8R0kn6v4",
       "cue": "Drive through the heel, squeeze at the top.",
-      "uses": 31
+      "uses": 32
     },
     {
       "uid": "single-leg-rdl-reach",
       "name": "Single-leg RDL reach",
       "video_url": "https://www.youtube.com/watch?v=Zfr6wizR8rs",
       "cue": "Balance + hamstrings; reach long, hips square.",
-      "uses": 26
+      "uses": 27
     },
     {
       "uid": "calf-raise-off-a-step",
@@ -8336,7 +8320,7 @@
       "name": "Copenhagen plank",
       "video_url": "https://www.youtube.com/watch?v=5Hs7AfiMXgs",
       "cue": "Short-lever version on a chair or bench is fine — groin insurance.",
-      "uses": 31
+      "uses": 32
     },
     {
       "uid": "side-plank-leg-lift",
@@ -8350,56 +8334,56 @@
       "name": "Dead bug",
       "video_url": "https://www.youtube.com/watch?v=GbSC02oU3To",
       "cue": "Low back stays glued to the floor.",
-      "uses": 41
+      "uses": 42
     },
     {
       "uid": "bird-dog",
       "name": "Bird dog",
       "video_url": "https://www.youtube.com/watch?v=ZdAHe9_HeEw",
       "cue": "Slow, no wobble — opposite arm and leg.",
-      "uses": 31
+      "uses": 32
     },
     {
       "uid": "plank-shoulder-taps",
       "name": "Plank shoulder taps",
       "video_url": "https://www.youtube.com/watch?v=gKA5LBy7WAI",
       "cue": "Hips quiet — anti-rotation.",
-      "uses": 31
+      "uses": 32
     },
     {
       "uid": "pogo-hops",
       "name": "Pogo hops",
       "video_url": "https://www.youtube.com/watch?v=p1co7wVEnJk",
       "cue": "Skip these the day before a long run.",
-      "uses": 37
+      "uses": 38
     },
     {
       "uid": "back-squat",
       "name": "Back squat",
       "video_url": "https://www.youtube.com/watch?v=bEv6CCg2BC8",
       "cue": "Technique loads — crisp and comfortable, 3×8–10.",
-      "uses": 15
+      "uses": 14
     },
     {
       "uid": "romanian-deadlift",
       "name": "Romanian deadlift",
       "video_url": "https://www.youtube.com/watch?v=_oyxCn2iSjU",
       "cue": "Hinge, soft knees, bar close to the legs; hamstrings load the descent — stop where the back would round.",
-      "uses": 15
+      "uses": 14
     },
     {
       "uid": "box-step-up-kb-db",
       "name": "Box step-up · KB/DB",
       "video_url": "https://www.youtube.com/watch?v=elhu-WC1qk4",
       "cue": "Onto the jump box or bench; drive through the top leg, control the way down.",
-      "uses": 15
+      "uses": 14
     },
     {
       "uid": "suitcase-carry",
       "name": "Suitcase carry",
       "video_url": "https://www.youtube.com/watch?v=Q1GjhRDAil0",
       "cue": "One heavy kettlebell, walk tall, don’t lean — the obliques do the work.",
-      "uses": 15
+      "uses": 14
     },
     {
       "uid": "deadlift",

@@ -177,6 +177,31 @@ final class DatabaseWriteThrough {
     /// Collapsing them would mean either the journal losing that detail or the
     /// vocabulary growing a fifth case meaning "manual, but from the other
     /// button". §12.39.2: a field name that carries detail is not a field name.
+    /// A STORE JUST SAVED SOMETHING THE ATHLETE WROTE — patch 348, §12.94.
+    ///
+    /// THE WINDOW THIS CLOSES. Until D7 the legacy files were what the app
+    /// read, so a save reaching disk was the end of the story and the database
+    /// catching up on backgrounding was housekeeping. From B1 the stores are
+    /// hydrated from rows at launch, which means a save that has not reached
+    /// the database is a save the next launch discards — with the newer value
+    /// sitting in a file nothing reads any more. ADR §12.93.5 named that; this
+    /// closes it.
+    ///
+    /// FIRE AND FORGET, DELIBERATELY. The caller is a `save()` that has just
+    /// succeeded and has nothing useful to do with a failure here: the file is
+    /// written, the value is in memory, and a database that did not catch up is
+    /// caught up by the next trigger. `run` reports its own outcome on the
+    /// health screen, which is where a persistent failure becomes visible.
+    ///
+    /// NO DIRTY FLAG AND NO NARROW WRITE — the header's argument, unchanged. A
+    /// whole-world run fails by being LATE; a targeted write fails by being
+    /// FORGOTTEN, and a store that forgets is a store nothing says anything
+    /// about. The run is a third of a second and coalesces, so a burst of saves
+    /// costs one run and at most one repeat.
+    func noteAuthoredChange(_ what: String) {
+        Task { await run(reason: what, trigger: .authored) }
+    }
+
     func run(reason: String, trigger: MigrationRunTrigger) async {
         if isRunning { runAgainWhenDone = true; return }
 

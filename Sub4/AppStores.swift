@@ -103,7 +103,39 @@ nonisolated struct AppStores: Sendable {
         s.constants = ConstantsStore.shared.c
         s.ftpWatts = AthleteStore.shared.ftp
         s.zones = AthleteStore.shared.hrZones
-        s.plan = PlanStore.shared.plan
+        // PATCH 347 — THE SEED, NOT WHAT THE APP IS SERVING. ADR §12.93.
+        //
+        // This read `PlanStore.shared.plan` for forty patches and was right
+        // every one of them: the store WAS the bundled plan. Since 346 it is
+        // rows, so the importer was taking one of its own outputs as an input.
+        //
+        // Three things came out of that, and they are one fix:
+        //
+        //   · a revised plan.json could no longer reach the database at all —
+        //     the store never reads the bundle again, and the importer read
+        //     the store. The bundle is the only way a plan revision enters.
+        //   · the plan being hashed had been through SQL, which returns weeks
+        //     and sessions ORDER BY uid rather than in the plan's own order.
+        //     Same 261 sessions, different array order, different SHA-256 —
+        //     so `importPlan` found no matching version and wrote a second
+        //     one, doubling every plan table.
+        //   · `planSourceLabel` defaults to "bundled", which was false of
+        //     every version written between 346 and this patch.
+        //
+        // §12.91.3 FORBIDS THE BUNDLE AS A FALLBACK FOR A FAILED READ. It has
+        // never forbidden seeding a WRITE from it — that is the only role the
+        // bundle has ever had, and `decodeBundle`'s own comment says so. The
+        // apply script's guard moves from two permitted call sites to three
+        // rather than being relaxed, so a fourth is still somebody's decision.
+        //
+        // IT DECODES, IT DOES NOT CACHE. `current()` is @MainActor and runs on
+        // backgrounding and on return, so this is 261 sessions of JSON on the
+        // main actor a handful of times a day. A cached bundled plan in
+        // production scope was the alternative and is the fallback somebody
+        // writes the day a database read fails — 346a rejected `PlanStore
+        // .bundled` for exactly that, and the reasoning did not change because
+        // this is the write direction.
+        s.plan = PlanStore.decodeBundle().plan
         s.streams = Array(DetailStore.shared.streams.values)
         s.details = Array(DetailStore.shared.details.values)
         s.reconcile = StoreReadJournal.shared.canReconcile(reconcileRequires)

@@ -42,7 +42,7 @@ struct ReviewRehearsalTests {
         #expect(p.changes.count == 2)
         #expect(p.changes.map(\.sessionUid) == uids)
 
-        let plan = PlanStore.shared
+        let plan = PlanStore()
         let known = Set(plan.plan.sessions.map(\.uid))
         let allKnown = p.changes.allSatisfy { known.contains($0.sessionUid) }
         #expect(allKnown, "a change names a session the plan does not have")
