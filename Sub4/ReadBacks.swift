@@ -53,15 +53,36 @@ enum ReadBacks {
     }
 
     /// Patch 322 — D6c slice 5b. `user_note` and `correction`.
+    ///
+    /// PATCH 355 ADDS `match_decision`, and it is a THIRD VALUE out of ONE
+    /// read-back rather than a tenth entry in the roll-up. The roll-up's nine
+    /// rows are load-bearing in D7's entry gate and "9 of 9" is written down in
+    /// several places; a tenth would change what that sentence means in all of
+    /// them. Match decisions are authored data, on the same screen, refreshed
+    /// by the same write-through — one family, one row.
     static func authored(_ db: Sub4Database)
-    async -> (load: AuthoredLoad, report: AuthoredRoundTrip.Report) {
+    async -> (load: AuthoredLoad, report: AuthoredRoundTrip.Report,
+              decisions: MatchDecisionLoad) {
         let load = await Task.detached(priority: .utility) {
             AuthoredRepository.load(db)
         }.value
-        return (load, AuthoredRoundTrip.compare(
+        // BOTH READS OFF THE ACTOR, one after the other, for the reason at
+        // the top of this file: a database read is not this screen's to block
+        // on. The comparison stays on it — `Matcher` is a main-actor
+        // singleton, like every other store compared here. §12.9c.
+        let decisionLoad = await Task.detached(priority: .utility) {
+            MatchDecisionRepository.load(db)
+        }.value
+
+        var report = AuthoredRoundTrip.compare(
             storeNotes: Array(NotesStore.shared.all.values),
             storeCommutes: Array(CommuteStore.shared.decisions.values),
-            database: load))
+            database: load)
+        AuthoredRoundTrip.compareDecisions(
+            store: Array(Matcher.shared.decisions.values),
+            database: decisionLoad,
+            into: &report)
+        return (load, report, decisionLoad)
     }
 
     /// Patch 323 and 326 — D6c slices 6b and 6c, read together because the

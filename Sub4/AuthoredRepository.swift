@@ -138,6 +138,136 @@ nonisolated enum AuthoredLoad: Sendable {
     }
 }
 
+// MARK: - The match decisions — patch 355, D7 slice B2
+
+/// What a read of `match_decision` produced.
+///
+/// ITS OWN TYPE RATHER THAN A FOURTH VALUE ON `AuthoredLoad`. Adding an
+/// associated value to `.loaded` would rewrite every construction and every
+/// pattern match of it — seven of them in tests alone — for no behaviour, and
+/// B2's hydration patch has to touch that enum anyway. One thing at a time.
+nonisolated enum MatchDecisionLoad: Sendable {
+    case loaded(decisions: [MatchDecision], skipped: Int)
+    case unavailable
+    case failed(String)
+
+    var isTrustworthy: Bool {
+        if case .loaded = self { return true }
+        return false
+    }
+
+    /// Nil rather than `[]` when the read failed — `AuthoredLoad`'s rule, and
+    /// the same reason: a caller must not reach the happy path without
+    /// deciding what a failed read means.
+    var decisions: [MatchDecision]? {
+        if case .loaded(let d, _) = self { return d }
+        return nil
+    }
+
+    /// Rows in the table that could not become a record. Counted rather than
+    /// dropped — §12.89's rule, and here it has a real case: a decision whose
+    /// `activityID` resolves to no alias.
+    var skipped: Int {
+        if case .loaded(_, let s) = self { return s }
+        return 0
+    }
+
+    var line: String {
+        switch self {
+        case .loaded(let d, let skipped):
+            skipped == 0
+                ? "\(d.count) match decisions."
+                : "\(d.count) match decisions; \(skipped) rows could not be read."
+        case .unavailable: "The database is not open."
+        case .failed(let why): "The database could not be read — \(why)"
+        }
+    }
+}
+
+/// THE READER THE GROUNDWORK SAID DID NOT EXIST.
+///
+/// `Sub4Import+Authored` has written `match_decision` since 274 and nothing has
+/// ever read it back. The verifier counts the rows — `match decisions:
+/// expected 0, found 0` — which agrees because both sides are empty, which is
+/// the shape 354 spent a patch making visible.
+nonisolated enum MatchDecisionRepository {
+
+    static func load(_ db: Sub4Database,
+                     accountID: String = Sub4Import.accountID,
+                     sourceID: String = Sub4Import.sourceID) -> MatchDecisionLoad {
+        do {
+            return try db.queue.read { d -> MatchDecisionLoad in
+                var out: [MatchDecision] = []
+                var skipped = 0
+                for row in try Row.fetchAll(d, sql: decisionSQL,
+                                            arguments: [sourceID, accountID]) {
+                    guard let uid = row["planSessionUID"] as String?,
+                          let decided = row["decidedUTC"] as String? else {
+                        skipped += 1; continue
+                    }
+                    // A DECISION WITH NO ACTIVITY IS NOT A BROKEN ROW.
+                    // `activityID` is nullable and nil means "explicitly
+                    // nothing" — the state the old `[String: String]` in
+                    // UserDefaults had to spell `""`. What IS broken is a
+                    // non-null `activityID` that resolves through no alias,
+                    // and the LEFT JOIN below is what tells the two apart.
+                    if row["activityID"] as String? != nil,
+                       row["storeID"] as String? == nil {
+                        skipped += 1; continue
+                    }
+                    out.append(MatchDecision(
+                        sessionUid: uid,
+                        activityId: row["storeID"] as String?,
+                        decided: date(decided),
+                        // NO COLUMN, AND THAT IS AN APPROVED DIFFERENCE.
+                        // `dateIsKnown` distinguishes a date the athlete
+                        // decided on from one synthesised when a dateless
+                        // record was migrated. The schema never carried it.
+                        // `true` rather than `false`, because every row in
+                        // this table was written from a record that had a
+                        // real date — see `approvedForDecisions`.
+                        dateIsKnown: true))
+                }
+                return .loaded(decisions: out, skipped: skipped)
+            }
+        } catch {
+            return .failed(String(describing: error))
+        }
+    }
+
+    /// `AuthoredRepository.date`'s rule, and the same formatter: the writer
+    /// uses `.withInternetDateTime`, so this parses with it. An unparseable
+    /// string becomes 1970 rather than nil, so it shows as a `decided`
+    /// difference instead of as a row that vanished.
+    private static func date(_ s: String) -> Date {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s) ?? Date(timeIntervalSince1970: 0)
+    }
+
+    /// A LEFT JOIN, NOT AN INNER ONE, and `AuthoredRepository.commuteSQL`'s
+    /// join is the contrast worth reading. A commute correction ALWAYS names an
+    /// activity, so an inner join loses nothing. A match decision may name
+    /// none, and an inner join would silently drop every "explicitly nothing"
+    /// the athlete recorded — the exact state `MatchDecision.activityId`'s doc
+    /// says the nullable column exists to express.
+    ///
+    /// Through `activity_alias`, for `commuteSQL`'s reason: the writer resolved
+    /// the athlete's Strava id to a canonical activity through the alias, so
+    /// the reader reverses the alias.
+    private static let decisionSQL = """
+        SELECT m.planSessionUID AS planSessionUID,
+               m.activityID     AS activityID,
+               m.decidedUTC     AS decidedUTC,
+               al.externalID    AS storeID
+          FROM match_decision m
+          LEFT JOIN activity_alias al
+            ON al.activityID = m.activityID AND al.sourceID = ?
+         WHERE m.accountID = ?
+         ORDER BY m.planSessionUID
+        """
+}
+
 // MARK: - The comparison
 
 nonisolated enum AuthoredRoundTrip {
@@ -171,6 +301,25 @@ nonisolated enum AuthoredRoundTrip {
             patch: "322")
     ]
 
+    /// PATCH 355 — the decisions' own list, kept SEPARATE from `approved`.
+    ///
+    /// `approved` is about `user_note`, it is printed by name in the paste, and
+    /// its count is pinned by test. A third entry about a different table would
+    /// have moved a number that means "columns the importer leaves NULL in the
+    /// notes" — so this is a second list rather than a longer one.
+    static let approvedForDecisions: [ApprovedDifference] = [
+        ApprovedDifference(
+            field: "match_decision.dateIsKnown",
+            reason: "no column. The flag says whether `decided` is when the "
+                  + "athlete decided or when a dateless legacy record was "
+                  + "migrated, and it was a migration concern of patch 272 "
+                  + "rather than a property of the decision. Every row in the "
+                  + "table was written from a record that carried a real "
+                  + "date, so the reader returns true and the comparison does "
+                  + "not walk the field.",
+            patch: "355")
+    ]
+
     struct Report: Sendable {
 
         // Denominators. Without them "no differences" and "nothing was
@@ -190,6 +339,19 @@ nonisolated enum AuthoredRoundTrip {
 
         var rowsSkipped = 0
 
+        // PATCH 355 — the match decisions. Additive: every counter starts at
+        // zero, so a caller that does not compare them reads exactly as it did
+        // before, and `lookedAtSomething` is unmoved.
+        var decisionsInApp = 0
+        var decisionsInDatabase = 0
+        var decisionsCompared = 0
+        var decisionFieldsCompared = 0
+        var decisionRowsSkipped = 0
+        /// Set when `compareDecisions` ran at all. Without it a report that was
+        /// never given the decisions is indistinguishable from one where both
+        /// sides were empty — §12.15, and both print zeros.
+        var decisionsWereRead = false
+
         // Differences, named
 
         var notesOnlyInApp: [String] = []
@@ -201,6 +363,11 @@ nonisolated enum AuthoredRoundTrip {
         var commutesOnlyInDatabase: [String] = []
         var commuteDifferences: [String] = []
 
+        /// Session uids, like the notes'. Never an activity id — §12.7.
+        var decisionsOnlyInApp: [String] = []
+        var decisionsOnlyInDatabase: [String] = []
+        var decisionDifferences: [String] = []
+
         // Context, printed rather than asserted
 
         /// Notes carrying an RPE at all, both sides. **This is the row slice 3
@@ -209,14 +376,18 @@ nonisolated enum AuthoredRoundTrip {
         var appNotesWithRPE = 0
         var databaseNotesWithRPE = 0
 
-        var totalCompared: Int { notesCompared + commutesCompared }
+        var totalCompared: Int {
+            notesCompared + commutesCompared + decisionsCompared
+        }
 
         var unexplained: Int {
             notesOnlyInApp.count + notesOnlyInDatabase.count
             + noteDifferences.count
             + commutesOnlyInApp.count + commutesOnlyInDatabase.count
             + commuteDifferences.count
-            + rowsSkipped
+            + decisionsOnlyInApp.count + decisionsOnlyInDatabase.count
+            + decisionDifferences.count
+            + rowsSkipped + decisionRowsSkipped
         }
 
         /// Zero records compared to zero records agrees perfectly. Both halves
@@ -261,7 +432,26 @@ nonisolated enum AuthoredRoundTrip {
                 "  commute decisions only in the database: "
                 + "\(commutesOnlyInDatabase.count)",
                 "  commute fields that differ: \(commuteDifferences.count)",
-                "  rows the reader could not read: \(rowsSkipped)",
+                "  match decisions in the app: \(decisionsInApp)",
+                "  match decisions in the database: \(decisionsInDatabase)",
+                "  match decisions compared: \(decisionsCompared)",
+                "  match decision fields compared: \(decisionFieldsCompared)",
+                "  match decisions only in the app: "
+                + "\(decisionsOnlyInApp.count)",
+                "  match decisions only in the database: "
+                + "\(decisionsOnlyInDatabase.count)",
+                "  match decision fields that differ: "
+                + "\(decisionDifferences.count)",
+                // §12.15. "0 of 0" is a pass and so is "never asked", and the
+                // two must not print the same.
+                "  match decisions were read: "
+                + "\(decisionsWereRead ? "yes" : "NO — nothing was compared")",
+                "  rows the reader could not read: "
+                + "\(rowsSkipped) notes and commutes, "
+                + "\(decisionRowsSkipped) match decisions",
+                "  approved differences, match decisions: "
+                + "\(approvedForDecisions.count) "
+                + "(\(approvedForDecisions.map(\.field).joined(separator: ", ")))",
                 "  approved differences: \(approved.count) "
                 + "(\(approved.map(\.field).joined(separator: ", ")))",
                 "  unexplained differences: \(unexplained)"]
@@ -270,6 +460,7 @@ nonisolated enum AuthoredRoundTrip {
                 lines.append("    + \(noteDifferences.count - 8) more")
             }
             for d in commuteDifferences.prefix(6) { lines.append("    \(d)") }
+            for d in decisionDifferences.prefix(6) { lines.append("    \(d)") }
             return lines
         }
     }
@@ -367,6 +558,63 @@ nonisolated enum AuthoredRoundTrip {
                              == Sub4Import.iso8601(b.decided))
         }
         return r
+    }
+
+    /// PATCH 355 — the match decisions, filled into the same report.
+    ///
+    /// A SECOND FUNCTION RATHER THAN TWO MORE ARGUMENTS ON `compare`. Adding
+    /// them there would rewrite seven existing test call sites and change
+    /// nothing about what those tests assert. B2's hydration patch has to
+    /// change that signature anyway — that is where the two fold into one.
+    ///
+    /// `inout`, and deliberately: this is not a second report. A caller that
+    /// forgets to call it leaves `decisionsWereRead` false, which the paste
+    /// prints in capitals rather than as a row of zeros.
+    static func compareDecisions(store: [MatchDecision],
+                                 database: MatchDecisionLoad,
+                                 into r: inout Report) {
+        r.decisionsWereRead = true
+        r.decisionsInApp = store.count
+
+        guard case .loaded(let theirs, let skipped) = database else { return }
+        r.decisionsInDatabase = theirs.count
+        r.decisionRowsSkipped = skipped
+
+        // A DECISION ABOUT AN IGNORED ACTIVITY IS NOT MISSING — the commute
+        // block's rule, and the importer applies the same one at the door:
+        // `matchDecisionsIgnored` is counted rather than imported. Reporting
+        // it here would be reporting a refusal as a loss, §12.42.2.
+        let mine = Dictionary(store.map { ($0.sessionUid, $0) },
+                              uniquingKeysWith: { first, _ in first })
+        let yours = Dictionary(theirs.map { ($0.sessionUid, $0) },
+                               uniquingKeysWith: { first, _ in first })
+        let mineKeys = Set(mine.keys)
+        let yourKeys = Set(yours.keys)
+
+        r.decisionsOnlyInApp = mineKeys.subtracting(yourKeys)
+            .filter { uid in
+                guard let external = mine[uid]?.activityId else { return true }
+                return !DataCorrections.isIgnored(id: external)
+            }
+            .sorted()
+        r.decisionsOnlyInDatabase = yourKeys.subtracting(mineKeys).sorted()
+
+        for uid in mineKeys.intersection(yourKeys).sorted() {
+            guard let a = mine[uid], let b = yours[uid] else { continue }
+            r.decisionsCompared += 1
+
+            func check(_ name: String, _ same: Bool) {
+                r.decisionFieldsCompared += 1
+                if !same { r.decisionDifferences.append("\(uid) · \(name)") }
+            }
+            // NIL AND A VALUE ARE DIFFERENT ANSWERS, and this is the field
+            // where that matters: nil is "the athlete said nothing satisfied
+            // this session", which is a decision, not an absence.
+            check("activityId", a.activityId == b.activityId)
+            check("decided", Sub4Import.iso8601(a.decided)
+                             == Sub4Import.iso8601(b.decided))
+            // `dateIsKnown` is NOT walked — `approvedForDecisions` says why.
+        }
     }
 }
 

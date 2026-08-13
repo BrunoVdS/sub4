@@ -253,13 +253,22 @@ The plan's B1–B9, with what this reading adds.
 | slice | family | new work D6c did not cover |
 |---|---|---|
 | **B1** | plan, athlete, constants | `PlanStore` stops parsing the bundled resource; the seed must not become a fallback |
-| **B2** | notes, commutes, match decisions, rejections | **`match_decision` and `rejection` have no reader** |
+| **B2** | notes, commutes, match decisions | **`match_decision` had a table and no reader — written at 355** |
 | **B3** | activities | `ActivityRoster` stays the one filter/dedup rule — do not copy it |
 | **B4** | details, traces | the 1.5-million-sample read stays off the main actor |
 | **B5** | weather, gear | gear distance is a Strava refresh, not a store write — §12.68.4 |
 | **B6** | derived metrics | one input snapshot; no calculation queries SQLite |
 | **B7** | reviews | **delete the six rehearsal records first** — see §8 |
-| **B8** | sync cursor, work queue, rejections, revisions | seven `UserDefaults` keys; the four backfill markers stay |
+| **B8** | sync cursor, work queue, rejections, revisions | seven `UserDefaults` keys; the four backfill markers stay. **`rejection` still has no reader** — moved here from B2 at patch 355, see below |
+
+**Amended 13 August 2026, patch 355.** §7's row for B2 said "notes, commutes,
+match decisions, rejections" while §1's call-site ledger put rejection receipts
+in B8. §1 is the more considered entry: it names the actual reader
+(`ActivityStore.receipts`), the actual storage (a `UserDefaults` data blob) and
+the fact that `RejectionRepository` does not exist. Rejection receipts are the
+same family as the sync cursor and the work queue, which are already B8, and
+they are read by `ActivityStore` rather than by anything authored. The table
+still has no reader; it is B8's to write.
 | **B9** | activate and fail closed | `activateVerified` called for the first time |
 
 **B1 first because it is the smallest true test.** It has a working repository,

@@ -8853,6 +8853,93 @@ A paste that omits the empty tables and a snapshot row that overstates its
 losses are both survivable while the person reading them is the person who
 generated them. They stop being survivable the moment the paste is the evidence.
 
+## 12.100 The table that had no reader — patch 355, D7 slice B2
+
+### 12.100.1 What B2's groundwork put in bold
+
+`D7-ACTIVATION-GROUNDWORK.md` §7 names B2's new work: **`match_decision` and
+`rejection` have no reader**. `Sub4Import+Authored` has written
+`match_decision` since 274 and the only thing that has ever read it back is the
+importer's own dedup `SELECT`.
+
+The verifier's `match decisions: expected 0, found 0` is the whole of the
+coverage, and it agrees because **both sides are empty** — the shape 354 spent
+a patch making visible one level up. Zero compared to zero agrees perfectly.
+
+### 12.100.2 The left join, and why an inner one loses data silently
+
+`match_decision.activityID` is nullable, and nil is not an absence: it is the
+athlete saying *nothing satisfied this session*. The old `[String: String]` in
+`UserDefaults` had to spell that `""`; patch 272 gave it a real nil, and
+`MatchDecision.activityId`'s own doc says the nullable column exists for it.
+
+`AuthoredRepository.commuteSQL` joins `activity_alias` INNER, correctly — a
+commute correction always names an activity. Copying that shape here would drop
+every explicitly-nothing decision, and the comparison would then report them as
+`decisionsOnlyInApp`, which reads as missing data rather than as a reader that
+cannot see half its table. The join is LEFT, the apply script checks it, and
+`theExplicitlyNothingDecisionSurvivesTheRead` is the test that would catch it.
+
+A non-null `activityID` that resolves through no alias is a different thing and
+is counted as `skipped` — §12.89's rule, and here it has a real case.
+
+### 12.100.3 One family, one read-back row
+
+Match decisions join the authored read-back rather than becoming a tenth entry
+in the roll-up. The roll-up's nine rows are load-bearing in D7's entry gate and
+"9 of 9" is written down in several places; a tenth would change what that
+sentence means in all of them. They are authored data, on the same screen,
+refreshed by the same write-through.
+
+`compare` is left alone and `compareDecisions` fills the same `Report` through
+`inout`. Two more arguments on `compare` would have rewritten seven existing
+test call sites and changed nothing they assert — and B2's hydration patch has
+to touch that signature anyway, which is where the two fold into one.
+
+`decisionsWereRead` exists because §12.15 applies here exactly: a report nobody
+gave the decisions to prints the same zeros as one where both sides were empty.
+The paste says `NO — nothing was compared` in capitals for the first.
+
+### 12.100.4 `dateIsKnown` has no column, and that is a decision
+
+The flag says whether `decided` is when the athlete decided or when a dateless
+legacy record was migrated. It was a concern of patch 272's migration rather
+than a property of the decision, and the schema never carried it. The reader
+returns `true` — every row in the table was written from a record with a real
+date — and the comparison does not walk the field.
+
+It is recorded in `approvedForDecisions`, a SECOND list rather than a third
+entry in `approved`. That list is about `user_note`, its count is printed by
+name in the paste and pinned by test; growing it would have moved a number that
+means something else.
+
+### 12.100.5 Rejections are B8, and the groundwork is amended
+
+That document contradicted itself. §1's call-site ledger:
+
+> rejection receipts | `ActivityStore.receipts` | `UserDefaults` data blob |
+> `RejectionRepository` — does not exist | **B8**
+
+§7's slice table said B2 covers "notes, commutes, match decisions,
+**rejections**".
+
+§1 is the more considered entry — it names the actual reader, the actual
+storage and the missing type — and rejection receipts are the same family as
+the sync cursor and the work queue, which are already B8. They are read by
+`ActivityStore`, not by anything authored. §7 is corrected in place and the
+amendment is dated and signed to the patch, rather than the work being moved to
+match the looser sentence.
+
+### 12.100.6 What 355 deliberately does not do
+
+No store is hydrated. `PersistenceMode.sliceUnderTest` stays at B1 and
+`HydratedStores` stays at one entry — both are checked by the apply script,
+because a patch that moved either would be doing B2's hydration by accident.
+
+This is B1's order repeated: 343 gave the read-back an independent side, 344
+built the machinery, 346 flipped it. The comparison has to exist and pass
+before anything depends on it.
+
 ## 12.99 A check that reads a store the database feeds — patch 354
 
 ### 12.99.1 The erosion, and why it was silent
