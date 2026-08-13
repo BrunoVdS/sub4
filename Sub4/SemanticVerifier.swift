@@ -96,12 +96,78 @@ nonisolated struct VerificationReport: Equatable {
 
     var failures: [VerificationCheck] { checks.filter { !$0.passed } }
 
+    // MARK: Whether any of it is evidence — patch 354, ADR-0003 §12.99
+
+    /// Comparisons whose expectation came from something the database does not
+    /// feed. THESE ARE THE ONES THAT CAN FAIL.
+    var independentChecks: [VerificationCheck] {
+        checks.filter { HydratedStores.entry(for: $0.name) == nil }
+    }
+
+    /// Comparisons reading a store this build hydrates FROM the database.
+    ///
+    /// They still run and still print. A self-referential check that DISAGREED
+    /// would mean hydration itself is broken, which is worth knowing — it is
+    /// only as evidence that the migration carried something that they are
+    /// worth nothing.
+    var selfReferentialChecks: [VerificationCheck] {
+        checks.filter { HydratedStores.entry(for: $0.name) != nil }
+    }
+
+    /// Declared hydrated, and naming no comparison in this report.
+    ///
+    /// §12.15 IN ITS SHARPEST FORM. `HydratedStores` joins to the checks BY
+    /// NAME. A rename on one side and not the other would silently move a
+    /// self-referential check back into the evidence column, and every number
+    /// below would read better than the truth. An entry that matches nothing is
+    /// the symptom that produces, so it is surfaced rather than ignored.
+    var unmatchedHydratedEntries: [HydratedStores.Entry] {
+        let names = Set(checks.map(\.name))
+        return HydratedStores.all.filter { !names.contains($0.check) }
+    }
+
+    /// WHAT `verified` MAY BE GRANTED ON — and it is no longer `passed`.
+    ///
+    /// Three conditions, each with a distinct failure: every comparison agreed,
+    /// at least one of them was CAPABLE of disagreeing, and the list that
+    /// decides which is which still lines up with the checks.
+    ///
+    /// The middle one is the whole patch. At B9 every store is fed by the
+    /// database, `independentChecks` is empty, and twenty green rows mean
+    /// nothing at all. This is the line that refuses to write `verified` on
+    /// that — which forces the question then, rather than after activation.
+    var isTrustworthyEvidence: Bool {
+        passed && !independentChecks.isEmpty && unmatchedHydratedEntries.isEmpty
+    }
+
+    /// Non-nil when the report PASSED and still may not be believed. Nil when
+    /// it failed — that is `failures`' story and this one would only blur it.
+    var withheldReason: String? {
+        guard passed else { return nil }
+        if !unmatchedHydratedEntries.isEmpty {
+            let n = unmatchedHydratedEntries.count
+            return "the hydrated-store list names \(n) comparison"
+                 + (n == 1 ? "" : "s") + " this report does not contain"
+        }
+        if independentChecks.isEmpty {
+            return "every comparison reads a store the database feeds, so none "
+                 + "of them could have disagreed"
+        }
+        return nil
+    }
+
     /// One line for the ledger. Counts only — this is stored in the database
     /// and read back into the redacted paste.
     var ledgerNote: String {
-        passed
-            ? "\(checks.count) comparisons, all agreed"
-            : "\(failures.count) of \(checks.count) comparisons disagreed"
+        guard passed else {
+            return "\(failures.count) of \(checks.count) comparisons disagreed"
+        }
+        // PATCH 354. THE DURABLE RECORD CARRIES HOW MUCH OF IT WAS EVIDENCE.
+        // "20 comparisons, all agreed" is what a row from B1 onward says, and
+        // it is true and misleading in the same breath. Rows written before
+        // this patch keep their own note; that is what a ledger is.
+        return "\(checks.count) comparisons, all agreed · "
+             + "\(independentChecks.count) independent"
     }
 
     /// COUNTS AND TABLE NAMES ONLY, like §12.9e's survey and for the same
@@ -110,9 +176,25 @@ nonisolated struct VerificationReport: Equatable {
     var diagnosticLines: [String] {
         var out = [String(format: "Verification: %.2f s — %@", seconds,
                           passed ? "agreed" : "DISAGREED")]
+        // PATCH 354 — §12.99. UNCONDITIONAL, and ABOVE the checks, because it
+        // is what the numbers below it mean. A reader who sees twenty ticks
+        // and no independent count cannot tell a verified migration from a
+        // database agreeing with itself twenty times.
+        out.append("  comparisons: \(checks.count) — "
+                 + "\(independentChecks.count) independent, "
+                 + "\(selfReferentialChecks.count) reading a store the "
+                 + "database feeds")
+        out.append("  may be believed: \(isTrustworthyEvidence ? "yes" : "no")"
+                 + (withheldReason.map { " — \($0)" } ?? ""))
+        for e in unmatchedHydratedEntries {
+            out.append("  DECLARED HYDRATED AND NOT COMPARED: \(e.check) "
+                     + "(\(e.note))")
+        }
         for c in checks {
+            let mark = HydratedStores.entry(for: c.name)
+                .map { " · self-referential: \($0.note)" } ?? ""
             out.append("  \(c.passed ? "ok" : "NO") \(c.name) [\(c.table)]: "
-                       + "expected \(c.expected), found \(c.found)")
+                       + "expected \(c.expected), found \(c.found)\(mark)")
         }
         return out
     }
@@ -570,7 +652,15 @@ enum SemanticVerifier {
     static func record(_ report: VerificationReport,
                        for runID: String,
                        in db: Sub4Database) throws -> Bool {
-        guard report.passed else { return false }
+        // PATCH 354 — `isTrustworthyEvidence`, NOT `passed`, and the doc
+        // above is the reason. A report where every comparison read a store the
+        // database feeds passes trivially: it is the database agreeing with
+        // itself, and `verified` is what D7's activation reads. §12.69.
+        //
+        // This is the sixth time this project has had to make a check able to
+        // fail before believing it, and the first time the erosion was
+        // gradual rather than present on day one.
+        guard report.isTrustworthyEvidence else { return false }
         return try MigrationLedger.verifyPending(db, id: runID,
                                                  note: report.ledgerNote)
     }

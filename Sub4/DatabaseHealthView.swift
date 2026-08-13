@@ -1507,8 +1507,16 @@ struct DatabaseHealthView: View {
                                                : "\(v.failures.count) disagreed")
                     .font(.caption)
                     .foregroundStyle(v.passed ? Color.dim : .red)
-                LabeledContent("Compared", value: "\(v.checks.count) things")
-                    .font(.caption).foregroundStyle(Color.dim)
+                // PATCH 354 — §12.99. A SWAPPED ROW, NOT AN ADDED ONE, for
+                // the reason stated three lines down: this screen's budget is
+                // depth. "20 things" was true and told nobody that one of them
+                // could not fail.
+                LabeledContent("Compared",
+                               value: "\(v.checks.count) · "
+                                    + "\(v.independentChecks.count) independent")
+                    .font(.caption)
+                    .foregroundStyle(v.independentChecks.isEmpty
+                                     ? .red : Color.dim)
                 // THE SAME ROW COUNT AS BEFORE. This screen's budget is DEPTH
                 // and a `@ViewBuilder` block is built pairwise, so swapping a
                 // row is free and adding one is not. §12.76.
@@ -1518,7 +1526,12 @@ struct DatabaseHealthView: View {
                                      ? Color.dim : .red)
 
                 ForEach(v.checks) { check in
-                    LabeledContent("  \(check.name)",
+                    // PATCH 354. The label is swapped, not a row added. A
+                    // self-referential check draws the same tick as a real one
+                    // and means something entirely different.
+                    LabeledContent(HydratedStores.entry(for: check.name) == nil
+                                   ? "  \(check.name)"
+                                   : "  \(check.name) — self-referential",
                                    value: check.passed ? check.found
                                                        : "\(check.expected) → \(check.found)")
                         .font(.caption2)
@@ -1537,7 +1550,13 @@ struct DatabaseHealthView: View {
             Text("Compares the database against the app's own stores: counts, "
                  + "which activities are there, the fields of every one, and a "
                  + "few figures the app actually shows. The last import is "
-                 + "marked verified only if every comparison agrees.")
+                 + "marked verified only if every comparison agrees AND at "
+                 + "least one of them could have disagreed.\n\n"
+                 + "A comparison reading a store the database now feeds is "
+                 + "the database agreeing with itself. B1 made that true of "
+                 + "the heart-rate zones; B9 will make it true of everything, "
+                 + "and at that point nothing here can be marked verified — "
+                 + "ADR-0003 §12.99.")
                 .font(.caption2)
         }
     }
@@ -2888,6 +2907,13 @@ struct DatabaseHealthView: View {
                         outcome = .marked
                     } else if !report.passed {
                         outcome = .reportDidNotPass
+                    } else if let why = report.withheldReason {
+                        // PATCH 354 — §12.99. BEFORE `notTheNewestRun`, and the
+                        // order is the whole point: `record` now refuses on
+                        // `isTrustworthyEvidence`, so a passing report that was
+                        // withheld would otherwise be reported as a ledger
+                        // ordering problem and send somebody to press Import.
+                        outcome = .noIndependentEvidence(why)
                     } else {
                         outcome = .notTheNewestRun
                     }

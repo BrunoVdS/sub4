@@ -8853,6 +8853,88 @@ A paste that omits the empty tables and a snapshot row that overstates its
 losses are both survivable while the person reading them is the person who
 generated them. They stop being survivable the moment the paste is the evidence.
 
+## 12.99 A check that reads a store the database feeds — patch 354
+
+### 12.99.1 The erosion, and why it was silent
+
+`SemanticVerifier` compares the database against the app's stores. Twenty
+comparisons, and `verified` is the state D7's activation reads — §12.16 wrote
+it, §12.88 made it survive the sheet closing.
+
+Every B-slice moves one more store onto the database. The moment it does, the
+comparison that reads that store stops being evidence and becomes the database
+agreeing with itself. §12.69: **a check that cannot fail has not been tested.**
+
+It has already happened once. B1 hydrated `AthleteStore.hrZones` from
+`hr_zone`, so `heart-rate zones [hr_zone]: expected 5, found 5` has been the
+database against itself since 346. Nineteen of twenty are still real. Nothing
+anywhere said so, in the report, on the screen, or in the ledger note — and
+"20 comparisons, all agreed" is a sentence that gets more misleading with every
+slice while staying literally true.
+
+At B9 the number reaches **zero**: every store fed by the database, twenty
+green rows, nothing that could have failed. On the one control the activation
+turns on. That is the state this patch makes unreachable.
+
+### 12.99.2 The list is the slice's, not the verifier's
+
+`HydratedStores.all` names the comparison, the store field and the slice that
+moved it. It lives beside `PersistenceMode.sliceUnderTest` because that is the
+constant a slice already edits — the same hand, on the same file, in the same
+patch.
+
+**The forgotten-entry direction cannot be caught.** A slice that hydrates a
+store and does not add a line here leaves a comparison looking independent when
+it is not, and no amount of code can notice. The list is a declaration, and a
+declaration is only as good as the discipline behind it.
+
+**The other direction is caught loudly.** The list joins to the checks BY NAME,
+so a rename on one side produces an entry matching nothing —
+`unmatchedHydratedEntries` — and that WITHHOLDS the whole report rather than
+quietly moving a self-referential check back into the evidence column. §12.15:
+a diagnostic that cannot say why it has no answer will be read as having one.
+
+### 12.99.3 What `verified` may be granted on
+
+`SemanticVerifier.record` gated on `report.passed`. It now gates on
+`isTrustworthyEvidence`, which is three ANDed facts with three distinct
+failures:
+
+- every comparison agreed,
+- **at least one of them was capable of disagreeing**,
+- and the list that decides which is which still lines up with the checks.
+
+The middle one is the patch. It is the sixth time this project has had to make
+a check able to fail before believing it, and the first time the erosion was
+gradual rather than present on day one — which is what made it hard to see.
+
+`VerificationResult.Ledger` gains a sixth case, `noIndependentEvidence`, rather
+than reusing `reportDidNotPass`. The report DID pass; every comparison agreed.
+Telling somebody it failed would send them looking for a fault in their data
+instead of at the verifier.
+
+### 12.99.4 On the screen, two rows swapped and none added
+
+§12.76 — this screen's budget is depth, and a `@ViewBuilder` block is built
+pairwise, so swapping a row is free and adding one is not. `Compared` reads
+`20 · 19 independent` and turns red at zero; a self-referential check's label
+says so. Both were rows that already existed.
+
+The paste prints the counts, the verdict and the reason unconditionally, above
+the checks, because it is what the twenty numbers below it mean.
+
+### 12.99.5 What is tested, and what is guarded instead
+
+`record`'s guard is not tested. The positive case needs a ledger row; the
+negative case would pass whether the guard existed or not, because
+`verifyPending` returns false for a run id that is not there. §12.69 one level
+up — so the line is held by `apply-354.py`, which fails the patch if it is
+relaxed back to `passed`.
+
+`everyDeclaredEntryNamesARealComparison` runs the real verifier over an empty
+database and requires every declared entry to match a check that exists. That
+is the test that fires at B5 if the new entry has a typo in it.
+
 ## 12.98 A rehearsal is not a review — patch 353
 
 ### 12.98.1 The defect, and the date it was going to land on

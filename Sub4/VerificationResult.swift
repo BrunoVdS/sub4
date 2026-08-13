@@ -77,6 +77,14 @@ final class VerificationResult {
         case failed(String)
         /// There was no run to mark.
         case noRun
+        /// PATCH 354 — the comparison agreed and none of it was evidence.
+        ///
+        /// A SIXTH CASE RATHER THAN A SECOND MEANING FOR `reportDidNotPass`.
+        /// The report DID pass; every comparison agreed. What it lacked was any
+        /// comparison that could have disagreed, and telling somebody their
+        /// report failed when it did not would send them looking for a fault
+        /// in the data instead of at the verifier.
+        case noIndependentEvidence(String)
 
         /// The five sentences, unchanged from patch 338's screen.
         var line: String {
@@ -92,6 +100,8 @@ final class VerificationResult {
                 "the run could not be marked verified: \(why)"
             case .noRun:
                 "no run to mark — the ledger is empty"
+            case .noIndependentEvidence(let why):
+                "the report agreed and was not believed: \(why)"
             }
         }
 

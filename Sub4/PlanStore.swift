@@ -737,7 +737,24 @@ final class PlanStore {
 // MARK: - Empty fallback so the UI can render an error instead of crashing
 
 extension Plan {
-    static let empty = Plan(
+    /// `nonisolated` SINCE 354a, AND IT IS THE RULE 352a WROTE DOWN.
+    ///
+    /// `Plan` is `nonisolated struct Plan` in `Models.swift`. This is an
+    /// EXTENSION, and an extension member takes
+    /// `SWIFT_DEFAULT_ACTOR_ISOLATION`'s default rather than the type's
+    /// isolation — so `Plan.empty` was main-actor inside a nonisolated struct.
+    ///
+    /// It surfaced when 352a made `decodeBundle` nonisolated, which was the
+    /// correct fix and which uncovered this one: both of that function's early
+    /// returns hand back `Plan.empty`, and both are failure paths — a missing
+    /// bundle resource and a decode error — so neither has ever run on a
+    /// device. The warning was always there; a louder one was standing in
+    /// front of it.
+    ///
+    /// Second instance of the same rule in three patches. `apply-354a.py`
+    /// now walks every extension of every nonisolated type and fails on a
+    /// static that does not say `nonisolated`.
+    nonisolated static let empty = Plan(
         meta: Meta(plan: "—", week1Monday: "", raceDate: "",
                    targetTime: "—", targetPaceSecKm: 0),
         // `let fuel: Fuel?` gets NO default in the memberwise init — a let

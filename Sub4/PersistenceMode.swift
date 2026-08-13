@@ -219,3 +219,64 @@ nonisolated enum PersistenceAuthority {
         return .legacyAuthoritative
     }
 }
+
+// MARK: - What the database now feeds — patch 354, ADR-0003 §12.99
+
+/// EVERY STORE THIS BUILD HYDRATES FROM THE DATABASE, AND THE COMPARISON EACH
+/// ONE INVALIDATES.
+///
+/// WHY THIS LIST EXISTS.
+/// `SemanticVerifier` compares the database against the app's stores, and
+/// `verified` is the state D7's activation reads. Every B-slice moves one more
+/// store onto the database — and the moment it does, the comparison that reads
+/// that store stops being evidence and becomes the database agreeing with
+/// itself. §12.69: a check that cannot fail has not been tested.
+///
+/// It went from twenty real comparisons to nineteen at B1 and nobody noticed,
+/// because nothing anywhere said which was which. At B9 it reaches zero, and
+/// zero is the number a verifier must never quietly report as twenty.
+///
+/// WHY HERE. `sliceUnderTest` is the constant a slice already edits, so this is
+/// the line the same hand is already on. Forgetting to add an entry cannot be
+/// caught by anything — a store silently becomes self-referential and the
+/// report reads better than the truth — which is exactly why the OPPOSITE
+/// mistake is caught loudly: `VerificationReport.unmatchedHydratedEntries`
+/// reports an entry naming a comparison that does not exist, and that is the
+/// symptom a rename produces.
+nonisolated enum HydratedStores {
+
+    nonisolated struct Entry: Equatable, Sendable, Identifiable {
+        /// `VerificationCheck.name`, EXACTLY. This is the join key.
+        let check: String
+        /// The store field the expectation is read from.
+        let store: String
+        /// The slice that moved it onto the database.
+        let slice: String
+
+        var id: String { check }
+
+        var note: String { "\(store), hydrated at \(slice)" }
+    }
+
+    /// B1 moved the plan, the athlete's constants, the heart-rate zones and the
+    /// FTP onto the database. Exactly one of those is a verifier expectation:
+    /// `zones` is `AthleteStore.hrZones`, and `heart-rate zones [hr_zone]` has
+    /// compared the database against itself since 346.
+    ///
+    /// THE PLAN IS NOT HERE AND MUST NOT BE. `SemanticVerifier` does not
+    /// compare plan tables at all — `PlanRoundTrip` does, and 343 gave that one
+    /// an independent side by decoding the bundle rather than asking the store.
+    /// An entry here for a comparison this verifier does not make would be
+    /// reported by `unmatchedHydratedEntries` and is a defect, not a note.
+    ///
+    /// B5 adds gear. B9 adds the rest, and takes the independent count to zero.
+    nonisolated static let all: [Entry] = [
+        .init(check: "heart-rate zones",
+              store: "AthleteStore.hrZones",
+              slice: "B1"),
+    ]
+
+    static func entry(for checkName: String) -> Entry? {
+        all.first { $0.check == checkName }
+    }
+}
