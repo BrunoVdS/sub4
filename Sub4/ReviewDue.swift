@@ -80,7 +80,22 @@ enum ReviewDue {
         let finished = finishedWeeks(today: today)
         guard finished >= minWeeks else { return .tooEarly(finished: finished) }
 
-        guard let last = ProposalStore.shared.newestFirst.first?.ranAt else {
+        // A REHEARSAL IS NOT A REVIEW — patch 353, ADR-0003 §12.98.
+        //
+        // This read `newestFirst.first` and counted the six rehearsal records
+        // written on 9 August 2026. `.tooEarly` was hiding it: on 24 August
+        // the fourth plan week finishes, this guard finds `ranAt: 2026-08-09`,
+        // and returns `.recent(nextDue: 6 September)`. The banner never
+        // appears and nothing says why — and "nothing says why" is the part
+        // that makes it worse than a crash.
+        //
+        // THE STORE IS READ HERE; THE RULE IS APPLIED IN A PURE FUNCTION.
+        // `state` cannot be tested without the two singletons it reads, and
+        // `newestReal(in:)` can. It takes its records as an argument WITH NO
+        // DEFAULT — 350a's lesson, where a defaulted `PlanStore = .shared` was
+        // a call site carrying a value no caller wrote and no grep could find.
+        guard let last = newestReal(in: ProposalStore.shared.newestFirst)?.ranAt
+        else {
             return .due("Four plan weeks are finished and no review has been run.")
         }
 
@@ -91,6 +106,63 @@ enum ReviewDue {
             return .due("\(days) days since the last review.")
         }
         return .recent(ranAt: last, nextDue: next)
+    }
+
+    // MARK: Rehearsals — patch 353, ADR-0003 §12.98
+
+    /// The records this gate is allowed to count. Order is the caller's; this
+    /// preserves whatever it is given.
+    static func realReviews(in records: [ProposalStore.Record])
+    -> [ProposalStore.Record] {
+        records.filter { !$0.isRehearsal }
+    }
+
+    static func rehearsals(in records: [ProposalStore.Record])
+    -> [ProposalStore.Record] {
+        records.filter { $0.isRehearsal }
+    }
+
+    /// The newest record that is not a rehearsal, given a newest-first list.
+    /// The one function `state` depends on, and the reason it is separate.
+    static func newestReal(in records: [ProposalStore.Record])
+    -> ProposalStore.Record? {
+        records.first { !$0.isRehearsal }
+    }
+
+    /// Non-nil ONLY while rehearsal records are stored.
+    ///
+    /// CONDITIONAL, and deliberately unlike everything §12.54.2 governs. This
+    /// is an ACTION ITEM on the athlete's morning screen: a card reading
+    /// "0 rehearsals stored" every day for thirty-four weeks is precisely the
+    /// permanent inert row this file's header was written to argue against.
+    /// The unconditional form is `rehearsalLine`, which goes in the paste,
+    /// where "0" is evidence rather than furniture.
+    static func rehearsalWarning(in records: [ProposalStore.Record],
+                                 today: String = DayKey.key()) -> String? {
+        let n = rehearsals(in: records).count
+        guard n > 0 else { return nil }
+        let noun = n == 1 ? "record is" : "records are"
+        if today < ReviewRehearsal.mustGoBefore {
+            return "\(n) rehearsal \(noun) stored. Delete them on Progress "
+                 + "before \(ReviewRehearsal.mustGoBeforeLabel) — until then "
+                 + "everything that counts reviews is counting them."
+        }
+        return "\(n) rehearsal \(noun) still stored and the first real review "
+             + "is already due. Delete them on Progress."
+    }
+
+    /// UNCONDITIONAL — §12.54.2. "0 stored" is the sentence that proves they
+    /// went; a line that appeared only while some were left could not be told
+    /// from a line nobody wired in. It is also the number that decides whether
+    /// `review: 6` in the table census is six reviews or six rehearsals.
+    static func rehearsalLine(in records: [ProposalStore.Record]) -> String {
+        let n = rehearsals(in: records).count
+        guard n > 0 else {
+            return "Review rehearsals stored: 0 — none, and the gate no longer "
+                 + "counts them"
+        }
+        return "Review rehearsals stored: \(n) — must be gone before "
+             + "\(ReviewRehearsal.mustGoBeforeLabel)"
     }
 
     /// One line for a card subtitle, when the card is shown at all.

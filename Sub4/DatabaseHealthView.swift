@@ -2550,6 +2550,15 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private var reviewReadBackSection: some View {
         Section {
+            // PATCH 353 — §12.98. FIRST IN THE SECTION, because it changes
+            // what every count below it means: six of the six reviews compared
+            // are rehearsals, and a reader who does not know that reads this
+            // section as six months of work round-tripping.
+            let rehearsals = ReviewDue.rehearsals(
+                in: ProposalStore.shared.records).count
+            LabeledContent("Rehearsals stored", value: "\(rehearsals)")
+                .font(.caption)
+                .foregroundStyle(rehearsals == 0 ? Color.dim : .orange)
             if let load = reviewLoad {
                 LabeledContent("The read", value: load.line)
                     .font(.caption)
@@ -3610,6 +3619,11 @@ struct DatabaseHealthView: View {
         } else {
             lines.append("Review read-back: \(reviewLoad?.line ?? "not read")")
         }
+        // PATCH 353 — §12.98. UNCONDITIONAL, for §12.54.2's reason. "0 stored"
+        // is what proves they went, and this is the number that decides
+        // whether `review: 6` in the table census above is six reviews or six
+        // rehearsals.
+        lines.append(ReviewDue.rehearsalLine(in: ProposalStore.shared.records))
 
         return lines.joined(separator: "\n")
     }

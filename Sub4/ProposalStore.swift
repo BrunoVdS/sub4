@@ -46,6 +46,15 @@ final class ProposalStore {
         /// Which build produced it — thresholds move.
         var appVersion: String
         var model: String
+
+        /// PATCH 353 — THE ONE PLACE THIS STRING IS INTERPRETED.
+        ///
+        /// `ReviewDue`, the Today banner and the diagnostics paste all ask the
+        /// record; none of them spells the word. The comment on `add` above
+        /// already argued that `model` is the reliable way to tell a rehearsal
+        /// from the first real record — this is that argument turned into a
+        /// property instead of left to each caller.
+        var isRehearsal: Bool { model == ReviewRehearsal.modelName }
     }
 
     private(set) var records: [Record] = []

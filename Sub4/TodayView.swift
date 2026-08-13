@@ -109,6 +109,13 @@ struct TodayView: View {
                         // screen that wants doing rather than reading, and it
                         // is dismissed by doing it.
                         if isToday { reviewBanner }
+                        // PATCH 353 — §12.98. Beside the review banner and for
+                        // the same reason the comment above gives: it wants
+                        // DOING rather than reading, and it is dismissed by
+                        // doing it. Absent at zero, which is what stops it
+                        // becoming the permanent inert row this screen's
+                        // review card used to be.
+                        if isToday { rehearsalBanner }
                         raceCard
                         header
 
@@ -662,6 +669,37 @@ struct TodayView: View {
     // that is always present and usually inert teaches you to scroll past the
     // place the real thing will appear. Here it is absent until it is due, and
     // then it is the first thing on the screen.
+
+    /// PATCH 353 — the rehearsal records, and the day they have to be gone.
+    ///
+    /// NOT TAPPABLE, and that is a decision rather than an omission. Deleting a
+    /// record is `ProposalView`'s job, reached from Progress, behind a
+    /// confirmation that says a review cannot be produced again. A second
+    /// route into that screen is not worth adding for six taps that happen
+    /// once — and the note at the top of this file about stacked sheets is the
+    /// other half of the reason.
+    @ViewBuilder
+    private var rehearsalBanner: some View {
+        // Read so the card re-evaluates the moment one is deleted — the same
+        // reason `reviewBanner` reads `records.count` one screen down.
+        let _ = proposals.records.count
+        if let warning = ReviewDue.rehearsalWarning(in: proposals.records) {
+            HStack(alignment: .top, spacing: 11) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.title3).foregroundStyle(.orange).frame(width: 26)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Rehearsal records still stored")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.ink)
+                    Text(warning)
+                        .font(.caption).foregroundStyle(Color.dim)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer()
+            }
+            .cardStyle()
+        }
+    }
 
     @ViewBuilder
     private var reviewBanner: some View {

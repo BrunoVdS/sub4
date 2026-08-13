@@ -8853,6 +8853,112 @@ A paste that omits the empty tables and a snapshot row that overstates its
 losses are both survivable while the person reading them is the person who
 generated them. They stop being survivable the moment the paste is the evidence.
 
+## 12.98 A rehearsal is not a review — patch 353
+
+### 12.98.1 The defect, and the date it was going to land on
+
+`ReviewDue.state()` decided whether the monthly-review banner appears, and it
+read the newest stored record with no filter:
+
+```swift
+guard let last = ProposalStore.shared.newestFirst.first?.ranAt else {
+    return .due("Four plan weeks are finished and no review has been run.")
+}
+```
+
+Six rehearsal records, written on 9 August 2026 by `ReviewRehearsal` (§12.8.3),
+are still on the device. Today this is invisible: two of the four plan weeks
+the gate needs have finished, so it returns `.tooEarly` and never reaches the
+guard. **On Monday 24 August the fourth week finishes**, the guard finds
+`ranAt: 2026-08-09`, and returns `.recent(nextDue: 6 September)`.
+
+The banner does not appear. Nothing says why. The first real review — the one
+this whole slice exists for, the one §12.8.2 wrote a checklist for — is pushed
+out twenty-eight days by a record that announces in its own `reasoning` field
+that it would do exactly this.
+
+That field also names the fix: *delete the record before the first real review
+runs*. Which is a fix for the symptom. **A gate that is only correct while
+somebody remembers to clean up is not a gate**, and the cleanup was already
+eleven days from its deadline and had been outstanding since 9 August.
+
+### 12.98.2 The marker was a literal nothing read
+
+`ProposalStore.add(model:)`'s doc, written at 269, already made the right
+argument:
+
+> A PARAMETER RATHER THAN A FLAG ON `Record`. `model` is already a column on
+> `review`, so a rehearsal announces itself in the database as well as on
+> screen, and the first real record will be distinguishable from it by
+> something more reliable than its date.
+
+Every word of that is true and nothing acted on it. `model: "rehearsal"` was
+written in one place and read in none, which made it documentation rather than
+a marker. From 353 it is `ReviewRehearsal.modelName`, the writer and the reader
+share it, and `ProposalStore.Record.isRehearsal` is the one place the string is
+interpreted — no caller spells the word.
+
+The constant is **pinned by test to the value already in `proposals.json`**
+rather than chosen. Six records on disk carry that exact string; changing the
+constant would make them stop being rehearsals to the gate, to the banner and
+to the paste, while remaining rehearsals in fact. `apply-353.py` refuses a
+second literal anywhere in the Swift sources, comments excepted.
+
+### 12.98.3 The rule is a pure function, and 350a is why
+
+`state()` reads two main-actor singletons — `PlanStore.shared` for the
+finished-week count and `ProposalStore.shared` for the last run. Neither is
+injectable and both are real in the test host: the plan store is hydrated from
+the simulator's database (§12.57, and 346a paid to learn it), the proposal
+store is a file in the host's container. A test driving `state()` would assert
+about whatever those happened to hold, and a test that WROTE a record to fix
+that would leave a row every other suite's `state()` then counts.
+
+So the rule moved into `newestReal(in:)`, `rehearsals(in:)`,
+`rehearsalWarning(in:today:)` and `rehearsalLine(in:)`, which take their
+records as an argument. **With no default.** §12.95.4 is fresh enough to quote:
+a default argument is a call site carrying a value the caller never writes, so
+no search for that value finds it — `WorkoutParser.coverage(_ store: PlanStore
+= .shared)` cost patch 350a exactly that way. `records:` here would have been
+the same shape on the same kind of singleton. The apply script fails if one
+appears.
+
+### 12.98.4 The negative control, and what it is for
+
+`theUnfilteredReadIsWhatTheDefectWas` asserts that the OLD expression — the
+plain newest record — returns the rehearsal on the same array the new one
+resolves correctly. Without it every other test in the file would pass against
+a `newestReal` that filtered nothing, because six of the seven cases would
+still come out right.
+
+§12.69, and the fifth negative control in this project written after the
+absence of one cost a patch.
+
+### 12.98.5 Conditional on a screen, unconditional in the paste
+
+The Today banner appears only while records are stored. That is a deliberate
+exception to §12.54.2, and `ReviewDue`'s own header is the argument: the review
+card used to be a permanent row on Progress reading "Available once the first
+plan week has ended", and *a row that is present, tappable and inert trains you
+to scroll past the place where the real thing will eventually appear*. A card
+reading "0 rehearsals stored" every morning for thirty-four weeks would be that
+row again.
+
+The diagnostics line is unconditional, because there "0 stored" is the sentence
+that proves they went — and it is the number that decides whether `review: 6`
+in the table census is six reviews or six rehearsals. Action items are
+conditional; evidence is not.
+
+### 12.98.6 What is still owed
+
+The six records themselves. `ReviewDue` no longer counts them, so the banner is
+right either way — but `review`, `review_evidence`, `proposal`,
+`proposal_change` and `proposal_watch` still hold their rows, the read-back
+still compares six of them, and a person reading the history six months from
+now still sees six windows that look like months of work. They are deleted from
+Progress, one at a time, behind the confirmation that says a review cannot be
+produced again. **Before Monday 24 August 2026.**
+
 ## 12.97 Four versions, three plans, one duplicate — patch 352
 
 ### 12.97.1 The question, and why the arithmetic was not an answer

@@ -89,6 +89,33 @@ enum ReviewRehearsal {
     /// value. The throw below is the belt to that braces: a gate that is only
     /// enforced by the caller is a gate that moves the first time somebody adds
     /// a second caller.
+    /// THE MARKER, DECLARED ONCE — patch 353, ADR-0003 §12.98.
+    ///
+    /// `model` has carried the literal `"rehearsal"` since 269 and NOTHING
+    /// READ IT. From this patch `ReviewDue` does, which turns a string into a
+    /// contract: two spellings would be a rehearsal the gate counts as a
+    /// review, silently, on the one morning the banner has to appear.
+    ///
+    /// It is the value already on disk in the six records written on 9 August,
+    /// so it is pinned by test rather than chosen. `apply-353.py` refuses a
+    /// second literal anywhere in the Swift sources.
+    static let modelName = "rehearsal"
+
+    /// The day the first real review comes due: four finished plan weeks after
+    /// the block began on Monday 27 July.
+    ///
+    /// THE RECORDS MUST BE GONE BEFORE IT, NOT ON IT. `ReviewDue` no longer
+    /// counts them, so the banner is now right either way — but everything
+    /// that counts REVIEWS is still wrong while they are stored: `review: 6`
+    /// in the table census, six rows through the read-back, and six windows
+    /// that a person reading the history would take for months of work.
+    static let mustGoBefore = "2026-08-24"
+
+    /// The same day, for a sentence. Two constants rather than a formatter
+    /// because one of them is compared and the other is read aloud, and a
+    /// locale-formatted string is not a thing to compare `DayKey` against.
+    static let mustGoBeforeLabel = "Monday 24 August 2026"
+
     static var isAvailable: Bool { ReleaseGates.isInternalBuild }
 
     @discardableResult
@@ -111,7 +138,7 @@ enum ReviewRehearsal {
         return ProposalStore.shared.add(review: review,
                                         proposal: proposal(naming: uids),
                                         evidence: evidence(for: review),
-                                        model: "rehearsal")
+                                        model: modelName)
     }
 
     // MARK: What it writes
