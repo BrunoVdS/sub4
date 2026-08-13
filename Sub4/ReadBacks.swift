@@ -110,6 +110,30 @@ enum ReadBacks {
         return (load, report, extras, extrasReport)
     }
 
+    /// PATCH 352 — the version census, ADR-0003 §12.97.
+    ///
+    /// SEPARATE FROM `plan(_:)` RATHER THAN FOLDED INTO ITS TUPLE, and it is a
+    /// deliberate exclusion from the roll-up: every function above compares the
+    /// database against a store and reports differences. This one compares
+    /// versions against each other and there is no store to be right or wrong
+    /// against. Putting it in the roll-up would give `ReadBackRollUp` a tenth
+    /// row whose "unexplained differences" number could only ever be zero —
+    /// §12.69, a check that cannot fail.
+    ///
+    /// `readerSessionCount` is `PlanRoundTrip.Report.sessionsInDatabase`. It is
+    /// handed in so the census can be CHECKED against the reader rather than
+    /// believed: two pieces of code read the same tables, and if they disagree
+    /// about the active version the census is the one that is wrong.
+    ///
+    /// Detached, like every read on this screen. 1043 sessions and 2536 blocks
+    /// hashed is not the main actor's work.
+    static func planVersions(_ db: Sub4Database,
+                             readerSessionCount: Int?) async -> PlanVersionCensus {
+        await Task.detached(priority: .utility) {
+            PlanVersionCensus.read(db, readerSessionCount: readerSessionCount)
+        }.value
+    }
+
     /// Patch 324 — D6c slice 6. `weather` and `gear`.
     ///
     /// `allGear`, NOT `shoes` — patch 325a. `AthleteStore` holds `shoes`,

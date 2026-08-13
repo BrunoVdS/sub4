@@ -136,6 +136,16 @@ struct DatabaseHealthView: View {
     @State private var planTrip: PlanRoundTrip.Report?
     @State private var planExtrasLoad: PlanExtrasLoad?
     @State private var planExtrasTrip: PlanExtrasRoundTrip.Report?
+    // PATCH 352 — §12.97. NOT a read-back, and it is below them because it is
+    // read at the same moment rather than because it is one of them: it
+    // compares nothing against a store, and it reads every stored version
+    // where the read-back above reads exactly one.
+    //
+    // `planPrune` is a value and not an optional. "Never run" and "ran and
+    // found nothing" are different states and an optional would collapse them
+    // — §12.15, and `PlanVersionPrune.didRun` is what keeps them apart.
+    @State private var planCensus: PlanVersionCensus?
+    @State private var planPrune = PlanVersionPrune()
     @State private var weatherGearLoad: WeatherGearLoad?
     @State private var weatherGearTrip: WeatherGearRoundTrip.Report?
     // PATCH 327 — D6c slice 7. The ninth read-back, and the only one whose
@@ -339,6 +349,11 @@ struct DatabaseHealthView: View {
         readBackSection(db)
         detailReadBackSection(db)
         recordingReadBackSection(db)
+        // PATCH 352 — §12.97. It is in THIS group and not beside the plan
+        // read-back because it needs the database: it carries the only
+        // destructive button on this screen, and the sections above the
+        // read-backs are the ones that take `db`.
+        planVersionSection(db)
     }
 
     /// The six that run themselves on open, because each costs one read.
@@ -1074,6 +1089,8 @@ struct DatabaseHealthView: View {
             let pl = await ReadBacks.plan(db)
             planLoad = pl.load; planTrip = pl.report
             planExtrasLoad = pl.extrasLoad; planExtrasTrip = pl.extrasReport
+            planCensus = await ReadBacks.planVersions(
+                db, readerSessionCount: pl.report.sessionsInDatabase)
             lines.append(ReadBackRollUp.line("Plan", pl.report.totalCompared,
                                    pl.report.unexplained,
                                    trustworthy: pl.load.isTrustworthy, pl.load.line))
@@ -1991,6 +2008,96 @@ struct DatabaseHealthView: View {
     ///
     /// NO BUTTON, like the athlete's and the authored, and every row
     /// unconditional — §12.54.2.
+    /// PATCH 352 — every stored version, and the only destructive button on
+    /// this screen. ADR-0003 §12.97.
+    ///
+    /// A DIFFERENT CLAIM FROM THE READ-BACK ABOVE IT, which is why it is its
+    /// own section. The read-back says the ACTIVE version inverts its
+    /// decomposition. This says how many versions exist, which of them hold
+    /// identical training, which session uids would leave with a delete, and
+    /// how many of those something else names.
+    ///
+    /// THE BUTTON IS DISABLED WHEN THERE IS NOTHING TO REMOVE and the rows
+    /// above it are what says why. `Last prune` prints "not run" rather than
+    /// disappearing — §12.15, and the same argument the paste makes.
+    @ViewBuilder
+    private func planVersionSection(_ db: Sub4Database) -> some View {
+        Section {
+            if let c = planCensus {
+                LabeledContent("Stored", value: c.line)
+                    .font(.caption)
+                    .foregroundStyle(c.readFailure == nil ? Color.dim : .red)
+                LabeledContent("Agrees with the read-back", value: c.agreementLine)
+                    .font(.caption2)
+                    .foregroundStyle(c.agreesWithReader == false ? .red : Color.dim)
+                LabeledContent("Session uids, all versions",
+                               value: "\(c.allSessionUIDs.count)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("  in the active version",
+                               value: "\(c.activeVersion?.sessionUIDs.count ?? 0)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                LabeledContent("Proposals naming no stored session",
+                               value: "\(c.danglingReferences.count)")
+                    .font(.caption2)
+                    .foregroundStyle(c.danglingReferences.isEmpty ? Color.dim : .red)
+
+                ForEach(c.versions, id: \.id) { v in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("[\(v.short)]" + (v.isActive ? " · active" : "")
+                             + " · " + v.importedUTC)
+                            .font(.caption.weight(.semibold))
+                        Text(v.rowLine)
+                            .font(.caption2).foregroundStyle(Color.dim)
+                        Text("fingerprint \(String(v.fingerprint.prefix(12)))"
+                             + " · uids only here \(c.uidsHeldOnlyBy(v).count)")
+                            .font(.caption2).foregroundStyle(Color.dim)
+                    }
+                }
+
+                LabeledContent("Removable", value: "\(c.removableCount)")
+                    .font(.caption)
+                    .foregroundStyle(c.removableCount == 0 ? Color.dim : .orange)
+                Button("Remove duplicate versions", role: .destructive) {
+                    // OFF THE MAIN ACTOR, like every other write this screen
+                    // starts. A cascade over three thousand rows is fast and
+                    // is still not this actor's work — and `reloadPlan` after
+                    // it is what makes the rows above redraw from the
+                    // database rather than from what was true before.
+                    Task {
+                        planPrune = await Task.detached(priority: .userInitiated) {
+                            PlanVersionPrune.run(db)
+                        }.value
+                        await reloadPlan(db)
+                    }
+                }
+                .font(.caption)
+                .disabled(c.removableCount == 0)
+                LabeledContent("Last prune", value: planPrune.line)
+                    .font(.caption2).foregroundStyle(Color.dim)
+            } else {
+                HStack { ProgressView(); Text("Counting versions…").font(.caption) }
+            }
+        } header: {
+            Text("The plan's versions")
+        } footer: {
+            Text("A stored version is a full copy of one plan. Four of them is "
+                 + "not four copies of the same thing: every revision writes "
+                 + "one, and the older ones are what a note or a proposal "
+                 + "written against a since-renamed session still resolves "
+                 + "against — ADR-0003 §12.7 and §12.11.\n\n"
+                 + "The fingerprint is taken over the stored rows with their "
+                 + "row ids dropped, which is what `contentHash` cannot do: "
+                 + "that hash is over the imported file and changes when the "
+                 + "same plan arrives in a different array order — §12.93.3, "
+                 + "which is where the removable version came from.\n\n"
+                 + "The button deletes only a version whose training another "
+                 + "stored version still holds, byte for byte. Nothing it "
+                 + "removes can orphan a reference, because every uid it "
+                 + "carries survives in its twin.")
+                .font(.caption2)
+        }
+    }
+
     @ViewBuilder
     private var planReadBackSection: some View {
         Section {
@@ -2221,6 +2328,13 @@ struct DatabaseHealthView: View {
         planTrip = r.report
         planExtrasLoad = r.extrasLoad
         planExtrasTrip = r.extrasReport
+        // PATCH 352. HERE AS WELL AS IN THE ROLL-UP, and for the reason
+        // `onChange(of: writeThrough.runs)` reloads six things: a screen left
+        // open across an import would otherwise keep describing the versions
+        // as they were before it — which is the exact shape of the defect that
+        // once made the run trigger look dead.
+        planCensus = await ReadBacks.planVersions(
+            db, readerSessionCount: r.report.sessionsInDatabase)
     }
 
     /// PATCH 324 — the seventh read-back, D6c slice 6, ADR-0003 §12.67.
@@ -3467,6 +3581,16 @@ struct DatabaseHealthView: View {
             lines.append("Plan extras read-back: "
                        + "\(planExtrasLoad?.line ?? "not read")")
         }
+        // PATCH 352 — §12.97. UNCONDITIONAL, and the "none" case is the whole
+        // point: a paste that mentioned versions only when one was a duplicate
+        // could not be used to show that none of them is. §12.54.2.
+        lines.append("")
+        if let c = planCensus {
+            lines.append(contentsOf: c.diagnosticLines)
+        } else {
+            lines.append("Plan versions: not counted")
+        }
+        lines.append(contentsOf: planPrune.diagnosticLines)
         // PATCH 324. Strava activity ids, gear ids, field names and counts.
         lines.append("")
         if let r = weatherGearTrip {

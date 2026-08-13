@@ -151,7 +151,19 @@ final class PlanStore {
     /// is written against `plan_session.uid` values from the stored version.
     /// Falling back would resolve those uids against a plan nobody chose.
     /// §12.91.3.
-    static func decodeBundle() -> (plan: Plan, error: String?) {
+    /// `nonisolated` SINCE 352a, AND IT IS A CORRECTION RATHER THAN A CHANGE.
+    ///
+    /// `PlanStore` is a `final class` with no isolation written on it, so
+    /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` makes it main-actor and its
+    /// statics with it. This one opens a bundle URL and runs a `JSONDecoder`.
+    /// It touches nothing on the actor and never has, and it has been called
+    /// from `Task.detached` in `ReadBacks.plan` since 343 — correctly, and
+    /// with a warning saying otherwise the whole time.
+    ///
+    /// The callers on the actor are unaffected: `init()` calls this, and
+    /// calling a nonisolated static from the main actor has never needed
+    /// anything.
+    nonisolated static func decodeBundle() -> (plan: Plan, error: String?) {
         guard let url = Bundle.main.url(forResource: "plan",
                                         withExtension: "json") else {
             return (Plan.empty,

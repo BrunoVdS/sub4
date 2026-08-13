@@ -8853,6 +8853,144 @@ A paste that omits the empty tables and a snapshot row that overstates its
 losses are both survivable while the person reading them is the person who
 generated them. They stop being survivable the moment the paste is the evidence.
 
+## 12.97 Four versions, three plans, one duplicate — patch 352
+
+### 12.97.1 The question, and why the arithmetic was not an answer
+
+13 August, the athlete, reading a diagnostics paste: *"we made some changes but
+it seems that we have exact the double of workouts."*
+
+`plan_session: 1043`, against a plan of 260. `plan_week: 148`, `plan_week_stat:
+736`, `plan_session_block: 2536`, `plan_exercise: 80` — every one of those an
+exact 4x, which is what makes the reading "four copies" so easy to reach.
+
+It is not four copies, and two numbers say so before anything is read: 1043 is
+not divisible by four, and `plan_session_detail: 326` is 82 + 82 + 81 + 81. The
+sum that closes is **261 + 261 + 261 + 260**, and against this document each
+term has a name:
+
+| version | sessions | breakdowns | what it is |
+|---|---|---|---|
+| 1 | 261 | 82 | the bundle as 329a left it |
+| 2 | 261 | 82 | 346's ordering artefact — §12.93.3 |
+| 3 | 261 | 81 | patch 349, the calendar revision — §12.94 |
+| 4 | 260 | 81 | patch 351, active — §12.95 and §12.96 |
+
+The uid superset checks too. The device reports 271 session uids known to the
+database against 260 in the active plan; the working tree's `plan.json` diff
+against the last commit removes ten uids, and §12.96.3's Tuesday rename
+accounts for an eleventh that only version 3 ever held.
+
+**So the answer was already in this file, and that is precisely the problem.**
+Every step above is a reconstruction. Nothing in the app had read a
+non-active version since they started being written, and the first time
+anything did was going to be a DELETE. A count that divides by four is not
+evidence that four things are the same, and a count that does not divide by
+four says nothing about WHICH of them differ. §12.15's argument, applied one
+level up: a diagnostic that cannot say why it has no answer will be read as
+having one — and a document that can only be checked by the person who wrote it
+is the same failure wearing better prose.
+
+### 12.97.2 `contentHash` is the wrong instrument, and §12.93.3 is why
+
+`plan_version.contentHash` is SHA-256 over the decoded `Plan` re-encoded with
+sorted keys — §12.11.3. `.sortedKeys` sorts object KEYS and does not sort
+ARRAYS. §12.93.3 is the patch where that mattered: the store was hydrated from
+rows read `ORDER BY uid`, `plan.json` is in the plan's own order, and the same
+261 sessions hashed differently and minted version 2.
+
+That hash answers *"have these bytes arrived in this order before"*, which is
+the right question for an importer and the wrong one for a prune. Two versions
+with different hashes can hold identical training — the device holds exactly
+that pair — and no amount of comparing hashes will show it.
+
+`PlanVersionCensus.fingerprint` is taken over the STORED ROWS instead: every
+column that is not a row identity, foreign keys replaced by the uid they point
+at, **the lines sorted before hashing**. Sorted is the whole of it. A
+fingerprint with §12.93.3's weakness would call four twins four different plans
+— confidently wrong in the direction of not deleting, which is the safe
+direction and therefore the one nobody would notice. `apply-352.py` guards the
+`.sorted()`.
+
+### 12.97.3 What the fingerprint covers, said out loud
+
+Weeks, week stats, sessions, breakdowns, blocks and exercises. Not the ten
+fuelling and warm-up tables.
+
+That is a real hole and it is small: three products, seven targets, a five-step
+ladder, a race-day schema and a nine-step warm-up, none of which any plan
+revision in this project has touched, all of which the extras read-back
+compares for the active version on every launch. It is stated in the paste
+itself — `fingerprint covers:` is a printed line, not a comment — because a
+verdict whose scope the reader has to guess is a verdict they will
+over-trust. §12.15 again.
+
+### 12.97.4 The rule a delete follows
+
+**A version may be deleted only when another stored version holds identical
+training.** Not "is inactive", not "is old", not "looks unused".
+
+That rule makes the dangerous case impossible rather than unlikely. §12.7
+refuses to make `user_note.planSessionUID` and `proposal_change.planSessionUID`
+foreign keys — deliberately, so that a plan revision cannot delete thirteen
+months of writing — and the price of that decision is that nothing in the
+schema would stop this from orphaning a reference either. If every uid the
+doomed version holds survives in its twin, there is nothing to orphan. That is
+why the census prints, per version, *session uids no other version holds* and
+*of those, named by a proposal_change*: the two numbers a delete is decided on,
+and both are zero for a twin by construction.
+
+`user_note.planVersionID` is `ON DELETE SET NULL`, so a note written against
+the removed version keeps its text and loses only its pointer. The content
+tables cascade from `plan_version`, which is §12.11's decision and the reason
+the delete is one statement.
+
+Three refusals stand between the button and the rows — no twins, the active
+version selected, a uid that would be lost — and the third cannot fire while
+the fingerprint covers `plan_session`. It stays, and is exercised directly on
+hand-built values, because what it protects against is not a bug in the rule
+but a NARROWING OF THE FINGERPRINT: the day somebody drops sessions from the
+covered set to make the census cheaper, two versions with different training
+become twins and that line is what refuses to delete one of them. §12.69, and
+the honest way to satisfy it — a pure function tested on values a database
+cannot produce, rather than a test theatre-ing a state that cannot exist.
+
+### 12.97.5 The census checks itself against the reader
+
+`PlanVersionCensus` writes its own reads of tables `PlanRepository` also reads.
+Not its own SQL — §12.43, the five queries stopped being `private` and are
+called — but its own traversal, its own re-keying, its own counting. Two pieces
+of code, one set of tables.
+
+So the paste's second line is `the census and the read-back agree`, and it
+carries the two numbers when they do not. If this file is wrong about what a
+version contains, its verdict is worthless and the delete it licenses is
+dangerous; the disagreement is a printed line and a test rather than an
+assumption. §12.92's lesson in a different shape — the thing to distrust is the
+part of a system that has never been contradicted by anything.
+
+### 12.97.6 Not in the roll-up, on purpose
+
+`ReadBackRollUp` carries nine rows and each is a comparison against a store.
+The census compares versions against each other; there is no independent side
+and its "unexplained differences" could only ever be zero. A tenth green row
+that cannot go red is §12.69 in the one place on this screen where a person
+looks for reassurance. It is its own section, with its own heading.
+
+### 12.97.7 What moved together
+
+`PlanVersionCensus.swift` and its tests (new), `PlanRepository`'s five query
+constants and `blockSQL`'s session uid, `ReadBacks.planVersions`,
+`DatabaseHealthView` — two state properties, two fills, one section, one paste
+block. AppVersion 352.
+
+**Nine patches were uncommitted while this was written.** A zero-byte
+`.git/index.lock`, left by something that died on 10 August, had been failing
+every `git add` and `git commit` since 344 while `git status` and `git log`
+kept answering normally. Seven commits reported as done had errored. Recorded
+here because it is the same shape as everything else in this section: a
+read-only path that works is not evidence that the write path does.
+
 ## 12.96 A rest card that argued with the session beside it — patch 351
 
 ### 12.96.1 What was asked, and the thing it fixed on the way

@@ -843,7 +843,16 @@ nonisolated enum PlanRepository {
           FROM plan WHERE id = ?
         """
 
-    private static let weekSQL = """
+    // NOT `private` SINCE 352, AND THE FIVE BELOW ARE THE REASON THIS FILE
+    // DID NOT GROW A CENSUS OF ITS OWN.
+    //
+    // `PlanVersionCensus` reads every stored version where everything in this
+    // file reads one. It needs exactly these queries, each already
+    // parameterised by a version id. Copying them into that file would be a
+    // second place to be wrong about what a version contains — §12.43 — and
+    // being right about that is the census's entire value, since it is what a
+    // DELETE is decided on.
+    static let weekSQL = """
         SELECT id, uid, weekNo, label, startDate, dateRange, tag, badge,
                kind, logged
           FROM plan_week
@@ -851,7 +860,7 @@ nonisolated enum PlanRepository {
          ORDER BY uid
         """
 
-    private static let weekStatSQL = """
+    static let weekStatSQL = """
         SELECT planWeekID, key, value
           FROM plan_week_stat
          WHERE planWeekID IN (SELECT id FROM plan_week WHERE planVersionID = ?)
@@ -861,7 +870,7 @@ nonisolated enum PlanRepository {
     /// `Session.weekUid` is the plan's own "w14". Returning the column instead
     /// of `w.uid` would report all 260 sessions as differing on `weekUid` while
     /// nothing at all was wrong with the data. §12.66.2.
-    private static let sessionSQL = """
+    static let sessionSQL = """
         SELECT s.uid          AS uid,
                w.uid          AS weekUid,
                s.day          AS day,
@@ -879,7 +888,7 @@ nonisolated enum PlanRepository {
          ORDER BY s.uid
         """
 
-    private static let detailSQL = """
+    static let detailSQL = """
         SELECT s.uid AS sessionUid,
                d.id  AS detailID,
                d.kind, d.total, d.tag, d.focus
@@ -888,8 +897,9 @@ nonisolated enum PlanRepository {
          WHERE s.planVersionID = ?
         """
 
-    private static let blockSQL = """
+    static let blockSQL = """
         SELECT d.id AS detailID,
+               s.uid AS sessionUid,
                b.ordinal, b.duration, b.title, b.cue, b.videoURL
           FROM plan_session_block b
           JOIN plan_session_detail d ON d.id = b.planSessionDetailID
