@@ -156,7 +156,22 @@ final class NotesStore {
         migrateIfNeeded()
     }
 
-    /// A store rooted somewhere else — patch 264, and it exists for the tests.
+    /// A store rooted somewhere else — patch 264, and NOT ONLY FOR THE TESTS
+    /// since 356.
+    ///
+    /// `ReadBacks.authoredSources` constructs one of these to read `notes.json`
+    /// without going through the singleton. B2 hydrates `shared` from the
+    /// database, and a read-back comparing the database against a store the
+    /// database fed is the database against itself — §12.91.2, and 343 made
+    /// the same move on the plan by decoding the bundle.
+    ///
+    /// IT STILL DOES NOT RECORD TO `StoreReadJournal`, and that was already the
+    /// right decision for a different reason. 273 kept it out so a test store
+    /// could not leak into the journal; the same line now keeps the READ-BACK's
+    /// own read out of a journal whose job is to describe the APP's stores.
+    ///
+    /// It still does not run `migrateIfNeeded` either. The read-back wants the
+    /// file as it is on disk, not the file as a migration would leave it.
     ///
     /// A failable save cannot be trusted until something has watched it fail,
     /// and the only honest way to make a write fail is to give it somewhere it

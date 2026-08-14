@@ -79,9 +79,13 @@ final class CommuteStore {
         StoreReadJournal.shared.record("commutes.json", lastLoad)
     }
 
-    /// A store rooted somewhere else — patch 265, for the tests, exactly as
-    /// `NotesStore(directory:)`. A failable save nobody has watched fail is
-    /// `try?` with more words around it.
+    /// A store rooted somewhere else — patch 265, exactly as
+    /// `NotesStore(directory:)`, and NOT ONLY FOR THE TESTS since 356.
+    ///
+    /// A failable save nobody has watched fail is `try?` with more words around
+    /// it — that is why it was written. `ReadBacks.authoredSources` is why it
+    /// is now also production: B2 hydrates `shared` from the database, and the
+    /// read-back needs `commutes.json` itself. §12.91.2.
     init(directory: URL) {
         fileURL = directory.appendingPathComponent("commutes.json")
         load()

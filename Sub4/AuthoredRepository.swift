@@ -347,6 +347,20 @@ nonisolated enum AuthoredRoundTrip {
         var decisionsCompared = 0
         var decisionFieldsCompared = 0
         var decisionRowsSkipped = 0
+        /// PATCH 356 — WHERE THE APP SIDE OF THIS COMPARISON CAME FROM.
+        ///
+        /// The default names the singletons because that is what any caller
+        /// which has not been updated is still using. `ReadBacks.authored`
+        /// overwrites it. A report that still says "the app's stores" after B2
+        /// is a comparison of the database against itself, and this line is
+        /// what makes that visible instead of invisible. §12.15.
+        var appSideCameFrom = "the app's stores"
+
+        /// False when the independent read failed — Application Support
+        /// unreachable, or a file present and undecodable. Distinct from
+        /// finding nothing: `.absent` is a clean read of an empty store.
+        var appSideWasReadCleanly = true
+
         /// Set when `compareDecisions` ran at all. Without it a report that was
         /// never given the decisions is indistinguishable from one where both
         /// sides were empty — §12.15, and both print zeros.
@@ -416,6 +430,13 @@ nonisolated enum AuthoredRoundTrip {
         var diagnosticLines: [String] {
             var lines = [
                 "Authored read-back: \(totalCompared) compared",
+                // PATCH 356 — §12.101. UNCONDITIONAL and FIRST, because it is
+                // what every count below it means. A read-back that does not
+                // say where its own side came from cannot be checked by
+                // anybody who was not holding the phone.
+                "  the app side came from: \(appSideCameFrom)",
+                "  the app side was read cleanly: "
+                + "\(appSideWasReadCleanly ? "yes" : "NO")",
                 "  notes in the app: \(notesInApp)",
                 "  notes in the database: \(notesInDatabase)",
                 "  notes compared: \(notesCompared)",

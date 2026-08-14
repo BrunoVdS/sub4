@@ -8853,6 +8853,84 @@ A paste that omits the empty tables and a snapshot row that overstates its
 losses are both survivable while the person reading them is the person who
 generated them. They stop being survivable the moment the paste is the evidence.
 
+## 12.101 The authored read-back keeps its own read — patch 356, D7 slice B2
+
+### 12.101.1 343, again, on three sources instead of one
+
+`ReadBacks.authored` compared the database against `NotesStore.shared`,
+`CommuteStore.shared` and `Matcher.shared`. B2 hydrates all three FROM the
+database, and at that moment the comparison is the database against itself:
+three counts guaranteed to agree, on the read-back that sits inside D7's entry
+gate. §12.69, at the worst possible moment.
+
+§12.91.2 settled the rule on 10 August — **the store serves the database; the
+read-back keeps its own legacy read** — and §12.91.1 named this exact slice:
+*"B2 does it to `AuthoredRoundTrip`."* 343 did it for the plan by decoding the
+bundle. This does it for two JSON files and a `UserDefaults` blob.
+
+**Today it changes no number, and that is what makes it checkable.** The stores
+ARE those sources until 357 hydrates them, so every count must come back
+unchanged. A patch that moved a number here would be a patch that got the
+independent read wrong.
+
+### 12.101.2 Each store's own loader, not a second decoder
+
+`NotesStore(directory:)`, `CommuteStore(directory:)` and `Matcher(defaults:)`
+already exist and already run each store's own `load`. `ReadBacks.authoredSources`
+constructs one of each. §12.43 — call the rule rather than reimplement it — and
+here the consequence is concrete: a second decoder would be a second opinion
+about what `notes.json` contains, and the two would drift the first time either
+changed. `StoreRead.decode` appearing in `ReadBacks` is a guard failure.
+
+All three initialisers were written for tests and said so in their docs. They
+have a production caller now and the docs say that instead. **All three still
+skip `StoreReadJournal`, and 273's reason has quietly become a second reason:**
+it kept a test store from leaking into the journal; the same line now keeps the
+READ-BACK's own read out of a journal whose job is to describe the APP's stores.
+`NotesStore(directory:)` still skips `migrateIfNeeded` too — the read-back wants
+the file as it is on disk, not as a migration would leave it.
+
+The container comes from `DataLifecycle.container`. There are already nine
+copies of the `applicationSupportDirectory` incantation in this project and a
+tenth was not written.
+
+### 12.101.3 Unreachable is not empty
+
+`directoryFound` exists because Application Support being unreachable and three
+stores holding nothing produce identical counts. §12.15: one says the athlete
+has written nothing, the other says the app cannot tell. `.absent` is a clean
+read — a fresh install has no `notes.json` — and `.unreadable` is not, which is
+`StoreLoad`'s own rule applied to the aggregate.
+
+### 12.101.4 The report says where its own side came from
+
+`Report.appSideCameFrom` defaults to `"the app's stores"` **on purpose**. Any
+caller not updated announces itself in the paste rather than hiding, and after
+357 that string on this line IS the defect. It prints first, under the heading,
+because it is what every count below it means — pinned by test so a later edit
+cannot bury it.
+
+### 12.101.5 What is guarded rather than tested
+
+The defect this patch removes is a negative: the read-back must not ask the
+three singletons. No assertion can see that today, because the singletons and
+the files hold the same values — which is the same sentence as §12.101.1's
+"changes no number". So `apply-356.py` names all three and fails the patch if
+any reappears.
+
+**All three, not one, and 346a is why.** Its sweep for the literal
+`PlanStore.shared` converted six occurrences and missed five sitting inside a
+default argument; the tests passed for four patches because two plans happened
+to agree. A guard that named only `NotesStore.shared` would be that mistake
+with fewer letters.
+
+### 12.101.6 What 356 deliberately does not do
+
+No store is hydrated. `sliceUnderTest` stays at B1, `HydratedStores` stays at
+one entry, and both are checked. 357 hydrates `NotesStore`, `CommuteStore` and
+`Matcher`, adds their entries — taking the verifier's independent count from 19
+to 17 — and flips the slice.
+
 ## 12.100 The table that had no reader — patch 355, D7 slice B2
 
 ### 12.100.1 What B2's groundwork put in bold

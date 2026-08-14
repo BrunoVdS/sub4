@@ -38,6 +38,92 @@ import Foundation
 @MainActor
 enum ReadBacks {
 
+    // MARK: The independent side — patch 356, D7 slice B2, ADR-0003 §12.101
+
+    /// The three authored sources, read WITHOUT asking the app's stores.
+    ///
+    /// WHY THIS EXISTS. `ReadBacks.authored` compared the database against
+    /// `NotesStore.shared`, `CommuteStore.shared` and `Matcher.shared`. B2
+    /// hydrates all three FROM the database, and at that moment the comparison
+    /// is the database against itself — three counts that cannot disagree, on
+    /// a read-back inside D7's entry gate. §12.69, and §12.91.2 settled what to
+    /// do about it: the store serves the database, the read-back keeps its own
+    /// legacy read.
+    ///
+    /// NOT A SECOND DECODER. Each store's own `init` is used, so this cannot
+    /// drift from what the store would have decoded — §12.43, call the rule
+    /// rather than reimplement it. The three initialisers were written for
+    /// tests; their docs now say they have a production caller.
+    struct AuthoredSources {
+        let notes: [NotesStore.Note]
+        let commutes: [CommuteDecision]
+        let decisions: [MatchDecision]
+
+        /// What each read actually did. `.absent` is a clean read of nothing —
+        /// a fresh install has no `notes.json` — and `.unreadable` is not.
+        let notesLoad: StoreLoad
+        let commutesLoad: StoreLoad
+        let decisionsLoad: StoreLoad
+
+        /// Nil when Application Support is unreachable. Distinct from three
+        /// `.absent` loads: one says the files are not there, the other says
+        /// the app cannot look. §12.15.
+        let directoryFound: Bool
+
+        var isTrustworthy: Bool {
+            directoryFound && notesLoad.isTrustworthy
+                && commutesLoad.isTrustworthy && decisionsLoad.isTrustworthy
+        }
+
+        /// Printed unconditionally. A read-back that does not say where its own
+        /// side came from is a read-back nobody can check.
+        var line: String {
+            guard directoryFound else {
+                return "Application Support is unreachable, so the app side "
+                     + "was not read at all"
+            }
+            return "notes.json, commutes.json and the stored match decisions, "
+                 + "read directly"
+        }
+    }
+
+    /// One of each store, rooted at the real container.
+    ///
+    /// `AppSupportItem.container` and not a tenth copy of the
+    /// `applicationSupportDirectory` incantation — there are already nine.
+    ///
+    /// ON `AppSupportItem` AND NOT ON `DataLifecycle`, which is what 356 wrote
+    /// and 356a corrected. The declaration sits at the top of
+    /// `DataLifecycle.swift`, inside a `nonisolated enum` that opens three
+    /// hundred lines before `enum DataLifecycle` does. A file name is not a
+    /// scope.
+    ///
+    /// It is the right thing to call for a second reason its own doc gives:
+    /// *"Nil is a real answer — every caller must handle it rather than
+    /// force-unwrapping and crashing a delete flow."* `directoryFound` is this
+    /// read-back handling it.
+    static func authoredSources() -> AuthoredSources {
+        guard let dir = AppSupportItem.container else {
+            return AuthoredSources(notes: [], commutes: [], decisions: [],
+                                   notesLoad: .absent, commutesLoad: .absent,
+                                   decisionsLoad: .absent,
+                                   directoryFound: false)
+        }
+        let notes = NotesStore(directory: dir)
+        let commutes = CommuteStore(directory: dir)
+        // `UserDefaults.standard` and not a file — `Matcher`'s header says why
+        // the decisions stayed there, and D7 is what moves them.
+        let decisions = Matcher(defaults: .standard)
+        return AuthoredSources(
+            notes: Array(notes.all.values),
+            commutes: Array(commutes.decisions.values),
+            decisions: Array(decisions.decisions.values),
+            notesLoad: notes.lastLoad,
+            commutesLoad: commutes.lastLoad,
+            decisionsLoad: decisions.lastLoad,
+            directoryFound: true)
+    }
+
     // MARK: The six that cost one read
 
     /// Patch 317 — D6c slice 6a. `athlete_profile`, `resting_month`, `hr_zone`.
@@ -74,14 +160,29 @@ enum ReadBacks {
             MatchDecisionRepository.load(db)
         }.value
 
+        // PATCH 356 — THE FILES, NOT THE STORES, AND THIS IS THE WHOLE PATCH.
+        //
+        // This read the three singletons. From B2 they are hydrated FROM the
+        // database, so comparing the database against them would be the
+        // database against itself: three counts, guaranteed to agree, on the
+        // read-back that passed D7's entry gate. §12.69, §12.91.2.
+        //
+        // TODAY THIS CHANGES NO NUMBER. The stores ARE these sources until B2
+        // hydrates them, so every count below must come back unchanged — which
+        // is exactly what makes this half checkable on its own. 343's argument,
+        // applied to two files and a `UserDefaults` blob.
+        let sources = authoredSources()
+
         var report = AuthoredRoundTrip.compare(
-            storeNotes: Array(NotesStore.shared.all.values),
-            storeCommutes: Array(CommuteStore.shared.decisions.values),
+            storeNotes: sources.notes,
+            storeCommutes: sources.commutes,
             database: load)
         AuthoredRoundTrip.compareDecisions(
-            store: Array(Matcher.shared.decisions.values),
+            store: sources.decisions,
             database: decisionLoad,
             into: &report)
+        report.appSideCameFrom = sources.line
+        report.appSideWasReadCleanly = sources.isTrustworthy
         return (load, report, decisionLoad)
     }
 

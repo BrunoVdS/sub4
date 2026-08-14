@@ -138,8 +138,18 @@ final class Matcher {
         StoreReadJournal.shared.record(Self.decisionsKey, lastLoad)
     }
 
-    /// A matcher rooted in its own defaults — patch 272, for the tests, in the
-    /// same spirit as `NotesStore(directory:)` and `CommuteStore(directory:)`.
+    /// A matcher rooted in its own defaults — patch 272, in the same spirit
+    /// as `NotesStore(directory:)` and `CommuteStore(directory:)`, and NOT
+    /// ONLY FOR THE TESTS since 356.
+    ///
+    /// `ReadBacks.authoredSources` constructs one to read the stored blob
+    /// without going through the singleton, for §12.91.2's reason: B2 hydrates
+    /// `shared` from `match_decision`, and a read-back comparing the database
+    /// against a matcher the database fed is the database against itself.
+    ///
+    /// Like the two file stores, it does not record to `StoreReadJournal` —
+    /// 273's rule, and the read-back's own read has no business in a journal
+    /// that describes the app's stores.
     /// The migration below is the one piece of this file that runs exactly
     /// once per device, which makes it the one piece that cannot be tested at
     /// all without this.
