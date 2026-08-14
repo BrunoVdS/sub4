@@ -52,18 +52,22 @@ struct AuthoredHydrationTests {
 
     // MARK: 357 hydrates nothing
 
-    /// **THE ONE THAT KEEPS 357 FROM BEING 358.** A patch that added
-    /// `.authored` here would be doing the flip inside the machinery's diff,
-    /// which is the thing B1 proved is worth avoiding.
-    @Test("This build still hydrates only the three families B1 moved")
-    func nothingNewHydratesYet() {
+    /// **THIS TEST KEPT 357 FROM BEING 358 AND 358 IS WHERE IT INVERTS.**
+    ///
+    /// It is not deleted, because the property it defends did not go away — it
+    /// changed value. `B2ActivationTests` owns the flip; this one stays here so
+    /// that the file which built the machinery also says, in one place, what
+    /// the machinery ended up doing. A later slice adding a sixth family
+    /// separates these two counts again, and this is where that shows up.
+    @Test("This build hydrates every family the bootstrap reads")
+    func everyFamilyHydratesNow() {
         #expect(PersistenceAuthority.hydratedFamilies
-                == [.plan, .extras, .athlete])
+                == [.plan, .extras, .athlete, .authored, .decisions])
         #expect(PersistenceAuthority.hydrates(.plan))
-        #expect(!PersistenceAuthority.hydrates(.authored))
-        #expect(!PersistenceAuthority.hydrates(.decisions))
+        #expect(PersistenceAuthority.hydrates(.authored))
+        #expect(PersistenceAuthority.hydrates(.decisions))
         #expect(PersistenceAuthority.Family.allCases.count == 5,
-                "five families, three of them fed from the database")
+                "five families, all five fed from the database at B2")
     }
 
     // MARK: The two verdicts — §12.92
@@ -132,7 +136,11 @@ struct AuthoredHydrationTests {
         #expect(lines.contains(where: {
             $0.contains("authored families keeping their files:")
         }))
-        #expect(lines.first == "Database bootstrap: 5 families")
+        // PREFIX, NOT EQUALITY — patch 358 put "read at launch" and what it
+        // is NOT to be compared against into this line. What this test pins is
+        // that the family count is the first thing said, which is what it
+        // always meant.
+        #expect(lines.first?.hasPrefix("Database bootstrap: 5 families") == true)
     }
 
     // MARK: An empty family is not hydratable

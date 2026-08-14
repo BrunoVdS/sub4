@@ -141,13 +141,21 @@ struct HydrationDecisionTests {
             Issue.record("every family loaded, so the stores must be fed")
             return
         }
-        // PATCH 357b. THE B1 HAPPY PATH CARRIES NO AUTHORED PAYLOAD, and both
-        // reasons are live: this build does not hydrate those families
-        // (`PersistenceAuthority.hydratedFamilies`, which 358 edits) and the
-        // fixture holds nothing anyway. Either alone produces nil, so this
-        // pins the OUTCOME rather than the mechanism — the mechanism is
-        // `AuthoredHydrationTests.nothingNewHydratesYet`.
-        #expect(authored == nil, "357 is the machinery; 358 is the flip")
+        // PATCH 358, AND THESE TWO LINES CHANGED MEANING WITHOUT CHANGING.
+        //
+        // At 357b nil had two causes — the build did not hydrate these
+        // families, and the fixture held nothing. The flip removed the first,
+        // so what they pin now is the SECOND ON ITS OWN: a family that read
+        // cleanly and holds nothing reaches the planner as nil rather than as
+        // an empty payload, EVEN THOUGH THIS BUILD WANTS IT.
+        //
+        // That check is the only thing standing between an empty database and
+        // a blanked `notes.json`, and until the flip it could not be tested in
+        // isolation because the build refused the family anyway. §12.8.1.
+        // `B2ActivationTests.anEmptyFamilyStillHandsOverNil` tests it from the
+        // bootstrap end; this is the planner end.
+        #expect(authored == nil,
+                "clean and empty is not something to hydrate a store from")
         #expect(decisions == nil, "the same, for the match decisions")
         #expect(plan.meta.plan == "stored", "the STORED plan, not the bundled one")
         #expect(plan.sessions.count == 1)

@@ -47,15 +47,46 @@ struct VerificationIndependenceTests {
         VerificationReport(checks: checks, seconds: 0.01)
     }
 
+    /// **A REPORT CONTAINING ONE CHECK PER DECLARED ENTRY, DERIVED FROM THE
+    /// LIST — patch 358a.**
+    ///
+    /// `unmatchedHydratedEntries` is `HydratedStores.all` minus the checks this
+    /// report contains, and `withheldReason` reports it before anything else.
+    /// So a fixture that does not name every declared entry is a report
+    /// withholding itself for a reason the test is not about — which is what
+    /// happened to five tests in this file the day B2 declared three more.
+    ///
+    /// DERIVED RATHER THAN LISTED, and that is the whole point. `HydratedStores`
+    /// grows again at B5 and at B9. A hand-listed fixture goes stale on each
+    /// growth; this one does not, and neither do the assertions below it, which
+    /// are written against `HydratedStores.all` rather than against a number.
+    ///
+    /// `omitting:` is for the ONE test that wants an unmatched entry. It takes a
+    /// name rather than an index so the test reads as what it means, and the
+    /// caller derives that name from the list rather than writing
+    /// `heart-rate zones` — so a reordering does not break it either.
+    private func covering(_ extra: [VerificationCheck] = [],
+                          omitting: String? = nil) -> VerificationReport {
+        report(HydratedStores.all.map(\.check)
+                .filter { $0 != omitting }
+                .map { check($0) }
+               + extra)
+    }
+
     // MARK: The list
 
     /// PINNED. `heart-rate zones` is the name `countChecks` gives the
     /// comparison and `AthleteStore.hrZones` is what B1 hydrated. If either
     /// moves, this fails here rather than on a device six weeks from now.
+    ///
+    /// THE COUNT MOVED AT 358 AND THIS TEST DID NOT CHANGE SHAPE. B2 declared
+    /// three more; which three, and that they name real comparisons, is
+    /// `B2ActivationTests`' business. What this suite still owns is B1's entry
+    /// and the machinery around it.
     @Test("The list names the comparison B1 made self-referential")
     func theListNamesTheZoneCheck() {
-        #expect(HydratedStores.all.count == 1,
-                "B5 and B9 will each add one, on purpose")
+        #expect(HydratedStores.all.count == 4,
+                "one from B1, three from B2; B5 and B9 will each add more")
         let e = HydratedStores.entry(for: "heart-rate zones")
         #expect(e != nil)
         #expect(e?.store == "AthleteStore.hrZones")
@@ -77,20 +108,42 @@ struct VerificationIndependenceTests {
         #expect(r.selfReferentialChecks.count == HydratedStores.all.count)
         #expect(r.independentChecks.count
                 == r.checks.count - HydratedStores.all.count)
-        #expect(r.selfReferentialChecks.first?.name == "heart-rate zones")
+        // A SET, NOT A FIRST — patch 358. `selfReferentialChecks` filters
+        // `checks`, so "first" is whichever declared comparison `countChecks`
+        // happens to emit earliest. At B1 there was one entry and the two were
+        // the same sentence; at B2 there are four and `notes` comes first,
+        // which says nothing about anything. Pinning an emission order is how a
+        // test starts failing for a reordering that changed no behaviour.
+        #expect(Set(r.selfReferentialChecks.map(\.name))
+                .contains("heart-rate zones"))
     }
 
     // MARK: The split
 
-    @Test("The zone check is counted as self-referential and nothing else is")
+    /// PATCH 358 MOVED THIS AND THE MOVE IS THE EVIDENCE. `notes` was an
+    /// independent comparison in this exact report until the flip; it reads
+    /// `NotesStore.notes`, which now comes out of `user_note`. The same four
+    /// checks, one fewer of them worth anything.
+    @Test("The split follows the declared list and nothing else")
     func theSplitIsWhereItShouldBe() {
-        let r = report([check("activities"), check("gear"), check("notes"),
-                        check("heart-rate zones")])
-        #expect(r.independentChecks.count == 3)
-        #expect(r.selfReferentialChecks.count == 1)
-        #expect(r.selfReferentialChecks.first?.name == "heart-rate zones")
+        let r = covering([check("activities"), check("gear")])
+
+        #expect(Set(r.independentChecks.map(\.name)) == ["activities", "gear"],
+                "both still read the app's own files")
+        #expect(Set(r.selfReferentialChecks.map(\.name))
+                == Set(HydratedStores.all.map(\.check)),
+                "and the split is the declared list, not a copy of it")
+        #expect(r.selfReferentialChecks.count == HydratedStores.all.count)
+
+        // B2, NAMED. `notes` was an independent comparison in this suite until
+        // the flip; it reads `NotesStore.notes`, which now comes out of
+        // `user_note`. Asserted separately from the set above, because that set
+        // would go on passing if `notes` had never been declared at all.
+        #expect(!r.independentChecks.contains { $0.name == "notes" },
+                "notes stopped being evidence at B2")
+
         #expect(r.passed)
-        #expect(r.isTrustworthyEvidence)
+        #expect(r.isTrustworthyEvidence, "two comparisons could still fail")
         #expect(r.withheldReason == nil)
     }
 
@@ -98,7 +151,11 @@ struct VerificationIndependenceTests {
     /// the database feeds. Every one of them agrees. None of it is evidence.
     @Test("A report of nothing but self-referential checks passes and is not believed")
     func nothingButSelfReferentialIsNotBelieved() {
-        let r = report([check("heart-rate zones")])
+        // EVERY DECLARED ENTRY AND NOTHING ELSE — which is what B9 is. Naming
+        // one of them and leaving the rest unmatched would withhold the report
+        // for the rename reason instead, and this test would pass on the wrong
+        // sentence.
+        let r = covering()
         #expect(r.passed, "every comparison agreed — that much is true")
         #expect(r.independentChecks.isEmpty)
         #expect(!r.isTrustworthyEvidence, "and none of them could have failed")
@@ -109,10 +166,18 @@ struct VerificationIndependenceTests {
     /// everything downstream would read better than the truth.
     @Test("An entry naming no comparison withholds the whole report")
     func anEntryNamingNothingWithholdsIt() {
-        let r = report([check("activities"), check("gear")])
+        // EXACTLY ONE MISSING, and which one is taken from the list rather than
+        // written down. The test is about a name existing on one side only; it
+        // is not about the zones, and it should not start failing because the
+        // list was reordered.
+        guard let gone = HydratedStores.all.first?.check else {
+            Issue.record("nothing is declared hydrated, so nothing can be lost")
+            return
+        }
+        let r = covering([check("activities"), check("gear")], omitting: gone)
         #expect(r.passed)
         #expect(r.unmatchedHydratedEntries.count == 1)
-        #expect(r.unmatchedHydratedEntries.first?.check == "heart-rate zones")
+        #expect(r.unmatchedHydratedEntries.first?.check == gone)
         #expect(!r.isTrustworthyEvidence)
         #expect(r.withheldReason?.contains("does not contain") == true)
     }
@@ -121,8 +186,11 @@ struct VerificationIndependenceTests {
     /// somebody to look at the verifier instead of at the data.
     @Test("A failing report reports its failure and withholds nothing")
     func aFailureIsNotAWithholding() {
-        let r = report([check("activities", expected: 689, found: 688),
-                        check("heart-rate zones")])
+        // COVERING — patch 358a. The old fixture named `heart-rate zones` for
+        // no reason and would have carried three unmatched entries after B2, so
+        // it could have gone on passing on the wrong sentence. Now the ONLY
+        // thing wrong with this report is the failure, which is what it is for.
+        let r = covering([check("activities", expected: 689, found: 688)])
         #expect(!r.passed)
         #expect(r.failures.count == 1)
         #expect(r.withheldReason == nil, "the failure is the story")
@@ -133,9 +201,15 @@ struct VerificationIndependenceTests {
 
     @Test("The ledger note carries how much of it was evidence")
     func theLedgerNoteCarriesTheCount() {
-        let good = report([check("activities"), check("gear"),
-                           check("heart-rate zones")])
-        #expect(good.ledgerNote == "3 comparisons, all agreed · 2 independent")
+        // DERIVED — patch 358a, and this one was a real latent break rather
+        // than a stale fixture. "3 comparisons · 2 independent" is only right
+        // while exactly ONE of the three is declared. B5 declares gear; this
+        // would then read "3 comparisons · 1 independent" and fail on a patch
+        // that changed nothing whatever about the ledger note.
+        let good = covering([check("activities"), check("gear")])
+        #expect(good.ledgerNote
+                == "\(HydratedStores.all.count + 2) comparisons, all agreed "
+                 + "· 2 independent")
 
         let bad = report([check("activities", expected: 1, found: 2)])
         #expect(bad.ledgerNote == "1 of 1 comparisons disagreed",
@@ -147,8 +221,7 @@ struct VerificationIndependenceTests {
     /// verified migration.
     @Test("The paste says it on a healthy run, and marks the check")
     func thePasteSaysItUnconditionally() {
-        let lines = report([check("activities"), check("heart-rate zones")])
-            .diagnosticLines
+        let lines = covering([check("activities")]).diagnosticLines
         #expect(lines.contains(where: { $0.contains("1 independent") }))
         #expect(lines.contains(where: { $0.contains("may be believed: yes") }))
         #expect(lines.contains(where: {
@@ -161,7 +234,7 @@ struct VerificationIndependenceTests {
 
     @Test("A withheld report says so in the paste, with the reason")
     func aWithheldReportSaysSoInThePaste() {
-        let lines = report([check("heart-rate zones")]).diagnosticLines
+        let lines = covering().diagnosticLines
         #expect(lines.contains(where: { $0.contains("may be believed: no") }))
         #expect(lines.contains(where: { $0.contains("could have disagreed") }))
         #expect(lines.contains(where: { $0.contains("0 independent") }))

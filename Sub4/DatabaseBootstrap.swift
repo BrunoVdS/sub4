@@ -282,7 +282,23 @@ nonisolated struct DatabaseBootstrap: Sendable {
     /// to hydrate and said nothing would be indistinguishable from one where
     /// hydration was never wired in — which is §12.54.2's whole subject.
     var diagnosticLines: [String] {
-        var l = ["Database bootstrap: \(Self.fieldCount) families",
+        // PATCH 358 — "READ AT LAUNCH", AND IT IS A DEFECT FIX.
+        //
+        // On 14 August the device recorded two match decisions, imported them,
+        // and this block said `match decisions: 0` twenty-six lines above
+        // `match_decision: 2`. Both numbers were right: `Sub4Launch.bootstrap`
+        // is read once, at launch, ON PURPOSE — 345's argument is that it
+        // records what the bootstrap saw on the launch that DECIDED the
+        // hydration, and refreshing it would destroy exactly that. The table
+        // counts further down are live.
+        //
+        // Nothing said which was which, so the paste contradicted itself and a
+        // reader had to open `Sub4Launch` to learn that it did not. §12.15. The
+        // sentence goes in the header because that is where a reader meets the
+        // block, and it stays ONE line so `diagnosticLineCount` does not move.
+        var l = ["Database bootstrap: \(Self.fieldCount) families, read at "
+                 + "launch — the table counts further down are live and can "
+                 + "have moved since",
                  "  plan: \(plan.line)",
                  "  plan trimmings: \(extras.line)",
                  "  athlete: \(athlete.line)",

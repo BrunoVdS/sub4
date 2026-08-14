@@ -168,7 +168,9 @@ nonisolated enum PersistenceAuthority {
     /// happens at all, and carries a label for the diagnostic. B2 adds its
     /// family to the bootstrap and extends this sentence — it does not replace
     /// it, and it cannot switch B1 off by editing a string. §12.43.
-    static let sliceUnderTest: String? = "B1 — the plan, the athlete and the constants"
+    static let sliceUnderTest: String? =
+        "B1 — the plan, the athlete and the constants"
+        + "; B2 — the notes, the commute decisions and the match decisions"
 
     /// WHICH FAMILIES THIS BUILD ACTUALLY HYDRATES — patch 357, §12.102.
     ///
@@ -186,7 +188,17 @@ nonisolated enum PersistenceAuthority {
         case plan, extras, athlete, authored, decisions
     }
 
-    static let hydratedFamilies: Set<Family> = [.plan, .extras, .athlete]
+    /// **PATCH 358 IS THIS LINE.** Every family the bootstrap reads is now
+    /// fed to its store. B2 is the slice where `hydratedFamilies.count` and
+    /// `Family.allCases.count` meet, and the next family added to the bootstrap
+    /// separates them again until its own flip.
+    ///
+    /// STILL REVERSIBLE, and by the same two edits as before: take a family out
+    /// of this set, or set `sliceUnderTest` to nil. The JSON files are still
+    /// written and still complete — that is what makes a slice a slice, and it
+    /// is why hydration MUST NOT WRITE. See `NotesStore.hydrate(from:)`.
+    static let hydratedFamilies: Set<Family> = [.plan, .extras, .athlete,
+                                                .authored, .decisions]
 
     /// Whether this build feeds a given store from the database. Asked by the
     /// planner and by nothing else — a second caller would be a second opinion
@@ -299,6 +311,29 @@ nonisolated enum HydratedStores {
         .init(check: "heart-rate zones",
               store: "AthleteStore.hrZones",
               slice: "B1"),
+        // PATCH 358 — B2, AND THE COUNT GOES 19 TO 16.
+        //
+        // `AppStores.gather` reads all three from the singletons —
+        // `NotesStore.shared.notes`, `CommuteStore.shared.decisions`,
+        // `Matcher.shared.decisions` — and from this build those singletons are
+        // fed by `DatabaseBootstrapReader`. Each comparison is now the database
+        // agreeing with itself. §12.69.
+        //
+        // `corrections` IS THE COMMUTE DECISIONS, and the name does not say so.
+        // The check compares the `correction` table against
+        // `CommuteStore.decisions`; the store is the only writer that table has
+        // ever had. Named here as it is named there, because this list joins to
+        // the checks BY NAME and a helpful rename on one side is the exact
+        // failure `unmatchedHydratedEntries` exists to catch.
+        .init(check: "notes",
+              store: "NotesStore.notes",
+              slice: "B2"),
+        .init(check: "corrections",
+              store: "CommuteStore.decisions",
+              slice: "B2"),
+        .init(check: "match decisions",
+              store: "Matcher.decisions",
+              slice: "B2"),
     ]
 
     static func entry(for checkName: String) -> Entry? {

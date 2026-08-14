@@ -296,12 +296,18 @@ final class Sub4Launch {
             ConstantsStore.shared.hydrate(from: constants)
             AthleteStore.shared.hydrate(zones: zones, ftp: ftp)
             var what = "the plan, its trimmings, the athlete and the constants"
-            // PATCH 357. NIL TODAY, BECAUSE
-            // `PersistenceAuthority.hydratedFamilies` does not yet list them —
-            // 358 is the line that does. The sentence
-            // grows with what actually moved rather than describing what this
-            // code is capable of, which is the difference between a paste that
-            // reports and one that advertises.
+            // PATCH 358. NO LONGER NIL — `hydratedFamilies` lists both families
+            // and the device holds rows for both. NIL IS STILL REACHABLE and
+            // still means something: a family that read cleanly and holds
+            // nothing hands over nil rather than an empty payload, because
+            // hydrating from it would blank the file that is the legacy side's
+            // only copy. §12.8.1.
+            //
+            // The sentence grows with WHAT ACTUALLY MOVED rather than with what
+            // this code is capable of — which is why it is built here from the
+            // payloads instead of being written out at the flip. A paste that
+            // reports and a paste that advertises look identical on a device
+            // where everything worked.
             if let authored {
                 NotesStore.shared.hydrate(from: authored.notes)
                 CommuteStore.shared.hydrate(from: authored.commutes)
