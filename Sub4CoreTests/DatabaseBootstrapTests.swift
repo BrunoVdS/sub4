@@ -64,12 +64,12 @@ struct DatabaseBootstrapTests {
     /// ONE STRING LITERAL, NOT A CONCATENATION — `Comment` is
     /// `ExpressibleByStringLiteral` and `"a" + "b"` is an expression, not a
     /// literal, so it does not convert. Patch 343b.
-    @Test("Three families at B1, and adding one is a decision")
+    @Test("Five families at B2, and adding one is a decision")
     func theFieldCountIsPinned() {
-        #expect(DatabaseBootstrap.fieldCount == 3,
-                "plan, plan trimmings, athlete — bump this in the patch that adds a family")
-        #expect(DatabaseBootstrap.diagnosticLineCount == 8,
-                "a header, one line per family, and the four verdict lines")
+        #expect(DatabaseBootstrap.fieldCount == 5,
+                "plan, trimmings, athlete, notes and commutes, match decisions")
+        #expect(DatabaseBootstrap.diagnosticLineCount == 11,
+                "a header, one line per family, and the five verdict lines")
     }
 
     // MARK: What an empty database produces
@@ -134,7 +134,9 @@ struct DatabaseBootstrapTests {
     func storedButInactiveIsAFault() {
         let boot = DatabaseBootstrap(plan: .noActiveVersion(versionsPresent: 3),
                                      extras: .noActiveVersion(versionsPresent: 3),
-                                     athlete: .missing)
+                                     athlete: .missing,
+                                     authored: .noneWritten,
+                                     decisions: .noneRecorded)
         #expect(!boot.wasReadCleanly)
         #expect(boot.firstFault?.contains("plan") == true)
         #expect(!boot.canHydrate)
@@ -145,7 +147,9 @@ struct DatabaseBootstrapTests {
     func theFaultNamesItsOwnFamily() {
         let boot = DatabaseBootstrap(plan: .noActiveVersion(versionsPresent: 0),
                                      extras: .noActiveVersion(versionsPresent: 0),
-                                     athlete: .failed("disk I/O error"))
+                                     athlete: .failed("disk I/O error"),
+                                     authored: .noneWritten,
+                                     decisions: .noneRecorded)
         #expect(!boot.wasReadCleanly)
         #expect(boot.firstFault?.contains("athlete") == true)
         #expect(boot.firstFault?.contains("disk I/O error") == true)
@@ -171,14 +175,18 @@ struct DatabaseBootstrapTests {
 
         let noExtras = DatabaseBootstrap(plan: loadedPlan,
                                          extras: .noActiveVersion(versionsPresent: 0),
-                                         athlete: .missing)
+                                         athlete: .missing,
+                                         authored: .noneWritten,
+                                         decisions: .noneRecorded)
         #expect(noExtras.hydratablePlan == nil,
                 "the trimmings are missing, so there is no whole plan to give")
 
         let whole = DatabaseBootstrap(
             plan: loadedPlan,
             extras: .loaded(fuel: nil, warmup: nil, exercises: [], skipped: 0),
-            athlete: .missing)
+            athlete: .missing,
+            authored: .noneWritten,
+            decisions: .noneRecorded)
         // Bound rather than chained: `whole.hydratablePlan?.fuel` is a
         // `Fuel??`, and comparing THAT to nil asks about the outer optional —
         // the plan, not the fuelling section. Two different questions wearing
@@ -215,9 +223,16 @@ struct DatabaseBootstrapTests {
     /// line, and does not read like an empty database.
     @Test("A failed read says so, per family, and does not read as empty")
     func aFailureIsVisiblePerFamily() {
+        // .unavailable ON ALL FIVE, AND THAT IS THE TEST. The loop below
+        // asserts every family line says the database is not open; a
+        // clean-and-empty authored family would leave two of the five saying
+        // "0 notes, 0 commute decisions." This is the one site in the suite
+        // where `.noneWritten` would be wrong. Patch 357b.
         let boot = DatabaseBootstrap(plan: .unavailable,
                                      extras: .unavailable,
-                                     athlete: .unavailable)
+                                     athlete: .unavailable,
+                                     authored: .unavailable,
+                                     decisions: .unavailable)
         let lines = boot.diagnosticLines
         #expect(lines.count == DatabaseBootstrap.diagnosticLineCount)
 
@@ -228,7 +243,9 @@ struct DatabaseBootstrapTests {
 
         let empty = DatabaseBootstrap(plan: .noActiveVersion(versionsPresent: 0),
                                       extras: .noActiveVersion(versionsPresent: 0),
-                                      athlete: .missing)
+                                      athlete: .missing,
+                                      authored: .noneWritten,
+                                      decisions: .noneRecorded)
         #expect(empty.diagnosticLines != lines,
                 "an unreadable database must not paste identically to an empty one")
         #expect(empty.wasReadCleanly && !boot.wasReadCleanly,
@@ -241,7 +258,9 @@ struct DatabaseBootstrapTests {
     func aFailedReadCarriesItsReason() {
         let boot = DatabaseBootstrap(plan: .failed("disk I/O error"),
                                      extras: .unavailable,
-                                     athlete: .unavailable)
+                                     athlete: .unavailable,
+                                     authored: .noneWritten,
+                                     decisions: .noneRecorded)
         #expect(boot.diagnosticLines.joined(separator: "\n").contains("disk I/O error"))
     }
 

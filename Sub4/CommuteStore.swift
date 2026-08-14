@@ -67,6 +67,9 @@ final class CommuteStore {
 
     private(set) var decisions: [String: CommuteDecision] = [:]
 
+    /// Where the decisions this store is serving came from — patch 357.
+    private(set) var servedFrom: StoreSource = .files
+
     private let fileURL: URL
 
     private init() {
@@ -89,6 +92,16 @@ final class CommuteStore {
     init(directory: URL) {
         fileURL = directory.appendingPathComponent("commutes.json")
         load()
+    }
+
+    // MARK: Hydration — D7 slice B2, patch 357
+
+    /// Replaces the decisions with the stored ones. Does not write, for
+    /// `NotesStore.hydrate`'s reason.
+    func hydrate(from stored: [CommuteDecision]) {
+        decisions = Dictionary(stored.map { ($0.activityId, $0) },
+                               uniquingKeysWith: { first, _ in first })
+        servedFrom = .database
     }
 
     // MARK: Reading

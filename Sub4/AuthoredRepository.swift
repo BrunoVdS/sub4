@@ -103,6 +103,27 @@ nonisolated enum AuthoredLoad: Sendable {
         return false
     }
 
+    // MARK: The two verdicts — patch 357, §12.92
+
+    /// DID THE READ SUCCEED. True for a clean read of an empty database.
+    ///
+    /// `isTrustworthy` above answers the same question and keeps its name
+    /// because six call sites ask it; this one exists so the bootstrap can ask
+    /// it in the same words as the other four families. §12.92 is the record of
+    /// what happens when one word carries both this and the question below.
+    var wasReadCleanly: Bool { isTrustworthy }
+
+    /// IS THERE ANYTHING HERE TO HYDRATE A STORE FROM.
+    ///
+    /// FALSE IS NOT A FAULT AND IS NOT RARE. A device where the athlete has
+    /// written no notes and ruled on no rides reads cleanly and holds nothing,
+    /// for ever, legitimately. What it is NOT is a reason to hydrate: see
+    /// `DatabaseBootstrap.hydratableAuthored`.
+    var holdsContent: Bool {
+        guard case .loaded(let notes, let commutes, _) = self else { return false }
+        return !notes.isEmpty || !commutes.isEmpty
+    }
+
     /// Deliberately nil rather than `[]` when the read failed, so a caller
     /// cannot reach the happy path without deciding what that means.
     var notes: [NotesStore.Note]? {
@@ -154,6 +175,21 @@ nonisolated enum MatchDecisionLoad: Sendable {
     var isTrustworthy: Bool {
         if case .loaded = self { return true }
         return false
+    }
+
+    // MARK: The two verdicts — patch 357, §12.92
+
+    /// Did the read succeed. True for a clean read of an empty table.
+    var wasReadCleanly: Bool { isTrustworthy }
+
+    /// Is there anything here to hydrate `Matcher` from.
+    ///
+    /// FALSE ON THIS DEVICE TODAY, and that is the honest state: no match
+    /// decision has ever been recorded, so `match_decision` holds nothing and
+    /// this family will not hydrate until one is.
+    var holdsContent: Bool {
+        guard case .loaded(let d, _) = self else { return false }
+        return !d.isEmpty
     }
 
     /// Nil rather than `[]` when the read failed — `AuthoredLoad`'s rule, and

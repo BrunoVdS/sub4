@@ -290,11 +290,28 @@ final class Sub4Launch {
         switch instruction {
         case .leaveOnFiles(let outcome):
             return outcome
-        case .hydrate(let plan, let constants, let zones, let ftp):
+        case .hydrate(let plan, let constants, let zones, let ftp,
+                      let authored, let decisions):
             PlanStore.shared.hydrate(from: plan)
             ConstantsStore.shared.hydrate(from: constants)
             AthleteStore.shared.hydrate(zones: zones, ftp: ftp)
-            return .hydrated("the plan, its trimmings, the athlete and the constants")
+            var what = "the plan, its trimmings, the athlete and the constants"
+            // PATCH 357. NIL TODAY, BECAUSE
+            // `PersistenceAuthority.hydratedFamilies` does not yet list them —
+            // 358 is the line that does. The sentence
+            // grows with what actually moved rather than describing what this
+            // code is capable of, which is the difference between a paste that
+            // reports and one that advertises.
+            if let authored {
+                NotesStore.shared.hydrate(from: authored.notes)
+                CommuteStore.shared.hydrate(from: authored.commutes)
+                what += ", the notes and the commute decisions"
+            }
+            if let decisions {
+                Matcher.shared.hydrate(from: decisions)
+                what += ", the match decisions"
+            }
+            return .hydrated(what)
         }
     }
 

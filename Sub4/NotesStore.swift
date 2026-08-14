@@ -136,6 +136,13 @@ final class NotesStore {
 
     private(set) var notes: [String: Note] = [:]
 
+    /// Where the notes this store is serving came from — patch 357, §12.102.
+    ///
+    /// `.files` until B2 flips. `PlanStore.servedFrom`'s argument applies
+    /// unchanged: a store that cannot say where its values came from is a store
+    /// whose read-back cannot be checked by anybody who was not there.
+    private(set) var servedFrom: StoreSource = .files
+
     private let fileURL: URL
     private let schemaKey = "notes.schema"
     private let schemaVersion = 1
@@ -282,6 +289,25 @@ final class NotesStore {
         lastLoad = outcome
     }
 
+
+    // MARK: Hydration — D7 slice B2, patch 357
+
+    /// Replaces the notes with the stored ones.
+    ///
+    /// IT DOES NOT WRITE, and `PlanStore.hydrate`'s comment is the reason word
+    /// for word: under a slice under test `notes.json` is still the legacy
+    /// side's only copy, and saving database-derived values over it would
+    /// destroy the independent second opinion the whole stage is checked
+    /// against. The apply script refuses a `save()` in here.
+    ///
+    /// IT IS NEVER CALLED WITH AN EMPTY ARRAY. `DatabaseBootstrap.hydratableAuthored`
+    /// returns nil for a family that holds nothing, so a database that has not
+    /// caught up cannot blank thirteen months of writing. §12.8.1.
+    func hydrate(from stored: [Note]) {
+        notes = Dictionary(stored.map { ($0.sessionUid, $0) },
+                           uniquingKeysWith: { first, _ in first })
+        servedFrom = .database
+    }
 
     /// Drops everything held in memory WITHOUT writing to disk.
     ///

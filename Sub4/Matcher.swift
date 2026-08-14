@@ -105,6 +105,19 @@ final class Matcher {
     /// What the athlete decided, by session uid.
     private(set) var decisions: [String: MatchDecision] = [:]
 
+    /// Where the decisions this matcher is serving came from — patch 357.
+    private(set) var servedFrom: StoreSource = .files
+
+    /// Replaces the decisions with the stored ones — D7 slice B2.
+    ///
+    /// DOES NOT WRITE TO `UserDefaults`, for `NotesStore.hydrate`'s reason. The
+    /// blob is still the legacy side's only copy while the slice is under test.
+    func hydrate(from stored: [MatchDecision]) {
+        decisions = Dictionary(stored.map { ($0.sessionUid, $0) },
+                               uniquingKeysWith: { first, _ in first })
+        servedFrom = .database
+    }
+
     /// Patch 272. The record shape; a `Data` blob rather than a dictionary,
     /// because UserDefaults cannot hold a `Codable` any other way and two
     /// parallel keys that must agree is a split brain by construction.

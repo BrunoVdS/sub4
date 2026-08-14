@@ -8853,6 +8853,93 @@ A paste that omits the empty tables and a snapshot row that overstates its
 losses are both survivable while the person reading them is the person who
 generated them. They stop being survivable the moment the paste is the evidence.
 
+## 12.102 The authored hydration machinery — patch 357, D7 slice B2
+
+### 12.102.1 Machinery and flip, separated on purpose for the second time
+
+344 built B1's bootstrap and planner. 346 flipped it and found four failures —
+a pinned gap name, an invariant 346 deliberately ended, and `PlanStore.shared`
+changing meaning under sixteen call sites in seven files. **They were
+attributable because the two were separate patches.**
+
+357 is 344's half for B2. `DatabaseBootstrap` learns two families, the three
+authored stores learn `hydrate(from:)` and `servedFrom`, and the planner learns
+to carry the payloads. Nothing hydrates. 358 is the flip.
+
+For that to be expressible at all, "which slice is under test" and "which
+stores are fed from the database" had to stop being the same value. They were
+identical while there was one slice; `PersistenceMode.hydratedFamilies` is the
+second one, and **it is the only line 358 changes.**
+
+### 12.102.2 Two families, not one and not three
+
+`AuthoredLoad` (notes and commutes) and `MatchDecisionLoad` are two reads that
+can fail separately, which is `fieldCount`'s rule — the plan and its trimmings
+are two entries for exactly that reason. They feed three stores, which is a
+different question: `hydratableAuthored` hands over notes and commutes together
+for `hydratablePlan`'s reason, because they come out of one read and half of
+them would leave one screen showing database values beside another showing file
+values with nothing saying which.
+
+Both loads gained `wasReadCleanly` and `holdsContent`. §12.92 is the record of
+why `isTrustworthy` alone could not carry it.
+
+### 12.102.3 An empty authored family is not hydrated — the decision, 14 August 2026
+
+`canHydrate` means *the database has been imported into*. The plan, its
+trimmings and the athlete always hold content after an import, so their
+emptiness is diagnostic. **Zero notes is not.** A device where the athlete has
+written nothing reads cleanly and holds nothing for ever, and letting that block
+the plan's hydration would make a legitimate state look like a fresh install.
+So the two authored families are excluded from `canHydrate`.
+
+They are also not hydrated when empty, and that is the sharper half. A database
+holding no notes while `notes.json` holds one does not prove the athlete wrote
+none — it can equally mean the write-through has not caught up. Hydrating there
+would blank the only copy, and §12.8.1 already priced that: the 4 August
+reinstall took every past review and there was nowhere to get them back from.
+
+**The cost is named rather than hidden.** With zero match decisions on this
+device, that family will not hydrate at all, and 358 will prove nothing about it
+until one is recorded. `emptyAuthoredFamilies` is a separate line from
+`firstEmpty` because they answer separate questions — one is "has this been
+imported into", where empty is a finding; the other is "which stores keep their
+files this launch", where empty is ordinary and permanent.
+
+### 12.102.4 Nil twice, for two reasons, and the paste tells them apart
+
+`Instruction.hydrate` carries the authored payloads as optionals. That is not a
+weakening of §12.90's all-or-nothing rule — the plan and the athlete are still
+whole or absent. The optionals are nil for two distinct legitimate reasons:
+
+- the build does not hydrate that family yet, or
+- the family read cleanly and holds nothing.
+
+The planner asks those separately rather than as one combined condition,
+because a single nil would collapse "not yet" and "nothing stored" — and §12.15
+is the record of what happens when a diagnostic cannot say why it has no
+answer.
+
+`HydrationOutcome.hydrated` now grows its sentence with what actually moved
+rather than describing what the code is capable of. Today it still says "the
+plan, its trimmings, the athlete and the constants", unchanged, which is how
+the device proves 357 flipped nothing.
+
+### 12.102.5 Hydration does not write, and the script refuses it
+
+`PlanStore.hydrate`'s comment applies to all three new ones word for word:
+under a slice under test the file is the legacy side's ONLY copy, and saving
+database-derived values over it would destroy the independent second opinion
+356 spent a patch giving the read-back. `apply-357.py` walks each `hydrate`
+body and fails on `save()`, `StoreWrite` or `defaults.set`.
+
+### 12.102.6 What 358 does
+
+Adds `.authored` and `.decisions` to `hydratedFamilies`, adds the
+`HydratedStores` entries for whichever families actually hydrate — `notes` and
+`corrections` in the verifier, taking 19 independent to 17 — and moves
+`sliceUnderTest` to B2. Nothing else.
+
 ## 12.101 The authored read-back keeps its own read — patch 356, D7 slice B2
 
 ### 12.101.1 343, again, on three sources instead of one

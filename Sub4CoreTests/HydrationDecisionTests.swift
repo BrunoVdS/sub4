@@ -65,14 +65,16 @@ struct HydrationDecisionTests {
     /// Everything present and readable — the state Bruno's device is in.
     private func whole() -> DatabaseBootstrap {
         DatabaseBootstrap(plan: loadedPlan(), extras: loadedExtras(),
-                          athlete: loadedAthlete())
+                          athlete: loadedAthlete(),
+                          authored: .noneWritten, decisions: .noneRecorded)
     }
 
     /// A migrated database nobody has imported into.
     private func empty() -> DatabaseBootstrap {
         DatabaseBootstrap(plan: .noActiveVersion(versionsPresent: 0),
                           extras: .noActiveVersion(versionsPresent: 0),
-                          athlete: .missing)
+                          athlete: .missing,
+                          authored: .noneWritten, decisions: .noneRecorded)
     }
 
     private func isHydrate(_ i: HydrationPlanner.Instruction) -> Bool {
@@ -134,10 +136,19 @@ struct HydrationDecisionTests {
         let i = HydrationPlanner.decide(mode: .shadow("B1 — the plan, the athlete "
                                                       + "and the constants"),
                                         bootstrap: whole())
-        guard case .hydrate(let plan, let constants, let zones, let ftp) = i else {
+        guard case .hydrate(let plan, let constants, let zones, let ftp,
+                            let authored, let decisions) = i else {
             Issue.record("every family loaded, so the stores must be fed")
             return
         }
+        // PATCH 357b. THE B1 HAPPY PATH CARRIES NO AUTHORED PAYLOAD, and both
+        // reasons are live: this build does not hydrate those families
+        // (`PersistenceAuthority.hydratedFamilies`, which 358 edits) and the
+        // fixture holds nothing anyway. Either alone produces nil, so this
+        // pins the OUTCOME rather than the mechanism — the mechanism is
+        // `AuthoredHydrationTests.nothingNewHydratesYet`.
+        #expect(authored == nil, "357 is the machinery; 358 is the flip")
+        #expect(decisions == nil, "the same, for the match decisions")
         #expect(plan.meta.plan == "stored", "the STORED plan, not the bundled one")
         #expect(plan.sessions.count == 1)
         #expect(constants.hrMaxObserved == 181)
@@ -166,7 +177,9 @@ struct HydrationDecisionTests {
     func aFailedPlanReadIsRefusedAndCarriesNoPlan() {
         let broken = DatabaseBootstrap(plan: .failed("database disk image is malformed"),
                                        extras: loadedExtras(),
-                                       athlete: loadedAthlete())
+                                       athlete: loadedAthlete(),
+                                       authored: .noneWritten,
+                                       decisions: .noneRecorded)
         let i = HydrationPlanner.decide(mode: .shadow("B1"), bootstrap: broken)
 
         #expect(!isHydrate(i), "no plan may leave this function")
@@ -187,7 +200,9 @@ struct HydrationDecisionTests {
     func aFaultOutranksAnEmptyFamily() {
         let both = DatabaseBootstrap(plan: .failed("I/O error"),
                                      extras: .noActiveVersion(versionsPresent: 0),
-                                     athlete: .missing)
+                                     athlete: .missing,
+                                     authored: .noneWritten,
+                                     decisions: .noneRecorded)
         let i = HydrationPlanner.decide(mode: .shadow("B1"), bootstrap: both)
         #expect(outcome(i)?.isFault == true)
     }
@@ -213,7 +228,9 @@ struct HydrationDecisionTests {
     func aPlanWithNoTrimmingsIsNotHydrated() {
         let half = DatabaseBootstrap(plan: loadedPlan(),
                                      extras: .noActiveVersion(versionsPresent: 0),
-                                     athlete: loadedAthlete())
+                                     athlete: loadedAthlete(),
+                                     authored: .noneWritten,
+                                     decisions: .noneRecorded)
         let i = HydrationPlanner.decide(mode: .shadow("B1"), bootstrap: half)
         #expect(!isHydrate(i))
         #expect(outcome(i)?.isFault == false, "absent trimmings are not a read failure")
@@ -228,7 +245,9 @@ struct HydrationDecisionTests {
             mode: .shadow("B1"),
             bootstrap: DatabaseBootstrap(plan: loadedPlan(),
                                          extras: loadedExtras(),
-                                         athlete: .missing))
+                                         athlete: .missing,
+                                         authored: .noneWritten,
+                                         decisions: .noneRecorded))
         #expect(!isHydrate(i))
         guard case .nothingStored(let who)? = outcome(i) else {
             Issue.record("a missing profile is not a fault")

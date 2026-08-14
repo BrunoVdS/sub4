@@ -121,6 +121,12 @@ nonisolated struct DatabaseBootstrap: Sendable {
     let plan: PlanLoad
     let extras: PlanExtrasLoad
     let athlete: AthleteLoad
+    /// PATCH 357 — D7 slice B2. Notes and commute decisions come out of ONE
+    /// read and are one family; match decisions are a second read that can fail
+    /// on its own, which is `fieldCount`'s rule and the same reason the plan and
+    /// its trimmings are two entries.
+    let authored: AuthoredLoad
+    let decisions: MatchDecisionLoad
 
     /// THE NUMBER A TEST HOLDS — see `AppStores.fieldCount` and its comment.
     ///
@@ -128,7 +134,7 @@ nonisolated struct DatabaseBootstrap: Sendable {
     /// family a thing somebody has to acknowledge, which is the half that can
     /// be checked cheaply. Three at B1: the plan, its trimmings, and the
     /// athlete.
-    static let fieldCount = 3
+    static let fieldCount = 5
 
     // MARK: The two verdicts
 
@@ -139,6 +145,7 @@ nonisolated struct DatabaseBootstrap: Sendable {
     /// behind. See the header for why this is not `isTrustworthy`.
     var wasReadCleanly: Bool {
         plan.wasReadCleanly && extras.wasReadCleanly && athlete.wasReadCleanly
+            && authored.wasReadCleanly && decisions.wasReadCleanly
     }
 
     /// Does every family hold something to hydrate a store from.
@@ -146,6 +153,18 @@ nonisolated struct DatabaseBootstrap: Sendable {
     /// FALSE IS NOT A FAULT. A migrated database nobody has imported into reads
     /// cleanly and holds nothing; that is a fresh install, and the answer is to
     /// leave the stores on their files rather than to fail.
+    /// THE TWO AUTHORED FAMILIES ARE DELIBERATELY NOT HERE — patch 357.
+    ///
+    /// This verdict means "the database has been imported into". The plan, its
+    /// trimmings and the athlete always hold content after an import, so their
+    /// emptiness is diagnostic. **Zero notes is not.** A device where the
+    /// athlete has written nothing reads cleanly and holds nothing for ever,
+    /// and letting that block the plan's hydration would make a legitimate
+    /// state look like a fresh install.
+    ///
+    /// What each authored family does about its own emptiness is
+    /// `hydratableAuthored`'s and `hydratableDecisions`' answer, and it is not
+    /// the same answer.
     var canHydrate: Bool {
         plan.holdsContent && extras.holdsContent && athlete.holdsContent
     }
@@ -159,6 +178,12 @@ nonisolated struct DatabaseBootstrap: Sendable {
         if !plan.wasReadCleanly { return "the plan — \(plan.line)" }
         if !extras.wasReadCleanly { return "the plan's trimmings — \(extras.line)" }
         if !athlete.wasReadCleanly { return "the athlete — \(athlete.line)" }
+        if !authored.wasReadCleanly {
+            return "the notes and commutes — \(authored.line)"
+        }
+        if !decisions.wasReadCleanly {
+            return "the match decisions — \(decisions.line)"
+        }
         return nil
     }
 
@@ -169,6 +194,24 @@ nonisolated struct DatabaseBootstrap: Sendable {
         if extras.wasReadCleanly, !extras.holdsContent { return "the plan's trimmings" }
         if athlete.wasReadCleanly, !athlete.holdsContent { return "the athlete" }
         return nil
+    }
+
+    /// The authored families that read cleanly and hold nothing.
+    ///
+    /// SEPARATE FROM `firstEmpty`, and the separation is the decision. That one
+    /// answers "has this database been imported into", where empty is a
+    /// finding. This answers "which stores keep their files this launch", where
+    /// empty is ordinary and permanent — and it is a LIST rather than a first,
+    /// because both can be true at once and a reader wants both.
+    var emptyAuthoredFamilies: [String] {
+        var out: [String] = []
+        if authored.wasReadCleanly, !authored.holdsContent {
+            out.append("notes and commutes")
+        }
+        if decisions.wasReadCleanly, !decisions.holdsContent {
+            out.append("match decisions")
+        }
+        return out
     }
 
     // MARK: What a store can be given
@@ -201,6 +244,34 @@ nonisolated struct DatabaseBootstrap: Sendable {
                     warmup: warmup)
     }
 
+    /// Notes and commute decisions, together, or nil.
+    ///
+    /// TOGETHER FOR `hydratablePlan`'S REASON: they come out of one read and
+    /// feed two stores, and handing over half of them would leave one screen
+    /// showing database values beside another showing file values with nothing
+    /// saying which.
+    ///
+    /// **NIL WHEN THE FAMILY IS EMPTY, AND THAT IS THE DECISION OF 14 AUGUST.**
+    /// A clean read holding no notes does not mean the athlete wrote none — it
+    /// can also mean the write-through has not caught up, and hydrating there
+    /// would blank `notes.json`'s only copy. §12.8.1 is what that costs. An
+    /// empty family keeps its files and `emptyAuthoredFamilies` says so.
+    var hydratableAuthored: (notes: [NotesStore.Note],
+                             commutes: [CommuteDecision])? {
+        guard case .loaded(let notes, let commutes, _) = authored,
+              authored.holdsContent
+        else { return nil }
+        return (notes, commutes)
+    }
+
+    /// The stored match decisions, or nil. Same rule, same reason — and on this
+    /// device it is nil, because none has ever been recorded.
+    var hydratableDecisions: [MatchDecision]? {
+        guard case .loaded(let d, _) = decisions, decisions.holdsContent
+        else { return nil }
+        return d
+    }
+
     // MARK: The paste
 
     /// UNCONDITIONAL, one line per family plus the two verdicts — §12.54.2.
@@ -214,17 +285,25 @@ nonisolated struct DatabaseBootstrap: Sendable {
         var l = ["Database bootstrap: \(Self.fieldCount) families",
                  "  plan: \(plan.line)",
                  "  plan trimmings: \(extras.line)",
-                 "  athlete: \(athlete.line)"]
+                 "  athlete: \(athlete.line)",
+                 "  notes and commutes: \(authored.line)",
+                 "  match decisions: \(decisions.line)"]
         l.append("  every read succeeded: \(wasReadCleanly ? "yes" : "no")")
         l.append("  first fault: \(firstFault ?? "none")")
         l.append("  every family holds data: \(canHydrate ? "yes" : "no")")
         l.append("  first family with nothing: \(firstEmpty ?? "none")")
+        // PATCH 357. A SEPARATE LINE FROM THE ONE ABOVE, because they are
+        // separate questions — see `emptyAuthoredFamilies`. Unconditional, so
+        // "none" is the sentence that proves both families held something.
+        l.append("  authored families keeping their files: "
+                 + (emptyAuthoredFamilies.isEmpty
+                    ? "none" : emptyAuthoredFamilies.joined(separator: ", ")))
         return l
     }
 
     /// How many lines `diagnosticLines` produces — pinned so a family added
     /// without a line is a test failure rather than a gap in the paste.
-    static let diagnosticLineCount = fieldCount + 5
+    static let diagnosticLineCount = fieldCount + 6
 }
 
 nonisolated enum DatabaseBootstrapReader {
@@ -236,7 +315,9 @@ nonisolated enum DatabaseBootstrapReader {
     static func read(_ db: Sub4Database) -> DatabaseBootstrap {
         DatabaseBootstrap(plan: PlanRepository.load(db),
                           extras: PlanExtrasRepository.load(db),
-                          athlete: AthleteRepository.load(db))
+                          athlete: AthleteRepository.load(db),
+                          authored: AuthoredRepository.load(db),
+                          decisions: MatchDecisionRepository.load(db))
     }
 }
 
@@ -308,7 +389,18 @@ nonisolated enum HydrationPlanner {
         case hydrate(plan: Plan,
                      constants: AthleteConstants,
                      zones: [AthleteStore.HRZone],
-                     ftp: Int?)
+                     ftp: Int?,
+                     // PATCH 357 — OPTIONAL, AND THAT IS NOT A WEAKENING OF THE
+                     // RULE ABOVE. The plan and the athlete are still
+                     // all-or-nothing; these are nil for two distinct and
+                     // legitimate reasons — the build does not hydrate the
+                     // family yet (358 is the line), or the family read cleanly
+                     // and holds nothing. Both keep their files, and
+                     // `emptyAuthoredFamilies` is what tells them apart in the
+                     // paste.
+                     authored: (notes: [NotesStore.Note],
+                                commutes: [CommuteDecision])?,
+                     decisions: [MatchDecision]?)
     }
 
     /// ORDER MATTERS AND IT IS THE POINT.
@@ -335,8 +427,16 @@ nonisolated enum HydrationPlanner {
         // in the paste, where a reader wants the answer without the values.
         if let plan = bootstrap.hydratablePlan,
            case .loaded(let constants, let ftp, let zones) = bootstrap.athlete {
-            return .hydrate(plan: plan, constants: constants,
-                            zones: zones, ftp: ftp)
+            // PATCH 357. TWO CONDITIONS PER FAMILY, ASKED SEPARATELY: does this
+            // build hydrate it, and does the database hold anything for it. A
+            // single combined check would collapse "not yet" and "nothing
+            // stored" into one nil, and those send a reader to opposite places.
+            return .hydrate(
+                plan: plan, constants: constants, zones: zones, ftp: ftp,
+                authored: PersistenceAuthority.hydrates(.authored)
+                    ? bootstrap.hydratableAuthored : nil,
+                decisions: PersistenceAuthority.hydrates(.decisions)
+                    ? bootstrap.hydratableDecisions : nil)
         }
         return .leaveOnFiles(
             .nothingStored(bootstrap.firstEmpty ?? "a family this build does not name"))

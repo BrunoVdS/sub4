@@ -170,6 +170,31 @@ nonisolated enum PersistenceAuthority {
     /// it, and it cannot switch B1 off by editing a string. §12.43.
     static let sliceUnderTest: String? = "B1 — the plan, the athlete and the constants"
 
+    /// WHICH FAMILIES THIS BUILD ACTUALLY HYDRATES — patch 357, §12.102.
+    ///
+    /// `sliceUnderTest` says which slice is being exercised; this says which
+    /// stores are fed from the database while it is. They were the same thing
+    /// while there was one slice and stopped being the same thing the moment
+    /// B2's machinery landed before B2's flip.
+    ///
+    /// **THIS IS THE LINE 358 CHANGES, AND IT IS THE ONLY ONE.** 344 built B1's
+    /// machinery and 346 flipped it; the flip found four failures, and they were
+    /// attributable because the two were separate patches. A build with the
+    /// machinery and without the flip has to be expressible for that to be
+    /// possible twice.
+    nonisolated enum Family: String, CaseIterable, Sendable {
+        case plan, extras, athlete, authored, decisions
+    }
+
+    static let hydratedFamilies: Set<Family> = [.plan, .extras, .athlete]
+
+    /// Whether this build feeds a given store from the database. Asked by the
+    /// planner and by nothing else — a second caller would be a second opinion
+    /// about what this build does.
+    static func hydrates(_ family: Family) -> Bool {
+        hydratedFamilies.contains(family)
+    }
+
     /// The mirror. See the header: it may only ever withhold.
     ///
     /// The key is namespaced and never reused. `DataLifecycle` must remove it
