@@ -135,6 +135,9 @@ struct DatabaseHealthView: View {
     /// PATCH 355 — D7 slice B2. `match_decision` had a table and no reader
     /// until this patch; this is the load, beside the two it joins.
     @State private var decisionLoad: MatchDecisionLoad?
+    /// PATCH 364. Held for the same reason `decisionLoad` is: the paste's
+    /// fallback branch prints it when no comparison has run this launch.
+    @State private var moveLoad: PlanMoveLoad?
     @State private var planLoad: PlanLoad?
     @State private var planTrip: PlanRoundTrip.Report?
     @State private var planExtrasLoad: PlanExtrasLoad?
@@ -1107,7 +1110,7 @@ struct DatabaseHealthView: View {
 
             let au = await ReadBacks.authored(db)
             authoredLoad = au.load; authoredTrip = au.report
-            decisionLoad = au.decisions
+            decisionLoad = au.decisions; moveLoad = au.moves
             lines.append(ReadBackRollUp.line("Notes and commutes", au.report.totalCompared,
                                    au.report.unexplained,
                                    trustworthy: au.load.isTrustworthy, au.load.line))
@@ -1946,12 +1949,17 @@ struct DatabaseHealthView: View {
                 // PATCH 355 — A SWAPPED ROW, NOT AN ADDED ONE (§12.76). Both
                 // reads are one sentence because they are one read-back, and
                 // the decisions' own `line` says its skipped count.
+                // PATCH 364 — A THIRD SENTENCE IN THE SAME ROW, not a fourth
+                // row. §12.76: this screen's budget is depth, and the three
+                // reads are one read-back.
                 LabeledContent("The read",
                                value: load.line + " "
-                                    + (decisionLoad?.line ?? "Not read."))
+                                    + (decisionLoad?.line ?? "Not read.") + " "
+                                    + (moveLoad?.line ?? "Not read."))
                     .font(.caption)
                     .foregroundStyle(load.isTrustworthy
                                      && (decisionLoad?.isTrustworthy ?? false)
+                                     && (moveLoad?.isTrustworthy ?? false)
                                      ? Color.dim : .red)
             } else {
                 HStack { ProgressView(); Text("Reading back…").font(.caption) }
@@ -2818,6 +2826,7 @@ struct DatabaseHealthView: View {
         // open across an import would otherwise keep describing the decisions
         // as they were before it.
         decisionLoad = r.decisions
+        moveLoad = r.moves
     }
 
     /// The read off the main actor, the comparison on it — the stores it
@@ -3657,6 +3666,8 @@ struct DatabaseHealthView: View {
             lines.append("Authored read-back: \(authoredLoad?.line ?? "not read")")
             lines.append("  match decisions: "
                        + "\(decisionLoad?.line ?? "not read")")
+            lines.append("  moved sessions: "
+                       + "\(moveLoad?.line ?? "not read")")
         }
         // PATCH 323. Bundled plan content — uids, field names and counts, and
         // nothing the athlete wrote.

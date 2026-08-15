@@ -47,6 +47,7 @@ struct AuthoredIndependenceTests {
         #expect(s.isTrustworthy)
         #expect(s.line.contains("notes.json"))
         #expect(s.line.contains("commutes.json"))
+        #expect(s.line.contains("moves.json"))
         #expect(s.line.contains("match decisions"))
         #expect(!s.line.contains("stores"),
                 "the whole point is that it did not ask the stores")
@@ -59,18 +60,18 @@ struct AuthoredIndependenceTests {
     @Test("An unreachable container is not three empty stores")
     func unreachableIsNotEmpty() {
         let lost = ReadBacks.AuthoredSources(
-            notes: [], commutes: [], decisions: [],
+            notes: [], commutes: [], decisions: [], moves: [],
             notesLoad: .absent, commutesLoad: .absent, decisionsLoad: .absent,
-            directoryFound: false)
+            movesLoad: .absent, directoryFound: false)
 
         #expect(!lost.isTrustworthy,
                 "every load says .absent and none of them was performed")
         #expect(lost.line.contains("unreachable"))
 
         let empty = ReadBacks.AuthoredSources(
-            notes: [], commutes: [], decisions: [],
+            notes: [], commutes: [], decisions: [], moves: [],
             notesLoad: .absent, commutesLoad: .absent, decisionsLoad: .absent,
-            directoryFound: true)
+            movesLoad: .absent, directoryFound: true)
         #expect(empty.isTrustworthy,
                 "a fresh install has no notes.json and that is a clean read")
         #expect(empty.line != lost.line)
@@ -83,19 +84,25 @@ struct AuthoredIndependenceTests {
     func oneUnreadableSourceSpoilsIt() {
         func sources(notes: StoreLoad = .loaded,
                      commutes: StoreLoad = .loaded,
-                     decisions: StoreLoad = .loaded) -> ReadBacks.AuthoredSources {
+                     decisions: StoreLoad = .loaded,
+                     moves: StoreLoad = .loaded) -> ReadBacks.AuthoredSources {
             ReadBacks.AuthoredSources(
-                notes: [], commutes: [], decisions: [],
+                notes: [], commutes: [], decisions: [], moves: [],
                 notesLoad: notes, commutesLoad: commutes,
-                decisionsLoad: decisions, directoryFound: true)
+                decisionsLoad: decisions, movesLoad: moves,
+                directoryFound: true)
         }
         #expect(sources().isTrustworthy)
         #expect(!sources(notes: .unreadable("bad json")).isTrustworthy)
         #expect(!sources(commutes: .unreadable("bad json")).isTrustworthy)
         #expect(!sources(decisions: .unreadable("bad blob")).isTrustworthy)
+        // PATCH 364, AND IT IS THE ONE THAT WOULD HAVE BEEN FORGOTTEN. A fourth
+        // source added to the struct and left out of `isTrustworthy` reports
+        // the aggregate as clean because three of four were.
+        #expect(!sources(moves: .unreadable("bad json")).isTrustworthy)
         #expect(sources(notes: .absent, commutes: .absent,
-                        decisions: .absent).isTrustworthy,
-                "absent is a clean read of nothing on all three")
+                        decisions: .absent, moves: .absent).isTrustworthy,
+                "absent is a clean read of nothing on all four")
     }
 
     // MARK: The provenance the report carries

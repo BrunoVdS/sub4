@@ -58,12 +58,16 @@ enum ReadBacks {
         let notes: [NotesStore.Note]
         let commutes: [CommuteDecision]
         let decisions: [MatchDecision]
+        /// PATCH 364. Read from `moves.json` through `PlanMoveStore`'s own
+        /// `init(directory:)`, for the reason above: not a second decoder.
+        let moves: [PlanMove]
 
         /// What each read actually did. `.absent` is a clean read of nothing —
         /// a fresh install has no `notes.json` — and `.unreadable` is not.
         let notesLoad: StoreLoad
         let commutesLoad: StoreLoad
         let decisionsLoad: StoreLoad
+        let movesLoad: StoreLoad
 
         /// Nil when Application Support is unreachable. Distinct from three
         /// `.absent` loads: one says the files are not there, the other says
@@ -73,6 +77,7 @@ enum ReadBacks {
         var isTrustworthy: Bool {
             directoryFound && notesLoad.isTrustworthy
                 && commutesLoad.isTrustworthy && decisionsLoad.isTrustworthy
+                && movesLoad.isTrustworthy
         }
 
         /// Printed unconditionally. A read-back that does not say where its own
@@ -82,8 +87,8 @@ enum ReadBacks {
                 return "Application Support is unreachable, so the app side "
                      + "was not read at all"
             }
-            return "notes.json, commutes.json and the stored match decisions, "
-                 + "read directly"
+            return "notes.json, commutes.json, moves.json and the stored "
+                 + "match decisions, read directly"
         }
     }
 
@@ -105,8 +110,9 @@ enum ReadBacks {
     static func authoredSources() -> AuthoredSources {
         guard let dir = AppSupportItem.container else {
             return AuthoredSources(notes: [], commutes: [], decisions: [],
+                                   moves: [],
                                    notesLoad: .absent, commutesLoad: .absent,
-                                   decisionsLoad: .absent,
+                                   decisionsLoad: .absent, movesLoad: .absent,
                                    directoryFound: false)
         }
         let notes = NotesStore(directory: dir)
@@ -114,13 +120,21 @@ enum ReadBacks {
         // `UserDefaults.standard` and not a file — `Matcher`'s header says why
         // the decisions stayed there, and D7 is what moves them.
         let decisions = Matcher(defaults: .standard)
+        // PATCH 364. `init(directory:)` and NOT `PlanMoveStore.shared` — the
+        // shared store will be hydrated from the database eventually, and a
+        // read-back that asked it would compare the database against itself.
+        // §12.91.2, fourth store. It also does not touch `StoreReadJournal`,
+        // which is that seam's own rule.
+        let moves = PlanMoveStore(directory: dir)
         return AuthoredSources(
             notes: Array(notes.all.values),
             commutes: Array(commutes.decisions.values),
             decisions: Array(decisions.decisions.values),
+            moves: moves.all,
             notesLoad: notes.lastLoad,
             commutesLoad: commutes.lastLoad,
             decisionsLoad: decisions.lastLoad,
+            movesLoad: moves.lastLoad,
             directoryFound: true)
     }
 
@@ -148,7 +162,7 @@ enum ReadBacks {
     /// by the same write-through — one family, one row.
     static func authored(_ db: Sub4Database)
     async -> (load: AuthoredLoad, report: AuthoredRoundTrip.Report,
-              decisions: MatchDecisionLoad) {
+              decisions: MatchDecisionLoad, moves: PlanMoveLoad) {
         let load = await Task.detached(priority: .utility) {
             AuthoredRepository.load(db)
         }.value
@@ -158,6 +172,11 @@ enum ReadBacks {
         // singleton, like every other store compared here. §12.9c.
         let decisionLoad = await Task.detached(priority: .utility) {
             MatchDecisionRepository.load(db)
+        }.value
+        // PATCH 364, off the actor like the two above it and for the same
+        // reason: a database read is not this screen's to block on.
+        let moveLoad = await Task.detached(priority: .utility) {
+            PlanMoveRepository.load(db)
         }.value
 
         // PATCH 356 — THE FILES, NOT THE STORES, AND THIS IS THE WHOLE PATCH.
@@ -181,9 +200,13 @@ enum ReadBacks {
             store: sources.decisions,
             database: decisionLoad,
             into: &report)
+        AuthoredRoundTrip.compareMoves(
+            store: sources.moves,
+            database: moveLoad,
+            into: &report)
         report.appSideCameFrom = sources.line
         report.appSideWasReadCleanly = sources.isTrustworthy
-        return (load, report, decisionLoad)
+        return (load, report, decisionLoad, moveLoad)
     }
 
     /// Patch 323 and 326 — D6c slices 6b and 6c, read together because the

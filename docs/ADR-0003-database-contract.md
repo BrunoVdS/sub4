@@ -8962,6 +8962,99 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.108 The read-back covers the moves — patch 364
+
+363 wrote the rows and counted them. A count says the right NUMBER of rows is
+there; it says nothing about which rows, and nothing at all about what is in
+them. `PlanMoveRepository` reads them back and `AuthoredRoundTrip.compareMoves`
+compares them field by field, beside the notes, the commute decisions and the
+match decisions.
+
+### 12.108.1 A fourth value out of one read-back
+
+355's rule, applied again. `ReadBackRollUp`'s nine rows are load-bearing in D7's
+entry gate and "9 of 9" is written down in several places; a tenth would change
+what that sentence means everywhere it appears. A moved session is authored
+data, on the same screen, refreshed by the same write-through — one family, one
+row.
+
+`compareMoves` therefore mirrors `compareDecisions`: an `inout` report rather
+than a second one, and a `movesWereRead` flag. That flag earns its place twice
+over here — `moves.json` is empty on every device until 366, so "both sides had
+nothing" is the EXPECTED reading and a forgotten call would imitate it
+perfectly. §12.15.
+
+### 12.108.2 The reader joins nothing, and that is its whole shape
+
+`commuteSQL` joins `activity_alias`; `decisionSQL` LEFT JOINs it. Both do so
+because the column holds the CANONICAL activity id while the store is keyed by
+Strava's — the canonical-id trap, §12.9, §12.19 and patch 289.
+
+`moveSQL` joins nothing. `correction.subjectID` holds `plan_session.uid`
+verbatim because `importMoves` writes it verbatim (§12.107.3). A reader that
+added the join both its neighbours have would return nothing at all, for ever,
+and the comparison would report every move as lost — a join somebody got wrong,
+reported as data loss, which is the exact failure §12.9 named.
+
+### 12.108.3 A value that is not a day key is declined, not guessed at
+
+`correction.value` is nullable TEXT, so the reader has to decide what to do with
+a row it cannot turn into a `PlanMove`. It calls `PlanMove.isDayKey` — the
+writer's own check from §12.106.3 — rather than parsing with a formatter this
+file would then own. §12.43.
+
+The row is counted rather than dropped: `moveRowsSkipped` feeds `unexplained`,
+so a declined row shows as a disagreement rather than as a store quietly holding
+one fewer move. §12.89.
+
+`PlanMoveStore.set` refuses a malformed day before touching memory, so a
+non-day-key in that column means something other than the store wrote it. That
+is precisely the case worth surfacing rather than repairing.
+
+### 12.108.4 The paste carries the field name and never the day
+
+A note's text is the obvious thing §12.7 keeps out of the diagnostics file.
+`movedTo` is the quiet one: it is a date out of the athlete's own training
+history, and `moveDifferences` is printed into that file. So a difference reads
+`wk-03-sun-long · movedTo` and never says which day.
+
+Session uids are permitted and already appear — they are the plan's identifiers,
+which is the line `noteDifferences` has drawn since 322.
+
+### 12.108.5 One parser, not three
+
+`AuthoredRepository` and `MatchDecisionRepository` each carried a private
+`date(_:)` building an `ISO8601DateFormatter` with `.withInternetDateTime` — the
+writer's option set, read backwards. 364 would have made three.
+
+`ColumnDate.parse` is the one implementation; both existing functions delegate,
+so every call site is unmoved. Two copies of a rule can disagree; three is a
+habit. §12.43.
+
+### 12.108.6 And the last place that retyped the writer's key
+
+361 gave the importer and the verifier one spelling of
+`('activity', …, 'isCommute')`. `commuteSQL` was the third reader and still had
+the literals inline. Bound now.
+
+The symptom this avoids is the quiet one, stated at 361 and true a second time:
+a reader holding a wrong copy of a writer's key does not throw. It returns
+nothing, and a comparison that finds nothing for ever agrees with an empty store
+for ever.
+
+### 12.108.7 The screen still shows two families, and the paste shows four
+
+`DatabaseHealthView` renders the notes and the commute decisions and has never
+rendered the match decisions — 355 put that family in the paste only, because
+§12.76 says a `@ViewBuilder` block is built pairwise and adding a row is not
+free. The moves follow the match decisions.
+
+Recorded rather than quietly matched: the paste is the complete surface, the
+screen is a depth-limited one, and anybody reasoning from the screen alone is
+reasoning from two of four families.
+
+---
+
 ## 12.107 The database learns about the moves — patch 363
 
 362's store, wired in. `AppStores.moves` and `fieldCount` 18, forwarded to the

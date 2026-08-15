@@ -271,15 +271,10 @@ nonisolated enum MatchDecisionRepository {
         }
     }
 
-    /// `AuthoredRepository.date`'s rule, and the same formatter: the writer
-    /// uses `.withInternetDateTime`, so this parses with it. An unparseable
-    /// string becomes 1970 rather than nil, so it shows as a `decided`
-    /// difference instead of as a row that vanished.
-    private static func date(_ s: String) -> Date {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f.date(from: s) ?? Date(timeIntervalSince1970: 0)
-    }
+    /// ONE IMPLEMENTATION SINCE 364 — see `ColumnDate`. This wrapper stays so
+    /// the six call sites above are unmoved; what it no longer holds is a
+    /// second copy of the option set.
+    private static func date(_ s: String) -> Date { ColumnDate.parse(s) }
 
     /// A LEFT JOIN, NOT AN INNER ONE, and `AuthoredRepository.commuteSQL`'s
     /// join is the contrast worth reading. A commute correction ALWAYS names an
@@ -301,6 +296,144 @@ nonisolated enum MatchDecisionRepository {
             ON al.activityID = m.activityID AND al.sourceID = ?
          WHERE m.accountID = ?
          ORDER BY m.planSessionUID
+        """
+}
+
+// MARK: - The moved sessions — patch 364
+
+/// What a read of the `planSession` / `date` corrections produced.
+///
+/// ITS OWN TYPE, like `MatchDecisionLoad` and for 355's reason: adding a
+/// fourth associated value to `AuthoredLoad.loaded` would rewrite every
+/// construction and every pattern match of it, in tests and in the bootstrap,
+/// for no behaviour.
+nonisolated enum PlanMoveLoad: Sendable {
+    case loaded(moves: [PlanMove], skipped: Int)
+    case unavailable
+    case failed(String)
+
+    var isTrustworthy: Bool {
+        if case .loaded = self { return true }
+        return false
+    }
+
+    /// Did the read succeed. True for a clean read of an empty table — §12.92.
+    var wasReadCleanly: Bool { isTrustworthy }
+
+    /// Is there anything here. FALSE ON EVERY DEVICE TODAY, and that is the
+    /// honest state: no gesture writes a move until 366.
+    var holdsContent: Bool {
+        guard case .loaded(let m, _) = self else { return false }
+        return !m.isEmpty
+    }
+
+    /// Nil rather than `[]` when the read failed — `AuthoredLoad`'s rule.
+    var moves: [PlanMove]? {
+        if case .loaded(let m, _) = self { return m }
+        return nil
+    }
+
+    /// Rows in the table that could not become a record. Here that is a
+    /// `value` which is not a day key — see `PlanMoveRepository`.
+    var skipped: Int {
+        if case .loaded(_, let s) = self { return s }
+        return 0
+    }
+
+    var line: String {
+        switch self {
+        case .loaded(let m, let skipped):
+            skipped == 0
+                ? "\(m.count) moved sessions."
+                : "\(m.count) moved sessions; \(skipped) rows could not be read."
+        case .unavailable: "The database is not open."
+        case .failed(let why): "The database could not be read — \(why)"
+        }
+    }
+}
+
+/// **THE WRITER'S FORMATTER, READ BACKWARDS — ONE COPY.**
+///
+/// `Sub4Import.iso8601` writes with `.withInternetDateTime`, so every reader of
+/// a timestamp column parses with the same option set rather than with
+/// `JSONDecoder.sub4` or a bare `ISO8601DateFormatter`. Contract item 4's rule,
+/// applied to a column instead of a file.
+///
+/// It was written twice — once in `AuthoredRepository`, once in
+/// `MatchDecisionRepository` — and 364 would have made three. Two copies of a
+/// rule can disagree; three is a habit. §12.43. Both existing functions now
+/// delegate here, so every call site is unmoved and there is exactly one place
+/// the option set can be wrong.
+///
+/// A STRING THAT WILL NOT PARSE BECOMES 1970 RATHER THAN NIL, deliberately.
+/// 1970 matches nothing any store holds, so it shows as a `created`, `decided`
+/// or `movedTo` difference — a row that is WRONG rather than a row that
+/// vanished.
+nonisolated enum ColumnDate {
+    static func parse(_ s: String) -> Date {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s) ?? Date(timeIntervalSince1970: 0)
+    }
+}
+
+/// THE READER FOR THE SECOND CLAIMANT ON `correction`.
+///
+/// **IT JOINS NOTHING, AND THAT IS THE WHOLE SHAPE OF IT.** `commuteSQL` joins
+/// `activity_alias` and `decisionSQL` LEFT JOINs it, both because the column
+/// holds the CANONICAL activity id while the store is keyed by Strava's — the
+/// canonical-id trap, §12.9, §12.19 and patch 289.
+///
+/// A move names a plan session. `correction.subjectID` holds
+/// `plan_session.uid` verbatim, because `importMoves` writes it verbatim
+/// (§12.107.3). A reader that added the join its two neighbours have would
+/// return nothing at all, for ever, and the comparison would report every move
+/// as lost.
+nonisolated enum PlanMoveRepository {
+
+    static func load(_ db: Sub4Database,
+                     accountID: String = Sub4Import.accountID) -> PlanMoveLoad {
+        do {
+            return try db.queue.read { d -> PlanMoveLoad in
+                var out: [PlanMove] = []
+                var skipped = 0
+                for row in try Row.fetchAll(
+                    d, sql: moveSQL,
+                    arguments: [accountID, Sub4Import.moveSubject,
+                                Sub4Import.moveField]) {
+                    // `PlanMove.isDayKey` AND NOT A FORMATTER. The store's own
+                    // check, from 362 — §12.43, and the reader must decline
+                    // exactly what the writer would have refused.
+                    //
+                    // COUNTED, NOT DROPPED. `skipped` feeds `unexplained`, so a
+                    // row this declines shows as a disagreement rather than as
+                    // a store quietly holding one fewer move. §12.89.
+                    guard let uid = row["sessionUID"] as String?,
+                          let movedTo = row["movedTo"] as String?,
+                          let authored = row["authoredUTC"] as String?,
+                          PlanMove.isDayKey(movedTo) else {
+                        skipped += 1; continue
+                    }
+                    out.append(PlanMove(sessionUid: uid,
+                                        movedTo: movedTo,
+                                        decided: ColumnDate.parse(authored)))
+                }
+                return .loaded(moves: out, skipped: skipped)
+            }
+        } catch {
+            return .failed(String(describing: error))
+        }
+    }
+
+    /// THE KEY IS BOUND, NOT SPELLED. `Sub4Import.moveSubject` and `moveField`
+    /// are the writer's own constants — 361's rule, third reader.
+    private static let moveSQL = """
+        SELECT subjectID   AS sessionUID,
+               value       AS movedTo,
+               authoredUTC AS authoredUTC
+          FROM correction
+         WHERE accountID = ? AND subjectKind = ? AND field = ?
+         ORDER BY subjectID
         """
 }
 
@@ -383,6 +516,14 @@ nonisolated enum AuthoredRoundTrip {
         var decisionsCompared = 0
         var decisionFieldsCompared = 0
         var decisionRowsSkipped = 0
+
+        // Patch 364 — the moved sessions, the fourth family out of this one
+        // read-back. `moveRowsSkipped` is a `value` that is not a day key.
+        var movesInApp = 0
+        var movesInDatabase = 0
+        var movesCompared = 0
+        var moveFieldsCompared = 0
+        var moveRowsSkipped = 0
         /// PATCH 356 — WHERE THE APP SIDE OF THIS COMPARISON CAME FROM.
         ///
         /// The default names the singletons because that is what any caller
@@ -402,6 +543,12 @@ nonisolated enum AuthoredRoundTrip {
         /// sides were empty — §12.15, and both print zeros.
         var decisionsWereRead = false
 
+        /// The same flag for the moves, and it earns its place twice over:
+        /// `moves.json` is empty on every device until 366, so "both sides had
+        /// nothing" is the EXPECTED reading and the one a missing call would
+        /// imitate perfectly.
+        var movesWereRead = false
+
         // Differences, named
 
         var notesOnlyInApp: [String] = []
@@ -418,6 +565,15 @@ nonisolated enum AuthoredRoundTrip {
         var decisionsOnlyInDatabase: [String] = []
         var decisionDifferences: [String] = []
 
+        /// Session uids and FIELD NAMES. **Never the day.** A note's text is
+        /// the obvious thing §12.7 keeps out of this paste; `movedTo` is the
+        /// quiet one — a date from the athlete's own training history, which is
+        /// exactly what §12.7 promises the file does not carry. So a difference
+        /// reads `wk-03-sun-long · movedTo` and never says which day.
+        var movesOnlyInApp: [String] = []
+        var movesOnlyInDatabase: [String] = []
+        var moveDifferences: [String] = []
+
         // Context, printed rather than asserted
 
         /// Notes carrying an RPE at all, both sides. **This is the row slice 3
@@ -427,7 +583,7 @@ nonisolated enum AuthoredRoundTrip {
         var databaseNotesWithRPE = 0
 
         var totalCompared: Int {
-            notesCompared + commutesCompared + decisionsCompared
+            notesCompared + commutesCompared + decisionsCompared + movesCompared
         }
 
         var unexplained: Int {
@@ -437,7 +593,9 @@ nonisolated enum AuthoredRoundTrip {
             + commuteDifferences.count
             + decisionsOnlyInApp.count + decisionsOnlyInDatabase.count
             + decisionDifferences.count
-            + rowsSkipped + decisionRowsSkipped
+            + movesOnlyInApp.count + movesOnlyInDatabase.count
+            + moveDifferences.count
+            + rowsSkipped + decisionRowsSkipped + moveRowsSkipped
         }
 
         /// Zero records compared to zero records agrees perfectly. Both halves
@@ -503,9 +661,23 @@ nonisolated enum AuthoredRoundTrip {
                 // two must not print the same.
                 "  match decisions were read: "
                 + "\(decisionsWereRead ? "yes" : "NO — nothing was compared")",
+                "  moved sessions in the app: \(movesInApp)",
+                "  moved sessions in the database: \(movesInDatabase)",
+                "  moved sessions compared: \(movesCompared)",
+                "  moved session fields compared: \(moveFieldsCompared)",
+                "  moved sessions only in the app: \(movesOnlyInApp.count)",
+                "  moved sessions only in the database: "
+                + "\(movesOnlyInDatabase.count)",
+                "  moved session fields that differ: \(moveDifferences.count)",
+                // §12.15. Zero moves is the reading on every device until a
+                // gesture exists, so "both sides had nothing" and "nobody asked"
+                // print identically without this line.
+                "  moved sessions were read: "
+                + "\(movesWereRead ? "yes" : "NO — nothing was compared")",
                 "  rows the reader could not read: "
                 + "\(rowsSkipped) notes and commutes, "
-                + "\(decisionRowsSkipped) match decisions",
+                + "\(decisionRowsSkipped) match decisions, "
+                + "\(moveRowsSkipped) moved sessions",
                 "  approved differences, match decisions: "
                 + "\(approvedForDecisions.count) "
                 + "(\(approvedForDecisions.map(\.field).joined(separator: ", ")))",
@@ -518,6 +690,7 @@ nonisolated enum AuthoredRoundTrip {
             }
             for d in commuteDifferences.prefix(6) { lines.append("    \(d)") }
             for d in decisionDifferences.prefix(6) { lines.append("    \(d)") }
+            for d in moveDifferences.prefix(6) { lines.append("    \(d)") }
             return lines
         }
     }
@@ -673,6 +846,61 @@ nonisolated enum AuthoredRoundTrip {
             // `dateIsKnown` is NOT walked — `approvedForDecisions` says why.
         }
     }
+
+    // MARK: The moved sessions — patch 364
+
+    /// `compareDecisions`' shape, fourth family.
+    ///
+    /// `inout`, and for the same reason: this is not a second report. A caller
+    /// that forgets it leaves `movesWereRead` false, which the paste prints in
+    /// capitals rather than as a row of zeros — and on a device where the
+    /// honest answer IS zero, that distinction is the only thing separating
+    /// "nothing has been moved" from "nobody looked".
+    ///
+    /// **NO IGNORE FILTER**, unlike the commutes and the match decisions above.
+    /// Those two skip records about activities `DataCorrections` excludes,
+    /// because the importer refuses them at the door and reporting a refusal as
+    /// a loss is §12.42.2. `importMoves` refuses nothing — it has no exclusion
+    /// list to consult and no lookup to fail (§12.107.3) — so every move the
+    /// store holds is expected in the database, orphans included.
+    static func compareMoves(store: [PlanMove],
+                             database: PlanMoveLoad,
+                             into r: inout Report) {
+        r.movesWereRead = true
+        r.movesInApp = store.count
+
+        guard case .loaded(let theirs, let skipped) = database else { return }
+        r.movesInDatabase = theirs.count
+        r.moveRowsSkipped = skipped
+
+        let mine = Dictionary(store.map { ($0.sessionUid, $0) },
+                              uniquingKeysWith: { first, _ in first })
+        let yours = Dictionary(theirs.map { ($0.sessionUid, $0) },
+                               uniquingKeysWith: { first, _ in first })
+        let mineKeys = Set(mine.keys)
+        let yourKeys = Set(yours.keys)
+
+        r.movesOnlyInApp = mineKeys.subtracting(yourKeys).sorted()
+        r.movesOnlyInDatabase = yourKeys.subtracting(mineKeys).sorted()
+
+        for uid in mineKeys.intersection(yourKeys).sorted() {
+            guard let a = mine[uid], let b = yours[uid] else { continue }
+            r.movesCompared += 1
+
+            func check(_ name: String, _ same: Bool) {
+                r.moveFieldsCompared += 1
+                if !same { r.moveDifferences.append("\(uid) · \(name)") }
+            }
+            // THE FIELD NAME, NEVER THE VALUE. `movedTo` is a date out of the
+            // athlete's own history and this list is printed into the paste.
+            check("movedTo", a.movedTo == b.movedTo)
+            // TIMESTAMPS COMPARED AS THE WRITER RENDERS THEM, which is this
+            // file's rule for every other family: `Sub4Import.iso8601` on both
+            // sides rather than a tolerance that would forgive a real drift.
+            check("decided", Sub4Import.iso8601(a.decided)
+                             == Sub4Import.iso8601(b.decided))
+        }
+    }
 }
 
 // MARK: - The reader
@@ -714,8 +942,11 @@ nonisolated enum AuthoredRepository {
                 }
 
                 var commutes: [CommuteDecision] = []
-                for row in try Row.fetchAll(d, sql: commuteSQL,
-                                            arguments: [sourceID, accountID]) {
+                for row in try Row.fetchAll(
+                    d, sql: commuteSQL,
+                    arguments: [sourceID, accountID,
+                                Sub4Import.commuteSubject,
+                                Sub4Import.commuteField]) {
                     guard let storeID = row["storeID"] as String?,
                           let value = row["value"] as String?,
                           let authored = row["authoredUTC"] as String?,
@@ -745,20 +976,10 @@ nonisolated enum AuthoredRepository {
         }
     }
 
-    /// THE WRITER'S FORMATTER, READ BACKWARDS. `Sub4Import.iso8601` uses
-    /// `.withInternetDateTime`, so this parses with the same option set rather
-    /// than with `JSONDecoder.sub4` or a bare `ISO8601DateFormatter` — contract
-    /// item 4's rule applied to a column instead of a file.
-    ///
-    /// A string that will not parse becomes `Date(timeIntervalSince1970: 0)`
-    /// rather than nil, and the comparison catches it: 1970 will not match
-    /// anything the store holds, so it shows as a `created` or `decided`
-    /// difference rather than as a row that vanished.
-    private static func date(_ s: String) -> Date {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f.date(from: s) ?? Date(timeIntervalSince1970: 0)
-    }
+    /// ONE IMPLEMENTATION SINCE 364 — see `ColumnDate`, which carries the
+    /// reasoning this comment used to. The wrapper stays so every call site in
+    /// this type is unmoved.
+    private static func date(_ s: String) -> Date { ColumnDate.parse(s) }
 
     private static let noteSQL = """
         SELECT planSessionUID, rpe, feel, text, createdUTC, editedUTC
@@ -771,6 +992,13 @@ nonisolated enum AuthoredRepository {
     /// canonical-to-Strava pairing and only one of them is the table the writer
     /// used — `Sub4Import.canonicalActivity` resolves through the alias, so
     /// this reverses the alias. See the header.
+    ///
+    /// **THE KEY IS BOUND SINCE 364.** 361 gave the importer and the verifier
+    /// one spelling of `('activity', …, 'isCommute')`; this read-back was the
+    /// third reader and still had the literals inline. A reader holding its own
+    /// copy of a writer's key does not throw when the copy is wrong — it
+    /// returns nothing, and a comparison that finds nothing for ever agrees
+    /// with an empty store for ever. §12.43, last place it applied.
     private static let commuteSQL = """
         SELECT al.externalID   AS storeID,
                c.value         AS value,
@@ -779,8 +1007,8 @@ nonisolated enum AuthoredRepository {
           JOIN activity_alias al
             ON al.activityID = c.subjectID AND al.sourceID = ?
          WHERE c.accountID = ?
-           AND c.subjectKind = 'activity'
-           AND c.field = 'isCommute'
+           AND c.subjectKind = ?
+           AND c.field = ?
          ORDER BY al.externalID
         """
 }
