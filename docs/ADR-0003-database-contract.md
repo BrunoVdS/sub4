@@ -8853,6 +8853,195 @@ A paste that omits the empty tables and a snapshot row that overstates its
 losses are both survivable while the person reading them is the person who
 generated them. They stop being survivable the moment the paste is the evidence.
 
+## 12.103 B2 is switched on — patch 358, D7 slice B2
+
+357 built the machinery and 358 is the one line that uses it. Same shape as B1:
+the flip is its own patch so its failures are attributable.
+
+`PersistenceAuthority.hydratedFamilies` gained `.authored` and `.decisions`, so
+`NotesStore.notes`, `CommuteStore.decisions` and `Matcher.decisions` are served
+from `user_note`, `correction` and `match_decision` at launch rather than from
+their blobs. `sliceUnderTest` names both slices. `HydratedStores` gained three
+entries, which is what moves those three comparisons out of the evidence column
+— §12.99's accounting, working as designed.
+
+### 12.103.1 The guard found two tests the suite did not
+
+`VerificationIndependenceTests` broke in six places, which was expected: five
+fixtures hand-listed the checks a report contained, and `unmatchedHydratedEntries`
+reports before anything else, so a fixture that did not name every declared entry
+was a report withholding itself for a reason the test was not about. 358a
+replaced the hand-listing with `covering(_:omitting:)`, derived from
+`HydratedStores.all`.
+
+Deriving it then failed two MORE tests that the suite had been passing.
+`theLedgerNoteCarriesTheCount` pinned the literal string
+`"3 comparisons, all agreed · 2 independent"` — a sentence that was true when
+one store was hydrated and would have gone quietly wrong at B5, on a device,
+inside a durable ledger row. A fixture that goes stale on each growth hides the
+growth.
+
+### 12.103.2 What B2 costs, stated
+
+Three comparisons stopped being evidence on the same day. The paste says so —
+`comparisons: N — M independent` — and `isTrustworthyEvidence` is what refuses
+`verified` when M reaches zero. That line is the whole reason 354 exists, and it
+is doing its job three slices early.
+
+---
+
+## 12.104 The run the athlete caused may delete — patch 360
+
+**A live data-loss defect, found on the device within an hour of 359 shipping.**
+
+359 made the recorded match visible. The next paste read `match decisions in the
+app: 2 / in the database: 3 / unexplained differences: 1`. It was localised in
+three validated device steps rather than inferred:
+
+| step | blob | database | unexplained |
+|---|---|---|---|
+| baseline | 3 | 3 | 0 |
+| "Back to automatic" (an authored write-through DID fire) | 2 | 3 | 1 |
+| the Import button — `1 removed`, `reconciled: yes` | 2 | 2 | 0 |
+
+Reconciliation worked. The automatic write-through was refusing to run it.
+
+### 12.104.1 The line, and why it was right until 358
+
+`DatabaseWriteThrough.writeThrough` set, for every trigger:
+
+    s.reconcile = .skipped("an automatic write-through does not delete")
+
+That was correct while the blob was what the app read and the database was a
+shadow: a row the athlete deleted sat there harmlessly until a reconciled import
+came along, and the blanket refusal is what stood between a store that
+transiently failed to decode and thirteen months of deleted notes. §12.20's
+argument, and it has not stopped being true.
+
+**B2 inverted the consequence.** With the stores hydrated FROM the database at
+launch, a row this refuses to delete is not stale — it comes back, the store
+serves it, and the next unrelated save persists the resurrected set over the
+blob. The divergence resolves itself in the database's favour, which is why the
+read-back went quiet on its own without anybody fixing anything. That
+self-erasing property is the dangerous part, not the missed delete.
+
+### 12.104.2 The split is by who caused the run
+
+`.authored` is fired by `NotesStore.save`, `Matcher.persist` and `CommuteStore`
+— the athlete wrote something and the stores are exactly as they left them. The
+other three triggers fire at a moment nobody chose, with the stores in whatever
+state they happen to be in. So: the run you caused may delete; the runs the
+system causes may not.
+
+**It still passes through `canReconcile`.** This widens WHICH RUNS MAY ASK, not
+what the answer is — the authored branch carries `stores.reconcile`, the gate's
+own verdict, and never a hard-coded `.run`. `theGateStillRefuses` is the test,
+and `theTwoRefusalsDiffer` exists because a skipped delete and a failed gate
+printing the same sentence is §12.54.2 again.
+
+### 12.104.3 Why the diagnosis took three round-trips
+
+`LastImport`'s own header claims it answers *"what did the newest import of ANY
+kind write"* and that "the two are written from the two call sites of
+`Sub4Import.run`". It was written from ONE: `DatabaseHealthView.runImport`, with
+`trigger: .manual`. Every automatic run — the ones carrying what the athlete
+just wrote — has been absent from `Last import report:` since 341.
+
+So the paste showed a manual run's `reconciled: yes` a few lines above a ledger
+entry for an authored run, and the number the diagnosis needed belonged to
+neither. §12.15, in the block a paste is read for. The write-through now records
+every outcome, `wrote` and `failed` alike.
+
+### 12.104.4 What 359 was actually for
+
+The picker was scoped as a UI patch the skipped toggle would inherit. It is
+recorded here as something else: the state was already wrong on the device and
+had been for a week, and it took a screen that said what was *recorded* rather
+than what was *chosen* to make it visible. A surface that names the stored fact
+is a diagnostic, whether or not it was built as one.
+
+---
+
+## 12.105 The `correction` table has more than one claimant — patch 361
+
+`PLAN-MOVES-GROUNDWORK.md` §8.1, marked BLOCKING, and it had been latent since
+280:
+
+    .compare("corrections", table: "correction",
+             expected: commutes.filter { storeIDs.contains($0.activityId) }.count,
+             found: try count(d, "correction")),
+
+`expected` is the commute decisions; `found` is every row in the table. They
+agreed for one reason — the commute decisions were the only rows there. The
+CREATE TABLE never believed that: `subjectKind IN ('activity', 'planSession')`
+and a `field` column beside it is a table designed for several claimants. The
+first plan-session correction would fail a comparison called `corrections` with
+`expected 1, found 2`, a sentence that sends the reader to the commute
+decisions.
+
+### 12.105.1 The fix is a list, not a `WHERE` clause
+
+Qualifying the commute comparison alone stops the false failure and buys a
+silence in its place: every row of every future family counted by nothing at
+all. §12.54.2, and it would be a worse defect than the one being fixed, because
+a false failure gets investigated and a silence does not.
+
+`ComparedCorrections.all` is the `(subjectKind, field)` pairs that have a
+comparison. It drives two checks:
+
+- **`commute corrections`** — the commute decisions, counted by the pair.
+- **`unclaimed corrections`** — everything the list does not name, expected 0,
+  with the kinds and fields it found in `detail`.
+
+The predicate for the second is BUILT from the list, so a family added to the
+list narrows it automatically and the two cannot drift apart.
+
+### 12.105.2 It is a forcing function, deliberately
+
+The patch that teaches a store to write a new correction family must add its
+line to `ComparedCorrections.all` in the same diff, or the verifier fails on the
+first row and names the family in the failure. That is `AppStores.fieldCount`
+pinned at 17 — a thing somebody acknowledges rather than forgets — aimed at a
+table instead of a struct.
+
+### 12.105.3 The key comes from the writer
+
+`Sub4Import.commuteField` already existed, one literal in one place, because the
+import and the prune must agree about it. The other half of the key did not:
+three statements spelled `subjectKind = 'activity'` inline. `commuteSubject` is
+now a constant and all three bind it.
+
+§12.43, thirteenth application, and here the symptom would have been unusually
+quiet: a verifier holding a wrong copy of a writer's key does not throw. It
+counts zero, and a comparison that counts zero forever agrees with an empty
+store forever.
+
+### 12.105.4 Narrowing a check is one keystroke from disabling it
+
+A `WHERE` clause matching nothing would make the commute comparison pass on
+every database ever built, and every other test in the new suite would still be
+green. `theCommuteComparisonStillFails` deletes the row by hand and requires the
+check to notice. §12.69, and it is the reason that test exists rather than the
+five around it.
+
+### 12.105.5 The rename, finished on both sides
+
+358 left a note on `HydratedStores` saying `corrections` IS the commute
+decisions, the name does not say so, and a helpful rename on one side is exactly
+what `unmatchedHydratedEntries` exists to catch. 361 is the patch where the name
+had to become honest — with a second claimant coming, `corrections` stopped
+describing anything — so both lists moved in one diff and
+`theRenameMovedBothLists` is what says they did.
+
+### 12.105.6 And the ADR was three patches behind
+
+`B2ActivationTests.swift` cited §12.103 and `WriteThroughDeleteTests.swift`
+cited §12.104 while neither section existed. Two live references into an empty
+page, in the document this project reasons from — §12.15 in the worst place for
+it. Both are written above, with this one.
+
+---
+
 ## 12.102 The authored hydration machinery — patch 357, D7 slice B2
 
 ### 12.102.1 Machinery and flip, separated on purpose for the second time

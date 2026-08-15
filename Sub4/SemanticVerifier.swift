@@ -200,6 +200,59 @@ nonisolated struct VerificationReport: Equatable {
     }
 }
 
+// MARK: - Which corrections have a comparison
+
+/// The `(subjectKind, field)` pairs some store in this app is the writer of.
+///
+/// **PATCH 361, AND IT WAS LATENT FROM 280.** The `corrections` comparison
+/// expected the commute decisions and counted `SELECT COUNT(*) FROM
+/// correction`. Those agreed for one reason: the commute decisions were the
+/// only rows the table had. The schema never believed that —
+/// `subjectKind IN ('activity', 'planSession')` is in the CREATE TABLE, and a
+/// `field` column beside it — so a second claimant was designed in from the
+/// start. The first plan-session correction would have failed a comparison
+/// named `corrections` with `expected 1, found 2`, which sends the reader to
+/// look at the commute decisions.
+///
+/// **THE LIST IS THE POINT, NOT THE `WHERE` CLAUSE.** Qualifying the commute
+/// comparison alone stops the false failure and buys a silence in its place:
+/// every row of every future family counted by nothing at all. §12.54.2 — a
+/// row that vanishes at zero cannot be told from a row nobody wired in. So the
+/// same list drives `unclaimed corrections`, which counts what this list does
+/// not name and expects none of it.
+///
+/// The consequence is deliberate. The patch that teaches a store to write a
+/// new family must add a line here in the same diff, or the verifier fails on
+/// the first row with a sentence naming `subjectKind · field`. That is
+/// `AppStores.fieldCount` pinned at 17, aimed at a table instead of a struct.
+nonisolated enum ComparedCorrections {
+
+    nonisolated struct Family: Equatable, Sendable {
+        /// The `correction.subjectKind` value.
+        let subjectKind: String
+        /// The `correction.field` value.
+        let field: String
+        /// The comparison that counts it, BY NAME.
+        ///
+        /// `everyFamilyNamesARealComparison` joins on this exactly the way
+        /// `unmatchedHydratedEntries` joins on `HydratedStores.Entry.check`,
+        /// and for the same reason: a rename finished on one side only leaves
+        /// a family whose comparison does not exist, and `unclaimed
+        /// corrections` would then count rows the report claims to compare.
+        let check: String
+    }
+
+    /// **THE PAIR COMES FROM THE WRITER**, not from a literal retyped here.
+    /// §12.43. A verifier holding its own copy of the importer's key does not
+    /// throw when the copy is wrong — it counts zero, and a comparison that
+    /// counts zero forever agrees with an empty store forever.
+    nonisolated static let commute = Family(subjectKind: Sub4Import.commuteSubject,
+                                            field: Sub4Import.commuteField,
+                                            check: "commute corrections")
+
+    nonisolated static let all: [Family] = [commute]
+}
+
 // MARK: - The verifier
 
 @MainActor
@@ -421,9 +474,21 @@ enum SemanticVerifier {
             // A correction is ABOUT an activity the database holds; a rejection
             // is about one it refuses. The two lines look alike and mean
             // opposite things.
-            .compare("corrections", table: "correction",
+            //
+            // QUALIFIED SINCE 361, AND NAMED FOR THE FAMILY IT COUNTS. `found`
+            // was `count(d, "correction")` — the whole table — which was right
+            // only while the commute decisions were the only rows in it. See
+            // `ComparedCorrections` for why the fix is a list rather than a
+            // `WHERE` clause.
+            .compare(ComparedCorrections.commute.check, table: "correction",
                      expected: commutes.filter { storeIDs.contains($0.activityId) }.count,
-                     found: try count(d, "correction")),
+                     found: try count(d, ComparedCorrections.commute)),
+            // AND EVERY ROW NOBODY ABOVE COUNTED. Zero is the assertion, not a
+            // placeholder: a row belonging to a family no comparison names is a
+            // claimant that arrived without a verifier, and the report says so
+            // rather than passing over it. §12.69 — this check can fail, and
+            // `CorrectionFamilyTests` makes it.
+            try unclaimedCorrections(d),
             .compare("weather readings", table: "weather",
                      expected: expectedWeather, found: try count(d, "weather")),
             .compare("traces", table: "recording",
@@ -670,6 +735,66 @@ enum SemanticVerifier {
     private static func count(_ d: Database, _ table: String) throws -> Int {
         // The table name is a literal from `countChecks` and never from input.
         try Int.fetchOne(d, sql: "SELECT COUNT(*) FROM \(table)") ?? 0
+    }
+
+    /// One family's rows, keyed the way the writer keys them — patch 361.
+    ///
+    /// Overloads `count(_:_:)` on purpose. The two read the same at the call
+    /// site and the argument is what says whether the whole table or one
+    /// family is meant, which is the distinction this patch exists to make
+    /// impossible to lose.
+    private static func count(_ d: Database,
+                              _ f: ComparedCorrections.Family) throws -> Int {
+        try Int.fetchOne(d, sql: """
+            SELECT COUNT(*) FROM correction
+            WHERE subjectKind = ? AND field = ?
+            """, arguments: [f.subjectKind, f.field]) ?? 0
+    }
+
+    /// Rows belonging to no family in `ComparedCorrections.all`.
+    ///
+    /// THE PREDICATE IS BUILT FROM THE LIST rather than written out beside it,
+    /// so adding a family narrows this check automatically and cannot be
+    /// half-done. A list and a hand-written `WHERE` that drifted apart would
+    /// leave a family both counted and claimed, or neither.
+    ///
+    /// `found` is a bare count and `detail` names the kinds and fields — the
+    /// §12.7 split. `subjectKind` and `field` are column vocabulary and safe on
+    /// a screen; `subjectID` is the athlete's own identifier and appears in
+    /// neither.
+    private static func unclaimedCorrections(_ d: Database) throws -> VerificationCheck {
+        let families = ComparedCorrections.all
+        // AN EMPTY LIST WOULD BUILD `WHERE NOT ()`, which is a SQL syntax error
+        // — a verifier that threw instead of reporting is §12.15. It cannot
+        // happen today (`all` is a literal with one entry) and it is handled
+        // rather than asserted, because the honest answer to an empty list is
+        // "then nothing is claimed", not a crash.
+        var args: [DatabaseValue] = []
+        for f in families {
+            args.append(f.subjectKind.databaseValue)
+            args.append(f.field.databaseValue)
+        }
+        let clause = families
+            .map { _ in "(subjectKind = ? AND field = ?)" }
+            .joined(separator: " OR ")
+        let sql = clause.isEmpty
+            ? "SELECT subjectKind, field FROM correction"
+            : "SELECT subjectKind, field FROM correction WHERE NOT (\(clause))"
+
+        let rows = try Row.fetchAll(d, sql: sql,
+                                    arguments: StatementArguments(args))
+        let pairs = Set(rows.map { r -> String in
+            let kind = r["subjectKind"] as String? ?? "?"
+            let field = r["field"] as String? ?? "?"
+            return "\(kind) · \(field)"
+        }).sorted()
+
+        return .init(name: "unclaimed corrections", table: "correction",
+                     expected: "0", found: "\(rows.count)",
+                     passed: rows.isEmpty,
+                     detail: rows.isEmpty ? nil
+                           : "no comparison claims: "
+                             + pairs.joined(separator: ", "))
     }
 
     private static func seconds(_ d: Duration) -> Double {

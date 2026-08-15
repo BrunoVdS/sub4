@@ -75,6 +75,20 @@ extension Sub4Import {
     /// silent — the prune would spare nothing, or delete everything.
     nonisolated static let commuteField = "isCommute"
 
+    /// The other half of the same key, and it had no name until 361.
+    ///
+    /// `subjectKind` and `field` TOGETHER are what says "this row is a commute
+    /// decision". `field` went through a constant from the day the importer was
+    /// written; `subjectKind` was spelled `'activity'` inline in three
+    /// statements in this file, which was harmless while this file was the only
+    /// reader of them.
+    ///
+    /// `SemanticVerifier` is now a second reader. A verifier holding its own
+    /// copy of a writer's key is §12.43's failure with the worst possible
+    /// symptom: it would not throw, it would count zero, and a comparison that
+    /// counts zero forever agrees with an empty store forever.
+    nonisolated static let commuteSubject = "activity"
+
     nonisolated static func importCorrections(
         _ d: Database,
         decisions: [CommuteDecision],
@@ -102,9 +116,10 @@ extension Sub4Import {
 
             let existing = try String.fetchOne(d, sql: """
                 SELECT id FROM correction
-                WHERE accountID = ? AND subjectKind = 'activity'
+                WHERE accountID = ? AND subjectKind = ?
                   AND subjectID = ? AND field = ?
-                """, arguments: [accountID, activityID, commuteField])
+                """, arguments: [accountID, commuteSubject, activityID,
+                                 commuteField])
 
             do {
                 try d.inSavepoint {
@@ -121,8 +136,9 @@ extension Sub4Import {
                             INSERT INTO correction
                               (id, accountID, subjectKind, subjectID, field,
                                value, reason, authoredUTC)
-                            VALUES (?, ?, 'activity', ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                             """, arguments: [UUID().uuidString, accountID,
+                                             Self.commuteSubject,
                                              activityID, commuteField,
                                              String(decision.isCommute),
                                              Self.commuteReason,
@@ -166,8 +182,8 @@ extension Sub4Import {
                                                   keeping keep: Set<String>) throws -> Int {
         let rows = try Row.fetchAll(d, sql: """
             SELECT id, subjectID FROM correction
-            WHERE accountID = ? AND subjectKind = 'activity' AND field = ?
-            """, arguments: [accountID, commuteField])
+            WHERE accountID = ? AND subjectKind = ? AND field = ?
+            """, arguments: [accountID, commuteSubject, commuteField])
 
         var removed = 0
         for row in rows {

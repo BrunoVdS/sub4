@@ -1,6 +1,7 @@
 # Moving a session, and saying you skipped one
 
-Groundwork for patches 359–364. Written 14 August 2026, against patch 358a.
+Groundwork for patches 359 and 361–365 — renumbered at 361, see §9. Written
+14 August 2026, against patch 358a.
 No code in this document is committed; it is the record of what was decided
 before any of it was written, so that a patch which turns out wrong can be
 argued with rather than guessed at.
@@ -315,8 +316,16 @@ that sends somebody to look at the commute decisions.
 
 This was parked as a latent defect on 13 August. It is now on the critical
 path and must be fixed **before** anything writes a plan-session correction.
-Patch 360, and it is provable today: the numbers do not change, but the check
-becomes able to fail for the right reason. §12.69.
+Patch 361, and it is provable today: the commute count does not move, and the
+check becomes able to fail for the right reason. §12.69.
+
+**Done at 361, and it went further than this section asked.** Qualifying the
+comparison alone would have left every future family counted by nothing —
+§12.54.2. `ComparedCorrections` is a list of the `(subjectKind, field)` pairs
+that have a comparison, and it drives a second check, `unclaimed corrections`,
+which counts what the list does not name and expects zero of it. The patch that
+adds a family must add its line, or the verifier fails on the first row and
+names the family in the failure.
 
 ### 8.2 A move is keyed on a uid the plan can reissue
 
@@ -345,19 +354,28 @@ moves it to 18 deliberately.
 
 ## 9. The patch plan
 
-Six patches. The order is not arbitrary: each one is provable on its own, and
-nothing writes a plan-session correction until the verifier can survive it.
+Six patches, and they are numbered 359, 361–365. **360 was spent elsewhere**:
+359 shipped the picker, the picker made the recorded state visible, and within
+the hour that visibility exposed a live data-loss defect in the automatic
+write-through — a refused delete that B2 had turned into a resurrection. That
+had to be fixed before anything else, so it took the next number. The row is
+kept in this table rather than removed, because a plan whose numbering has a
+hole in it invites somebody to assume a patch was skipped.
+
+The order is not arbitrary: each one is provable on its own, and nothing writes
+a plan-session correction until the verifier can survive it.
 
 | # | What | Why here |
 |---|---|---|
 | **359** | The picker shows the recorded choice; "Not done" reads as destructive; the three missing `… store reads:` lines in the paste | The toggle inherits this UI. Fixing it after building on it means fixing it twice. No data model. |
-| **360** | `corrections` qualified by `subjectKind` and `field` | Blocking (§8.1). Provable today — the counts do not move and the check becomes able to fail. |
-| **361** | `PlanMoveStore`, `moves.json`, `AppStores` → 18, the importer's second claim, the read-back's coverage of it | Machinery only. Nothing applies a move yet, and a test says so. |
-| **362** | `PlanCorrections.apply`, called from `PlanStore` and `PlanRepository` | The flip. This is the patch where a stored move changes what the app shows. |
-| **363** | "Change match" unconditional; the reverse picker; the two writes | The gesture Bruno asked for. |
-| **364** | The skipped toggle | Last, because it is the smallest and it depends on 359's styling. |
+| **360** | *(not this plan)* The authored write-through may delete; every automatic run records what it did | Found by 359 on the device, 15 August. §12.104. Blocking for everything, not just this. |
+| **361** | `corrections` qualified by `subjectKind` and `field`, plus `unclaimed corrections` | Blocking (§8.1). Provable today — the commute count does not move and the check becomes able to fail. |
+| **362** | `PlanMoveStore`, `moves.json`, `AppStores` → 18, the importer's second claim, the read-back's coverage of it | Machinery only. Nothing applies a move yet, and a test says so. |
+| **363** | `PlanCorrections.apply`, called from `PlanStore` and `PlanRepository` | The flip. This is the patch where a stored move changes what the app shows. |
+| **364** | "Change match" unconditional; the reverse picker; the two writes | The gesture Bruno asked for. |
+| **365** | The skipped toggle | Last, because it is the smallest and it depends on 359's styling. |
 
-361 and 362 are deliberately separate for the reason B1 and B2 both proved:
+362 and 363 are deliberately separate for the reason B1 and B2 both proved:
 a flip whose diff contains nothing else is a flip whose failures are
 attributable. That has now paid twice — four failures at 346, and at 358 the
 one line that mattered was visible in a diff of one line.

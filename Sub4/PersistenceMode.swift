@@ -319,16 +319,20 @@ nonisolated enum HydratedStores {
         // fed by `DatabaseBootstrapReader`. Each comparison is now the database
         // agreeing with itself. §12.69.
         //
-        // `corrections` IS THE COMMUTE DECISIONS, and the name does not say so.
-        // The check compares the `correction` table against
-        // `CommuteStore.decisions`; the store is the only writer that table has
-        // ever had. Named here as it is named there, because this list joins to
-        // the checks BY NAME and a helpful rename on one side is the exact
-        // failure `unmatchedHydratedEntries` exists to catch.
+        // RENAMED AT 361, ON BOTH SIDES IN ONE DIFF. This entry read
+        // `corrections` and carried a note saying the name did not say it was
+        // the commute decisions — and warning that a helpful rename on one side
+        // is the exact failure `unmatchedHydratedEntries` exists to catch.
+        //
+        // 361 is the patch where the name had to become honest: the `correction`
+        // table gained a second claimant in the plan moves, so `corrections`
+        // stopped being a description of anything. `ComparedCorrections.commute`
+        // owns the name now and this list still joins to the checks BY NAME —
+        // `theRenameMovedBothLists` is what says both halves moved.
         .init(check: "notes",
               store: "NotesStore.notes",
               slice: "B2"),
-        .init(check: "corrections",
+        .init(check: "commute corrections",
               store: "CommuteStore.decisions",
               slice: "B2"),
         .init(check: "match decisions",

@@ -224,7 +224,7 @@ struct B2ActivationTests {
     func theListNamesWhatB2Took() {
         #expect(HydratedStores.all.count == 4, "one from B1 and three from B2")
         for (check, store) in [("notes", "NotesStore.notes"),
-                               ("corrections", "CommuteStore.decisions"),
+                               ("commute corrections", "CommuteStore.decisions"),
                                ("match decisions", "Matcher.decisions")] {
             let e = HydratedStores.entry(for: check)
             #expect(e != nil, "a comparison B2 made self-referential is undeclared")
@@ -250,7 +250,7 @@ struct B2ActivationTests {
                 "an entry naming no comparison is a rename nobody finished")
         #expect(r.selfReferentialChecks.count == 4)
         #expect(Set(r.selfReferentialChecks.map(\.name))
-                == ["notes", "corrections", "match decisions",
+                == ["notes", "commute corrections", "match decisions",
                     "heart-rate zones"])
         #expect(!r.independentChecks.isEmpty,
                 "B2 is not B9 — there is still evidence left")
