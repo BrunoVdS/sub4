@@ -1,0 +1,281 @@
+//
+//  PlanMoveStore.swift
+//  Sub4
+//
+//  When a session was actually done — patch 362, ADR-0003 §12.106.
+//  PLAN-MOVES-GROUNDWORK §6.1.
+//
+//  WHAT A MOVE IS, AND WHAT IT IS NOT
+//  ----------------------------------
+//  The plan says Sunday's long run is on Sunday. It was done on Monday. A move
+//  records that, and nothing else: it changes the plan's idea of WHEN a session
+//  was due, on the day it was actually done.
+//
+//  It does NOT move the activity — Strava's record of what happened is not the
+//  app's to edit. It does NOT change `weekUid`, so the session stays in the
+//  week the plan put it in and the week's planned-km statistic does not move
+//  (§3.1 of the groundwork, and the cost is stated there rather than hidden:
+//  a session can appear in one week's list and on a day inside the next one).
+//
+//  NOTHING READS THIS YET, AND THAT IS THE PATCH
+//  ---------------------------------------------
+//  This file, `moves.json`, and every place a store file has to be DECLARED.
+//  No database column, no importer claim, no application to a `Plan`, no
+//  gesture in the UI. `theStoreIsNotWiredIntoAnything` is the test that says
+//  so, and it is here so that the patch which wires it in has a diff
+//  containing nothing else. B1 and B2 both paid for that twice — four failures
+//  at 346, and at 358 the one line that mattered was visible in a diff of one
+//  line.
+//
+//  DECLARED BEFORE ANYTHING WRITES IT, and that is patch 195's rule rather
+//  than a preference. The alternative leaves a window in which a file exists
+//  in Application Support and "Delete local data" walks straight past it —
+//  which is exactly how `details.json` outlived four versions of this app. So
+//  `DataLifecycle`, the delete flow, `LegacyStore`, the classifier, the
+//  snapshot and the authored export all learn about `moves.json` in this
+//  patch, while the file cannot yet exist on any device.
+//
+//  IT FOLLOWS `CommuteStore` EXACTLY
+//  ---------------------------------
+//  A dictionary keyed by the subject's id, a file in Application Support, a
+//  failable save whose memory copy is rolled back when the write fails, a
+//  `clear` that is a real answer distinct from never having decided, and
+//  `DatabaseWriteThrough.noteAuthoredChange` fired AFTER a successful write
+//  and never before — §12.94, the rule 348 established and B2 made
+//  load-bearing.
+//
+//  Following it exactly is the point. A fifth authored store that invented its
+//  own shape would be a fifth thing to check every time the rules around
+//  authored data change, and those rules have changed three times this month.
+//
+//  WHAT `clear` MEANS, AND WHY IT IS NOT `set` WITH THE PLANNED DATE
+//  -----------------------------------------------------------------
+//  "I moved it back" and "I never moved it" are the same end state and
+//  different facts. Writing the planned date as a move would leave a row
+//  asserting an override that overrides nothing — and the reconciliation prune
+//  would then have to decide whether a no-op correction is stale. Removing the
+//  record says what happened.
+//
+//  THE UID IS THE PLAN'S OWN, AND IT CAN BE REISSUED
+//  -------------------------------------------------
+//  `plan_session.uid` carries the session's `seq` — its position within its day
+//  (§12.96.3) — so a new plan version that changes what is on a day reissues
+//  uids and a move naming an old one is orphaned. This is the exposure the
+//  notes already have and have had since 274.
+//
+//  An orphaned move is harmless in a way an orphaned note is not: the session
+//  simply shows on its planned day. Nothing is lost and nothing is wrong.
+//  Recorded because the opposite assumption — that a move is durable across
+//  plan versions — would be wrong, and `PlanVersionCensus.uidsHeldOnlyBy`
+//  already surfaces the uids that would be affected.
+//
+
+import Foundation
+import Observation
+
+// MARK: - The record
+
+/// One session, moved to one day.
+///
+/// `movedTo` IS A DAY KEY AND NOT A `Date`. `Session.date` is `String?`
+/// holding `"yyyy-MM-dd"`, and the whole feature is an override of that field.
+/// A `Date` here would need a calendar and a time zone to become the thing it
+/// overrides, and the two conversions could disagree — §12.43 with a
+/// formatter in it. The vocabulary the plan uses is the vocabulary stored.
+nonisolated struct PlanMove: Codable, Hashable, Identifiable, Sendable {
+
+    /// `plan_session.uid`. The plan's own identifier, never remapped.
+    var sessionUid: String
+
+    /// `"yyyy-MM-dd"` — the day it was actually done.
+    var movedTo: String
+
+    /// When the athlete said so. Not the day it was moved TO, and not the day
+    /// this record was written to the database — `CommuteDecision.decided`'s
+    /// rule, and the column `correction.authoredUTC` expects.
+    var decided: Date
+
+    var id: String { sessionUid }
+
+    /// Whether a string is the shape `Session.date` holds.
+    ///
+    /// **NO FORMATTER, DELIBERATELY.** `DateFormatter` brings a locale, a
+    /// calendar and a time zone to a question that has none of those in it:
+    /// this asks whether ten characters look like a plan day key, which is a
+    /// property of the string. A formatter would also accept things the plan
+    /// never writes and reject things it does, depending on the device.
+    ///
+    /// IT DOES NOT CHECK THE DAY AGAINST THE MONTH. `2026-02-31` passes, and
+    /// that is the honest limit of a shape check — stated rather than implied.
+    /// Nothing downstream parses this: `PlanCorrections` will compare it to
+    /// `Session.date` as a string, so a day that does not exist matches no
+    /// session and shows nothing, which is the same outcome as an orphaned uid.
+    nonisolated static func isDayKey(_ s: String) -> Bool {
+        let parts = s.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3,
+              parts[0].count == 4, parts[1].count == 2, parts[2].count == 2
+        else { return false }
+        // ASCII DIGITS, NOT `isNumber`. `Character.isNumber` is true of Arabic-
+        // Indic digits and of "½", none of which `Session.date` has ever held.
+        for part in parts where !part.allSatisfy({ $0.isASCII && $0.isNumber }) {
+            return false
+        }
+        guard let month = Int(parts[1]), let day = Int(parts[2]),
+              (1...12).contains(month), (1...31).contains(day) else { return false }
+        return true
+    }
+}
+
+/// Why a move was refused before anything was written.
+///
+/// ITS OWN TYPE RATHER THAN A `StoreWriteError`. That type says which store
+/// failed at which STAGE of a write, and nothing was encoded or written here —
+/// the value never got that far. Reporting a rejected day key as an encoding
+/// failure would send somebody to look at the disk.
+nonisolated enum PlanMoveFault: Error, Equatable {
+    /// The string is not `"yyyy-MM-dd"`. Carries the offending value, which is
+    /// a date the athlete chose and therefore screen-only — §12.7.
+    case notADayKey(String)
+
+    var line: String {
+        switch self {
+        case .notADayKey:
+            "That is not a day the plan could name."
+        }
+    }
+}
+
+// MARK: - The store
+
+@Observable
+final class PlanMoveStore {
+
+    static let shared = PlanMoveStore()
+
+    private(set) var moves: [String: PlanMove] = [:]
+
+    private let fileURL: URL
+
+    private init() {
+        let dir = (try? FileManager.default.url(for: .applicationSupportDirectory,
+                                                in: .userDomainMask,
+                                                appropriateFor: nil, create: true))
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        fileURL = dir.appendingPathComponent("moves.json")
+        load()
+        StoreReadJournal.shared.record("moves.json", lastLoad)
+    }
+
+    /// A store rooted somewhere else — `CommuteStore(directory:)`'s seam.
+    ///
+    /// IT DOES NOT RECORD TO THE READ JOURNAL, and that is the journal's own
+    /// rule rather than an omission here: a test store writing into the shared
+    /// journal would leak into whatever ran next, and `canReconcile` reads that
+    /// journal to decide whether rows may be deleted.
+    init(directory: URL) {
+        fileURL = directory.appendingPathComponent("moves.json")
+        load()
+    }
+
+    // MARK: Reading
+
+    /// The day this session was actually done, or nil if it has not moved.
+    ///
+    /// NIL IS NOT "THE PLANNED DAY". It is "no opinion", and the caller falls
+    /// back to `Session.date` — the same shape `CommuteStore.decision(for:)`
+    /// has, and for the same reason: collapsing the two would make an absent
+    /// answer indistinguishable from an answer that agrees with the plan.
+    func movedTo(_ sessionUid: String) -> String? {
+        moves[sessionUid]?.movedTo
+    }
+
+    var count: Int { moves.count }
+
+    /// Every move, ordered newest decision first. For a screen, and for the
+    /// import — `Dictionary.values` has no order and a report that listed them
+    /// differently on each run would be unreadable.
+    var all: [PlanMove] {
+        moves.values.sorted { $0.decided > $1.decided }
+    }
+
+    // MARK: Writing
+
+    /// Records that `sessionUid` was done on `movedTo`.
+    ///
+    /// THROWS BEFORE IT TOUCHES MEMORY when the day key is malformed. The
+    /// alternative — storing it and letting the comparison silently match
+    /// nothing — is the shape of defect this project keeps finding: a value
+    /// that is wrong in a way that produces an empty result rather than an
+    /// error, which reads as "no moves" for ever.
+    ///
+    /// The rollback below is `CommuteStore.set`'s, unchanged. It matters for
+    /// the same reason: the store is what the screen reads, so putting the old
+    /// answer back IS the visual revert, and there is no second opinion about
+    /// what happened that could drift from this one.
+    func set(_ movedTo: String, for sessionUid: String,
+             now: Date = Date()) throws {
+        guard PlanMove.isDayKey(movedTo) else {
+            throw PlanMoveFault.notADayKey(movedTo)
+        }
+        let previous = moves[sessionUid]
+        moves[sessionUid] = PlanMove(sessionUid: sessionUid,
+                                     movedTo: movedTo,
+                                     decided: now)
+        do {
+            try save()
+        } catch {
+            if let previous { moves[sessionUid] = previous }
+            else { moves.removeValue(forKey: sessionUid) }
+            throw error
+        }
+    }
+
+    /// Puts the session back on the day the plan asked for.
+    ///
+    /// See the header: this is a different fact from moving it to its own
+    /// planned date, and writing that instead would leave a correction row
+    /// overriding nothing.
+    func clear(_ sessionUid: String) throws {
+        guard let previous = moves.removeValue(forKey: sessionUid) else { return }
+        do {
+            try save()
+        } catch {
+            moves[sessionUid] = previous
+            throw error
+        }
+    }
+
+    // MARK: Disk
+
+    /// What the last read of `moves.json` found — §12.20.
+    ///
+    /// An unreadable file here reads as "no session has been moved", so every
+    /// moved session silently returns to its planned day. That is the same
+    /// class of quiet loss `commutes.json` has, and it is why this outcome is
+    /// recorded rather than swallowed.
+    private(set) var lastLoad: StoreLoad = .absent
+
+    private func load() {
+        let (value, outcome) = StoreRead.decode([String: PlanMove].self,
+                                                at: fileURL)
+        if let value { moves = value }
+        lastLoad = outcome
+    }
+
+    private func save() throws {
+        try StoreWrite.encode(moves, to: fileURL, store: "moves.json")
+        // AFTER THE FILE WRITE, NEVER BEFORE — §12.94. A write-through fired
+        // on an intention rather than on a fact imports a state that is not on
+        // disk, and since 360 an authored run may also DELETE on the strength
+        // of it.
+        DatabaseWriteThrough.shared.noteAuthoredChange("a plan move was saved")
+    }
+
+    /// Drops everything held in memory WITHOUT writing to disk — the
+    /// counterpart to `DataLifecycleCoordinator.deleteEverything`. Resetting
+    /// would write an empty file and recreate the store that was just deleted;
+    /// leaving the memory copy alive would let the next save resurrect it.
+    func dropInMemory() {
+        moves = [:]
+    }
+}

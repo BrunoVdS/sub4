@@ -93,7 +93,11 @@ nonisolated enum AuthoredExport {
     /// argument `MigrationLedger.prunableTriggers` makes, pointing the other
     /// way: there, a forgotten case leaks; here, a forgotten case bloats. Both
     /// fail towards the harmless side.
-    static let stores: [LegacyStore] = [.notes, .commutes, .proposals,
+    // `.moves` ADDED AT 362. It belongs on the small side of the argument
+    // above without needing the argument: a file of session uids and day keys
+    // is bytes, not megabytes, and it is authored — nothing can re-fetch a
+    // decision the athlete made about his own week.
+    static let stores: [LegacyStore] = [.notes, .commutes, .moves, .proposals,
                                         .athlete, .constants]
 
     static let schemaVersion = 1

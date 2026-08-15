@@ -221,6 +221,25 @@ nonisolated enum Sub4Import {
         var correctionsIgnored = 0
         var correctionsRemoved = 0
 
+        // Patch 363 — the second claimant on `correction`. Which sessions were
+        // done on a day other than the planned one.
+        //
+        // NO `unresolved` COUNTER, and its absence is the design rather than an
+        // omission. A commute decision is keyed by Strava's id and the column
+        // holds the canonical one, so it needs a lookup that can fail; a move
+        // is keyed by the plan's own uid on both sides and needs none.
+        //
+        // `orphaned` is NOT that counter wearing another name. An orphan is a
+        // move whose session uid no stored plan version holds — the plan was
+        // revised and reissued the uid (§12.96.3, groundwork §8.2). It is
+        // written, it protects its own row, and it does not hold the prune
+        // back. Counted so that §8.2 is a number rather than a paragraph.
+        var movesSeen = 0
+        var movesImported = 0
+        var movesUpdated = 0
+        var movesRemoved = 0
+        var movesOrphaned = 0
+
         // Patch 278 — D5 slice 3. What a rule threw away. NEVER pruned:
         // nothing in the app removes a receipt short of Delete local data,
         // which removes the database in the same breath.
@@ -325,6 +344,14 @@ nonisolated enum Sub4Import {
                      + "\(correctionsRemoved) removed")
             l.append("    ignored: \(correctionsIgnored), "
                      + "unresolved: \(correctionsUnresolved)")
+            l.append("  moved sessions: \(movesSeen) seen, "
+                     + "\(movesImported) new, \(movesUpdated) refreshed, "
+                     + "\(movesRemoved) removed")
+            // UNCONDITIONAL, like every line around it — 266c's rule. A zero
+            // here is the answer on a healthy device and it must not read the
+            // same as a line nobody printed.
+            l.append("    naming a session no stored plan holds: "
+                     + "\(movesOrphaned)")
             l.append("  weather: \(weatherSeen) seen, \(weatherImported) new, "
                      + "\(weatherUpdated) refreshed")
             l.append("    unmatched: \(weatherUnmatched), ignored: \(weatherIgnored)")
@@ -445,6 +472,7 @@ nonisolated enum Sub4Import {
                     workItems: [WorkItem] = [],
                     rejections: [RejectionReceipt] = [],
                     commutes: [CommuteDecision] = [],
+                    moves: [PlanMove] = [],
                     // PATCH 274. DEFAULTS TO NOT RECONCILING, and that is the
                     // safe direction: a forgotten argument leaves rows behind,
                     // which is the status quo and is visible on the health
@@ -585,6 +613,16 @@ nonisolated enum Sub4Import {
                 try importCorrections(d, decisions: commutes,
                                       reconcile: reconcile, now: now,
                                       into: &report)
+
+                // THE SECOND CLAIMANT ON THE SAME TABLE — patch 363.
+                //
+                // AFTER the plan, not after the activities: an orphan check
+                // reads `plan_session`, and a move names a plan session rather
+                // than a recording. It needs no alias resolution at all, which
+                // is the difference from the line above and the reason its
+                // prune has no guard where that one does.
+                try importMoves(d, moves: moves, reconcile: reconcile,
+                                into: &report)
 
                 // LAST, AND INSIDE THE SAME WRITE — patch 274.
                 //

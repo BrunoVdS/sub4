@@ -827,6 +827,28 @@ struct DatabaseHealthView: View {
                         .font(.caption2).foregroundStyle(Color.dim)
                 }
 
+                // PATCH 363. Named "Moved sessions" for 280's reason one row
+                // up: it says what these rows ARE rather than what table they
+                // happen to share with the commute decisions.
+                LabeledContent("Moved sessions",
+                               value: r.movesSeen == 0
+                               ? "none"
+                               : "\(r.movesImported) new, \(r.movesUpdated) refreshed")
+                    .font(.caption)
+                if r.movesOrphaned > 0 {
+                    // NOT A FAULT, AND THE WORDING SAYS SO. A plan revision
+                    // reissues session uids; the session simply shows on its
+                    // planned day again. Groundwork §8.2, ADR §12.106.4.
+                    LabeledContent("  move naming a session the plan no longer has",
+                                   value: "\(r.movesOrphaned)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+                if r.movesRemoved > 0 {
+                    LabeledContent("  moves withdrawn",
+                                   value: "\(r.movesRemoved)")
+                        .font(.caption2).foregroundStyle(Color.dim)
+                }
+
                 // PATCH 278. The one row on this screen that describes
                 // recordings the database does not hold and never will — so it
                 // sits with the counts rather than with the activities.
@@ -3059,9 +3081,11 @@ struct DatabaseHealthView: View {
     /// The two things that leave the phone — patch 341.
     ///
     /// The diagnostics file is counts about the data. The authored export is
-    /// the data: `notes.json`, `commutes.json`, `proposals.json`,
-    /// `athlete.json` and `constants.json`, the five stores no source can send
-    /// again. On 9 August a hand-delete took all of them AND the protected
+    /// the data: `notes.json`, `commutes.json`, `moves.json`,
+    /// `proposals.json`, `athlete.json` and `constants.json` — the stores no
+    /// source can send again. SIX SINCE 362, and this sentence said five until
+    /// 363; the list it describes lives in `AuthoredExport.stores`, which is
+    /// the thing to read rather than this. On 9 August a hand-delete took all of them AND the protected
     /// snapshot that held them, because the snapshot lives inside the
     /// container. Stage A1 item 5 exists for exactly that, and until now it
     /// could only be done by downloading the whole container from Xcode.
@@ -3081,9 +3105,13 @@ struct DatabaseHealthView: View {
 
     /// Builds the authored export and hands it to the share sheet.
     ///
-    /// The summary is counts only — five small files, and a note's text is the
-    /// athlete writing about his own training. §12.7 applies to this screen's
-    /// captions as much as to the paste.
+    /// The summary is counts only — a handful of small files, and a note's
+    /// text is the athlete writing about his own training. §12.7 applies to
+    /// this screen's captions as much as to the paste.
+    ///
+    /// NO NUMBER IN THE SENTENCE. It said "five" and went wrong the first time
+    /// an authored store was added; the summary itself counts
+    /// `AuthoredExport.stores`, which is where the answer belongs.
     private func writeAuthoredExport() {
         authoredExported = nil
         let document = AuthoredExport.build(appVersion: AppVersion.patchLabel)

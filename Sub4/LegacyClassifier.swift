@@ -403,6 +403,7 @@ enum LegacyClassifier {
         case .streams:       _ = try d.decode(ActivityStreams.self, from: data)
         case .constants:     _ = try d.decode(AthleteConstants.self, from: data)
         case .commutes:      _ = try d.decode([String: CommuteDecision].self, from: data)
+        case .moves:         _ = try d.decode([String: PlanMove].self, from: data)
         case .legacyDetails: _ = try d.decode([String: ActivityDetail].self, from: data)
         case .legacyStreams: _ = try d.decode([String: ActivityStreams].self, from: data)
         }

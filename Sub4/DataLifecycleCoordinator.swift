@@ -237,6 +237,7 @@ enum DataLifecycleCoordinator {
         ConstantsStore.shared.dropInMemory()
         WeatherStore.shared.dropInMemory()
         CommuteStore.shared.dropInMemory()
+        PlanMoveStore.shared.dropInMemory()
         LoadThresholds.shared.dropInMemory()
     }
 

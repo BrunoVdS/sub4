@@ -250,7 +250,19 @@ nonisolated enum ComparedCorrections {
                                             field: Sub4Import.commuteField,
                                             check: "commute corrections")
 
-    nonisolated static let all: [Family] = [commute]
+    /// PATCH 363 — THE SECOND CLAIMANT, AND THE REASON 361 EXISTED.
+    ///
+    /// This line and `Sub4Import.importMoves` had to land in the same diff.
+    /// `unclaimed corrections` fails on a row belonging to a family no
+    /// comparison names, so a build that wrote plan-session rows without this
+    /// entry would fail the verifier on the athlete's first move. That is the
+    /// forcing function doing precisely what it was built for, and taking it
+    /// seriously means adding the family here rather than turning it off.
+    nonisolated static let planMove = Family(subjectKind: Sub4Import.moveSubject,
+                                             field: Sub4Import.moveField,
+                                             check: "session moves")
+
+    nonisolated static let all: [Family] = [commute, planMove]
 }
 
 // MARK: - The verifier
@@ -272,6 +284,7 @@ enum SemanticVerifier {
                        workItems: [WorkItem] = [],
                        rejections: [RejectionReceipt] = [],
                        commutes: [CommuteDecision] = [],
+                       moves: [PlanMove] = [],
                        matchDecisions: [MatchDecision] = [],
                        weather: [ActivityWeather] = [],
                        zones: [AthleteStore.HRZone] = [],
@@ -290,7 +303,7 @@ enum SemanticVerifier {
                     d, activities: activities, shoes: shoes, notes: notes,
                     proposals: proposals, workItems: workItems,
                     rejections: rejections, commutes: commutes,
-                    matchDecisions: matchDecisions,
+                    moves: moves, matchDecisions: matchDecisions,
                     weather: weather, zones: zones, streams: streams,
                     details: details, storeIDs: storeIDs))
                 // A COUNT WOULD NOT BE ENOUGH HERE, which is why this is a
@@ -327,6 +340,7 @@ enum SemanticVerifier {
                         workItems: [WorkItem] = [],
                         rejections: [RejectionReceipt] = [],
                         commutes: [CommuteDecision] = [],
+                        moves: [PlanMove] = [],
                         matchDecisions: [MatchDecision] = [],
                         weather: [ActivityWeather] = [],
                         zones: [AthleteStore.HRZone] = [],
@@ -337,7 +351,7 @@ enum SemanticVerifier {
                               notes: notes, proposals: proposals,
                               syncState: syncState, workItems: workItems,
                               rejections: rejections, commutes: commutes,
-                              matchDecisions: matchDecisions,
+                              moves: moves, matchDecisions: matchDecisions,
                               weather: weather, zones: zones,
                               streams: streams, details: details)
         } catch {
@@ -393,6 +407,7 @@ enum SemanticVerifier {
                                     workItems: [WorkItem],
                                     rejections: [RejectionReceipt],
                                     commutes: [CommuteDecision],
+                                    moves: [PlanMove],
                                     matchDecisions: [MatchDecision],
                                     weather: [ActivityWeather],
                                     zones: [AthleteStore.HRZone],
@@ -483,6 +498,22 @@ enum SemanticVerifier {
             .compare(ComparedCorrections.commute.check, table: "correction",
                      expected: commutes.filter { storeIDs.contains($0.activityId) }.count,
                      found: try count(d, ComparedCorrections.commute)),
+            // NOT FILTERED, unlike the commute comparison directly above, and
+            // the two lines look alike for the third time on this table.
+            //
+            // A commute decision naming an activity the store does not have is
+            // held back by the importer, so expecting it here would report a
+            // permanent disagreement nobody could act on. A move is written
+            // whatever its uid names — there is no resolution step to fail —
+            // so every move the store holds is expected, orphans included.
+            //
+            // AND THIS ONE IS EVIDENCE. Nothing hydrates `PlanMoveStore` from
+            // the database, so the expectation comes from a file the database
+            // does not feed. It is the first comparison added since B1 that
+            // could actually disagree. §12.99.
+            .compare(ComparedCorrections.planMove.check, table: "correction",
+                     expected: moves.count,
+                     found: try count(d, ComparedCorrections.planMove)),
             // AND EVERY ROW NOBODY ABOVE COUNTED. Zero is the assertion, not a
             // placeholder: a row belonging to a family no comparison names is a
             // claimant that arrived without a verifier, and the report says so

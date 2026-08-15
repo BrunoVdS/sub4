@@ -1,7 +1,7 @@
 # Moving a session, and saying you skipped one
 
-Groundwork for patches 359 and 361–365 — renumbered at 361, see §9. Written
-14 August 2026, against patch 358a.
+Groundwork for patches 359 and 361–366 — renumbered at 361 and again at 362,
+see §9. Written 14 August 2026, against patch 358a.
 No code in this document is committed; it is the record of what was decided
 before any of it was written, so that a patch which turns out wrong can be
 argued with rather than guessed at.
@@ -150,6 +150,10 @@ sessions are not overdue yet.
 1. **An authored store for plan-session corrections.** Notes, commutes, match
    decisions, the athlete cache and the constants each have a file, a
    write-through and a read-back. A move needs the same: `moves.json`.
+   **Built at 362**, with the write-through; the read-back is 364. The store is
+   declared everywhere a store file must be declared — `DataLifecycle`, the
+   delete flow, `LegacyStore`, the classifier, the snapshot and the authored
+   export — before anything can write it, which is patch 195's rule.
 2. **A sheet that picks a session for an activity.** Today's picker runs the
    other way round.
 3. **Any application of a `planSession` correction.** Nothing reads that half
@@ -370,15 +374,27 @@ a plan-session correction until the verifier can survive it.
 | **359** | The picker shows the recorded choice; "Not done" reads as destructive; the three missing `… store reads:` lines in the paste | The toggle inherits this UI. Fixing it after building on it means fixing it twice. No data model. |
 | **360** | *(not this plan)* The authored write-through may delete; every automatic run records what it did | Found by 359 on the device, 15 August. §12.104. Blocking for everything, not just this. |
 | **361** | `corrections` qualified by `subjectKind` and `field`, plus `unclaimed corrections` | Blocking (§8.1). Provable today — the commute count does not move and the check becomes able to fail. |
-| **362** | `PlanMoveStore`, `moves.json`, `AppStores` → 18, the importer's second claim, the read-back's coverage of it | Machinery only. Nothing applies a move yet, and a test says so. |
-| **363** | `PlanCorrections.apply`, called from `PlanStore` and `PlanRepository` | The flip. This is the patch where a stored move changes what the app shows. |
-| **364** | "Change match" unconditional; the reverse picker; the two writes | The gesture Bruno asked for. |
-| **365** | The skipped toggle | Last, because it is the smallest and it depends on 359's styling. |
+| **362** | `PlanMove`, `PlanMoveStore`, `moves.json`, and every place a store file must be declared | The store, and nothing that reads it. Touches no database at all, so a mistake here fails a pinned test rather than deleting a row. |
+| **363** | `AppStores` → 18, `reconcileRequires`, the importer's second claim and its prune, the `ComparedCorrections` family and its comparison | The database half. The family and the first row must land together — 361's `unclaimed corrections` fails otherwise, which is what it is for. |
+| **364** | The authored read-back's coverage of the moves | Field-level, alongside notes, commutes and match decisions. Separate because until a gesture exists the file is empty on every device, so nothing here is provable outside the suite either way. |
+| **365** | `PlanCorrections.apply`, called from `PlanStore` and `PlanRepository` | The flip. This is the patch where a stored move changes what the app shows. |
+| **366** | "Change match" unconditional; the reverse picker; the two writes; the skipped toggle | The gestures Bruno asked for, and the first patch in which `moves.json` can exist on the phone. |
 
-362 and 363 are deliberately separate for the reason B1 and B2 both proved:
+**362 was split out of what this table used to call 362**, which asked for the
+store, the `AppStores` field, the importer's claim, the prune and the read-back
+in one diff. Counted against the real surface that is well over a thousand
+lines touching the delete path, and the seam chosen is not a convenient one: 362
+touches no database at all. Every line of it is a declaration, and a declaration
+that is wrong fails a pinned test instead of removing a row.
+
+364 and 365 are deliberately separate for the reason B1 and B2 both proved:
 a flip whose diff contains nothing else is a flip whose failures are
 attributable. That has now paid twice — four failures at 346, and at 358 the
 one line that mattered was visible in a diff of one line.
+
+**366 is the first patch after which `moves.json` can exist on the phone.**
+Everything before it is provable only by the suite, which is why the
+declarations are in 362 rather than beside the gesture that needs them.
 
 ## 10. What this deliberately does not do
 

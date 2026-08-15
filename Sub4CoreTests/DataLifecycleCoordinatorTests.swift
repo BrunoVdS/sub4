@@ -79,6 +79,11 @@ struct DataLifecycleCoordinatorTests {
             "constants.json",    // ConstantsStore
             "weather.json",      // WeatherStore
             "commutes.json",     // CommuteStore — patch 251
+            // PATCH 362, and the second line here that is not true yet — see
+            // `db` below for the first and for the reasoning, which is the
+            // same one: a file that exists before the delete flow names it is
+            // a file the delete flow walks past.
+            "moves.json",        // PlanMoveStore — patch 362
             // DECLARED BEFORE ANYTHING WRITES IT — patch 195, and the only line
             // in this list that is not true yet.
             //

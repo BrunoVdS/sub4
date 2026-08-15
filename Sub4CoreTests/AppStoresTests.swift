@@ -159,14 +159,19 @@ struct AppStoresTests {
 
     // MARK: The gate's own list
 
-    /// The four stores whose read must be trustworthy before anything is
-    /// deleted on their behalf. `canReconcile` fails CLOSED, so a name MISSING
-    /// from this list makes reconciliation more likely to run — a delete
-    /// hazard, not a skip hazard, which is why the list is pinned.
-    @Test("The reconcile gate names the four stores it has always named")
+    /// The stores whose read must be trustworthy before anything is deleted on
+    /// their behalf. `canReconcile` fails CLOSED, so a name MISSING from this
+    /// list makes reconciliation more likely to run — a delete hazard, not a
+    /// skip hazard, which is why the list is pinned.
+    ///
+    /// `moves.json` JOINED AT 363, in the same patch as `pruneMoves`. That
+    /// pairing is the rule: a store gains a prune and the gate gains its name
+    /// together, or there is a window in which rows are deleted on the strength
+    /// of a read nobody checked.
+    @Test("The reconcile gate names every store something prunes for")
     func theGateListIsPinned() {
         #expect(AppStores.reconcileRequires
                 == ["notes.json", "proposals.json", "commutes.json",
-                    Matcher.decisionsKey])
+                    "moves.json", Matcher.decisionsKey])
     }
 }

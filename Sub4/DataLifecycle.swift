@@ -617,8 +617,9 @@ enum DataLifecycle {
             category: .matchDecisions,
             title: "Your corrections",
             whatItIs: "Where you told the app that a particular recording was — "
-                    + "or was not — the session the plan asked for, and which "
-                    + "bike rides are commutes rather than training.",
+                    + "or was not — the session the plan asked for, which "
+                    + "bike rides are commutes rather than training, and which "
+                    + "sessions you did on a day other than the planned one.",
             purpose: "Overriding the matcher when it guesses wrong, and keeping "
                    + "that decision.",
             lineage: [.authored],
@@ -634,8 +635,20 @@ enum DataLifecycle {
             // requires, and the retired `match.overrides`, still named because
             // a device that has not launched this build still holds it and a
             // key nobody names is a key "Delete local data" cannot remove.
+            // `moves.json` added in patch 362, and filed here for the same
+            // reason `commutes.json` was: a move IS a correction — to WHEN the
+            // plan said a session was due, rather than to which recording
+            // satisfied it. A category of its own would buy a heading and cost
+            // four exhaustive switches.
+            //
+            // DECLARED BEFORE ANYTHING WRITES IT. Nothing in patch 362 can
+            // create this file; the store exists and no gesture reaches it.
+            // That is deliberate and it is patch 195's rule — `db` is in this
+            // inventory for exactly the same reason, and the alternative is a
+            // window in which "Delete local data" walks past a real file.
             storage: [.preferences(Matcher.preferenceKeys),
-                      .applicationSupport(.file("commutes.json"))],
+                      .applicationSupport(.file("commutes.json")),
+                      .applicationSupport(.file("moves.json"))],
             retention: .indefinite,
             sharedWith: [],
             isExportable: true,
@@ -646,6 +659,16 @@ enum DataLifecycle {
             gaps: ["Stored against Strava activity ids, so the decisions must be "
                  + "remapped rather than lost when the source changes "
                  + "(ADR-0002, step 4A M4). True of the commute decisions too.",
+                   "A moved session is keyed on the plan's own session uid, "
+                 + "which carries the session's position within its day. A new "
+                 + "plan version that changes what is on a day reissues those "
+                 + "uids, and a move naming an old one is orphaned — the "
+                 + "session simply shows on its planned day again. Harmless, "
+                 + "and disclosed rather than fixed: the same exposure the "
+                 + "session notes have carried since patch 274 "
+                 + "(ADR-0003 §12.106.4). "
+                 + "`PlanVersionCensus.uidsHeldOnlyBy` already surfaces which "
+                 + "uids are affected.",
                    "The match decisions are still in UserDefaults rather than in "
                  + "a transaction (step 3.5.4), which is also why they are the "
                  + "one authored store with no failable save: UserDefaults has "

@@ -8962,6 +8962,173 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.107 The database learns about the moves — patch 363
+
+362's store, wired in. `AppStores.moves` and `fieldCount` 18, forwarded to the
+importer and to the verifier; `reconcileRequires` gains `moves.json`;
+`Sub4Import.importMoves` claims `subjectKind = 'planSession' AND field = 'date'`
+and `pruneMoves` claims exactly the same; `ComparedCorrections.planMove` and the
+`session moves` comparison.
+
+### 12.107.1 The family and the first row had to land together
+
+361 built `unclaimed corrections` to fail on a row belonging to a family no
+comparison names. So the patch that starts writing plan-session rows is
+necessarily the patch that adds the family — a build with one and not the other
+fails the verifier on the athlete's first move.
+
+That is the forcing function working exactly as §12.105.2 described it, and
+this is the first time it has been paid. Worth recording, because the cheap
+response to a forcing function is to disable it, and the correct response is to
+do the work it is asking for.
+
+### 12.107.2 `session moves` is evidence
+
+Nothing hydrates `PlanMoveStore` from the database, so this comparison's
+expectation comes from a file the database does not feed. The independent count
+goes 17 → 18 and the total 21 → 22.
+
+It is the first comparison added since B1 that could actually disagree, and it
+will stop being one the day a slice hydrates the moves — at which point
+`HydratedStores` gains an entry and this sentence stops being true. §12.99.
+
+### 12.107.3 No resolution step, therefore no `unresolved` counter
+
+`importCorrections` resolves each commute decision's Strava id through
+`activity_alias`, because `correction.subjectID` holds the canonical activity
+id. That lookup can fail; `correctionsUnresolved` counts the failures; and
+`pruneCommutes` refuses to run while any is outstanding, because the keep-set is
+built from ids that RESOLVED and an unresolved decision cannot protect its own
+row.
+
+**A move has nothing to resolve.** `PlanMove.sessionUid` is the plan's own
+identifier and `subjectID` holds that identifier verbatim. No lookup, no
+failure, no held-back records — so `keep` contains every move the store holds,
+every held move protects its row, and `pruneMoves` is safe unconditionally.
+
+`pruneMoves` therefore has NO guard where `pruneCommutes` has one, and that
+absence is a decision rather than an oversight. A guard that cannot fail is
+§12.69, and it would be §12.69 in the one place this project can least afford
+it: the line that deletes.
+
+### 12.107.4 An orphan is counted, not held back
+
+`plan_session.uid` carries the session's position within its day (§12.96.3), so
+a plan revision reissues uids and a move naming an old one names nothing.
+`movesOrphaned` counts them.
+
+They are still written and they still protect their rows. The store is the
+authority on what the athlete decided; the database holding no matching session
+is a fact about the plan, not about the decision. Groundwork §8.2 said this in
+prose and §12.106 disclosed it in the lifecycle inventory; this turns it into a
+number on the paste.
+
+The query is `SELECT DISTINCT uid FROM plan_session`, which is the question
+`ReviewRepository` already asks of a `proposal_change` — one shape, two callers.
+§12.43.
+
+### 12.107.5 The gather order inside `AppStores.current()`
+
+`canReconcile` fails CLOSED on a store that never reported, and
+`PlanMoveStore.shared` is a lazy singleton whose `init` is what records
+`moves.json` to the read journal. So `s.moves` is gathered BEFORE `s.reconcile`
+is computed.
+
+Reversed, the first gather of every session would refuse to reconcile anything —
+notes, reviews, commutes and match decisions included — and it would look
+precisely like the gate doing its job. A comment says so at the line, and
+`apply-363.py` asserts the ordering, because this is a fault that compiles.
+
+### 12.107.6 Two comments that had gone wrong
+
+`DatabaseHealthView` described the authored export as "the five stores no source
+can send again" and named all five. It has carried six since 362. Flagged when
+362 shipped rather than left beside `manual.html`, and neither replacement
+carries a number: the list lives in `AuthoredExport.stores`.
+
+---
+
+## 12.106 The store before the wiring — patch 362
+
+`PlanMove`, `PlanMoveStore`, `moves.json`. A dictionary keyed by
+`plan_session.uid`, a file in Application Support, a failable save whose memory
+copy rolls back when the write fails, and `noteAuthoredChange` fired AFTER the
+write and never before (§12.94). `CommuteStore`'s shape, followed exactly —
+a fifth authored store that invented its own would be a fifth thing to check
+every time the rules around authored data change, and those have changed three
+times this month.
+
+### 12.106.1 It is wired into nothing, and that is the patch
+
+No `AppStores` field, no `correction` row, no application to a `Plan`, no
+gesture. `theStoreIsNotWiredIntoAnything` asserts each of the four, including
+that `ComparedCorrections.all` still names one family — because a plan-session
+row reaching `correction` before the verifier knows the family fails
+`unclaimed corrections`, which is precisely what 361 built it to do.
+
+The plan's §9 asked for the store, the `AppStores` field, the importer's claim,
+the prune and the read-back in one patch. The real surface is over a thousand
+lines and it touches the delete path. The seam taken instead is that **362
+touches no database at all**: every line is a declaration, and a wrong
+declaration fails a pinned test rather than removing a row.
+
+### 12.106.2 Declared before anything can write it — patch 195's rule again
+
+`moves.json` is named by a `DataLifecycle` category, dropped by
+`dropAllInMemory`, classified by `LegacyStore`, decoded by `LegacyClassifier`,
+copied by `LegacySnapshot` (which walks `LegacyStore.allCases`) and carried by
+`AuthoredExport` — while nothing in this build can create the file.
+
+That is not caution for its own sake. `details.json` outlived four versions of
+this app because it existed before anything named it, and `db` was declared in
+195 before `Sub4Database` created it for the same reason.
+`DataLifecycleCoordinatorTests` still carries the comment; `moves.json` is now
+the second line in that list which is true before it is true on disk.
+
+Filed under "Your corrections" beside `commutes.json` rather than given a
+category. The comment already there says the commute decisions are filed with
+the overrides because a commute IS a correction to matching; a move is the same
+kind of thing one field over — a correction to when a session was due.
+
+### 12.106.3 The day key is a string, and it is checked as one
+
+`Session.date` is `String?` holding `"yyyy-MM-dd"`, so `PlanMove.movedTo` is
+that same string. A `Date` would need a calendar and a time zone to become the
+thing it overrides, and the two conversions could disagree — §12.43 with a
+formatter in it.
+
+`PlanMove.isDayKey` is therefore a shape check with no locale in it, and `set`
+throws BEFORE touching memory when it fails. That ordering is the point: a
+malformed value that is stored and then matches no session reads as "nothing
+was moved" for ever, rather than as an error. The same failure shape §12.105
+had just removed from the verifier.
+
+**It does not check the day against the month**, and the doc comment says so.
+`2026-02-31` passes the shape check and matches no session, which is the same
+harmless outcome as an orphaned uid — and inventing a calendar here would be a
+second opinion about what a plan day is.
+
+### 12.106.4 A move is keyed on a uid the plan can reissue
+
+`plan_session.uid` carries the session's position within its day (§12.96.3), so
+a new plan version that changes a day reissues uids and a move naming an old one
+is orphaned. This is the exposure the notes have carried since 274, and it is
+disclosed in the lifecycle entry rather than fixed.
+
+An orphaned move is harmless in a way an orphaned note is not: the session
+simply shows on its planned day again. Nothing is lost. Recorded because the
+opposite assumption — that a move survives a plan revision — would be wrong.
+
+### 12.106.5 `clear` is not `set` with the planned date
+
+"I moved it back" and "I never moved it" are the same end state and different
+facts. Writing the planned date as a move leaves a row asserting an override
+that overrides nothing, and the reconciliation prune would then have to decide
+whether a no-op correction is stale. Removing the record says what happened —
+`CommuteStore.clear`'s argument, third store.
+
+---
+
 ## 12.105 The `correction` table has more than one claimant — patch 361
 
 `PLAN-MOVES-GROUNDWORK.md` §8.1, marked BLOCKING, and it had been latent since

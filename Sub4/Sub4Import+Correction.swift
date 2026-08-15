@@ -89,6 +89,20 @@ extension Sub4Import {
     /// counts zero forever agrees with an empty store forever.
     nonisolated static let commuteSubject = "activity"
 
+    // MARK: The second claimant — patch 363
+
+    /// `subjectKind` for a moved plan session. The other value the CREATE TABLE
+    /// has always permitted, and until 363 nothing wrote it.
+    nonisolated static let moveSubject = "planSession"
+
+    /// The field a move overrides: `Session.date`. Named for the column it
+    /// stands in for, because that is what a reader of the row needs to know.
+    nonisolated static let moveField = "date"
+
+    /// See `commuteReason`: provenance, not an argument, and true of every row.
+    nonisolated static let moveReason =
+        "The athlete recorded this session as done on another day."
+
     nonisolated static func importCorrections(
         _ d: Database,
         decisions: [CommuteDecision],
@@ -174,6 +188,132 @@ extension Sub4Import {
     /// See the header: provenance, not an argument, and true of every row.
     nonisolated static let commuteReason =
         "The athlete's own answer, given on the ride."
+
+    // MARK: The moves — patch 363
+
+    /// Writes one `correction` row per moved session.
+    ///
+    /// **THERE IS NOTHING TO RESOLVE, AND THAT SHAPES THE WHOLE FUNCTION.**
+    /// `importCorrections` above resolves each decision's Strava id through
+    /// `activity_alias` because `correction.subjectID` holds the CANONICAL
+    /// activity id — a lookup that can fail, which is what
+    /// `correctionsUnresolved` counts and why the commute prune refuses to run
+    /// while any is outstanding.
+    ///
+    /// `PlanMove.sessionUid` is the plan's own identifier and `subjectID` holds
+    /// that same identifier verbatim. No lookup, no failure, no held-back
+    /// records — so `keep` contains every move the store holds, every held move
+    /// protects its own row, and the prune below is safe unconditionally.
+    ///
+    /// **AN ORPHAN IS COUNTED AND KEPT.** `plan_session.uid` carries the
+    /// session's position within its day (§12.96.3), so a plan revision
+    /// reissues uids and a move naming an old one names nothing. It is still
+    /// the athlete's decision and the database is not entitled to overrule it:
+    /// the row is written, it protects itself, and `movesOrphaned` says how
+    /// many there are. Groundwork §8.2, turned into a number.
+    ///
+    /// THE ORPHAN QUERY RUNS ONCE, AND ONLY WHEN THERE IS SOMETHING TO ASK
+    /// ABOUT. `SELECT DISTINCT uid FROM plan_session` is the same question
+    /// `ReviewRepository` asks of a `proposal_change` — one shape, two callers,
+    /// rather than two opinions about which uids exist.
+    /// NO `now:` PARAMETER, unlike `importCorrections` beside it. Every
+    /// timestamp written here is `move.decided` — the moment the athlete said
+    /// so — and a parameter nothing reads is a parameter a future reader has to
+    /// check before believing the rest. `importCorrections` carries the same
+    /// unused argument and is left alone: changing the signature of a function
+    /// this patch does not otherwise touch would put a rename in a diff about
+    /// a second claimant.
+    nonisolated static func importMoves(
+        _ d: Database,
+        moves: [PlanMove],
+        reconcile: Reconciliation,
+        into report: inout Report
+    ) throws {
+        var keep: Set<String> = []
+
+        let known: Set<String> = moves.isEmpty ? []
+            : Set(try String.fetchAll(
+                d, sql: "SELECT DISTINCT uid FROM plan_session"))
+
+        for move in moves {
+            report.movesSeen += 1
+            if !known.contains(move.sessionUid) { report.movesOrphaned += 1 }
+            // BEFORE THE WRITE CAN FAIL, and deliberately. A row this importer
+            // could not write is still a move the athlete holds, and dropping
+            // it out of `keep` would let the prune delete the row that IS there
+            // from a previous run.
+            keep.insert(move.sessionUid)
+
+            let existing = try String.fetchOne(d, sql: """
+                SELECT id FROM correction
+                WHERE accountID = ? AND subjectKind = ?
+                  AND subjectID = ? AND field = ?
+                """, arguments: [accountID, moveSubject, move.sessionUid,
+                                 moveField])
+
+            do {
+                try d.inSavepoint {
+                    if let id = existing {
+                        try d.execute(sql: """
+                            UPDATE correction
+                            SET value = ?, reason = ?, authoredUTC = ?
+                            WHERE id = ?
+                            """, arguments: [move.movedTo, Self.moveReason,
+                                             iso8601(move.decided), id])
+                    } else {
+                        try d.execute(sql: """
+                            INSERT INTO correction
+                              (id, accountID, subjectKind, subjectID, field,
+                               value, reason, authoredUTC)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """, arguments: [UUID().uuidString, accountID,
+                                             Self.moveSubject, move.sessionUid,
+                                             Self.moveField, move.movedTo,
+                                             Self.moveReason,
+                                             iso8601(move.decided)])
+                    }
+                    return .commit
+                }
+                if existing != nil { report.movesUpdated += 1 }
+                else { report.movesImported += 1 }
+            } catch {
+                report.refusals.append(
+                    .init(externalID: "move \(move.sessionUid)",
+                          reason: String(describing: error)))
+            }
+        }
+
+        guard reconcile.isRunning else { return }
+
+        // NO SECOND GUARD, unlike `importCorrections`. Its guard exists because
+        // an unresolved decision cannot protect its own row; nothing here can
+        // be unresolved. A guard that cannot fail would be §12.69 in the one
+        // place this project can least afford it — the line that deletes.
+        report.movesRemoved = try pruneMoves(d, keeping: keep)
+    }
+
+    /// Removes moved-session corrections the store no longer holds. Scoped to
+    /// `subjectKind = 'planSession' AND field = 'date'`, so a future
+    /// plan-session correction on any other field is not ours to delete — the
+    /// same claim `pruneCommutes` makes one family over.
+    private nonisolated static func pruneMoves(_ d: Database,
+                                               keeping keep: Set<String>) throws -> Int {
+        let rows = try Row.fetchAll(d, sql: """
+            SELECT id, subjectID FROM correction
+            WHERE accountID = ? AND subjectKind = ? AND field = ?
+            """, arguments: [accountID, moveSubject, moveField])
+
+        var removed = 0
+        for row in rows {
+            let subject: String = row["subjectID"]
+            guard !keep.contains(subject) else { continue }
+            let id: String = row["id"]
+            try d.execute(sql: "DELETE FROM correction WHERE id = ?",
+                          arguments: [id])
+            removed += 1
+        }
+        return removed
+    }
 
     /// Removes `isCommute` corrections whose ride the store no longer has an
     /// opinion about. Scoped to this one field — a `DataCorrections` row in

@@ -69,6 +69,7 @@ enum LegacyInput: String, CaseIterable {
     case streams
     case constants
     case commutes
+    case moves
     case legacyDetails
     case legacyStreams
 
@@ -86,6 +87,7 @@ enum LegacyInput: String, CaseIterable {
         case .streams:    "streams/<id>.json"
         case .constants:  "constants.json"
         case .commutes:   "commutes.json"
+        case .moves:      "moves.json"
         // The two monolithic files the per-activity split replaced. Still on
         // disk on every device that upgraded through it, still read by
         // `DetailStore.load()`, and listed in the inventory as `.legacyFile`
@@ -104,7 +106,7 @@ enum LegacyInput: String, CaseIterable {
         // Authored data uses ISO-8601 throughout — notes, proposals, and now
         // the commute decisions. The split in contract item 4 is not arbitrary:
         // what the athlete wrote is stored in a form a human can read.
-        case .notes, .proposals, .commutes:  .iso8601
+        case .notes, .proposals, .commutes, .moves:  .iso8601
         case .athlete, .weather, .detail, .streams,
              .legacyDetails, .legacyStreams: .numericReferenceDate
         // Activity stores its instants as strings, not `Date`s — see
@@ -130,7 +132,7 @@ enum LegacyInput: String, CaseIterable {
         case .notes, .weather,
              .legacyDetails, .legacyStreams:    .dictionaryKeyedByID
         case .proposals, .activities:           .array
-        case .commutes:                         .dictionaryKeyedByID
+        case .commutes, .moves:                 .dictionaryKeyedByID
         case .athlete, .detail, .streams,
              .constants:                        .object
         }
@@ -228,6 +230,18 @@ enum LegacyInput: String, CaseIterable {
             "decided":"2026-08-05T09:12:00Z"}}
             """
 
+        case .moves:
+            // [String: PlanMove] · ISO-8601
+            //
+            // `movedTo` is a STRING and `decided` is a `Date`, which is the
+            // whole shape of this store: the day is the plan's own vocabulary
+            // and the instant is when the athlete said so. A fixture that made
+            // both dates would not exercise the pairing.
+            """
+            {"w03-sun-long":{"sessionUid":"w03-sun-long",\
+            "movedTo":"2026-08-17","decided":"2026-08-17T18:40:00Z"}}
+            """
+
         case .legacyDetails:
             // [String: ActivityDetail] · numeric · the pre-split monolith
             """
@@ -298,6 +312,14 @@ enum LegacyInput: String, CaseIterable {
             {"19608576674":{"activityId":"19608576674","isCommute":true,\
             "decided":776000000.0}}
             """
+        case .moves:
+            // The one that catches contract item 4 being got backwards on this
+            // store: `movedTo` still parses, so a decoder mix-up would leave a
+            // file that looks right and holds nothing.
+            """
+            {"w03-sun-long":{"sessionUid":"w03-sun-long",\
+            "movedTo":"2026-08-17","decided":776000000.0}}
+            """
         case .legacyDetails:
             """
             {"11111111":{"activityId":"11111111","splits":[{"index":1,\
@@ -337,6 +359,11 @@ enum LegacyInput: String, CaseIterable {
             """
             {"99999999":{"activityId":"19608576674","isCommute":true,\
             "decided":"2026-08-05T09:12:00Z"}}
+            """
+        case .moves:
+            """
+            {"w99-sat-rest":{"sessionUid":"w03-sun-long",\
+            "movedTo":"2026-08-17","decided":"2026-08-17T18:40:00Z"}}
             """
         case .legacyDetails:
             """

@@ -71,22 +71,29 @@ struct CorrectionFamilyTests {
         return (db, acts, commutes)
     }
 
-    /// A `planSession` correction, written straight in.
+    /// A correction belonging to no family any comparison names.
     ///
-    /// DELIBERATELY NOT THROUGH A STORE. `PlanMoveStore` is patch 362 and this
-    /// suite must not wait for it — the point of fixing the verifier first is
-    /// that it can survive a row nothing in this build knows how to make. The
-    /// row is shaped exactly as §6.2 of the groundwork specifies it.
+    /// **IT WAS A `planSession` MOVE UNTIL 363**, which is the point: that
+    /// family now HAS a comparison, so a row of it is claimed and this suite
+    /// would have been testing the opposite of what it says. The stray is now
+    /// a `DataCorrections`-shaped row — `('activity', id, 'elapsedTime')` — the
+    /// case the `correction` table's own schema comment describes as "the
+    /// recordings whose moving time is wrong", and the one
+    /// `Sub4Import+Correction`'s header calls "somebody else's".
+    ///
+    /// DELIBERATELY NOT THROUGH A STORE, and that has not changed. Nothing in
+    /// this build writes this family, which is exactly what makes it the right
+    /// stray: the verifier has to survive a row it does not know how to make.
     private func stray(_ db: Sub4Database) throws {
         try db.queue.write { d in
             try d.execute(sql: """
                 INSERT INTO correction
                   (id, accountID, subjectKind, subjectID, field, value,
                    reason, authoredUTC)
-                VALUES (?, ?, 'planSession', 's-w03-tue-1', 'date',
-                        '2026-07-29', ?, '2026-07-28T16:30:00Z')
+                VALUES (?, ?, 'activity', '19580875358', 'elapsedTime',
+                        '3600', ?, '2026-07-28T16:30:00Z')
                 """, arguments: [UUID().uuidString, Sub4Import.accountID,
-                                 "moved from the planned day"])
+                                 "chip time, official results"])
         }
     }
 
@@ -131,9 +138,12 @@ struct CorrectionFamilyTests {
         // `field` are column vocabulary; `subjectID` is the athlete's own
         // identifier and appears in neither.
         let detail = try #require(c.detail)
-        #expect(detail.contains("planSession"))
-        #expect(detail.contains("date"))
-        #expect(!detail.contains("s-w03-tue-1"), "no subject id, ever")
+        #expect(detail.contains("activity"))
+        #expect(detail.contains("elapsedTime"))
+        // THE SUBJECT ID IS THE ATHLETE'S OWN and appears in neither `found`
+        // nor `detail`. It is a Strava activity id here, which makes the
+        // assertion sharper than it was when the stray was a session uid.
+        #expect(!detail.contains("19580875358"), "no subject id, ever")
     }
 
     @Test("With only the family it knows, the report agrees")

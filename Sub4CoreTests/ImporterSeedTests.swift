@@ -116,11 +116,12 @@ struct ImporterSeedTests {
                 "the store is serving a different plan and the importer must not take it")
     }
 
-    /// The write direction's inventory is unchanged by this patch. Seventeen
-    /// fields, and the plan is still one of them — what moved is where that one
-    /// field is read FROM, not whether it is forwarded.
-    @Test("The field count did not move")
+    /// The write direction's inventory. Eighteen fields since 363, when the
+    /// moved sessions joined it; the plan is still one of them, and what 347
+    /// moved is where that one field is read FROM rather than whether it is
+    /// forwarded.
+    @Test("The field count is what the forwarding covers")
     func theFieldCountDidNotMove() {
-        #expect(AppStores.fieldCount == 17)
+        #expect(AppStores.fieldCount == 18)
     }
 }

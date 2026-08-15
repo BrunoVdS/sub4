@@ -120,7 +120,12 @@ struct DataLifecycleTests {
             "athlete.json",
             "constants.json",
             "weather.json",
-            "commutes.json"     // CommuteStore — patch 251
+            "commutes.json",    // CommuteStore — patch 251
+            // DECLARED BEFORE ANYTHING WRITES IT — patch 362, and the second
+            // line in this project's history to be true here before it is true
+            // on disk. See `db` in `DataLifecycleCoordinatorTests` for the
+            // first, and for the argument.
+            "moves.json"        // PlanMoveStore — patch 362
         ]
         let covered = Set(DataLifecycle.appSupportItems.map(\.pathComponent))
         for store in storesTheAppActuallyWrites {

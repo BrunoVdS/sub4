@@ -145,14 +145,22 @@ struct RollUpAdapterTests {
 
     private let when = Date(timeIntervalSince1970: 1_786_698_000)
 
-    @Test("The export carries the five stores that cannot be re-fetched")
+    // NO NUMBER IN THE TITLE. It said "five" and the list below it said five,
+    // and 362 made both wrong in the same breath. The list is the assertion;
+    // a count in the sentence describing it is a second copy that can go stale
+    // on its own.
+    @Test("The export carries the stores that cannot be re-fetched")
     func theExportNamesItsStores() {
         let names = AuthoredExport.stores.compactMap { store -> String? in
             guard case .file(let n) = store.item else { return nil }
             return n
         }
-        #expect(names == ["notes.json", "commutes.json", "proposals.json",
-                          "athlete.json", "constants.json"])
+        // SPELLED OUT, DELIBERATELY, and this one does not become a derived
+        // count. WHICH stores are exported is the fact worth pinning — the
+        // two negative assertions below say why, and neither would survive a
+        // check that only counted.
+        #expect(names == ["notes.json", "commutes.json", "moves.json",
+                          "proposals.json", "athlete.json", "constants.json"])
         // THE ONES DELIBERATELY LEFT OUT. A test that only asserted the five
         // present would pass on a version that also shipped 19 MB of traces.
         #expect(!names.contains("activities.json"))
@@ -241,8 +249,16 @@ struct RollUpAdapterTests {
                          atomically: true, encoding: .utf8)
         let doc = AuthoredExport.build(appVersion: "341-test", now: when, base: dir)
         #expect(doc.presentCount == 1)
-        #expect(doc.absentCount == 4)
-        #expect(doc.summary == "1 of 5 stores, \(secret.utf8.count) bytes")
+        // DERIVED AT 362a, NOT RENUMBERED. These read `4` and `1 of 5 stores`
+        // and had to be edited the first time an authored store was added,
+        // which is §12.103's mistake in miniature — a hand-written count is a
+        // test that tracks the code rather than checking it. What this test is
+        // FOR is the line below: the summary carries counts and never a word
+        // the athlete wrote.
+        #expect(doc.absentCount == AuthoredExport.stores.count - 1)
+        #expect(doc.summary
+                == "1 of \(AuthoredExport.stores.count) stores, "
+                 + "\(secret.utf8.count) bytes")
         #expect(!doc.summary.contains("awful"))
     }
 }

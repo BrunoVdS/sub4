@@ -52,7 +52,11 @@ struct LegacyFixtureTests {
          .weather: "weather.json", .detail: "details", .streams: "streams",
          .constants: "constants.json",
          .legacyDetails: "details.json", .legacyStreams: "streams.json",
-         .commutes: "commutes.json"]
+         .commutes: "commutes.json",
+         // PATCH 362. Declared by `DataLifecycle` before any device can hold
+         // the file, so this map has to know about it before the corpus has
+         // anything real to classify. That is the point of the pin.
+         .moves: "moves.json"]
     }
 
     @Test("Every legacy path DataLifecycle declares has a fixture")
@@ -126,6 +130,7 @@ struct LegacyFixtureTests {
         case .streams:    _ = try numeric.decode(ActivityStreams.self, from: data)
         case .constants:  _ = try numeric.decode(AthleteConstants.self, from: data)
         case .commutes:   _ = try iso.decode([String: CommuteDecision].self, from: data)
+        case .moves:      _ = try iso.decode([String: PlanMove].self, from: data)
         case .legacyDetails:
             _ = try numeric.decode([String: ActivityDetail].self, from: data)
         case .legacyStreams:

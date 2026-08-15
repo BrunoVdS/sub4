@@ -48,6 +48,12 @@ nonisolated enum LegacyStore: String, CaseIterable, Hashable {
     case streams
     case constants
     case commutes
+    /// PATCH 362. Which sessions were done on a day other than the planned
+    /// one. Authored, keyed by the plan's own session uid, and the only store
+    /// in this list whose file cannot exist yet — declared before anything can
+    /// write it, which is patch 195's rule and the reason `db` is in
+    /// `DataLifecycle` at all.
+    case moves
     /// The pre-split monolith. Still on disk on every device that upgraded
     /// through the per-activity split, and the reason `AppSupportItem` has a
     /// `.legacyFile` case at all.
@@ -69,6 +75,7 @@ nonisolated enum LegacyStore: String, CaseIterable, Hashable {
         case .weather:       .file("weather.json")
         case .constants:     .file("constants.json")
         case .commutes:      .file("commutes.json")
+        case .moves:         .file("moves.json")
         case .detail:        .directory("details")
         case .streams:       .directory("streams")
         case .legacyDetails: .legacyFile("details.json")
@@ -91,7 +98,7 @@ nonisolated enum LegacyStore: String, CaseIterable, Hashable {
 
     var dates: DateStrategy {
         switch self {
-        case .notes, .proposals, .commutes: .iso8601
+        case .notes, .proposals, .commutes, .moves: .iso8601
         case .athlete, .weather, .detail, .streams,
              .legacyDetails, .legacyStreams: .numericReferenceDate
         case .activities, .constants: .noneStored
@@ -110,7 +117,7 @@ nonisolated enum LegacyStore: String, CaseIterable, Hashable {
     var container: Container {
         switch self {
         case .proposals, .activities: .array
-        case .notes, .weather, .commutes, .athlete, .detail,
+        case .notes, .weather, .commutes, .moves, .athlete, .detail,
              .streams, .constants, .legacyDetails, .legacyStreams: .object
         }
     }
@@ -151,7 +158,14 @@ nonisolated enum LegacyStore: String, CaseIterable, Hashable {
 
     var keying: Keying {
         switch self {
-        case .notes:         .dictionaryKeyedByID(field: "sessionUid")
+        // KEYED BY THE SESSION, like the notes and unlike everything else
+        // here. `moves.json` and `notes.json` are the two stores whose subject
+        // is a plan session rather than a recording, so they carry the same
+        // trap: the outer key and the embedded `sessionUid` state the same
+        // fact twice and contract item 5 says a disagreement is quarantined
+        // rather than resolved.
+        case .notes,
+             .moves:         .dictionaryKeyedByID(field: "sessionUid")
         case .weather,
              .commutes,
              .legacyDetails,

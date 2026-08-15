@@ -59,6 +59,8 @@ nonisolated struct AppStores: Sendable {
     var workItems: [WorkItem] = []
     var rejections: [RejectionReceipt] = []
     var commutes: [CommuteDecision] = []
+    /// PATCH 363. Which sessions were done on a day other than the planned one.
+    var moves: [PlanMove] = []
     var weather: [ActivityWeather] = []
     var constants: AthleteConstants?
     var ftpWatts: Int?
@@ -83,8 +85,16 @@ nonisolated struct AppStores: Sendable {
 
     /// The stores whose read must be trustworthy before anything may be
     /// deleted on their behalf. See `reconcile`.
+    /// PATCH 363 — `moves.json` ADDED WITH THE PRUNE THAT NEEDS IT.
+    ///
+    /// `pruneMoves` deletes correction rows on this store's behalf, so the
+    /// store's read has to be trustworthy first. Adding the name in the same
+    /// patch as the prune is the rule this list's own comment states: a name
+    /// MISSING here makes reconciliation more likely to run, and
+    /// reconciliation deletes rows.
     static let reconcileRequires = ["notes.json", "proposals.json",
-                                    "commutes.json", Matcher.decisionsKey]
+                                    "commutes.json", "moves.json",
+                                    Matcher.decisionsKey]
 
     /// Read every store, now. `@MainActor` because every one of them is.
     @MainActor
@@ -99,6 +109,19 @@ nonisolated struct AppStores: Sendable {
         s.workItems = DetailStore.shared.workItems
         s.rejections = ActivityStore.shared.receipts
         s.commutes = Array(CommuteStore.shared.decisions.values)
+        // PATCH 363, AND THE ORDER IS LOAD-BEARING. This line must come before
+        // the `reconcile` line at the bottom of this function.
+        //
+        // `PlanMoveStore.shared` is a lazy singleton and its `init` is what
+        // records `moves.json` to `StoreReadJournal`. `canReconcile` fails
+        // CLOSED on a store that has never reported — so gathering the moves
+        // after computing the gate would refuse to reconcile ANYTHING on the
+        // first gather of every session, notes and match decisions included,
+        // and it would look exactly like the gate working.
+        //
+        // `all` rather than `Array(...values)`: a dictionary has no order and
+        // the import report lists what it wrote.
+        s.moves = PlanMoveStore.shared.all
         s.weather = Array(WeatherStore.shared.byActivity.values)
         s.constants = ConstantsStore.shared.c
         s.ftpWatts = AthleteStore.shared.ftp
@@ -154,7 +177,7 @@ nonisolated struct AppStores: Sendable {
     /// Pinning the COUNT does not prove the forwarding. It makes adding a field
     /// a thing somebody has to acknowledge, which is the half that can be
     /// checked cheaply — the same trick §12.34 uses on a hand-written list.
-    static let fieldCount = 17
+    static let fieldCount = 18
 }
 
 // MARK: - The forwarding, written once
@@ -189,6 +212,7 @@ extension Sub4Import {
                 workItems: s.workItems,
                 rejections: s.rejections,
                 commutes: s.commutes,
+                moves: s.moves,
                 reconcile: s.reconcile,
                 weather: s.weather,
                 constants: s.constants,
@@ -221,6 +245,7 @@ extension SemanticVerifier {
                 workItems: s.workItems,
                 rejections: s.rejections,
                 commutes: s.commutes,
+                moves: s.moves,
                 matchDecisions: s.matchDecisions,
                 weather: s.weather,
                 zones: s.zones,
