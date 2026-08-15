@@ -8962,6 +8962,301 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.115 The store that could not tell empty from unreadable — patch 371
+
+On 15 August at about 23:40, `weather.json` went from 602 readings to one. The
+database still held 602 and the one they shared matched exactly: nothing was
+corrupt, the file was overwritten.
+
+    weather.json became undecodable
+      -> load()'s `?? [:]` emptied the store in memory, silently
+      -> activity 692 arrived and its weather was fetched
+      -> store(_:) called save()
+      -> the one-entry dictionary was written over the file
+
+**Found by §12.114, an hour after §12.114 shipped.** The import verified itself
+without being asked, `weather readings` read `1 -> 602`, and the ledger refused
+to mark the run. Nobody would have pressed Verify at 23:45.
+
+### 12.115.1 Three failures, all of them already solved elsewhere
+
+**The read could not tell absent from unreadable.** `(try? decode(...)) ?? [:]`
+is §12.92 in one line — `wasReadCleanly` versus `holdsContent`. Every other
+store answers it: `PlanMoveStore.load` goes through `StoreRead.decode` and
+assigns only `if let value`, so a failed read leaves memory alone. Weather
+assigned `[:]`, which is not *leave it alone*; it is *the athlete has no
+weather*.
+
+**It never reported to `StoreReadJournal`.** Which is why *Unreadable stores:
+none* had been true and useless: `weather.json` was not among the stores that
+could be reported. **A store the list cannot name is a store the list cannot
+warn about** — the same defect as a row that vanishes at zero, one level up.
+
+**And `save()` overwrote on the strength of a read nobody could make.** §12.20,
+on a file rather than a row. Two callers, neither asking whether the load
+worked.
+
+### 12.115.2 The decoder is the dangerous line
+
+`save()` writes with a bare `JSONEncoder()` — deliberately, because the numeric
+date encoding on disk is thirteen months old and `LegacyStore` declares it.
+`StoreRead.decode` defaults to `JSONDecoder.sub4`.
+
+**Taking that default would make every existing weather file undecodable**,
+turning a patch about not destroying data into the thing that destroys it, on
+every device at once. It is passed explicitly, and the apply script fails if it
+is ever dropped.
+
+### 12.115.3 The write refuses, and the cost is disclosed
+
+`guard lastLoad.isTrustworthy else { return }`.
+
+While the file is unreadable, new readings live in memory and draw on screen but
+are not persisted — they are re-fetched next launch. That is the cheap failure.
+The expensive one is the file, and it is the one that happened. "Unreadable
+stores" names `weather.json` now, which is how anybody finds out that the cheap
+failure is in progress.
+
+### 12.115.4 A seam, because a guard that cannot fail has not been tested
+
+`WeatherStore` had only a singleton `init()`, so nothing could drive a corrupt
+file through it. Every other store of this shape has `init(directory:)` for
+precisely that reason. It gains one, and — per that journal's own rule — the
+seam does not record: a test store writing into the shared journal would leak
+into whatever ran next, and `canReconcile` reads it to decide whether rows may
+be deleted. §12.69.
+
+### 12.115.5 What this does not do
+
+**It does not recover the 601 readings.** They are in the database, intact.
+Weather has no hydration path and building one is a patch rather than a line;
+refetching, or restoring the 10 August snapshot, are the other two options. That
+decision is separate from stopping the bleeding, and this is the stopping.
+
+**It does not add `weather.json` to `reconcileRequires`.** Considered and
+refused: that list gates DELETION of notes, commutes, moves, match decisions and
+proposals. Weather is never pruned by reconciliation — there is no
+`weatherRemoved` counter — so adding it would let an unreadable weather file
+block the deletion of unrelated families. A wider blast radius than the fault.
+
+**It does not explain why the file became undecodable.** It cannot: nothing
+recorded it. From now on the journal does, which is the difference between this
+happening once and this happening once more.
+
+### 12.115.6 THE HALF OF THE FIX THAT WAS ALREADY EVERYWHERE, AND DID NOT HELP
+
+Found while checking this patch against its own siblings, and it is the part of
+§12.115 worth carrying forward.
+
+`NotesStore`, `PlanMoveStore`, `CommuteStore` and `ProposalStore` have all read
+through `StoreRead.decode` with `if let value` since 273. Weather did not, and
+that difference is real — but **it is not the difference that lost the data.**
+
+On a singleton's FIRST load the store is already empty. `if let value` leaves it
+empty; `?? [:]` sets it empty. Both arrive at the same dictionary. The only line
+in this patch that would have kept 601 readings is the one no store had:
+
+    guard lastLoad.isTrustworthy else { return }
+
+So the four stores that looked correct carry the identical exposure today. An
+undecodable `notes.json` on launch reads as no notes, and the first note written
+afterwards saves ONE note over thirteen months of them — on the store whose
+header (`StoreWrite.swift`) says in as many words that nothing anywhere can
+reproduce its contents.
+
+**Deliberately not fixed here, because the guard is not the same guard.** A
+weather save that refuses is invisible and cheap: the reading is re-fetched next
+launch. A notes save that refuses silently is the precise defect `StoreWrite`
+was written to end — the athlete types, sees the note in the list, and loses it
+overnight with nothing said. Those stores need a refusal that THROWS, so the
+alert path already wired into `NoteEditorView` fires. That is a patch with a
+decision in it, not a line, and doing it badly inside a weather fix would trade
+a quiet loss for a quieter one.
+
+Recorded here so the next patch starts from a written finding rather than a
+second incident.
+
+---
+
+## 12.114 Import verifies what it just wrote — patch 370
+
+Two buttons, one above the other, and pressing the first without the second left
+a run at `pending`: written, and checked by nobody. Not a theoretical state —
+the ledger read **`runs ever verified: 12`** against 244 rows.
+
+A control you have to remember to press is a control that records the absence of
+evidence as though it were evidence of absence. The tap that writes should be
+the tap that checks it.
+
+### 12.114.1 Only the manual button
+
+`runImport` is the button. Backgrounded, foregrounded and authored runs reach
+`Sub4Import.run` by other paths and are untouched, deliberately: the verifier
+reads 8 187 splits and 198 948 trace samples, and thirty-nine authored runs
+happened in a single afternoon this week. Folding it in there would spend
+minutes of battery re-deriving a conclusion nobody asked for.
+
+**The cost lands on the deliberate tap.** That is the whole reason this is safe
+to do, and it is why the fold is in the view rather than in `Sub4Import`.
+
+### 12.114.2 One verification, two callers
+
+The forty lines that turn `SemanticVerifier.record`'s outcome into a
+`VerificationResult.Ledger` — marked, reportDidNotPass, noIndependentEvidence,
+notTheNewestRun, failed — moved into `verifyNewestRun`. Both callers use it.
+
+Copying them would have been the obvious way and the wrong one. That chain
+encodes §12.99's ordering: `noIndependentEvidence` is tested BEFORE
+`notTheNewestRun`, because a passing-but-withheld report reported as a
+ledger-ordering problem sends somebody to press Import — the opposite of what
+would help. A second copy is a second place for that order to be got wrong, in
+an `else if` chain where being wrong produces a plausible sentence rather than
+an error. §12.43.
+
+### 12.114.3 After the ledger reload, and not before
+
+`verifyNewestRun` blesses `lastRun`, and `reloadLedger` is what sets it. Called
+before, the run being marked would be the PREVIOUS one — which
+`SemanticVerifier.record` refuses on `sequence = MAX(sequence)`, correctly and
+confusingly.
+
+### 12.114.4 A failed import does not verify
+
+The `catch` path returns without it. Verifying after a failure would compare the
+database against stores whose write was rolled back and report the disagreement
+as a finding — a check that fails for a reason it does not name, which is the
+shape §12.15 is about.
+
+### 12.114.5 The button says so, and the other one stays
+
+"Import from the app's stores" became **"Import and verify"**. A button that
+quietly does a second thing is a screen that has stopped describing itself.
+
+The Verify button remains. It is now the way to re-check without re-importing —
+what you want after a background run, and the only way to exercise the verifier
+against rows this screen did not just write.
+
+**The evidence is unchanged.** The verifier already gathered
+`AppStores.current()` for itself and still does. Pressing two buttons three
+seconds apart and pressing one are the same comparison, with a smaller window
+between the two gathers rather than a larger one.
+
+---
+
+## 12.113 What a run deleted, kept — patch 369
+
+360 made `.authored` the only trigger permitted to delete. §12.20 says nothing
+deletes on the strength of a read nobody checked. **Neither claim could be
+audited after the fact.**
+
+`rows removed in total` lives in the import REPORT; the diagnostics paste prints
+only the newest report; and the ledger — 241 rows, retained deliberately — had
+nowhere to put it. On 15 August an authored run pruned a plan move. It read
+"moves withdrawn 1" on one screen for as long as that screen was open, and
+nothing survived it: not the count, not the trigger, not the time. The only
+delete this app has ever performed was unauditable, and that was noticed by
+reading the paste rather than by any check.
+
+### 12.113.1 ALTER, not rebuild
+
+Every migration since `2026-08-15-interrupted-run` rebuilt `migration_run`,
+because each widened a CHECK and SQLite cannot alter one. This adds a nullable
+column and changes no constraint, so `ALTER TABLE … ADD COLUMN` is both
+sufficient and safer.
+
+`sequence` is `AUTOINCREMENT` and load-bearing: `runsSinceVerified` is derived
+from it precisely so the retention prune cannot flatter the figure. A rebuild is
+exactly the operation that would have to re-establish that by hand, and doing so
+to add a column nothing constrains would be risk taken for symmetry with three
+migrations that had no choice.
+
+### 12.113.2 Nullable, not `DEFAULT 0`
+
+A default would make all 241 existing rows claim they deleted nothing — a claim
+none of them made. They finished before anything counted.
+
+NULL is *not recorded*; 0 is *recorded, and it was none*. §12.54.2 applied to a
+column rather than a row: a value that cannot tell those apart reads as evidence
+and is not.
+
+### 12.113.3 A separate call, not a parameter on `finish`
+
+`MigrationLedger.finish` has fourteen call sites in the test target. A new
+parameter means editing all of them or giving it a default — and §12.95.4 is
+explicit that a default argument is a call site carrying a value the caller never
+wrote. On the one field whose entire purpose is distinguishing "nobody wrote it"
+from "zero", that would have been the defect inside the fix.
+
+`recordRemovals` is also the better shape on its own terms: `finish` closes a
+run, this states a fact about what the run did. It is called BEFORE `finish` and
+its failure is allowed to propagate, so a run whose count could not be written
+becomes a run that FAILED rather than one that afterwards reads as though it
+predated the column. It is unconditional, zero included, for the reason in
+§12.113.2.
+
+### 12.113.4 The line that makes the other three readable
+
+    runs that removed rows: 1
+    rows removed in all runs: 1
+    newest removal: 2026-08-15T14:01:07Z · authored · 1 row
+    runs that finished before this was recorded: 241
+
+**The trigger on the third line is the point.** 360 permits deletion on
+`.authored` alone; this is the only place that claim can be checked against a
+run that actually deleted something.
+
+The fourth line is what stops the first three being a new instance of the same
+problem. Without it, `runs that removed rows: 0` cannot be told from *we started
+counting this morning* — §12.54.2 reintroduced one level above the column
+written to protect against it. It counts only rows in a terminal SUCCESSFUL
+state: a running or failed row with no count is a run that never got there,
+which is a different fact and not this one.
+
+---
+
+### 12.113.5 The total it was built on was missing three families — patch 369a
+
+`Report.removedTotal` read `notesRemoved + matchDecisionsRemoved +
+reviewsRemoved`. `correctionsRemoved`, `movesRemoved` and
+`workItemsRemoved` were not in it, and all three are real deletions printed on
+their own lines in the same report.
+
+**The third was found by this patch's own guard, on its first run.** Two were
+visible from reading the sum; the count of what was missing was itself wrong.
+That is the argument for a check that reads the declarations instead of a list
+somebody typed out — a list would have said five.
+
+The figure named "rows removed in total" had never been the total.
+
+**It was a half-truth nobody had to act on while it lived in one report that
+scrolled away.** §12.113 wrote it into the ledger and made it the durable
+evidence that a run deleted something — which turned a stale sum into precisely
+the defect this section exists to end. The authored run that pruned a plan move
+on 15 August would have recorded `rowsRemoved = 0`, and the paste would have
+said, permanently and in writing, that no run has ever deleted anything.
+
+Found by asking what the device campaign would actually measure, before running
+it. The campaign would have passed.
+
+**The fix is one line; the guard is the patch.** `apply-369a.py` reads every
+`var …Removed = 0` declared on `Report` and fails if any name is absent from
+`removedTotal`. A seventh family added later and not summed fails the apply
+script rather than under-reporting silently — which is what three of the six
+have been doing.
+
+That is §12.43 one level up: not *do not reimplement a rule* but *do not let a
+derived figure drift from the fields it derives from*. The counters and the sum
+were written by different patches at different times and nothing connected them.
+
+**No backfill.** Rows already in the ledger recorded what the old total said.
+`runs that finished before this was recorded` counts NULL, and a row that
+recorded 0 wrongly is not NULL — it is wrong, and reclassifying it would be a
+worse lie than the one row. In practice there are none: every run that has
+deleted anything predates the migration.
+
+---
+
+
 ## 12.112 Saying you did not do it — patch 368
 
 Deferred at 366 and again at 367, and both deferrals were right: this offers to

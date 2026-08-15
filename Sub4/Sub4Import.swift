@@ -281,8 +281,31 @@ nonisolated enum Sub4Import {
         /// athlete deleted.
         var reviewsRemoved = 0
 
+        /// **EVERY FAMILY THAT CAN BE DELETED — corrected at 369a.**
+        ///
+        /// It read `notesRemoved + matchDecisionsRemoved + reviewsRemoved` and
+        /// left out THREE: the two that live in `correction` —
+        /// `pruneCommutes` and `pruneMoves` — and the work queue behind
+        /// "stopped asking". All three are printed on their own lines in the
+        /// same report, a few lines from this sum.
+        ///
+        /// The third was found by the guard below, on its first run. Two were
+        /// known; the count of what was missing was itself wrong.
+        ///
+        /// A half-truth nobody had to act on while it lived in a report that
+        /// scrolled away. 369 wrote it into the ledger as the durable evidence
+        /// that a run deleted something, which made the omission the exact
+        /// defect 369 exists to end: the authored run that pruned a plan move
+        /// on 15 August would have recorded zero, in writing, for ever.
+        ///
+        /// `apply-369a.py` reads every `…Removed` counter declared above and
+        /// fails if one is missing from this sum. The six were written by
+        /// different patches at different times and nothing connected them;
+        /// now something does — which is how the third omission was found
+        /// rather than shipped.
         var removedTotal: Int {
             notesRemoved + matchDecisionsRemoved + reviewsRemoved
+                + correctionsRemoved + movesRemoved + workItemsRemoved
         }
 
         var unresolvedGear: [String: Int] = [:]
@@ -644,6 +667,13 @@ nonisolated enum Sub4Import {
         // here. Marking a run verified from inside the importer that produced
         // it would be a control reporting work it did not do, which is the
         // defect this project has now found five times.
+        // PATCH 369, BEFORE `finish` AND ALLOWED TO THROW. `finish` makes the
+        // run terminal; recording what it deleted afterwards would leave a
+        // window in which a completed run reads as one that predates the
+        // column. A count that cannot be written makes this a failed run,
+        // which is the honest outcome — §12.113.
+        try MigrationLedger.recordRemovals(db, id: runID,
+                                           rows: report.removedTotal)
         try MigrationLedger.finish(db, id: runID, state: .pending,
                                    note: report.ledgerNote,
                                    now: iso8601(Date()))

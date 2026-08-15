@@ -272,6 +272,18 @@ final class WeatherStore {
     /// What the last completed fetch used, for the diagnostics row in Settings.
     private(set) var lastSource: WeatherSource?
 
+    /// **WHAT THE LAST READ FOUND — patch 371.**
+    ///
+    /// Every other store of this shape has carried this since 274. This one did
+    /// not, and on 15 August that cost 601 readings: an undecodable file
+    /// emptied the store in memory, and the next fetch wrote the empty
+    /// dictionary back over it.
+    ///
+    /// §12.92 — `wasReadCleanly` is not `holdsContent`. An empty store the app
+    /// could read and an empty store it could not are opposite facts, and
+    /// `?? [:]` returned the same value for both.
+    private(set) var lastLoad: StoreLoad = .absent
+
     private init() {
         let dir = (try? FileManager.default.url(for: .applicationSupportDirectory,
                                                 in: .userDomainMask,
@@ -281,6 +293,24 @@ final class WeatherStore {
         // Patch 130 stopped persisting the failure set. Clear the old key so a
         // phone that ran 128 or 129 is not still carrying its verdicts.
         UserDefaults.standard.removeObject(forKey: "weather.unavailable")
+        load()
+        // THE SINGLETON ONLY — patch 371, and it is the journal's own rule.
+        // `weather.json` could not appear under "Unreadable stores" because it
+        // never reported; a store the list cannot name is a store the list
+        // cannot warn about.
+        StoreReadJournal.shared.record("weather.json", lastLoad)
+    }
+
+    /// A store rooted somewhere else — the seam `CommuteStore` and
+    /// `PlanMoveStore` already have, added here at 371 for the reason §12.69
+    /// gives: nothing could drive a corrupt file through the singleton, so the
+    /// guard below could not be shown to fail.
+    ///
+    /// IT DOES NOT RECORD TO THE JOURNAL. A test store writing into the shared
+    /// journal would leak into whatever ran next, and `canReconcile` reads that
+    /// journal to decide whether rows may be deleted.
+    init(directory: URL) {
+        fileURL = directory.appendingPathComponent("weather.json")
         load()
     }
 
@@ -354,7 +384,17 @@ final class WeatherStore {
         markUnavailable(a.id)
     }
 
-    private func store(_ w: ActivityWeather) {
+    /// **NOT `private`, SINCE 371, AND THAT IS THE TEST SEAM.**
+    ///
+    /// This is the path that overwrote 602 readings with one: a fetch landed,
+    /// this ran, `save()` believed a load that had failed. While it was private
+    /// the only way to reach `save()` was a real network call, so the guard
+    /// below it could be read but not driven — and §12.69 says a guard that
+    /// cannot fail has not been tested.
+    ///
+    /// Internal rather than a `storeForTesting` twin, deliberately: a seam that
+    /// is not the real path proves the real path nothing.
+    func store(_ w: ActivityWeather) {
         byActivity[w.activityId] = w
         lastSource = w.source
         save()
@@ -567,10 +607,26 @@ final class WeatherStore {
     var storedCount: Int { byActivity.count }
     var failedCount: Int { unavailable.count }
 
+    /// **THE DECODER IS PASSED, AND THAT IS THE DANGEROUS LINE — patch 371.**
+    ///
+    /// `save()` writes with a BARE `JSONEncoder()`, deliberately: the numeric
+    /// date encoding on disk is thirteen months old and `LegacyStore` declares
+    /// it. `StoreRead.decode` defaults to `JSONDecoder.sub4`. Taking that
+    /// default would make every existing weather file undecodable — turning a
+    /// patch about not destroying data into the thing that destroys it, on
+    /// every device at once.
+    ///
+    /// **AND THE ASSIGNMENT IS CONDITIONAL.** `if let value` — a failed read
+    /// leaves memory as it was, which is what `PlanMoveStore` and
+    /// `CommuteStore` have always done. The old line was `?? [:]`, and that is
+    /// the whole of §12.115: it said "the athlete has no weather" when it meant
+    /// "I could not tell".
     private func load() {
-        guard let d = try? Data(contentsOf: fileURL) else { return }
-        byActivity = (try? JSONDecoder().decode([String: ActivityWeather].self,
-                                                from: d)) ?? [:]
+        let (value, outcome) = StoreRead.decode(
+            [String: ActivityWeather].self, at: fileURL,
+            decoder: JSONDecoder())
+        if let value { byActivity = value }
+        lastLoad = outcome
     }
 
 
@@ -589,6 +645,21 @@ final class WeatherStore {
     }
 
     private func save() {
+        // **THE GUARD THAT WOULD HAVE KEPT 601 READINGS — patch 371.**
+        //
+        // §12.20 on a file rather than a row: nothing is overwritten on the
+        // strength of a read nobody could make. Two callers reach here — the
+        // store after every successful fetch, and the backfill's `defer` — and
+        // on 15 August the first of them wrote a one-entry dictionary over six
+        // hundred, because the load had failed and said nothing.
+        //
+        // THE COST IS DISCLOSED, NOT HIDDEN. While the file is unreadable, new
+        // readings live in memory and appear on screen but are not persisted:
+        // they are re-fetched next launch. That is the cheap failure. The
+        // expensive one is the file. "Unreadable stores" names weather.json
+        // now, which is how anybody finds out.
+        guard lastLoad.isTrustworthy else { return }
+
         // Bare encoder, like `athlete.json` and for the same reason: the
         // numeric date encoding on disk is thirteen months old and `LegacyStore`
         // declares it.
@@ -598,10 +669,24 @@ final class WeatherStore {
         }
     }
 
+    /// **AND IT HAS TO CLEAR `lastLoad` — patch 371.**
+    ///
+    /// Without this the guard in `save()` is permanent: a store whose file was
+    /// unreadable stays unwritable for the rest of the session even after the
+    /// bad file has been deleted, so the one action offered for fixing it fixes
+    /// nothing until the next launch. The removal is the repair; the verdict
+    /// has to move with it.
     func resetCache() {
         byActivity = [:]
         unavailable = []
         try? FileManager.default.removeItem(at: fileURL)
+        // §12.20, and it would be this patch's own mistake to make. `try?`
+        // swallows a removal that did not happen, and claiming `.absent` on the
+        // strength of an unchecked call is the exact shape of the defect above.
+        // So the file is asked, not assumed.
+        if !FileManager.default.fileExists(atPath: fileURL.path) {
+            lastLoad = .absent
+        }
     }
 }
 

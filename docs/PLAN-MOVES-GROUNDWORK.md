@@ -400,7 +400,7 @@ a plan-session correction until the verifier can survive it.
 | **366** | "Change match" unconditional; the reverse picker; the two writes | The gesture Bruno asked for, and the first patch in which `moves.json` can exist on the phone. |
 | **367** | Putting a session back, from the session side | Found by 366c's device campaign. The undo existed only through the activity, which is unreachable when the planned day holds no recording — the usual case — and which asserts a match when it is reachable. |
 | **368** | The skipped toggle, and `moves.json` named in the launch block | Split out of 366, deferred again at 367 — both deferrals right, because until the undo existed a moved session that could not be put back was exactly the kind this offers to mark skipped. The diagnostics line rides along: found by 366c's paste, one line, same §12.54.2 argument. |
-| **369** | Durable evidence that a run deleted something | 366c's paste prints only the newest import report, so the run that pruned a move on 15 August left no trace of having done it. Needs `migration_run.rowsRemoved` and therefore a migration, which is why it is not folded into 368. |
+| **369** | Durable evidence that a run deleted something | 366c's paste prints only the newest import report, so the run that pruned a move on 15 August left no trace of having done it. `migration_run.rowsRemoved`, added by `ALTER` and nullable so 241 existing rows do not claim they deleted nothing, plus the trigger that did it — which is the only way 360's rule can be checked after the fact. |
 
 **362 was split out of what this table used to call 362**, which asked for the
 store, the `AppStores` field, the importer's claim, the prune and the read-back

@@ -295,6 +295,41 @@ nonisolated struct LedgerCensus: Equatable, Sendable {
     /// fingerprint is still open work and this line is not a substitute for
     /// it — it is the ledger half of the question, said out loud.
     let runsSinceVerified: Int?
+    /// Runs that deleted something — patch 369.
+    ///
+    /// Only rows where `rowsRemoved` is greater than zero. A run that recorded
+    /// zero is not one of these and is not missing either; see `notRecorded`.
+    let runsThatRemoved: Int
+
+    /// Every row those runs deleted, summed.
+    let rowsRemovedEver: Int
+
+    /// **THE LINE THAT MAKES THE OTHER TWO READABLE.** Runs that reached a
+    /// terminal state before `rowsRemoved` existed, so their count is unknown
+    /// rather than zero.
+    ///
+    /// Without it, `runs that removed rows: 0` cannot be told from "we started
+    /// counting this morning" — §12.54.2 reintroduced one level above the
+    /// column it was written to protect.
+    let notRecorded: Int
+
+    /// The newest run that deleted anything, with the trigger that did it.
+    ///
+    /// THE TRIGGER IS THE POINT. 360 permits deletion on `.authored` alone;
+    /// this is the only place that claim can be checked after the fact.
+    let newestRemoval: Removal?
+
+    nonisolated struct Removal: Equatable, Sendable {
+        let startedUTC: String
+        let trigger: String
+        let rows: Int
+
+        var line: String {
+            "\(startedUTC) · \(trigger) · \(rows) "
+            + (rows == 1 ? "row" : "rows")
+        }
+    }
+
     /// Rows whose trigger is NULL.
     let unrecorded: Int
     /// Keyed by raw value, so an unknown string in the column would show up as
@@ -320,6 +355,18 @@ nonisolated struct LedgerCensus: Equatable, Sendable {
         lines.append("  runs opened since it: "
                      + (runsSinceVerified.map { "\($0)" }
                         ?? "not applicable — none verified"))
+        // PATCH 369, and all four are unconditional. A delete that leaves no
+        // durable trace is 360's rule and §12.20's rule both unauditable; a
+        // set of lines that appeared only after the first delete would make
+        // "nothing has ever been deleted" indistinguishable from "nobody wired
+        // this in".
+        lines.append("  runs that removed rows: \(runsThatRemoved)")
+        lines.append("  rows removed in all runs: \(rowsRemovedEver)")
+        lines.append("  newest removal: "
+                     + (newestRemoval?.line
+                        ?? "never — no run has deleted anything"))
+        lines.append("  runs that finished before this was recorded: "
+                     + "\(notRecorded)")
         lines.append("  retention: newest \(MigrationLedger.keepAutomaticRuns) "
                      + "successful automatic runs and newest "
                      + "\(MigrationLedger.keepAutomaticInterruptedRuns) automatic "
@@ -478,6 +525,40 @@ nonisolated enum MigrationLedger {
             let changed = try Int.fetchOne(d, sql: "SELECT changes()") ?? 0
             guard changed == 1 else {
                 throw MigrationLedgerError.invalidTransition(id: id, target: state)
+            }
+        }
+    }
+
+    /// **WHAT THIS RUN DELETED — patch 369.**
+    ///
+    /// SEPARATE FROM `finish`, and not because it was easier. `finish` has
+    /// fourteen call sites in the test target; a new parameter means editing
+    /// all of them or giving it a default, and §12.95.4 is explicit that a
+    /// default argument is a call site carrying a value nobody wrote — on the
+    /// one field whose entire purpose is telling "nobody wrote it" apart from
+    /// "zero".
+    ///
+    /// It is also the better shape: `finish` closes a run; this states a fact
+    /// about what the run did.
+    ///
+    /// CALLED BEFORE `finish`, AND ITS FAILURE PROPAGATES. A run whose count
+    /// could not be written becomes a run that failed, rather than one that
+    /// reads afterwards as though it predated the column.
+    ///
+    /// UNCONDITIONAL, including when the answer is zero. §12.54.2: a column
+    /// written only when something was deleted cannot be told from one nobody
+    /// wired in, and that is the defect this patch exists to end.
+    static func recordRemovals(_ db: Sub4Database,
+                               id: String,
+                               rows: Int) throws {
+        try db.queue.write { d in
+            try d.execute(sql: """
+                UPDATE migration_run SET rowsRemoved = ? WHERE id = ?
+                """, arguments: [rows, id])
+            let changed = try Int.fetchOne(d, sql: "SELECT changes()") ?? 0
+            guard changed == 1 else {
+                throw MigrationLedgerError.invalidTransition(id: id,
+                                                             target: .running)
             }
         }
     }
@@ -655,12 +736,48 @@ nonisolated enum MigrationLedger {
             let verifiedRows = try count(.verified)
             let activatedRows = try count(.activated)
 
+            // PATCH 369. `rowsRemoved IS NULL` on a row that FINISHED is a run
+            // that predates the column; on a running or failed row it is
+            // simply a run that never got there, which is not the same fact and
+            // is not counted.
+            let removalRow = try Row.fetchOne(d, sql: """
+                SELECT COUNT(*) AS runs, COALESCE(SUM(rowsRemoved), 0) AS rows
+                  FROM migration_run
+                 WHERE rowsRemoved > 0
+                """)
+            let notRecorded = try Int.fetchOne(d, sql: """
+                SELECT COUNT(*) FROM migration_run
+                 WHERE rowsRemoved IS NULL
+                   AND state IN (?, ?, ?)
+                """, arguments: [MigrationRunState.pending.rawValue,
+                                 MigrationRunState.verified.rawValue,
+                                 MigrationRunState.activated.rawValue]) ?? 0
+            let newestRemoval = try Row.fetchOne(d, sql: """
+                SELECT startedUTC, triggeredBy, rowsRemoved
+                  FROM migration_run
+                 WHERE rowsRemoved > 0
+                 ORDER BY sequence DESC
+                 LIMIT 1
+                """).map {
+                    LedgerCensus.Removal(
+                        startedUTC: ($0["startedUTC"] as String?) ?? "—",
+                        trigger: ($0["triggeredBy"] as String?)
+                            ?? "trigger not recorded",
+                        rows: ($0["rowsRemoved"] as Int?) ?? 0)
+                }
+
             return LedgerCensus(total: total,
                                 openNow: try count(.running),
                                 interrupted: try count(.interrupted),
                                 everVerified: verifiedRows + activatedRows,
                                 newestVerified: newestVerified,
                                 runsSinceVerified: runsSince,
+                                runsThatRemoved:
+                                    (removalRow?["runs"] as Int?) ?? 0,
+                                rowsRemovedEver:
+                                    (removalRow?["rows"] as Int?) ?? 0,
+                                notRecorded: notRecorded,
+                                newestRemoval: newestRemoval,
                                 unrecorded: unrecorded, byTrigger: byTrigger)
         }
     }

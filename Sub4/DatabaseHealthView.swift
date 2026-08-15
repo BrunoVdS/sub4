@@ -621,7 +621,10 @@ struct DatabaseHealthView: View {
             if importing {
                 HStack { ProgressView(); Text("Importing…").font(.caption) }
             } else {
-                Button("Import from the app's stores") { runImport(db) }
+                // PATCH 370. IT SAYS SO. A button that quietly does a
+                // second thing is a screen that has stopped describing
+                // itself — §12.54.2, applied to a control rather than a row.
+                Button("Import and verify") { runImport(db) }
             }
 
             if let e = importError {
@@ -1357,6 +1360,20 @@ struct DatabaseHealthView: View {
                 lastImport.record(report, trigger: .manual, atUTC: at)
                 await recheck(db)
                 await reloadLedger(db)
+                // PATCH 370 — THE TAP THAT WRITES CHECKS WHAT IT WROTE.
+                //
+                // AFTER `reloadLedger`, and that is not tidiness:
+                // `verifyNewestRun` marks `lastRun`, which this call is what
+                // sets. Before it, the run being blessed would be the previous
+                // one — which `SemanticVerifier.record` would refuse, correctly
+                // and confusingly.
+                //
+                // ONLY HERE. Backgrounded, foregrounded and authored runs reach
+                // the importer by other paths and are untouched: the verifier
+                // reads 8 187 splits and 198 948 trace samples, and 39 authored
+                // runs happened in one afternoon this week. The cost belongs on
+                // the deliberate tap.
+                await verifyNewestRun(db)
             } catch {
                 importError = String(describing: error)
                 lastImport.recordFailure(String(describing: error),
@@ -2933,46 +2950,61 @@ struct DatabaseHealthView: View {
     }
 
     private func runVerify(_ db: Sub4Database) {
+        Task { await verifyNewestRun(db) }
+    }
+
+    /// **ONE VERIFICATION, TWO CALLERS — patch 370.**
+    ///
+    /// The button below and the import above. Copying these forty lines would
+    /// have been the obvious way and the wrong one: the `else if` chain encodes
+    /// 354's ordering — `noIndependentEvidence` BEFORE `notTheNewestRun`,
+    /// because a passing-but-withheld report reported as a ledger-ordering
+    /// problem sends somebody to press Import. A second copy is a second place
+    /// for that order to be got wrong, silently. §12.43.
+    ///
+    /// IT DOES NOT DECIDE ANYTHING. `SemanticVerifier.record` refuses or
+    /// marks; this reads which happened and says so. That was true when the
+    /// code lived in the button and is worth restating now that two things
+    /// call it.
+    private func verifyNewestRun(_ db: Sub4Database) async {
         verifying = true
-        Task {
-            // The same gathered value the import uses — 301. The verifier
-            // reads a subset of it on purpose; see the overload's comment.
-            let report = SemanticVerifier.attempt(db, stores: AppStores.current())
-            // A passing run moves the ledger to `verified`. A failing one
-            // leaves it where it is — `SemanticVerifier.record` is what
-            // refuses, not this screen.
-            //
-            // PATCH 340. The four sentences moved into
-            // `VerificationResult.Ledger` unchanged. They are the same words;
-            // what is new is that they have a type, so a test can assert each
-            // one and the paste can print it after this sheet is gone.
-            if let runID = lastRun?.id {
-                let outcome: VerificationResult.Ledger
-                do {
-                    let moved = try SemanticVerifier.record(report, for: runID, in: db)
-                    if moved {
-                        outcome = .marked
-                    } else if !report.passed {
-                        outcome = .reportDidNotPass
-                    } else if let why = report.withheldReason {
-                        // PATCH 354 — §12.99. BEFORE `notTheNewestRun`, and the
-                        // order is the whole point: `record` now refuses on
-                        // `isTrustworthyEvidence`, so a passing report that was
-                        // withheld would otherwise be reported as a ledger
-                        // ordering problem and send somebody to press Import.
-                        outcome = .noIndependentEvidence(why)
-                    } else {
-                        outcome = .notTheNewestRun
-                    }
-                } catch {
-                    outcome = .failed(String(describing: error))
+        defer { verifying = false }
+        // The same gathered value the import uses — 301. The verifier
+        // reads a subset of it on purpose; see the overload's comment.
+        let report = SemanticVerifier.attempt(db, stores: AppStores.current())
+        // A passing run moves the ledger to `verified`. A failing one
+        // leaves it where it is — `SemanticVerifier.record` is what
+        // refuses, not this screen.
+        //
+        // PATCH 340. The four sentences moved into
+        // `VerificationResult.Ledger` unchanged. They are the same words;
+        // what is new is that they have a type, so a test can assert each
+        // one and the paste can print it after this sheet is gone.
+        if let runID = lastRun?.id {
+            let outcome: VerificationResult.Ledger
+            do {
+                let moved = try SemanticVerifier.record(report, for: runID, in: db)
+                if moved {
+                    outcome = .marked
+                } else if !report.passed {
+                    outcome = .reportDidNotPass
+                } else if let why = report.withheldReason {
+                    // PATCH 354 — §12.99. BEFORE `notTheNewestRun`, and the
+                    // order is the whole point: `record` now refuses on
+                    // `isTrustworthyEvidence`, so a passing report that was
+                    // withheld would otherwise be reported as a ledger
+                    // ordering problem and send somebody to press Import.
+                    outcome = .noIndependentEvidence(why)
+                } else {
+                    outcome = .notTheNewestRun
                 }
-                verification.record(report, ledger: outcome)
-                await reloadLedger(db)
-            } else {
-                verification.record(report, ledger: .noRun)
+            } catch {
+                outcome = .failed(String(describing: error))
             }
-            verifying = false
+            verification.record(report, ledger: outcome)
+            await reloadLedger(db)
+        } else {
+            verification.record(report, ledger: .noRun)
         }
     }
 
