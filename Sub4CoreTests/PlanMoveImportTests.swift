@@ -343,11 +343,22 @@ struct PlanMoveImportTests {
 
     // MARK: The report
 
+    /// **`redactedLines`, NOT `diagnosticLines`** — and 363a is the third time
+    /// this project has had to say so.
+    ///
+    /// `Report` has two line properties. `diagnosticLines` names every refusal
+    /// by `externalID`, which is a Strava activity id, and has never been
+    /// called from `diagnosticsText`. `redactedLines` is what the paste prints.
+    /// The type's own header records that 341 tried to add a SECOND
+    /// `diagnosticLines` and the compiler refused it.
+    ///
+    /// 363 put its two new lines in the right one and this test asked the wrong
+    /// object, which is a cheap way to find out that the names still matter.
     @Test("The paste says what the moves did, including the zeros")
     func thePasteIsUnconditional() throws {
         let db = try Sub4Database.inMemory()
         let report = try Sub4Import.run(into: db, activities: [], shoes: [])
-        let lines = report.diagnosticLines
+        let lines = report.redactedLines
 
         // §12.15 and 266c. A device that has moved nothing must print a zero
         // rather than nothing at all — an absent line and a zero read the same
@@ -356,6 +367,30 @@ struct PlanMoveImportTests {
         #expect(lines.contains {
             $0.contains("naming a session no stored plan holds: 0")
         })
+    }
+
+    /// **§12.7, ASSERTED WHERE THIS PATCH PUT THE RISK.** `redactedLines` is
+    /// the paste, and the paste promises to carry no identifier out of the
+    /// athlete's history. A session uid is the plan's identifier for a day of
+    /// his training, and 363 added two lines to that property.
+    ///
+    /// Counts only, then — and this is the test rather than the convention,
+    /// because an interpolation is one keystroke and a promise is not.
+    @Test("A move's lines carry counts and never the session uid")
+    func theMoveLinesCarryNoIdentifier() throws {
+        let db = try Sub4Database.inMemory()
+        let report = try Sub4Import.run(into: db, activities: [], shoes: [],
+                                        moves: [move(session, monday)])
+        let lines = report.redactedLines
+
+        #expect(lines.contains { $0.contains("moved sessions: 1 seen") })
+        #expect(lines.contains { $0.contains("1 new") })
+        for line in lines {
+            #expect(!line.contains(session),
+                    "a session uid reached the redacted paste")
+            #expect(!line.contains(monday),
+                    "the day a session moved to is a date from his own history")
+        }
     }
 
     @Test("The key comes from the writer, checked against what the writer wrote")
