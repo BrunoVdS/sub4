@@ -8962,6 +8962,90 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.109 A stored move changes what the app shows — patch 365
+
+The flip. `PlanCorrections.apply` rewrites `Session.date` for every session a
+move names, `PlanStore` derives what it serves from a pristine copy, and
+`Sub4Launch` hands the moves in.
+
+### 12.109.1 The groundwork said two callers and 343 had already made that wrong
+
+`PLAN-MOVES-GROUNDWORK` §6.3 asked for the applier on both sides of the plan
+read-back — `PlanStore` and `PlanRepository.load` — reasoning that otherwise
+"the read-back would report every moved session as a field that differs".
+
+That reasoning describes a read-back whose app side is the store. 343 replaced
+it: `ReadBacks.plan` decodes the bundle itself, so the comparison stopped being
+the database against a store the database feeds. Both sides are consequently
+already move-free — the bundle is pristine, and `plan_session` is written from
+`AppStores.current()`, which seeds from `decodeBundle()` and not from the served
+plan (§12.93).
+
+**Applying moves on both sides would blind the check that matters.**
+`plan_session` must never hold a moved date; a move lives in `correction`. If
+one ever leaked into the plan tables, that comparison is what would catch it.
+Adding the same transform to both sides is exactly how a check stops being able
+to fail — §12.99, arrived at from the other direction, and the second time this
+project has had to notice that symmetry can be a way of hiding.
+
+The groundwork is corrected rather than quietly disobeyed, and `apply-365.py`
+fails if `PlanRepository` or `ReadBacks` ever grows a `PlanMove`.
+
+### 12.109.2 Two plans, because applying twice destroys the answer
+
+The obvious shape is `plan = PlanCorrections.apply(plan, moves:)` at each
+assignment. It overwrites `Session.date` — and the planned date is precisely
+what `PlanMoveStore.clear` has to put the session back on. Applied twice, the
+second application has nothing left to correct from.
+
+So `PlanStore` holds `planAsStored`, exactly what the bundle or the database
+gave it, and derives `plan` from it. `applyMoves` is idempotent, and "the
+athlete moved it back" is applying one fewer move rather than a second code
+path.
+
+### 12.109.3 The store does not fetch the moves
+
+`PlanStore()` is constructed by `PlanCoverageTests`, `PlanFocusTests` and others
+that read dates off it. Reading `PlanMoveStore.shared` from its initialiser
+would make those suites depend on whatever `moves.json` the test host's
+container holds — which from 366 is data the athlete wrote. A suite whose
+answers change because somebody moved a session has stopped being a suite.
+
+`Sub4Launch` hands them in, on BOTH hydration paths. On `.leaveOnFiles` the plan
+is the bundle and the moves still apply: a move is the athlete's, not the
+database's, and refusing to honour it because a slice is off would be the app
+quietly disagreeing with something he wrote.
+
+That also makes `moves.json` a launch-time read like every other authored store.
+Until now it was a lazy singleton first touched by `AppStores.current()`, which
+meant an unreadable file did not reach Settings until the first import of the
+session — noted at §12.107.5 and closed here.
+
+### 12.109.4 `Session.date` becomes `var`
+
+One word. The alternative is rebuilding each moved `Session` through its
+memberwise initialiser, which means naming all fourteen fields in the applier —
+and the day somebody adds a fifteenth, the applier keeps compiling and quietly
+drops it. `Session` is a value type and the copy is made inside the applier;
+nothing else mutates the field.
+
+### 12.109.5 What it does to the weeks: nothing
+
+`PlanCorrections.apply` rewrites sessions and passes `weeks` through untouched.
+A move changes the DAY a session was done, never its week membership, so the
+Week view and `plan_week_stat` keep the plan's own arithmetic. Groundwork §3.1,
+and the cost is disclosed rather than hidden: a session can appear in one week's
+list and on a day inside the next one.
+
+### 12.109.6 Nothing on the phone changes yet
+
+No gesture writes a move, so `moves.json` is empty and this patch is invisible
+on the device. That is 366 — and it is why the flip gets a diff of its own. B1
+and B2 both paid for that separation, and 358's one line was visible because
+nothing else was in the diff with it.
+
+---
+
 ## 12.108 The read-back covers the moves — patch 364
 
 363 wrote the rows and counted them. A count says the right NUMBER of rows is

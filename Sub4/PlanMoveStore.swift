@@ -145,6 +145,71 @@ nonisolated enum PlanMoveFault: Error, Equatable {
     }
 }
 
+// MARK: - Applying them — patch 365
+
+/// Rewrites `Session.date` for every session a move names.
+///
+/// **ONE APPLIER, AND `PlanStore` IS ITS ONLY CALLER.** The groundwork asked
+/// for two — `PlanStore` and `PlanRepository.load` — so that both sides of the
+/// plan read-back would agree. That instruction predates patch 343: the
+/// read-back's app side is now `PlanStore.decodeBundle()`, a pristine bundle,
+/// and its database side is `plan_session`, written from a seed that is also
+/// the pristine bundle (§12.93). Both sides are already move-free.
+///
+/// Applying moves to both would add an operation to a comparison whose data
+/// contains none, and it would blind the thing worth catching: **`plan_session`
+/// must never hold a moved date.** A move lives in `correction`. If one ever
+/// leaked into the plan tables, that comparison is what would see it — and
+/// applying moves to both sides is precisely how it would stop being able to.
+/// §12.99, in the direction nobody expects.
+///
+/// IT IS A PURE FUNCTION AND IT TAKES THE MOVES. No store, no singleton, no
+/// database. That is what lets `PlanStore` stay testable and what lets this be
+/// driven through every case without a container.
+nonisolated enum PlanCorrections {
+
+    /// The sessions, with every named one moved.
+    ///
+    /// A MOVE NAMING NO SESSION IS NOT AN ERROR. `plan_session.uid` carries the
+    /// session's position within its day, so a plan revision reissues uids and
+    /// a move naming an old one names nothing (§12.106.4). The session simply
+    /// stays where the plan put it, which is the whole reason an orphan was
+    /// described as harmless rather than fixed.
+    ///
+    /// IT WILL GIVE A DATE TO A SESSION THAT HAD NONE, and that is stated
+    /// rather than guarded. The eight dateless sessions are the logged July
+    /// prologue weeks; no screen offers a move for one, because the reverse
+    /// picker lists sessions out of `byDate` and a dateless session is not in
+    /// it. If one ever arrives here, moving it is the honest reading of what
+    /// the record says.
+    static func apply(_ sessions: [Session], moves: [PlanMove]) -> [Session] {
+        guard !moves.isEmpty else { return sessions }
+        let byUid = Dictionary(moves.map { ($0.sessionUid, $0) },
+                               uniquingKeysWith: { first, _ in first })
+        return sessions.map { s in
+            guard let move = byUid[s.uid] else { return s }
+            var moved = s
+            moved.date = move.movedTo
+            return moved
+        }
+    }
+
+    /// The same, on a whole plan. `weeks` are untouched — a move changes the
+    /// DAY a session was done and never its week membership, so the Week view
+    /// and `plan_week_stat` keep the plan's own arithmetic. Groundwork §3.1,
+    /// and the cost is disclosed there rather than hidden: a session can appear
+    /// in one week's list and on a day inside the next one.
+    static func apply(_ plan: Plan, moves: [PlanMove]) -> Plan {
+        guard !moves.isEmpty else { return plan }
+        return Plan(meta: plan.meta,
+                    weeks: plan.weeks,
+                    sessions: apply(plan.sessions, moves: moves),
+                    exercises: plan.exercises,
+                    fuel: plan.fuel,
+                    warmup: plan.warmup)
+    }
+}
+
 // MARK: - The store
 
 @Observable

@@ -287,12 +287,32 @@ final class Sub4Launch {
     @MainActor
     private static func apply(_ instruction: HydrationPlanner.Instruction)
         -> HydrationOutcome {
+        // PATCH 365 — THE MOVES ARE HANDED IN HERE, ON BOTH PATHS.
+        //
+        // `PlanStore` deliberately does not read `PlanMoveStore.shared` (see
+        // its `init`), so this is where the athlete's corrections meet the plan
+        // — and it is the same main-actor step as the hydration above, with no
+        // suspension inside it, so nothing gets to observe a plan that has been
+        // hydrated and not yet corrected.
+        //
+        // It also makes `moves.json` a LAUNCH-TIME read like every other
+        // authored store. Until 365 the store was a lazy singleton first
+        // touched by `AppStores.current()`, which meant an unreadable file did
+        // not reach Settings until the first import of the session.
+        let moves = PlanMoveStore.shared.all
+
         switch instruction {
         case .leaveOnFiles(let outcome):
+            // THE PLAN IS THE BUNDLE ON THIS PATH and the moves still apply.
+            // A move is the athlete's, not the database's; refusing to honour
+            // it because a slice is off would be the app quietly disagreeing
+            // with something he wrote.
+            PlanStore.shared.applyMoves(moves)
             return outcome
         case .hydrate(let plan, let constants, let zones, let ftp,
                       let authored, let decisions):
             PlanStore.shared.hydrate(from: plan)
+            PlanStore.shared.applyMoves(moves)
             ConstantsStore.shared.hydrate(from: constants)
             AthleteStore.shared.hydrate(zones: zones, ftp: ftp)
             var what = "the plan, its trimmings, the athlete and the constants"

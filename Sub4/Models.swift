@@ -109,7 +109,18 @@ nonisolated struct Session: Codable, Identifiable, Hashable {
     let uid: String
     let weekUid: String
     let day: String?
-    let date: String?          // "yyyy-MM-dd", nil for logged prologue weeks
+    /// `var` SINCE 365, AND IT IS ONE WORD RATHER THAN A REBUILD.
+    ///
+    /// `PlanCorrections.apply` overrides this for a session the athlete did on
+    /// another day. The alternative is constructing a replacement `Session`
+    /// through its memberwise initialiser, which means naming all fourteen
+    /// fields in the applier — and the day somebody adds a fifteenth, the
+    /// applier still compiles and quietly drops it.
+    ///
+    /// Nothing else mutates it. `Session` is a value type, the copy is made
+    /// inside the applier, and `PlanStore` keeps the stored plan beside the
+    /// served one so the planned date is never lost.
+    var date: String?          // "yyyy-MM-dd", nil for logged prologue weeks
     let discipline: Discipline
     let intensity: Intensity?
     let title: String?

@@ -38,7 +38,30 @@ final class PlanStore {
     /// view could have seen would be advertising a guarantee it is not the
     /// thing providing; the ORDERING is the guarantee, and it lives in the
     /// launch.
+    /// WHAT THE APP READS — the stored plan with the athlete's moves applied.
+    ///
+    /// DERIVED, NEVER MUTATED IN PLACE. See `planAsStored` below: applying a
+    /// move to `plan` itself would overwrite the planned date, and the planned
+    /// date is what putting a session back requires.
     private(set) var plan: Plan
+
+    /// **EXACTLY WHAT THE BUNDLE OR THE DATABASE GAVE US — patch 365.**
+    ///
+    /// The reason there are two. `PlanCorrections.apply` rewrites
+    /// `Session.date`, so applying it to the served plan would destroy the day
+    /// the plan actually asked for. Undoing a move would then have nothing to
+    /// restore, and applying twice would correct a correction.
+    ///
+    /// Every derivation starts here, which makes `applyMoves` idempotent and
+    /// makes "the athlete moved it back" the ordinary case of applying one
+    /// fewer move rather than a second code path.
+    private var planAsStored: Plan
+
+    /// The moves last handed to `applyMoves`. Held so a hydration can re-derive
+    /// without the caller having to remember them — `Sub4Launch` hydrates and
+    /// applies in one step, but the write-through can hydrate again later.
+    private var appliedMoves: [PlanMove] = []
+
     let loadError: String?
 
     /// Where the plan this store is serving came from — patch 344.
@@ -88,6 +111,16 @@ final class PlanStore {
         // So the read-back does its own decode of the bundle, which is the
         // ORIGINAL SOURCE and stays an independent side. §12.91.
         let decoded = Self.decodeBundle()
+        planAsStored = decoded.plan
+        // NO MOVES HERE, AND IT IS DELIBERATE. `PlanStore()` is constructed by
+        // `PlanCoverageTests`, `PlanFocusTests` and others, which read dates
+        // off it. Reading `PlanMoveStore.shared` in this initialiser would make
+        // those suites depend on whatever `moves.json` the test host's
+        // container holds — which from 366 is data the athlete wrote. A suite
+        // whose answers change because somebody moved a session has stopped
+        // being a suite.
+        //
+        // `Sub4Launch` hands the moves in instead, on both hydration paths.
         plan = decoded.plan
         loadError = decoded.error
         guard decoded.error == nil else { return }
@@ -111,8 +144,35 @@ final class PlanStore {
     /// against. Nothing in this method touches disk, and the apply script that
     /// installed it refuses to if it does.
     func hydrate(from stored: Plan) {
-        plan = stored
+        planAsStored = stored
         servedFrom = .database
+        // PATCH 365. Re-derives from the moves already applied rather than
+        // dropping them: hydration replaces the PLAN, not the athlete's
+        // corrections to it, and `DatabaseWriteThrough` can hydrate again long
+        // after the launch handed them over.
+        derive()
+    }
+
+    /// **THE FLIP — patch 365.** The stored plan, with these moves applied.
+    ///
+    /// TAKES THE MOVES RATHER THAN FETCHING THEM. See `init` for why this store
+    /// never touches `PlanMoveStore.shared`, and `Sub4Launch` for who hands
+    /// them in. 366 calls this after a write, which is what makes a move show
+    /// without a relaunch.
+    ///
+    /// IDEMPOTENT, because `derive` always starts from `planAsStored`. Calling
+    /// it twice with the same moves is the same as calling it once, and calling
+    /// it with one fewer move puts that session back on its planned day —
+    /// which is the whole of "undo" and needs no code of its own.
+    func applyMoves(_ moves: [PlanMove]) {
+        appliedMoves = moves
+        derive()
+    }
+
+    /// The served plan, from the stored one. The only place `plan` is written
+    /// after `init`.
+    private func derive() {
+        plan = PlanCorrections.apply(planAsStored, moves: appliedMoves)
         rebuildIndexes()
     }
 

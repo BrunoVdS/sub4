@@ -213,22 +213,41 @@ PlanCorrections.apply(_ plan: Plan, moves: [PlanMove]) -> Plan
 ```
 
 It rewrites `Session.date` for every session named by a move and returns the
-plan. Called:
+plan.
 
-- in `PlanStore` wherever `plan` is set — the bundle decode **and**
-  `hydrate(from:)`
-- in `PlanRepository.load` when assembling sessions from `plan_session` rows
+**CORRECTED AT 365 — one caller, not two.** This section said the applier runs
+on both sides of the plan read-back, because "if only the store applied it, the
+read-back would report every moved session as a field that differs". That was
+written against a read-back whose app side was the store. **Patch 343 changed
+it**: `ReadBacks.plan` decodes the bundle itself, so the comparison stops being
+the database against a store the database feeds.
 
-**Both sides, deliberately.** If only the store applied it, the plan read-back
-would report every moved session as a field that differs, and the honest fix
-would be an "approved difference" that grows without bound. Applying it on both
-sides means the two agree and the comparison stays a comparison. §12.99 is the
-record of what happens when a check stops being able to fail; this is the
-opposite mistake and it is just as bad.
+Both sides of that comparison are therefore already move-free — the bundle is
+pristine, and `plan_session` is written from `AppStores.current()`, which seeds
+from `PlanStore.decodeBundle()` rather than from the served plan (§12.93).
 
-**One applier, two callers.** A second implementation is a second opinion about
-where a session is (§12.43, and it is the twelfth application of that rule in
-this project).
+Applying moves to both would add an operation to a comparison whose real data
+contains none, and it would blind the one thing worth catching: **`plan_session`
+must never hold a moved date.** A move lives in `correction`. If one ever leaked
+into the plan tables, that comparison is what would see it — and applying moves
+on both sides is exactly how it would stop being able to. §12.99, in the
+direction nobody expects.
+
+So it is called from **`PlanStore` only**, where the store derives what it
+serves, and `apply-365.py` fails if `PlanRepository` or `ReadBacks` ever grows a
+`PlanMove`.
+
+**Two plans, not one.** `PlanStore` keeps `planAsStored` — exactly what the
+bundle or the database gave it — beside the served `plan`. Applying a move to
+the served plan would overwrite the planned date, and the planned date is what
+putting a session back requires. Deriving from the stored copy makes
+`applyMoves` idempotent and makes "moved it back" the ordinary case of applying
+one fewer move.
+
+**The store does not fetch the moves.** `PlanStore()` is constructed by several
+test suites that read dates off it; reading `PlanMoveStore.shared` in its
+initialiser would make them depend on the test host's `moves.json`.
+`Sub4Launch` hands them in, on both hydration paths.
 
 ### 6.4 The UI
 
