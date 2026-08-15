@@ -1394,14 +1394,16 @@ struct MatchPickerView: View {
         }
     }
 
+    /// What is recorded for this session — patch 359. Read from the decision
+    /// rather than from the resolved day; see `MatchStanding`.
+    private var standing: MatchStanding {
+        MatchStanding.of(decision: matcher.decisions[session.uid],
+                         offered: activities.activities(on: dayKey).map(\.id))
+    }
+
     private var choiceSection: some View {
-        Section("Choose the activity") {
-            Button {
-                matcher.setOverride(session: session, activity: nil)
-                dismiss()
-            } label: {
-                Label("Not done", systemImage: "circle")
-            }
+        Section {
+            notDoneButton
 
             ForEach(activities.activities(on: dayKey)) { a in
                 Button {
@@ -1411,13 +1413,55 @@ struct MatchPickerView: View {
                     activityRow(a)
                 }
             }
+        } header: {
+            Text("Choose the activity")
+        } footer: {
+            // UNCONDITIONAL. The boring sentence is the one that proves the
+            // other three are wired in at all. §12.54.2.
+            Text(standing.line).font(.caption2)
         }
     }
 
+    /// **A NEGATIVE STATE, STYLED AS ONE — patch 359.** It sat among the
+    /// activity rows in the same ink, and those rows mean "this happened".
+    /// This one means the opposite, and on 14 August it was tapped, it worked,
+    /// and nothing on screen said so.
+    private var notDoneButton: some View {
+        Button {
+            matcher.setOverride(session: session, activity: nil)
+            dismiss()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "xmark.circle.fill")
+                Text("Not done").fontWeight(.semibold)
+                Spacer()
+                if standing == .choseNothing {
+                    Image(systemName: "checkmark").fontWeight(.semibold)
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.red, in: RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+        .listRowBackground(Color.clear)
+    }
+
     private func activityRow(_ a: Activity) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(a.name)
-            Text(subtitle(a)).font(.caption).foregroundStyle(.secondary)
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(a.name)
+                Text(subtitle(a)).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            // THE TICK IS THE WHOLE PATCH, in one line. Before it, a recorded
+            // choice and no choice at all rendered identically.
+            if standing.chosen == a.id {
+                Image(systemName: "checkmark").fontWeight(.semibold)
+            }
         }
     }
 
@@ -1432,9 +1476,16 @@ struct MatchPickerView: View {
                 matcher.clearOverride(session: session)
                 dismiss()
             }
+            // DISABLED WHEN THERE IS NOTHING TO UNDO — patch 359. Clearing an
+            // override that does not exist removes nothing and dismisses the
+            // sheet, which is indistinguishable from having undone something.
+            .disabled(!standing.isRecorded)
         } footer: {
-            Text("Overrides are remembered. Use this when the automatic match picks "
-                 + "the wrong activity — for example two runs on one day.")
+            Text(standing.isRecorded
+                 ? "Overrides are remembered. Use this when the automatic match "
+                 + "picks the wrong activity — for example two runs on one day."
+                 : "There is nothing to undo — no choice has been recorded for "
+                 + "this session.")
         }
     }
 }

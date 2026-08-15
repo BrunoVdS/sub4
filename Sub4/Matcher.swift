@@ -60,6 +60,87 @@ struct Match: Hashable {
     var isDone: Bool { activity != nil }
 }
 
+// MARK: - What was recorded — patch 359
+
+/// WHAT THE ATHLETE RECORDED ABOUT ONE SESSION, as the picker must show it.
+///
+/// **THIS READS THE DECISION AND NOT THE RESOLUTION, AND THAT IS THE POINT.**
+/// `MatchResolver.resolve` already knows whether an override is in effect —
+/// `Match.auto == false` — and the picker could have read that. It would have
+/// been wrong, for the reason the resolver states about itself:
+///
+/// > THREE OUTCOMES, TWO OF THEM THE SAME MATCH. "Explicitly nothing" and "the
+/// > activity named is not here" both produce an unmatched session … The
+/// > importer treats the two differently, because the database can tell them
+/// > apart and this screen cannot.
+///
+/// The collapse is correct there: the athlete overrode the matcher, so the
+/// matcher does not get another guess, and a day view has nothing useful to do
+/// with the difference. It is not correct HERE, in the one sheet whose job is
+/// to show what was recorded, because the athlete's next action differs. A
+/// recorded "not done" is a decision to keep. A recorded activity the day no
+/// longer offers is a decision to redo, and it looks identical on every other
+/// screen in the app.
+///
+/// NOT A SECOND OPINION ABOUT MATCHING. §12.43 holds: nothing here decides what
+/// satisfied a session. It answers the question `MatchResolver` discards.
+nonisolated enum MatchStanding: Equatable, Sendable {
+
+    /// No decision. Whatever the matcher picked is in effect.
+    case automatic
+
+    /// A decision naming an activity the day still offers.
+    case chose(String)
+
+    /// A decision naming nothing — a row with a NULL in it, which is not the
+    /// same as no row. `match_decision.activityID` is nullable for this.
+    case choseNothing
+
+    /// A decision naming an activity this day does not offer. Deleted from the
+    /// source, or moved to another day. The resolver reports this as an
+    /// unmatched session and so does every screen; this sheet does not.
+    case choseSomethingGone(String)
+
+    /// Was anything recorded at all — the flag "Back to automatic" is enabled
+    /// on. A control that undoes nothing is a control that looks broken.
+    var isRecorded: Bool { self != .automatic }
+
+    /// The activity on THIS day that the recorded choice names, if it is here.
+    /// Nil for the other three, each for its own reason.
+    var chosen: String? {
+        if case .chose(let id) = self { return id }
+        return nil
+    }
+
+    /// §12.54.2 — printed on every state, including the boring one. A footer
+    /// that appeared only when something was recorded could not be told from
+    /// one nobody wired in, and this is the line that tells a reader whether
+    /// the tick above it came from them or from the matcher.
+    var line: String {
+        switch self {
+        case .automatic:
+            "Nothing recorded — the automatic match is in effect."
+        case .chose:
+            "You chose this one. Back to automatic undoes it."
+        case .choseNothing:
+            "You marked this not done. Back to automatic undoes it."
+        case .choseSomethingGone:
+            "You chose an activity this day no longer offers, so the session "
+            + "reads as not done. Choose again, or go back to automatic."
+        }
+    }
+
+    /// Pure, and takes the ids rather than the activities: what is needed is
+    /// whether the recorded one is still on offer, and a test should not have
+    /// to build an `Activity` to ask.
+    nonisolated static func of(decision: MatchDecision?,
+                               offered: [String]) -> MatchStanding {
+        guard let decision else { return .automatic }
+        guard let id = decision.activityId else { return .choseNothing }
+        return offered.contains(id) ? .chose(id) : .choseSomethingGone(id)
+    }
+}
+
 /// One planned session, and what the athlete said satisfied it.
 ///
 /// NONISOLATED, and deliberately so. `Sub4Import` reads this from inside a

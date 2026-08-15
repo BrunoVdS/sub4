@@ -3466,6 +3466,17 @@ struct DatabaseHealthView: View {
         lines.append("Plan store reads: \(PlanStore.shared.servedFrom.line)")
         lines.append("Athlete store reads: \(AthleteStore.shared.servedFrom.line)")
         lines.append("Constants store reads: \(ConstantsStore.shared.servedFrom.line)")
+        // PATCH 359 — THE THREE B2 MOVED AND DID NOT ANNOUNCE.
+        //
+        // `Hydration:` above says what moved, once, on the launch it moved. It
+        // is a sentence about an event. These say where each store READS, on
+        // every paste, which is a different fact and the one somebody checks
+        // against a screen that looks wrong six weeks from now. §12.54.2: they
+        // print whatever the answer is, so "the app's own files" on one of them
+        // after B2 is a finding rather than a missing line.
+        lines.append("Notes store reads: \(NotesStore.shared.servedFrom.line)")
+        lines.append("Commute store reads: \(CommuteStore.shared.servedFrom.line)")
+        lines.append("Matcher reads: \(Matcher.shared.servedFrom.line)")
         lines.append("Tables: \(counts.count), imported rows: \(importedRows), total: \(totalRows)")
         // PATCH 336. EVERY TABLE, INCLUDING THE EMPTY ONES.
         //

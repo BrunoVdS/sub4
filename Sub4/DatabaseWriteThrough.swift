@@ -244,6 +244,33 @@ final class DatabaseWriteThrough {
             last = outcome
             runs += 1
             Self.record(outcome, reason: reason)
+            // PATCH 360 — AND `LastImport`'s OWN HEADER ASKED FOR IT.
+            //
+            // It says it answers *"what did the newest import of ANY kind
+            // write"*, and that "the two are written from the two call sites of
+            // `Sub4Import.run`". It was written from ONE: the button on the
+            // health screen, with `trigger: .manual`. Every automatic run — the
+            // ones carrying what the athlete just wrote — has been absent from
+            // `Last import report:` since 341.
+            //
+            // That is why the 15 August defect took three device round-trips.
+            // The paste showed a manual run's `reconciled: yes` a few lines
+            // above a ledger entry for an authored run, and the number the
+            // diagnosis needed belonged to neither. §12.15, in the block a
+            // paste is read for.
+            //
+            // `DatabaseWriteThrough.last` still answers its own question — is
+            // the automatic trigger firing, and did it fail — and is still fed
+            // only from here. The duplication the two headers describe is now
+            // real rather than claimed.
+            switch outcome {
+            case .wrote(let report, let at):
+                LastImport.shared.record(report, trigger: trigger, atUTC: at)
+            case .failed(let why, let at):
+                LastImport.shared.recordFailure(why, atUTC: at)
+            case .never, .noDatabase:
+                break
+            }
         } while runAgainWhenDone
     }
 
@@ -255,9 +282,43 @@ final class DatabaseWriteThrough {
                                          snapshotID: String? = nil,
                                          trigger: MigrationRunTrigger) -> Outcome {
         var s = stores
-        // See the header. Set HERE rather than at the call site so it cannot be
-        // forgotten by a future trigger.
-        s.reconcile = .skipped("an automatic write-through does not delete")
+        // PATCH 360 — THE RULE SPLIT, AND B2 IS WHY.
+        //
+        // This read `.skipped("an automatic write-through does not delete")`
+        // for every trigger, and until 358 that was right: the blob was what
+        // the app read, the database was a shadow, and a row the athlete had
+        // deleted sat there until somebody ran a reconciled import. The blanket
+        // refusal is what stood between a store that transiently failed to
+        // decode and thirteen months of deleted notes — 274's argument, still
+        // true.
+        //
+        // B2 INVERTED THE CONSEQUENCE. `Matcher`, `NotesStore` and
+        // `CommuteStore` are hydrated FROM the database at launch, so a row
+        // this refuses to delete is not stale: it comes back, the store serves
+        // it, and the next save persists it over the file. Measured on the
+        // device on 15 August — a "Back to automatic" cleared the blob, this
+        // run fired, `match_decision` kept the row, and the next launch handed
+        // it back.
+        //
+        // THE SPLIT IS BY WHO CAUSED THE RUN. `.authored` is fired by
+        // `NotesStore.save`, `Matcher.persist` and `CommuteStore`: the athlete
+        // wrote something and the stores are exactly as they left them. The
+        // other three fire at a moment nobody chose, with the stores in
+        // whatever state they happen to be in — `resetCache` exists, and 274's
+        // guard was earned there. So the run you caused may delete; the runs
+        // the system causes may not.
+        //
+        // **IT STILL PASSES THROUGH `canReconcile`.** This widens WHICH RUNS
+        // MAY ASK, not what the answer is: `stores.reconcile` is the gate's own
+        // verdict, computed in `AppStores.current()`, and a store that did not
+        // read cleanly still deletes nothing. `theGateStillRefuses` is the test.
+        //
+        // Still set HERE rather than at the call site, for the original reason:
+        // a future trigger cannot forget it, and it cannot quietly inherit
+        // permission by defaulting.
+        s.reconcile = trigger == .authored
+            ? stores.reconcile
+            : .skipped("an automatic write-through does not delete")
 
         let at = Sub4Import.iso8601(Date())
         do {
