@@ -145,6 +145,95 @@ nonisolated enum PlanMoveFault: Error, Equatable {
     }
 }
 
+// MARK: - What the session side can undo — patch 367
+
+/// Whether this session sits where the plan put it, and where that was.
+///
+/// **`MatchStanding`'s TWIN, AND THE PARALLEL IS THE DESIGN.** 359 built that
+/// one because a recorded choice and no choice at all rendered identically in
+/// the same sheet. This answers the same question about the DAY rather than the
+/// recording, in the same shape, and its `line` is printed on every state
+/// including the boring one — §12.54.2, a row that vanishes at zero cannot be
+/// told from a row nobody wired in.
+///
+/// PURE, AND TAKING THE MOVE RATHER THAN THE STORE. What is needed is whether a
+/// row exists and what the plan asked for; a test should not have to build a
+/// `PlanMoveStore` on disk to ask. §12.69 — the decision lives here so it can
+/// fail in a test rather than inside a `body`.
+nonisolated enum MoveStanding: Equatable {
+
+    /// No stored move. The session is on the day the plan asked for.
+    case notMoved
+
+    /// A move is stored, and the plan asked for this day.
+    case movedFrom(String)
+
+    /// A move is stored and the plan gives this session NO day at all — the
+    /// logged prologue weeks. §12.110.7 disclosed that these could be moved and
+    /// never put back, for want of a day to go back to. From the session side
+    /// there is nothing to go back TO and nothing needed: removing the row
+    /// returns the session to having no day.
+    case movedFromNoDay
+
+    /// Was anything stored at all — what the control is enabled on. A button
+    /// that undoes nothing is a button that looks broken (359's rule, for the
+    /// same reason).
+    var isMoved: Bool { self != .notMoved }
+
+    /// §12.54.2 — printed on every state, the boring one included.
+    ///
+    /// The middle case discloses what putting it back does NOT do BEFORE the
+    /// tap. Afterwards `MatchStanding.choseSomethingGone` says the same thing
+    /// about the state it leaves behind.
+    var line: String {
+        switch self {
+        case .notMoved:
+            "This session is on the day the plan asked for."
+        case .movedFrom(let day):
+            "You moved this session here from \(day). Putting it back does not "
+            + "change which recording it is matched to — if that recording is "
+            + "on another day, the session will read as not done until you "
+            + "choose again."
+        case .movedFromNoDay:
+            "The plan gives this session no day of its own; you gave it one. "
+            + "Putting it back removes that day, so it will not appear on any "
+            + "day until you place it again."
+        }
+    }
+
+    /// What the button says. Nil when there is nothing to undo — the caller
+    /// still renders the control, disabled, so the row cannot be mistaken for
+    /// one nobody wired in.
+    var action: String {
+        switch self {
+        case .notMoved:
+            return "Back to its planned day"
+        case .movedFrom(let day):
+            // §12.15 — a key the formatter cannot read falls back to the key
+            // rather than to an empty button.
+            guard let d = DayKey.date(day) else { return "Back to \(day)" }
+            return "Back to \(DayKey.pretty(d))"
+        case .movedFromNoDay:
+            return "Back to no day at all"
+        }
+    }
+
+    /// Takes the MOVE, not the store, and the PLANNED date, not the served one.
+    ///
+    /// The served date already carries the move — that was 366's defect
+    /// (§12.110.7) — so deriving "is it moved" by comparing it against anything
+    /// would be asking the corrected value whether it was corrected. The stored
+    /// row is the only honest answer, and a row that happens to name the planned
+    /// day (which 366 could write and 366a cannot) still counts as moved, so it
+    /// can be cleared rather than stranded.
+    nonisolated static func of(storedMove: PlanMove?,
+                               plannedDate: String?) -> MoveStanding {
+        guard storedMove != nil else { return .notMoved }
+        guard let plannedDate else { return .movedFromNoDay }
+        return .movedFrom(plannedDate)
+    }
+}
+
 // MARK: - Applying them — patch 365
 
 /// Rewrites `Session.date` for every session a move names.
@@ -218,6 +307,19 @@ final class PlanMoveStore {
     static let shared = PlanMoveStore()
 
     private(set) var moves: [String: PlanMove] = [:]
+
+    /// Where the moves this store is serving came from — patch 368.
+    ///
+    /// `.files` AND NOTHING SETS IT YET, WHICH IS THE POINT. Moves are not
+    /// hydrated from the database, so this store reads its own file and the
+    /// `session moves` comparison is a genuinely independent second opinion
+    /// (§12.99). The launch block printed where four stores read and said
+    /// nothing about this one, so a reader could not tell "reads its own file"
+    /// from "not wired in" — §12.54.2, on the page whose job is answering
+    /// exactly that. `CommuteStore.servedFrom` sat at `.files` the same way
+    /// until B2 moved it, and when moves are hydrated this line moves on its
+    /// own rather than going quietly stale.
+    private(set) var servedFrom: StoreSource = .files
 
     private let fileURL: URL
 

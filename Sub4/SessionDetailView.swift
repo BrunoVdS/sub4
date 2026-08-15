@@ -240,15 +240,65 @@ struct SessionDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .cardStyle()
         } else {
-            HStack {
-                Label("Not recorded yet", systemImage: "circle")
-                    .font(.subheadline).foregroundStyle(Color.dim)
-                Spacer()
-                Button("Match…") { route = .picker }
+            // PATCH 368. "Not recorded yet" was a FALSE STATEMENT about a
+            // session you had marked skipped — you recorded it, and this said
+            // nobody had. The control and its reason are both unconditional:
+            // §12.54.2, the surface the card's context menu leans on.
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    // RED, and through the shared symbol — 368a. See
+                    // `SkipStanding.symbol`: this was one of three copies.
+                    Label(skip.isSkipped ? "You did not do this" : "Not recorded yet",
+                          systemImage: SkipStanding.symbol(isDone: false,
+                                                           isSkipped: skip.isSkipped))
+                        .font(.subheadline)
+                        .foregroundStyle(skip.isSkipped ? Color.red : Color.dim)
+                    Spacer()
+                    Button("Match…") { route = .picker }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.accent4)
+                }
+                // **THE COLOUR IS CONDITIONAL, AND 368 GOT THIS WRONG.**
+                //
+                // An explicit `foregroundStyle` OVERRIDES the styling
+                // `.disabled` would apply, so this button read in full accent
+                // on a session whose day has not passed and did nothing when
+                // tapped. "Back to its planned day" in the Fix match sheet
+                // greys correctly precisely because it sets no colour.
+                //
+                // A control that looks live and silently does nothing is worse
+                // than one that is absent — §12.54.2 inside out, and the reason
+                // the row is rendered in every state at all.
+                Button(skip.action) { toggleSkip() }
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.accent4)
+                    .foregroundStyle(skip.isOffered ? Color.accent4 : Color.dim)
+                    .disabled(!skip.isOffered)
+                Text(skip.line).font(.caption2).foregroundStyle(Color.dim)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .cardStyle()
+        }
+    }
+
+    /// Whether this session can be marked skipped, and whether it is — 368.
+    ///
+    /// `session.date` is the EFFECTIVE day, so a session moved onto a past day
+    /// becomes skippable and one moved into the future stops being.
+    private var skip: SkipStanding {
+        SkipStanding.of(isRest: session.isRest,
+                        day: session.date,
+                        today: DayKey.key(),
+                        isDone: matcher.isComplete(session, on: session.date ?? ""),
+                        decision: matcher.decisions[session.uid])
+    }
+
+    /// See `TodayView.toggleSkip` — neither call can fail, and §12.19 says why
+    /// that is a disclosed gap rather than an omission here.
+    private func toggleSkip() {
+        if skip.isSkipped {
+            matcher.clearOverride(sessionUid: session.uid)
+        } else {
+            matcher.setOverride(sessionUid: session.uid, activityId: nil)
         }
     }
 

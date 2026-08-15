@@ -141,6 +141,121 @@ nonisolated enum MatchStanding: Equatable, Sendable {
     }
 }
 
+/// Whether the athlete said they did not do this session — patch 368.
+///
+/// **THE THIRD OF THE FAMILY.** `MatchStanding` above says where the RECORDING
+/// stands; `MoveStanding` says where the DAY stands; this says whether the
+/// session was skipped. Same shape all three: a case per state, a flag the
+/// control is enabled on, and a `line` printed on every state including the
+/// ones that offer nothing — §12.54.2.
+///
+/// **THE GATE CARRIES ITS REASON.** Three different things stop the control
+/// being offered, and a compound `if` inside a `body` would answer "no" to all
+/// three and say none of them. That is how a control missing for a good reason
+/// becomes indistinguishable from one nobody wired in, which is the defect this
+/// project keeps finding. The reason is a value, so the session page can print
+/// it.
+nonisolated enum SkipStanding: Equatable {
+
+    nonisolated enum NotOffered: Equatable {
+        /// The plan asked for rest. There is nothing to skip.
+        case restDay
+        /// Today, still to come, or a session the plan gives no day at all —
+        /// there is no day for it to be past.
+        case notPast
+        /// A recording is matched to it, so it was not skipped.
+        case somethingIsMatched
+    }
+
+    case notOffered(NotOffered)
+    case notSkipped
+    case skipped
+
+    var isOffered: Bool {
+        if case .notOffered = self { return false }
+        return true
+    }
+
+    var isSkipped: Bool { self == .skipped }
+
+    /// §12.54.2 — printed on every state, the three that offer nothing
+    /// included. A control that is absent without explanation is the thing
+    /// this line exists to prevent.
+    var line: String {
+        switch self {
+        case .notOffered(.restDay):
+            return "The plan asks for rest — there is nothing to skip."
+        case .notOffered(.notPast):
+            return "A session can be marked skipped once its day has passed."
+        case .notOffered(.somethingIsMatched):
+            return "A recording is matched to this session, so it was not skipped."
+        case .notSkipped:
+            return "Nothing is recorded against this session. Saying you skipped "
+                 + "it is a fact; leaving it alone only means nobody has said."
+        case .skipped:
+            return "You said you did not do this one. Undoing that leaves it "
+                 + "unmatched again, which is not the same statement."
+        }
+    }
+
+    /// **THE CIRCLE EVERY SESSION ROW DRAWS, IN ONE PLACE — patch 368a.**
+    ///
+    /// 359 found that a skipped session rendered identically to one nobody had
+    /// touched, and fixed the picker. 368 fixed the Today card and the session
+    /// page by writing the same ternary out twice. `WeekView` is a THIRD row
+    /// renderer with a third copy, it was forgotten, and the defect survived
+    /// both patches aimed at it — on the one screen you read a whole week from.
+    ///
+    /// A rule written out three times is a rule with two places to be wrong.
+    /// §12.43.
+    ///
+    /// THE COLOUR IS NOT HERE. This file imports Foundation, not SwiftUI, and
+    /// the three renderers legitimately differ on the DONE tint — the session's
+    /// own discipline colour, at three opacities. They share only the negative
+    /// one, and that is `Color.red`: the same red 359 gave "Not done", for the
+    /// reason written there.
+    nonisolated static func symbol(isDone: Bool, isSkipped: Bool) -> String {
+        if isDone { return "checkmark.circle.fill" }
+        return isSkipped ? "xmark.circle.fill" : "circle"
+    }
+
+    /// What the control says. Present in every state — the caller renders it
+    /// disabled rather than absent where nothing is offered.
+    var action: String {
+        switch self {
+        case .skipped: return "It was not skipped after all"
+        default:       return "I did not do this"
+        }
+    }
+
+    /// **STRICTLY BEFORE TODAY, BY STRING COMPARISON.** Two `yyyy-MM-dd` keys,
+    /// which is the rule the top of `DayKey` states — the plan says Saturday and
+    /// Saturday is Saturday wherever you are. No arithmetic and no zone, so
+    /// nothing here changes in Tokyo.
+    ///
+    /// `day` is the EFFECTIVE day, so a moved session is judged on where it
+    /// actually sits rather than where the plan first asked for it.
+    ///
+    /// ORDER MATTERS: rest first, because a rest day is never skippable
+    /// whatever else is true of it; then the day, because an unmatched session
+    /// today is not yet anything; then the match.
+    nonisolated static func of(isRest: Bool,
+                               day: String?,
+                               today: String,
+                               isDone: Bool,
+                               decision: MatchDecision?) -> SkipStanding {
+        if isRest { return .notOffered(.restDay) }
+        guard let day, day < today else { return .notOffered(.notPast) }
+        if isDone { return .notOffered(.somethingIsMatched) }
+        // A decision naming NOTHING is the skip. A decision naming an activity
+        // this day no longer offers is `choseSomethingGone` — not a skip, and
+        // marking it skipped replaces a stale choice with a stated one, which
+        // is an improvement rather than a loss.
+        if let decision, decision.activityId == nil { return .skipped }
+        return .notSkipped
+    }
+}
+
 /// One planned session, and what the athlete said satisfied it.
 ///
 /// NONISOLATED, and deliberately so. `Sub4Import` reads this from inside a

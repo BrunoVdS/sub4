@@ -97,6 +97,30 @@ struct TodayView: View {
 
     private var resolved: (matches: [Match], extras: [Activity]) { matcher.day(key) }
 
+    /// Whether this session can be marked skipped, and whether it is — patch
+    /// 368. Computed here rather than in `MatchRow` because the row is handed
+    /// facts, not stores, everywhere else on this screen.
+    private func skipStanding(_ m: Match) -> SkipStanding {
+        SkipStanding.of(isRest: m.session.isRest,
+                        day: m.session.date,
+                        today: DayKey.key(),
+                        isDone: m.isDone,
+                        decision: matcher.decisions[m.session.uid])
+    }
+
+    /// **NEITHER CALL CAN FAIL, AND THAT IS DISCLOSED RATHER THAN ASSUMED.**
+    /// Both write to `UserDefaults`, which has no API to ask whether the write
+    /// landed — §12.19's stated gap, the same one `SessionPickerView` names.
+    /// So there is no alert here, because there is nothing that could raise
+    /// one, rather than because failure was not considered.
+    private func toggleSkip(_ m: Match) {
+        if skipStanding(m).isSkipped {
+            matcher.clearOverride(sessionUid: m.session.uid)
+        } else {
+            matcher.setOverride(sessionUid: m.session.uid, activityId: nil)
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -302,8 +326,10 @@ struct TodayView: View {
                      // session now always opens the activity — which is where
                      // everything about it lives — and an unmatched one opens
                      // the plan page, because there is no activity to open.
+                     skip: skipStanding(m),
                      onOpen: { open(m) },
                      onFix: { route = .fix(m.session) },
+                     onSkip: { toggleSkip(m) },
                      onData: { open(m) },
                      onFuel: { route = .fuel(ladder: m.session.fuelPointsAtLadder,
                                              raceDay: m.session.fuelPointsAtRaceDay) },
@@ -750,8 +776,15 @@ struct TodayView: View {
 
 struct MatchRow: View {
     let match: Match
+    /// Patch 368. Handed in rather than computed: this row is given facts, not
+    /// stores, and the standing needs the matcher.
+    let skip: SkipStanding
     let onOpen: () -> Void
     let onFix: () -> Void
+    /// Beside `onFix` rather than at the end: both are corrections to what the
+    /// app decided, and the call site reads in the order the menu offers them.
+    /// Swift matches these positionally, so declaration order IS call order.
+    let onSkip: () -> Void
     let onData: () -> Void
     let onFuel: () -> Void
     let onPrep: () -> Void
@@ -793,6 +826,15 @@ struct MatchRow: View {
             if match.activity != nil {
                 Button("Activity data…", systemImage: "chart.bar.xaxis") { onData() }
             }
+            // CONDITIONAL, like "Activity data…" one line up, and for the same
+            // reason: a menu entry that does nothing is worse than no entry.
+            // The §12.54.2 surface for this gesture is the session page, which
+            // shows the control in every state and prints why.
+            if skip.isOffered {
+                Button(skip.action,
+                       systemImage: skip.isSkipped
+                       ? "arrow.uturn.backward" : "xmark.circle") { onSkip() }
+            }
         }
     }
 
@@ -800,14 +842,45 @@ struct MatchRow: View {
 
     private var plannedPart: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 3)
-                .fill(s.tint).frame(width: 5).frame(maxHeight: .infinity)
-                .opacity(done ? 0.45 : 1)
+            // A REST DAY CARRIES NEITHER MARK — patch 368b, matching the Week
+            // page at 368a.
+            //
+            // The card already says REST, with a moon. The circle then says
+            // something else, and what it says is "outstanding" about the one
+            // row that is complete by definition — the plan asked for rest and
+            // got it. Dropping only the bar would have kept the false half and
+            // removed the harmless one.
+            //
+            // Two renderers rather than one shared view because this bar sizes
+            // itself with `maxHeight: .infinity` and dims when done, where the
+            // Week page's is a fixed 16 points. The RULE is shared through
+            // `SkipStanding.symbol`; the metrics are not.
+            if !s.isRest {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(s.tint).frame(width: 5).frame(maxHeight: .infinity)
+                    .opacity(done ? 0.45 : 1)
 
-            Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                .font(.title2)
-                .foregroundStyle(done ? s.tint : Color.dim.opacity(0.4))
-                .frame(width: 30)
+                // THREE STATES, NOT TWO — patch 368, and this is 359's finding
+                // applied where it should have been in the first place. A
+                // session you marked skipped showed the SAME empty circle as
+                // one nobody had touched: the gesture worked and the card did
+                // not say so.
+                //
+                // THE SYMBOL COMES FROM `SkipStanding` — 368a. This was the
+                // second of three copies; the third was on the Week page and
+                // was wrong for a whole patch. §12.43.
+                //
+                // RED, NOT GREY. Grey is what "nothing here yet" looks like,
+                // which is precisely the state this one has to be told apart
+                // from. It is the red 359 gave "Not done".
+                Image(systemName: SkipStanding.symbol(isDone: done,
+                                                      isSkipped: skip.isSkipped))
+                    .font(.title2)
+                    .foregroundStyle(done ? s.tint
+                                     : skip.isSkipped ? Color.red
+                                     : Color.dim.opacity(0.4))
+                    .frame(width: 30)
+            }
 
             Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 4) {

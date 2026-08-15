@@ -1,7 +1,7 @@
 # Moving a session, and saying you skipped one
 
-Groundwork for patches 359 and 361–366 — renumbered at 361 and again at 362,
-see §9. Written 14 August 2026, against patch 358a.
+Groundwork for patches 359 and 361–368 — renumbered at 361, at 362, at
+366 and again at 367, see §9. Written 14 August 2026, against patch 358a.
 No code in this document is committed; it is the record of what was decided
 before any of it was written, so that a patch which turns out wrong can be
 argued with rather than guessed at.
@@ -397,7 +397,10 @@ a plan-session correction until the verifier can survive it.
 | **363** | `AppStores` → 18, `reconcileRequires`, the importer's second claim and its prune, the `ComparedCorrections` family and its comparison | The database half. The family and the first row must land together — 361's `unclaimed corrections` fails otherwise, which is what it is for. |
 | **364** | The authored read-back's coverage of the moves | Field-level, alongside notes, commutes and match decisions. Separate because until a gesture exists the file is empty on every device, so nothing here is provable outside the suite either way. |
 | **365** | `PlanCorrections.apply`, called from `PlanStore` and `PlanRepository` | The flip. This is the patch where a stored move changes what the app shows. |
-| **366** | "Change match" unconditional; the reverse picker; the two writes; the skipped toggle | The gestures Bruno asked for, and the first patch in which `moves.json` can exist on the phone. |
+| **366** | "Change match" unconditional; the reverse picker; the two writes | The gesture Bruno asked for, and the first patch in which `moves.json` can exist on the phone. |
+| **367** | Putting a session back, from the session side | Found by 366c's device campaign. The undo existed only through the activity, which is unreachable when the planned day holds no recording — the usual case — and which asserts a match when it is reachable. |
+| **368** | The skipped toggle, and `moves.json` named in the launch block | Split out of 366, deferred again at 367 — both deferrals right, because until the undo existed a moved session that could not be put back was exactly the kind this offers to mark skipped. The diagnostics line rides along: found by 366c's paste, one line, same §12.54.2 argument. |
+| **369** | Durable evidence that a run deleted something | 366c's paste prints only the newest import report, so the run that pruned a move on 15 August left no trace of having done it. Needs `migration_run.rowsRemoved` and therefore a migration, which is why it is not folded into 368. |
 
 **362 was split out of what this table used to call 362**, which asked for the
 store, the `AppStores` field, the importer's claim, the prune and the read-back

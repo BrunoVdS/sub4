@@ -567,16 +567,43 @@ struct DayRow: View {
     /// Any note that exists is still PRINTED under the line, so a week can be
     /// read without opening anything. Reading it here and writing it there is
     /// the split the patch is making.
+    /// Whether this session was marked skipped — patch 368a.
+    ///
+    /// THE THIRD RENDERER. 359 fixed the picker, 368 fixed the Today card and
+    /// the session page, and this row kept drawing a skipped session as an
+    /// empty circle for a whole patch because it holds its own copy of the
+    /// glyph. The symbol now comes from `SkipStanding`; only the tint is local.
+    private func skipStanding(_ m: Match) -> SkipStanding {
+        SkipStanding.of(isRest: m.session.isRest,
+                        day: m.session.date,
+                        today: DayKey.key(),
+                        isDone: m.isDone,
+                        decision: matcher.decisions[m.session.uid])
+    }
+
     private func sessionLine(_ m: Match) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let skipped = skipStanding(m).isSkipped
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 9) {
                 Button { open(m) } label: {
                     HStack(spacing: 9) {
-                        Image(systemName: m.isDone ? "checkmark.circle.fill" : "circle")
-                            .font(.footnote)
-                            .foregroundStyle(m.isDone ? m.session.tint : Color.dim.opacity(0.4))
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(m.session.tint).frame(width: 3, height: 16)
+                        // A REST DAY IS NOT AN UNFINISHED SESSION — 368a.
+                        //
+                        // It drew the same empty circle and coloured bar as a
+                        // session nobody had done, which says "outstanding"
+                        // about the one row on the page that is complete by
+                        // definition: the plan asked for rest and got it.
+                        // Both marks go; the line is text.
+                        if !m.session.isRest {
+                            Image(systemName: SkipStanding.symbol(
+                                isDone: m.isDone, isSkipped: skipped))
+                                .font(.footnote)
+                                .foregroundStyle(m.isDone ? m.session.tint
+                                                 : skipped ? Color.red
+                                                 : Color.dim.opacity(0.4))
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(m.session.tint).frame(width: 3, height: 16)
+                        }
                         Text(m.session.title ?? "—")
                             .font(.subheadline)
                             .foregroundStyle(m.isDone ? Color.dim : Color.ink)

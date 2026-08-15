@@ -1366,12 +1366,27 @@ struct MatchPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var matcher = Matcher.shared
     @State private var activities = ActivityStore.shared
+    // PATCH 367. The day is corrected here too now, so this sheet reads both
+    // stores — the plan for what was asked, the moves for what was said.
+    @State private var plan = PlanStore.shared
+    @State private var moves = PlanMoveStore.shared
+
+    /// Non-nil when removing the move failed.
+    ///
+    /// A plain `StoreWriteError` driving the SHARED `.storeWriteFailure`
+    /// modifier, unlike `SessionPickerView`'s hand-written alert. That one is
+    /// bespoke because the modifier is titled "Not saved" and there the match
+    /// HAD been saved, so the title would be false (§12.110.2). Here nothing
+    /// else happened, so it is simply true. §12.43 both ways: reuse where the
+    /// shared thing is right, write it out only where it is not.
+    @State private var putBackFailure: StoreWriteError?
 
     var body: some View {
         NavigationStack {
             List {
                 headerSection
                 choiceSection
+                daySection
                 resetSection
             }
             .navigationTitle("Fix match")
@@ -1381,6 +1396,7 @@ struct MatchPickerView: View {
                     Button("Cancel") { dismiss() }
                 }
             }
+            .storeWriteFailure($putBackFailure, retry: { putBack() })
         }
         .tint(.accent4)
     }
@@ -1470,6 +1486,68 @@ struct MatchPickerView: View {
         return "\(a.sportType) · \(km) · \(a.minutes) min"
     }
 
+    /// Where the plan asked for this session, and whether it is there.
+    ///
+    /// Read from `PlanMoveStore` rather than inferred from `session.date`: that
+    /// date is the SERVED one and already carries the move, so comparing it
+    /// against anything asks the corrected value whether it was corrected —
+    /// which is exactly the defect §12.110.7 records.
+    private var moveStanding: MoveStanding {
+        MoveStanding.of(storedMove: moves.moves[session.uid],
+                        plannedDate: plan.plannedDate(of: session.uid))
+    }
+
+    /// **THE UNDO, ON THE SIDE THAT OWNS THE FACT — patch 367.**
+    ///
+    /// Until now putting a session back was only reachable through
+    /// `SessionPickerView`, from an activity — so it was unreachable when the
+    /// planned day held no recording (the usual case, since you move a session
+    /// precisely because you did it elsewhere), and when it WAS reachable it
+    /// asserted a match on the way through. Undo is a statement about the plan,
+    /// not a choice about a recording, and it belongs here.
+    private var daySection: some View {
+        Section {
+            Button(moveStanding.action, role: .destructive) { putBack() }
+                // DISABLED RATHER THAN ABSENT — 359's rule, one row down.
+                // A control that appears only when there is something to undo
+                // cannot be told from one nobody wired in. §12.54.2.
+                .disabled(!moveStanding.isMoved)
+        } header: {
+            Text("The day")
+        } footer: {
+            Text(moveStanding.line)
+        }
+    }
+
+    /// Removes the move and nothing else.
+    ///
+    /// **IT DOES NOT CLEAR THE MATCH.** `SessionPickerView.clearIfMine` refused
+    /// the mirror of this at 366 — un-matching a moved session does not put it
+    /// back, because it still belongs on the day it was done — and the reverse
+    /// holds: a recording the athlete named is a fact this button was not asked
+    /// about. What that leaves, when the named recording is on another day, is
+    /// `MatchStanding.choseSomethingGone`, whose line has said the right thing
+    /// since 359 and which this patch makes reachable for the first time. The
+    /// footer above discloses it before the tap.
+    ///
+    /// `clear` returns without writing when there is nothing stored, so a tap
+    /// that got past the disabled state still writes no file and fires no
+    /// write-through. §12.94.
+    private func putBack() {
+        do {
+            try moves.clear(session.uid)
+            // IMMEDIATELY, for 365's reason: `applyMoves` derives from the
+            // stored plan every time, so a view may call it on every write and
+            // the session lands back on its planned day without a relaunch.
+            plan.applyMoves(moves.all)
+            dismiss()
+        } catch {
+            putBackFailure = error as? StoreWriteError
+                ?? StoreWriteError(store: "moves.json", stage: .encoding,
+                                   reason: String(describing: error))
+        }
+    }
+
     private var resetSection: some View {
         Section {
             Button("Back to automatic", role: .destructive) {
@@ -1487,5 +1565,330 @@ struct MatchPickerView: View {
                  : "There is nothing to undo — no choice has been recorded for "
                  + "this session.")
         }
+    }
+}
+
+// MARK: - The other way round — patch 366
+
+/// What the picker has to decide, as pure functions.
+///
+/// SEPARATE FROM THE VIEW ON PURPOSE. Two of these are real decisions with a
+/// wrong answer, and a decision living inside a `body` is a decision no test can
+/// drive. §12.69.
+nonisolated enum SessionChoice {
+
+    /// Seven day keys centred on the activity's own day.
+    ///
+    /// **±3 IS A DECISION, NOT A DEFAULT.** A session done more than three days
+    /// off its planned day is a different kind of thing from "I shifted it by
+    /// one", and a longer list buries the near sessions under ones nobody is
+    /// choosing. Written down because a magic number inside a picker is exactly
+    /// what nobody revisits.
+    static let radius = 3
+
+    /// **ANCHORED AT MIDDAY, AND THAT IS THE WHOLE OF THE DATE ARITHMETIC.**
+    ///
+    /// `DayKey.date` returns LOCAL midnight and `DayKey.formatter` sets no
+    /// zone, so stepping by 86 400 s from midnight is wrong twice a year: on
+    /// 25 October 2026 — inside this plan — a Brussels day is twenty-five hours
+    /// long, so midnight plus a day is 23:00 THE SAME DAY and the window
+    /// returns that day twice while losing one at the end. Anchoring at noon
+    /// absorbs the hour in either direction; §4.5 makes the same argument for
+    /// the same reason.
+    static func window(around dayKey: String,
+                       radius: Int = SessionChoice.radius) -> [String] {
+        guard let noon = DayKey.date(dayKey)?.addingTimeInterval(12 * 3600) else {
+            return [dayKey]
+        }
+        return (-radius...radius).map {
+            DayKey.key(noon.addingTimeInterval(Double($0) * 86_400))
+        }
+    }
+
+    /// What choosing this session does to the move store.
+    ///
+    /// TWO CASES, NOT THREE. `putBack` covers both "nothing is stored, so do
+    /// nothing" and "a move exists, so remove it", because `PlanMoveStore.clear`
+    /// already returns without writing when there is nothing to remove — no
+    /// file write and therefore no `noteAuthoredChange` (§12.94).
+    enum Correction: Equatable {
+        /// The plan already puts this session on the activity's day. Any stored
+        /// move must GO rather than be rewritten to name that same day.
+        case putBack
+        case moveTo(String)
+    }
+
+    /// **THE RULE THAT KEEPS THE TABLE HONEST, AGAINST THE RIGHT DATE —
+    /// patch 366a.**
+    ///
+    /// A `correction` row saying `date = <the day the plan already holds>`
+    /// overrides nothing: it sits there meaning nothing, counts against the
+    /// `session moves` comparison, and has to be pruned by hand.
+    ///
+    /// 366 tested that against `Session.date`, which since 365 is the SERVED
+    /// date — the plan with moves already applied. The rule then held for a
+    /// session nobody had moved and broke for one somebody had: picking a moved
+    /// session from an activity on its original day looked like a move to a
+    /// different day, and wrote exactly the row the rule forbids. Against the
+    /// PLANNED date it is not a move at all. It is putting it back.
+    ///
+    /// A session with no planned date takes a move — that is a genuine move,
+    /// not a no-op. It has no way back for want of a day to go back to, which
+    /// is disclosed in §12.110.7 rather than papered over.
+    static func correction(plannedDate: String?,
+                           activityDay: String) -> Correction {
+        plannedDate == activityDay ? .putBack : .moveTo(activityDay)
+    }
+}
+
+/// Which session did this activity satisfy — patch 366, groundwork §6.4.
+///
+/// `MatchPickerView` above asks the opposite question and neither replaces the
+/// other: from a session you ask which recording satisfied it, and from an
+/// activity you ask which session it was. Only this direction can move a
+/// session to the day it was actually done, because only here do you know the
+/// day.
+///
+/// HERE RATHER THAN IN A FILE OF ITS OWN, beside the twin it mirrors. A new file
+/// in the app target costs a quit and reopen, and these two are read together
+/// or not at all.
+struct SessionPickerView: View {
+    let activity: Activity
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var matcher = Matcher.shared
+    @State private var plan = PlanStore.shared
+    @State private var moves = PlanMoveStore.shared
+
+    /// Non-nil when the MOVE failed. The match has already landed by then —
+    /// see `choose` — and the alert says so rather than implying the gesture
+    /// was atomic.
+    ///
+    /// A `StoreWriteError` rather than a string, because the two things an
+    /// alert has to decide about a failed write — the sentence, and whether
+    /// retrying could possibly help — are already decided by `errorDescription`
+    /// and `Stage.isWorthRetrying`. §12.43: the presentation is written here
+    /// because the shared `.storeWriteFailure` modifier has no way to say that
+    /// half the gesture landed; the RULES are called, not copied.
+    @State private var moveFailure: StoreWriteError?
+
+    /// The session whose move failed, so *Try again* repeats the same gesture
+    /// rather than an approximation of it.
+    @State private var pending: Session?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                headerSection
+                choiceSection
+                extraSection
+            }
+            .navigationTitle("Which session?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            // "The day was not saved" — NOT "Not saved", which is what the
+            // shared modifier says and would be false here. The match landed.
+            .alert("The day was not saved",
+                   isPresented: Binding(get: { moveFailure != nil },
+                                        set: { if !$0 { moveFailure = nil } }),
+                   presenting: moveFailure) { failure in
+                if failure.stage.isWorthRetrying, let pending {
+                    Button("Try again") { choose(pending) }
+                }
+                Button("OK", role: .cancel) { }
+            } message: { failure in
+                Text("The match was saved — this activity now counts for that "
+                     + "session. The day was not, so the session still shows "
+                     + "where the plan put it.\n\n"
+                     + (failure.errorDescription ?? ""))
+            }
+        }
+        .tint(.accent4)
+    }
+
+    private var headerSection: some View {
+        Section {
+            Text(activity.name).font(.headline)
+            Text(activity.dayKey).font(.subheadline).foregroundStyle(.secondary)
+        } footer: {
+            Text("Pick the session this was. If it is on another day, the "
+                 + "plan moves that session to \(activity.dayKey) — the week "
+                 + "it belongs to does not change.")
+        }
+    }
+
+    /// One row of the list. A named type rather than a tuple because two views
+    /// and a sort read it, and `ForEach` needs something it can key.
+    private struct Candidate: Identifiable {
+        let session: Session
+        let day: String
+        let open: Bool
+        var id: String { session.uid }
+    }
+
+    /// Every session within the window, the ones with nothing against them
+    /// first.
+    ///
+    /// **UNMATCHED FIRST, AND THAT IS THE WHOLE ORDERING.** §6.4. A
+    /// chronological list puts the sessions you already completed in the way of
+    /// the one you are looking for, and the one you are looking for is by
+    /// definition the one with nothing against it.
+    ///
+    /// **ONE RESOLUTION PER DAY, NOT ONE PER SESSION.** `Matcher.isComplete`
+    /// resolves the WHOLE day to answer about one session, so calling it per
+    /// candidate re-runs the resolver once per session per redraw. Reading
+    /// `matcher.day(_:)` once per day and asking a `Set` costs seven.
+    private var candidates: [Candidate] {
+        SessionChoice.window(around: activity.dayKey)
+            .flatMap { day -> [Candidate] in
+                let done = Set(matcher.day(day).matches
+                    .filter(\.isDone).map(\.session.uid))
+                return plan.sessions(on: day)
+                    .filter { !$0.isRest }
+                    .map { Candidate(session: $0, day: day,
+                                     open: !done.contains($0.uid)) }
+            }
+            .sorted { a, b in
+                if a.open != b.open { return a.open }
+                if a.day != b.day { return a.day < b.day }
+                return a.session.seq < b.session.seq
+            }
+    }
+
+    @ViewBuilder
+    private var choiceSection: some View {
+        // BOUND ONCE. `candidates` resolves seven days; reading it twice in one
+        // body pass does that twice for no reason.
+        let list = candidates
+        Section("Sessions near \(activity.dayKey)") {
+            if list.isEmpty {
+                // §12.15. An empty list and a list nobody built look identical.
+                // The radius, not the word "three". Two statements of one
+                // number is how the sentence comes to lie about the list.
+                Text("The plan has nothing within "
+                     + "\(SessionChoice.radius) days of this.")
+                    .font(.caption).foregroundStyle(Color.dim)
+            }
+            ForEach(list) { c in
+                Button { choose(c.session) } label: { row(c) }
+                    .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func row(_ c: Candidate) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(c.session.title ?? "—")
+                    .font(.subheadline.weight(.medium))
+                HStack(spacing: 6) {
+                    Text(c.day).font(.caption2).foregroundStyle(Color.dim)
+                    if c.day == activity.dayKey {
+                        Text("same day").font(.caption2)
+                            .foregroundStyle(Color.dim)
+                    }
+                    // §12.54.2 — WITHOUT THIS THE UNDO IS INVISIBLE. A moved
+                    // session and an unmoved one on the same day render
+                    // identically, so nothing on screen says which of them has
+                    // something to take back, or that picking it from its
+                    // original day would take it.
+                    if let planned = plan.plannedDate(of: c.session.uid),
+                       planned != c.day {
+                        Text("moved from \(planned)").font(.caption2)
+                            .foregroundStyle(Color.accent4)
+                    }
+                    if !c.open {
+                        Text("already done").font(.caption2)
+                            .foregroundStyle(Color.dim)
+                    }
+                }
+            }
+            Spacer(minLength: 8)
+            if matcher.decisions[c.session.uid]?.activityId == activity.id {
+                Image(systemName: "checkmark").fontWeight(.semibold)
+                    .foregroundStyle(Color.accent4)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var extraSection: some View {
+        Section {
+            Button("Nothing planned — this was extra") { clearIfMine() }
+                .font(.subheadline)
+                .foregroundStyle(Color.accent4)
+        } footer: {
+            Text("An activity is extra unless you say otherwise, so this only "
+                 + "undoes a choice you made earlier. It does not remove the "
+                 + "activity or change the plan.")
+        }
+    }
+
+    // MARK: The two writes
+
+    /// **MATCH FIRST, MOVE SECOND — groundwork §6.4, and the order is the
+    /// point.**
+    ///
+    /// A move whose match did not land leaves a session on a day with nothing
+    /// against it, which the skipped toggle would then offer to mark skipped —
+    /// a failed write becoming a wrong fact. The reverse failure is harmless: a
+    /// match without a move is exactly today's behaviour, and the alert says so.
+    ///
+    /// `setOverride` cannot report failure — it writes to `UserDefaults`, which
+    /// has no API to ask whether the write landed. That is §12.19's disclosed
+    /// gap, not a shortcut taken here.
+    private func choose(_ s: Session) {
+        matcher.setOverride(session: s, activity: activity)
+
+        do {
+            // THE PLANNED DAY, NOT `s.date`. `s` comes off the SERVED plan, so
+            // its date already carries whatever move is stored — see
+            // §12.110.7. Asked against the served date, putting a moved session
+            // back writes a row naming the day the plan already holds.
+            switch SessionChoice.correction(
+                plannedDate: plan.plannedDate(of: s.uid),
+                activityDay: activity.dayKey) {
+            case .putBack:       try moves.clear(s.uid)
+            case .moveTo(let d): try moves.set(d, for: s.uid)
+            }
+            // IMMEDIATELY, and 365 built `applyMoves` idempotent from the
+            // stored plan precisely so a view may call it every time. Without
+            // this the session lands on its new day only at the next launch.
+            //
+            // UNCONDITIONAL NOW. `.putBack` on a session with nothing stored
+            // re-derives an unchanged plan, which is what idempotent means and
+            // costs one pass over the sessions.
+            plan.applyMoves(moves.all)
+            dismiss()
+        } catch {
+            // Coerced, the way `ProposalStore` does it. `PlanMoveFault` landing
+            // in `.encoding` is not a fudge: the day key comes from
+            // `activity.dayKey`, so one the store refuses IS a fault in this
+            // app, and `.encoding` is exactly the stage that offers no retry.
+            //
+            // NO `dismiss()`. The sheet stays up, the tick is on the session
+            // the match went to, and the alert says which half landed.
+            moveFailure = error as? StoreWriteError
+                ?? StoreWriteError(store: "moves.json", stage: .encoding,
+                                   reason: String(describing: error))
+            pending = s
+        }
+    }
+
+    /// Undoes a choice that named THIS activity, and nothing else.
+    ///
+    /// It does not clear a decision naming some other recording, and it does not
+    /// remove the move — a session that was moved and then un-matched still
+    /// belongs on the day it was done, and taking that away would be this sheet
+    /// deciding something the athlete did not.
+    private func clearIfMine() {
+        for (uid, d) in matcher.decisions where d.activityId == activity.id {
+            matcher.clearOverride(sessionUid: uid)
+        }
+        dismiss()
     }
 }

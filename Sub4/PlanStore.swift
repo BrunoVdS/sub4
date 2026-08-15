@@ -169,10 +169,42 @@ final class PlanStore {
         derive()
     }
 
+    /// The day the PLAN asked for, by session uid — patch 366a.
+    ///
+    /// **IT DOES NOT FOLLOW A MOVE, AND THAT IS ITS ENTIRE PURPOSE.** Built
+    /// from `planAsStored`, so `plannedDate(of:)` answers the question
+    /// `Session.date` stopped being able to answer the moment 365 made `plan`
+    /// a derived value: *where does this session belong when nobody has
+    /// corrected it?*
+    ///
+    /// The reverse picker needs it to tell a move from putting one back. It
+    /// asked `Session.date` in 366 and got the served day, so choosing a moved
+    /// session from an activity on its ORIGINAL day wrote a correction row
+    /// naming the day the plan already held. §12.110.7.
+    ///
+    /// **BUILT IN `rebuildIndexes`, WITH THE OTHER FOUR.** Not in `derive`:
+    /// `init` calls the rebuild directly and never calls `derive`, so an index
+    /// built there is empty on a store nobody hydrated. §12.110.9.
+    private var plannedDates: [String: String] = [:]
+
+    /// Where the plan puts this session, before any correction. `nil` for a
+    /// session the plan gives no date at all — the logged prologue weeks — and
+    /// `nil` for a uid this plan does not contain, which a move made against a
+    /// superseded revision will be (§12.106.4).
+    func plannedDate(of sessionUid: String) -> String? {
+        plannedDates[sessionUid]
+    }
+
     /// The served plan, from the stored one. The only place `plan` is written
     /// after `init`.
     private func derive() {
         plan = PlanCorrections.apply(planAsStored, moves: appliedMoves)
+        // `plannedDates` IS NOT BUILT HERE — patch 366c. It lives in
+        // `rebuildIndexes` with the other four, because `init` calls that
+        // directly and never calls this. See §12.110.9: built here, a
+        // constructed-but-never-hydrated store answered nil for every session,
+        // which makes `SessionChoice.correction` say `.moveTo` for every
+        // choice — §12.110.3 violated on every tap by the code enforcing it.
         rebuildIndexes()
     }
 
@@ -185,6 +217,7 @@ final class PlanStore {
         byDate = [:]
         weeksByUid = [:]
         focusCache = nil
+        plannedDates = [:]
 
         for s in plan.sessions where s.date != nil {
             byDate[s.date!, default: []].append(s)
@@ -193,6 +226,23 @@ final class PlanStore {
             byDate[key]?.sort { $0.seq < $1.seq }
         }
         for w in plan.weeks { weeksByUid[w.uid] = w }
+
+        // FIVE NOW, AND THE FIFTH READS THE OTHER PLAN — patch 366c.
+        //
+        // `byDate`, `weeksByUid` and `focusCache` describe what the app SERVES.
+        // `plannedDates` describes what the plan ASKED FOR, which is a
+        // different question and the only one that can tell a move from putting
+        // a session back. So it reads `planAsStored` while its neighbours read
+        // `plan`, and that is the entire asymmetry.
+        //
+        // It is here rather than in `derive` because `init` calls this function
+        // and not that one. 366a put it there and a constructed store answered
+        // nil for every session — §12.110.9, and the header of this function
+        // had already said why.
+        plannedDates.reserveCapacity(planAsStored.sessions.count)
+        for s in planAsStored.sessions {
+            if let d = s.date { plannedDates[s.uid] = d }
+        }
     }
 
     // MARK: The bundled plan — patch 343

@@ -8962,6 +8962,443 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.112 Saying you did not do it — patch 368
+
+Deferred at 366 and again at 367, and both deferrals were right: this offers to
+mark an unmatched past session skipped, and until 367 a session that had been
+moved and could not be put back was exactly such a session. The toggle would
+have offered to record a wrong fact about a defect.
+
+### 12.112.1 It is not a match correction
+
+"Not done" already existed inside `MatchPickerView`, three taps deep behind a
+sheet called *Fix match*. Saying you skipped a session is not fixing a match —
+it is the ordinary answer to a day with nothing against it — so it belongs on
+the card and on the session page. The button in the picker stays; it is the same
+write reached from where you were already correcting something.
+
+### 12.112.2 `SkipStanding`, and the family is now three
+
+`MatchStanding` (359) says where the recording stands. `MoveStanding` (367) says
+where the day stands. `SkipStanding` says whether the session was skipped. Same
+shape each time: a case per state, a flag the control is enabled on, and a
+`line` printed on every state — including the ones that offer nothing.
+
+**The gate carries its reason.** Three separate things stop the control being
+offered — a rest day, a day that has not passed, a recording already matched —
+and a compound `if` inside a `body` would answer "no" to all three and say none
+of them. That is precisely how a control missing for a good reason becomes
+indistinguishable from one nobody wired in. `NotOffered` is a value, so the
+session page prints which.
+
+Order inside `of` matters and is stated: rest first, because a rest day is never
+skippable whatever else is true; then the day; then the match.
+
+### 12.112.3 Strictly before today, by string comparison
+
+`day < today` on two `yyyy-MM-dd` keys — the rule the top of `DayKey` states:
+the plan says Saturday and Saturday is Saturday wherever you are. No arithmetic,
+no zone, nothing that changes in another country. A session the plan gives no
+day is `notPast`: there is no day for it to be past.
+
+`day` is the EFFECTIVE date, so a session moved onto a past day becomes
+skippable and one moved into the future stops being.
+
+### 12.112.4 The glyph changes, and that is 359's finding applied properly
+
+359 found that "Not done" was tapped, it worked, and nothing on screen said so.
+It fixed the picker. It did not fix the card, where a skipped session showed the
+same empty circle as one nobody had touched — and it did not fix the session
+page, which read **"Not recorded yet"** about a session you had explicitly
+recorded. That sentence was false for eight months and no test could have caught
+it, because there was no gesture that produced the state.
+
+The card now shows `xmark.circle.fill`, and the page says "You did not do this".
+
+### 12.112.5 `moves.json` becomes readable at launch
+
+Found in 366c's paste. The launch block prints where four stores read; the move
+store was absent, and the bootstrap census counts five families because moves
+are not hydrated from the database. Both facts correct, and together unreadable:
+nothing on the page distinguished *reads its own file* from *not wired in*, on
+the diagnostic whose whole job is answering that.
+
+`PlanMoveStore.servedFrom` is `.files` and nothing sets it, exactly as
+`CommuteStore.servedFrom` was before B2. When moves are hydrated the line moves
+on its own rather than going stale — which is the reason it is a `StoreSource`
+rather than a hardcoded sentence.
+
+### 12.112.6 What this does not fix
+
+**A delete still leaves no durable evidence.** 366c's paste prints only the
+newest import report, so the authored run that pruned a move on 15 August —
+observed on screen as *moves withdrawn 1* — left nothing behind: its `rows
+removed in total` is gone with the report and so is its trigger. 360 exists to
+make `.authored` the only run permitted to delete, and §12.20 says nothing
+deletes on the strength of a read nobody checked; neither claim can be audited
+after the fact.
+
+It needs a `rowsRemoved` column on `migration_run`, and therefore a migration.
+That is 369, not a line in this patch.
+
+---
+
+### 12.112.7 The third renderer, and a control that lied — patch 368a
+
+**The glyph rule was written out three times, so it had two places to be wrong.**
+359 found that a skipped session rendered identically to one nobody had touched
+and fixed the picker. 368 fixed the Today card and the session page — by writing
+the same ternary out twice. `WeekView.DayRow.sessionLine` is a third row
+renderer holding a third copy, it was forgotten, and on the one screen you read
+a whole week from a skipped session still showed an empty circle. The defect
+survived two patches aimed at it.
+
+`SkipStanding.symbol(isDone:isSkipped:)` is now the only place that decides.
+§12.43, learned the expensive way.
+
+**The colour did not move with it.** `Matcher.swift` imports Foundation, not
+SwiftUI, and the three renderers legitimately differ on the DONE tint — the
+session's own discipline colour, at three opacities. They share only the
+negative one, and that is `Color.red`: the same red 359 gave "Not done", for the
+reason written there. Grey said *nothing here yet*, which is the state the mark
+exists to be told apart from.
+
+**A rest day is not an unfinished session.** The Week page drew it with the same
+empty circle and coloured bar as a session nobody had done — "outstanding",
+about the one row on the page that is complete by definition. Both marks are
+gone; the line is text.
+
+**And a control that looked live.** 368's session page set
+`.foregroundStyle(Color.accent4)` unconditionally and then `.disabled(...)`. An
+explicit foreground colour overrides the styling `.disabled` would apply, so on
+a session whose day has not passed the button read "I did not do this" in full
+accent and did nothing when tapped. "Back to its planned day" in the Fix match
+sheet greys correctly because it sets no colour at all.
+
+A control that looks live and silently does nothing is worse than one that is
+absent — which is §12.54.2 inside out, and the whole reason that row is rendered
+in every state rather than hidden.
+
+---
+
+### 12.112.8 The Today card's rest row — patch 368b
+
+368a took the circle and the coloured bar off a rest row on the Week page. The
+Today card is the second renderer of the same idea and kept both, so the two
+screens disagreed about what a rest day looks like — which is how the Week page
+came to be wrong in the first place.
+
+**Both marks, not just the bar.** The card already carries a moon and the word
+REST; that is the statement. The circle then says something else, and what it
+says is "outstanding" about the one row that is complete by definition. Dropping
+only the dot would have kept the false half and removed the harmless one.
+
+They stay two renderers rather than one shared view: this bar sizes itself with
+`maxHeight: .infinity` and dims when the session is done, where the Week page's
+is a fixed sixteen points. The rule is shared through
+`SkipStanding.symbol`; the metrics are genuinely different and pretending
+otherwise would be a component with two special cases.
+
+---
+
+
+
+## 12.111 Putting a session back, from the session side — patch 367
+
+**Found by 366c's device campaign, on 15 August, while writing the campaign
+rather than while running it.** 366 made a move possible and 366a made putting
+one back possible — but only through `SessionPickerView`, which is reached from
+an activity.
+
+### 12.111.1 Two failures, one cause
+
+**Unreachable in the common case.** You move a session because you did it on a
+different day, so the planned day usually holds no recording and there is
+nothing to open the sheet from.
+
+**Reachable, but it asserts something.** When the planned day does hold a
+recording, `choose` writes the match first — unconditionally, and that order is
+right (§12.110.2). So putting a session back also claims that recording
+satisfied it. On the campaign's own data, undoing the move would have recorded
+an 11.9 km bike ride as a strength session.
+
+Both are the same defect: **undo was only expressible as a choice about an
+activity, and it is not one.** It is a statement about the plan, and it belongs
+where the plan's corrections already live.
+
+### 12.111.2 `MoveStanding` is `MatchStanding`'s twin
+
+359 built `MatchStanding` because a recorded choice and no choice at all
+rendered identically in this sheet. `MoveStanding` answers the same question
+about the DAY, in the same shape: three cases, an `isMoved` flag the control is
+enabled on, and a `line` printed on every state including the boring one
+(§12.54.2). The two now sit one section apart, which is the point — the sheet
+corrects a match and a day, and says where it stands on both.
+
+It is pure and takes the stored `PlanMove` plus the PLANNED date, never the
+served one. Deriving "is it moved" from `Session.date` would be asking the
+corrected value whether it was corrected, which is §12.110.7 exactly.
+
+### 12.111.3 It does not clear the match
+
+`SessionPickerView.clearIfMine` refused the mirror of this at 366: un-matching a
+moved session does not put it back, because it still belongs on the day it was
+done. The reverse holds — a recording the athlete named is a fact this button
+was not asked about.
+
+What that leaves, when the named recording is on another day, is
+`MatchStanding.choseSomethingGone`. Its line has read *"You chose an activity
+this day no longer offers, so the session reads as not done. Choose again, or go
+back to automatic"* since 359, and **this patch makes that state reachable on
+the device for the first time** — it was noted as unverifiable at 359 and has
+been carried as such ever since. `MoveStanding.movedFrom`'s footer discloses the
+consequence before the tap; that line describes it afterwards.
+
+### 12.111.4 §12.110.7's disclosed gap closes
+
+366a disclosed that a session the plan gives no date at all could be moved and
+never put back, for want of a day to go back to. From the session side there is
+nothing to go back TO and nothing needed: removing the row returns the session
+to having no day. `movedFromNoDay` names that case and says what will happen —
+the session will appear on no day until it is placed again. The bundled plan
+holds eight such sessions and `aDatelessSessionCanBePutBack` drives one of them
+end to end.
+
+### 12.111.5 The alert reuses the shared modifier
+
+`.storeWriteFailure` is titled **Not saved**. In `SessionPickerView` that would
+be false, because the match landed — which is why 366 wrote its own alert there
+while still calling `errorDescription` and `Stage.isWorthRetrying` rather than
+restating them. Here nothing else happened, so the title is simply true and the
+shared modifier is correct, retry included.
+
+§12.43 cuts both ways: reuse where the shared thing is right, and write it out
+only where it is not — saying which, in the place a reader will ask.
+
+### 12.111.6 The numbering moved again
+
+§9 had 367 as the skipped toggle. The toggle offers to mark an unmatched past
+session skipped, and a session that was moved and cannot be put back is exactly
+such a session — so the undo goes first, or the toggle inherits a trap. The
+toggle is 368.
+
+---
+
+## 12.110 Choosing which session an activity satisfied — patch 366
+
+The gesture, and **the first patch after which `moves.json` can exist on the
+phone.** 362 through 365 were provable only by the suite.
+
+### 12.110.1 The sheet runs the other way round
+
+`MatchPickerView` asks which activity satisfied a session. `SessionPickerView`
+asks which session an activity satisfied, which is the question you have when
+you are looking at an activity — and the only direction that can move a session,
+because only here do you know the day it was done.
+
+"Change match" was inside `if let s = session`, so an activity that matched
+nothing had no way in. §6.4 asked only that the button appear. Routing only the
+unmatched case to the new sheet would have left a matched activity unable to
+move anything, which is the feature — so it routes there in both cases, and the
+forward picker stays reachable from the session side where its question is the
+right one.
+
+### 12.110.2 Match first, move second
+
+    Matcher.shared.setOverride(session: s, activity: activity)
+    if SessionChoice.needsAMove(...) { try PlanMoveStore.shared.set(...) }
+
+A move whose match did not land leaves a session sitting on a day with nothing
+against it — which the skipped toggle would then offer to mark skipped, turning
+a failed write into a wrong fact. The reverse failure is harmless: a match
+without a move is exactly the behaviour before this patch.
+
+`setOverride` cannot report failure; it writes to `UserDefaults`, which has no
+API to ask whether the write landed (§12.19's disclosed gap). So the alert on a
+failed move says what DID land rather than implying the gesture was atomic.
+
+That alert is written out in `SessionPickerView` rather than delegated to the
+shared `.storeWriteFailure` modifier, and the reason is narrow: that modifier is
+titled **Not saved**, which would be false here — the match was. What is NOT
+rewritten is the pair of rules underneath it. `StoreWriteError.errorDescription`
+still supplies the sentence and `Stage.isWorthRetrying` still decides whether
+*Try again* appears at all, so the one thing that could drift — the claim that
+retrying might help — is asked, not asserted. §12.43.
+
+`PlanMoveFault.notADayKey` is coerced into `.encoding`, which is not a fudge:
+the day key comes from `activity.dayKey`, so a value the store refuses is a
+fault in this app, and `.encoding` is precisely the stage that offers no retry.
+The sheet does not dismiss on a failed move — the tick is already on the session
+the match went to, and the alert names the half that did not land.
+
+### 12.110.3 The same day writes only the match
+
+A `correction` row saying `date = <the day the plan already holds>` overrides
+nothing. It would sit in the table meaning nothing, count against the `session
+moves` comparison, and have to be pruned by hand. `SessionChoice.correction` is
+the one place that decides and it is a pure function, so the rule is driven by
+test rather than living inside a `body`.
+
+**It is asked against the PLANNED date, not the served one.** 366 asked
+`Session.date`, which since 365 already carries the athlete's corrections; see
+§12.110.7 for what that broke and why the fix also supplied the undo.
+
+### 12.110.4 The plan is re-derived in the same gesture
+
+`PlanStore.shared.applyMoves(PlanMoveStore.shared.all)` after a successful
+write. 365 made `applyMoves` idempotent from `planAsStored` precisely so a view
+may call it every time — without it the session lands on its new day only at the
+next launch.
+
+### 12.110.5 ±3 days, and unmatched first
+
+`SessionChoice.window` returns seven day keys. A session done more than three
+days off its planned day is a different decision from "I shifted it by one", and
+a longer list buries the near sessions. The number is written down because a
+magic number inside a picker is what nobody revisits — and the empty-list
+sentence interpolates it rather than spelling "three", because two statements of
+one number is how a sentence comes to lie about the list beneath it.
+
+**The window is anchored at midday, and that is not a stylistic choice.**
+`DayKey.date` returns LOCAL midnight and `DayKey.formatter` carries no zone, so
+stepping by 86 400 s from midnight is wrong twice a year — and one of those days
+is inside this plan. On 25 October 2026 a Brussels day is twenty-five hours
+long: midnight plus a day is 23:00 the SAME day, so a midnight-anchored window
+returns 25 October twice and loses 28 October off the end. Anchoring at noon
+absorbs an hour in either direction, which is §4.5's argument for the same
+reason. `theWindowSurvivesADaylightSavingChange` is what holds it there, and it
+is worth noting that the test passes either way on a UTC machine — it earns its
+keep on the machine the suite is actually run on.
+
+Sessions with nothing against them sort first. A chronological list puts the
+sessions you already completed in the way of the one you are looking for, and
+the one you are looking for is by definition the open one.
+
+### 12.110.6 The skipped toggle was split out
+
+The groundwork bundled it here. It is a second, independent gesture, and this is
+the first patch that lets a move exist on the device at all — which deserves its
+own campaign before another gesture lands on top of it. It is 367.
+
+---
+
+### 12.110.7 The picker compared the wrong date — patch 366a
+
+**366 implemented §12.110.3 against `Session.date`, and `Session.date` has not
+meant "where the plan puts this" since 365.** `PlanStore.plan` is derived —
+`PlanCorrections.apply` overwrites the date — so the picker was reading the
+served day, the one that already carries whatever move is stored.
+
+The rule therefore held for a session nobody had moved and broke for one
+somebody had:
+
+    Session X is planned for Wednesday. You move it to Saturday.
+    Later you open Wednesday's activity and pick X.
+      served date  = Saturday   → "a different day" → a move is written
+      planned date = Wednesday  → the day the plan already holds
+
+`correction` ends up with a row moving X to Wednesday — overriding nothing,
+counted by the verifier, prunable only by hand. The three outcomes §12.110.3
+exists to prevent, produced by the code that cites it.
+
+**The consequence was larger than the row.** `PlanMoveStore.clear` is the only
+call that removes a move and 366 reached it from nowhere. §12.109's note on
+`applyMoves` says undo "is the whole of undo and needs no code of its own" —
+366 built every part of that except the gesture, so a move made on the phone
+could not be taken back short of deleting all data. The defect and the missing
+feature were the same defect: **putting a session back is not a move to the same
+day, it is the absence of a move**, and only the planned date can tell them
+apart.
+
+`PlanStore.plannedDate(of:)` answers off `planAsStored` and is indexed in
+`derive()` beside the others. `SessionChoice.correction` returns `.putBack` or
+`.moveTo` — two cases and not three, because `PlanMoveStore.clear` already
+returns without writing when there is nothing to remove, so the ordinary
+same-day match still touches no file and fires no write-through (§12.94).
+
+The picker now labels a session that carries a move — "moved from
+2026-08-12". Without it the undo is invisible: a moved row and an unmoved row
+rendered identically, and nothing on screen saying which one has anything to
+take back. §12.54.2.
+
+**Disclosed, not fixed.** A session the plan gives no date at all still takes a
+move and still has no way back, for want of a day to go back to. Those are the
+logged prologue weeks, which are behind this plan's start.
+
+**What the guard missed.** 366's `guard_the_same_day_writes_no_move` checked
+that `needsAMove` was *consulted* and that it compared two days. It could not
+see which two, so the check passed on the defect it was written to prevent —
+§12.69 again, one level up: a guard that cannot name the operand has not tested
+the rule.
+
+---
+
+### 12.110.8 A `#expect` message that was concatenated — patch 366b
+
+`swift-testing`'s message parameter is a `Comment`, which is
+`ExpressibleByStringLiteral` and nothing else. A literal converts; the result of
+`"a " + "b"` is a `String`, and a `String` does not. One message in 366a's suite
+was written across two lines with a `+` and the test target did not build.
+
+The trap is that the identical concatenation is correct everywhere else in the
+same file — a `Text`, a `footer`, a `let` — so it reads as house style right up
+to the argument that happens to be a `Comment`.
+
+**What is worth keeping is not the fix.** `guard_no_expect_message_is_concatenated`
+parses every `#expect` and `#require` in the test target, takes the last
+top-level argument, and fails when it is a concatenation beginning with a string
+literal. It ships in every apply script from here.
+
+That earns the parser because of where the failure lands: a compile error in the
+TEST target only, which `Cmd-R` does not surface. `scripts/test.sh` exists
+because 275, 276 and 277 all ran on the phone while the suite had not compiled
+since 273 (§12.69's neighbourhood). This is the same class of defect caught one
+step earlier — before the suite is even asked to run.
+
+---
+
+### 12.110.9 The fifth index went in the wrong function — patch 366c
+
+366a built `plannedDates` in `derive()`. `PlanStore.init` does not call
+`derive()`; it calls `rebuildIndexes()`. So a store that was constructed and
+never hydrated held an empty index and answered `nil` for every session.
+
+`rebuildIndexes` has carried this since 344:
+
+> FOUR THINGS MOVE TOGETHER OR THE STORE IS WORSE THAN EITHER HALF. `byDate`,
+> `weeksByUid` and `focusCache` are all derived from `plan` and none of them
+> knows it. … which is why the rebuild is one function with two callers rather
+> than four assignments here. §12.43.
+
+366a added a fifth derived thing and put it beside one of the two callers. The
+comment describes the defect precisely and the patch that caused it did not read
+it.
+
+**The severity is not what it did; it is what it was one path away from doing.**
+`Sub4Launch` calls `applyMoves` on both hydration paths, so `derive()` ran
+before any screen appeared and the index was populated in practice. Had it not,
+`plannedDate` returning nil makes `SessionChoice.correction` answer `.moveTo`
+for every choice — so every same-day match would write a `correction` row naming
+the day the plan already holds. §12.110.3 violated on every tap, by the code
+that exists to enforce it, on a store that looked perfectly healthy.
+
+The fix is the comment's own answer: `plannedDates` moves into
+`rebuildIndexes`, and both callers get it. It reads `planAsStored` while its
+four neighbours read `plan` — four describe what the app SERVES, the fifth
+describes what the plan ASKED FOR — and that asymmetry is now written where the
+rebuild is instead of being implied by which function it sat in.
+
+Found by `aNewStoreIsUncorrected`, shipped in 366a, failing on its first run.
+The suite was right and the production code was wrong; the test is unchanged.
+Its neighbour `aConstructedStoreHasEveryIndex` is added to say the general form
+out loud: one call populates all five, so a store that was only constructed
+answers every question the store can answer.
+
+---
+
+
+
+
 ## 12.109 A stored move changes what the app shows — patch 365
 
 The flip. `PlanCorrections.apply` rewrites `Session.date` for every session a

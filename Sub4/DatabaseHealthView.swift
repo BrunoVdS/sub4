@@ -3514,6 +3514,11 @@ struct DatabaseHealthView: View {
         lines.append("Notes store reads: \(NotesStore.shared.servedFrom.line)")
         lines.append("Commute store reads: \(CommuteStore.shared.servedFrom.line)")
         lines.append("Matcher reads: \(Matcher.shared.servedFrom.line)")
+        // PATCH 368, and it is the same argument as the three above rather than
+        // a new one. Found in 366c's paste: this store was the only authored
+        // one with no line, and the bootstrap census counts five families
+        // because moves are not hydrated. Both true, together unreadable.
+        lines.append("Move store reads: \(PlanMoveStore.shared.servedFrom.line)")
         lines.append("Tables: \(counts.count), imported rows: \(importedRows), total: \(totalRows)")
         // PATCH 336. EVERY TABLE, INCLUDING THE EMPTY ONES.
         //

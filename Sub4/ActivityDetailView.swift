@@ -72,12 +72,21 @@ struct ActivityDetailView: View {
     /// off the code — applies here the moment this view gained a second.
     enum Route: Identifiable {
         case note(Session)
-        case picker(Session, String)
+        /// PATCH 366 — THE SHEET RUNS THE OTHER WAY ROUND NOW.
+        ///
+        /// This was `.picker(Session, String)`, which opened `MatchPickerView`
+        /// — "which activity satisfied this session". From an activity's own
+        /// detail the question is the reverse one, and the reverse one is the
+        /// only one that can move a session to the day it was actually done.
+        ///
+        /// `MatchPickerView` is unmoved and still reachable from the session
+        /// side, where its question is the right one.
+        case sessions(Activity)
 
         var id: String {
             switch self {
-            case .note(let s):      "note-\(s.uid)"
-            case .picker(let s, _): "picker-\(s.uid)"
+            case .note(let s):       "note-\(s.uid)"
+            case .sessions(let a):   "sessions-\(a.id)"
             }
         }
     }
@@ -265,7 +274,7 @@ struct ActivityDetailView: View {
             .sheet(item: $route) { r in
                 switch r {
                 case .note(let s):        NoteEditorView(session: s)
-                case .picker(let s, let d): MatchPickerView(session: s, dayKey: d)
+                case .sessions(let a):    SessionPickerView(activity: a)
                 }
             }
         }
@@ -385,12 +394,19 @@ struct ActivityDetailView: View {
                 Text(dateLine).font(.caption).foregroundStyle(Color.dim)
             }
             Spacer(minLength: 8)
-            if let s = session {
-                Button("Change match") { route = .picker(s, activity.dayKey) }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.accent4)
-                    .fixedSize()
+            // UNCONDITIONAL SINCE 366, and the `if let` was the defect.
+            //
+            // An activity that matched nothing is exactly the case where you
+            // want to say "that was Wednesday's session" — and it was the one
+            // case with no way in. §6.4 asked only for the button to appear;
+            // routing it to the reverse picker in BOTH cases is what makes it
+            // able to move anything, which is the feature.
+            Button(session == nil ? "Which session?" : "Change match") {
+                route = .sessions(activity)
             }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color.accent4)
+            .fixedSize()
         }
     }
 
