@@ -8962,6 +8962,143 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.123 The seventh family, read and not fed — patch 379
+
+D7 slice B3, groundwork. 357 was B2's; this is B3's.
+
+### 12.123.1 The gap is the patch
+
+`Family.allCases.count` is 7. `hydratedFamilies.count` is 6. Between 358 and
+this patch those two numbers were equal, and every suite in the target was
+written in a world where they were.
+
+**That gap is the slice.** A family read before it is fed is what 344/346 and
+357/358 both looked like, and it is what makes the flip's failures
+attributable: when 381 adds one line, anything that breaks broke because of
+that line.
+
+`AuthoredHydrationTests`' doc predicted this twice. §12.121.8 records it being
+wrong the first time — 377 added a family and flipped it in the same patch,
+because the moves' machinery had already been built at 361 and 365. It was
+right about the shape and wrong about the patch, which is the more useful half
+to have been right about.
+
+### 12.123.2 What is deliberately not in it
+
+No `hydratableActivities`, no payload on `Instruction.hydrate`, no
+`ActivityStore.hydrate(from:)`, no entry in `HydratedStores`. 380 builds those;
+381 flips the line.
+
+§12.103's argument, applied a third time: 344 built B1's machinery and 346
+flipped it, and the flip found four failures every one of which was
+attributable BECAUSE the diff contained nothing else. This patch is one field
+and everything that follows from it.
+
+### 12.123.3 Three lists it is absent from, and why each is a decision
+
+- **`canHydrate`.** That verdict means "has this database been imported into",
+  and it is answered by the three families a plan import always fills.
+  Activities arrive from a Strava sync — a different event, which on a fresh
+  install has never run. Including them would refuse to hydrate a perfectly
+  good plan because the athlete had not connected Strava yet.
+- **`firstEmpty`.** Same question, same answer.
+- **`emptyAuthoredFamilies`.** That list means "stores keeping a file nobody
+  may blank", and it exists because the athlete's writing cannot be fetched
+  again. Activities can — §12.122.3's `resetCache` path is exactly that.
+
+Each omission is documented at the site, because an omission with no reason
+next to it reads as an oversight and the next patch closes it.
+
+### 12.123.4 The enumeration ran first, and it found what §12.121.8 said it would
+
+Not `grep 'DatabaseBootstrap('`. Every literal encoding six families:
+
+- **15 constructions** across three test files, plus the one in
+  `DatabaseBootstrapReader`.
+- **8 numeric pins** — RULE 5 catches every one, which is what it was built
+  for at 377d.
+- **5 semantic sites** — RULE 5 is blind to all of them, and one changes
+  MEANING rather than value.
+
+That last one: `B2ActivationTests.everyFamilyHydrates` asserted
+
+    hydratedFamilies.count == Family.allCases.count   // "B2 is the slice
+                                                      //  where those two
+                                                      //  numbers meet"
+
+and looped `for f in Family.allCases { #expect(hydrates(f)) }`. Both were true.
+This patch is the reason they stop being.
+
+**Renumbering was not available.** The loop would have needed an exception for
+`.activities`, and a test carrying an exception list stops being a statement
+about the build. It is rewritten to loop over `hydratedFamilies` — which is
+what B2 actually owns — and the gap moved to `ActivitiesAreReadTests`, where it
+is the subject rather than a footnote.
+
+### 12.123.5 The 15 constructions are a structural pass
+
+Hand-anchoring a mechanical fan-out is what took 377 three rounds. This one
+paren-matches every `DatabaseBootstrap(`, **skips the ones inside `//` lines**
+— there is exactly one, in a comment 377d wrote about this very problem — and
+mirrors whatever that site passes for `moves`.
+
+Derived from the site, not invented. `aFailureIsVisiblePerFamily` passes
+`.unavailable` for every family on purpose: its loop asserts each family LINE
+says the database is not open, and a seventh family reading `0 activities.`
+would fail it for a reason unrelated to what it tests.
+
+### 12.123.6 No default value on the new field
+
+`let activities: ActivityLoad = .loaded(activities: [], skipped: 0)` would have
+left all 15 constructions compiling untouched.
+
+Refused, for §12.122.4's reason written the same day: **a default argument is a
+decision somebody else made for you.** A test building a bootstrap where every
+family failed would silently get one that read fine, and `fieldCount` exists
+precisely so that adding a family is a decision somebody takes on purpose.
+Fifteen mechanical edits is the price of that, and it is the right price.
+
+### 12.123.8 A concatenation Swift does not have
+
+The new suite carried
+
+    #expect(!b.emptyAuthoredFamilies.contains("activities"),
+            "an empty activity table is a device before a sync, not a "
+            "store keeping a file")
+
+Two adjacent string literals. That is C and it is Python; **Swift has no
+implicit concatenation and it does not parse.** Caught by a guard in this
+patch's own apply script, in an environment with no Swift toolchain.
+
+`check-invariants.py` RULE 3 did not see it and should not: that rule is
+366b's defect, a `+` inside a message, which COMPILES and then prints an
+expression instead of the sentence written. This one never compiles.
+
+It earns no rule there, for §12.118.8's bar and 375b's precedent — the
+compiler catches it in seconds, so a permanent rule pays rent for nothing. It
+earns a guard here, because the thing that does not catch it in seconds is me.
+
+### 12.123.7 What 381 has to decide, written down now
+
+Two things this patch deliberately leaves open, so the flip does not meet them
+as surprises:
+
+- **`hydrate(from:)` and `ActivityRoster.settle`.** `load` settles and `ingest`
+  settles; §12.43 says the third door must too. But the verifier compares
+  `ActivityStore.activities.count` against `COUNT(*) FROM activity`, so if
+  settling the database rows drops any, that comparison starts disagreeing.
+  **That disagreement would be true** — it would mean the table holds rows the
+  app's own rules reject — and it must be read as a finding rather than
+  patched away. The device paste of 16 August says 694 and 694, so today it
+  drops none.
+- **`loadRoster` after hydration.** The paste's `Activity roster: 694 kept of
+  694 offered` describes what the LOAD kept. Once a hydration replaces the
+  store's contents, that line describes the file while the store holds rows.
+  §12.15. Nothing diverges at 379 because nothing hydrates; 381 must either
+  set the roster from the hydration or name the source in the line.
+
+---
+
 ## 12.122 The seventh store, and the rule that could not see it — patch 378
 
 ### 12.122.1 What was there

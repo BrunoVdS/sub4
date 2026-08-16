@@ -190,12 +190,25 @@ nonisolated enum PersistenceAuthority {
         /// PATCH 377. Built at 365, after this enum was written, and authored
         /// data of B2's own kind — the last of that slice still on a file.
         case moves
+        /// **PATCH 379 — D7 slice B3, and the case that separates the two
+        /// counts.** The bootstrap reads it as of this patch; nothing feeds a
+        /// store from it, which is what `hydratedFamilies` not naming it
+        /// means. 380 builds the machinery and 381 is the flip. §12.123.
+        case activities
     }
 
-    /// **PATCH 358 IS THIS LINE.** Every family the bootstrap reads is now
-    /// fed to its store. B2 is the slice where `hydratedFamilies.count` and
-    /// `Family.allCases.count` meet, and the next family added to the bootstrap
-    /// separates them again until its own flip.
+    /// **PATCH 358 WAS THIS LINE, AND 379 IS WHERE IT STOPPED BEING THE
+    /// WHOLE STORY.**
+    ///
+    /// At B2 every family the bootstrap read was fed to its store, so
+    /// `hydratedFamilies.count` and `Family.allCases.count` met. 379 adds
+    /// `.activities` to the bootstrap and NOT to this set, so they have
+    /// separated: seven read, six fed. **That gap is the slice.** A family
+    /// read before it is fed is what 344/346 and 357/358 both looked like, and
+    /// what 377 did not — see §12.121.8 for the prediction this finally makes
+    /// true.
+    ///
+    /// The flip is still one line: add `.activities` here. 381 does that.
     ///
     /// STILL REVERSIBLE, and by the same two edits as before: take a family out
     /// of this set, or set `sliceUnderTest` to nil. The JSON files are still

@@ -132,6 +132,15 @@ nonisolated struct DatabaseBootstrap: Sendable {
     /// table of 10 August has no row for them; they are authored data of
     /// exactly B2's kind and were the last of it still on a file.
     let moves: PlanMoveLoad
+    /// **PATCH 379 — D7 slice B3, groundwork.** The seventh family, and the
+    /// first one the bootstrap reads without feeding anything from it.
+    ///
+    /// APPENDED RATHER THAN PLACED BESIDE THE ATHLETE, where it arguably
+    /// belongs by subject. Field order is `firstFault`'s order and the paste's
+    /// order, and reordering the six that exist would move every line a reader
+    /// has learned the position of, to buy nothing. `moves` was appended at
+    /// 377 for the same reason.
+    let activities: ActivityLoad
 
     /// THE NUMBER A TEST HOLDS — see `AppStores.fieldCount` and its comment.
     ///
@@ -139,7 +148,7 @@ nonisolated struct DatabaseBootstrap: Sendable {
     /// family a thing somebody has to acknowledge, which is the half that can
     /// be checked cheaply. Three at B1: the plan, its trimmings, and the
     /// athlete.
-    static let fieldCount = 6
+    static let fieldCount = 7
 
     // MARK: The two verdicts
 
@@ -151,7 +160,7 @@ nonisolated struct DatabaseBootstrap: Sendable {
     var wasReadCleanly: Bool {
         plan.wasReadCleanly && extras.wasReadCleanly && athlete.wasReadCleanly
             && authored.wasReadCleanly && decisions.wasReadCleanly
-            && moves.wasReadCleanly
+            && moves.wasReadCleanly && activities.wasReadCleanly
     }
 
     /// Does every family hold something to hydrate a store from.
@@ -171,6 +180,12 @@ nonisolated struct DatabaseBootstrap: Sendable {
     /// What each authored family does about its own emptiness is
     /// `hydratableAuthored`'s and `hydratableDecisions`' answer, and it is not
     /// the same answer.
+    /// **AND `.activities` IS DELIBERATELY NOT HERE EITHER — patch 379.**
+    /// The three above are filled by a plan import, which runs at every
+    /// launch. Activities arrive from a Strava sync, which is a different
+    /// event that may never have run. A device on its first launch holds a
+    /// plan and no activities, and reading that as "there is nothing here to
+    /// hydrate from" would refuse the plan over the absence of a sync.
     var canHydrate: Bool {
         plan.holdsContent && extras.holdsContent && athlete.holdsContent
     }
@@ -191,6 +206,9 @@ nonisolated struct DatabaseBootstrap: Sendable {
             return "the match decisions — \(decisions.line)"
         }
         if !moves.wasReadCleanly { return "the plan moves — \(moves.line)" }
+        if !activities.wasReadCleanly {
+            return "the activities — \(activities.line)"
+        }
         return nil
     }
 
@@ -327,7 +345,13 @@ nonisolated struct DatabaseBootstrap: Sendable {
                  "  athlete: \(athlete.line)",
                  "  notes and commutes: \(authored.line)",
                  "  match decisions: \(decisions.line)",
-                 "  plan moves: \(moves.line)"]
+                 "  plan moves: \(moves.line)",
+                 // PATCH 379. NOT under the authored families and not in
+                 // `emptyAuthoredFamilies` below: activities are fetched, not
+                 // written by the athlete, and an empty one is a device
+                 // between its first launch and its first sync rather than a
+                 // store keeping a file nobody may blank. §12.123.
+                 "  activities: \(activities.line)"]
         l.append("  every read succeeded: \(wasReadCleanly ? "yes" : "no")")
         l.append("  first fault: \(firstFault ?? "none")")
         l.append("  every family holds data: \(canHydrate ? "yes" : "no")")
@@ -358,7 +382,12 @@ nonisolated enum DatabaseBootstrapReader {
                           athlete: AthleteRepository.load(db),
                           authored: AuthoredRepository.load(db),
                           decisions: MatchDecisionRepository.load(db),
-                          moves: PlanMoveRepository.load(db))
+                          moves: PlanMoveRepository.load(db),
+                          // `all`, not `activity(_:storeID:)`. Ordered by
+                          // `startUTC` — §4.1 makes that authoritative for
+                          // order, where `startLocal` is authoritative for
+                          // which training day a session belongs to.
+                          activities: ActivityRepository.all(db))
     }
 }
 

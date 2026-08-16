@@ -65,7 +65,11 @@ struct AuthoredHydrationTests {
     /// the moves' machinery had been built at 361 and 365, so the family and
     /// its flip landed in one patch. What separates the counts is a family
     /// READ before it is FED, and 377 was not that shape. B3 will be.
-    @Test("This build hydrates every family the bootstrap reads")
+    ///
+    /// **B3 IS, AND 379 IS THE PATCH — §12.123.** Seven families read, six
+    /// fed. The doc above was right about the shape and wrong about which
+    /// patch, which is the more useful half to have been right about.
+    @Test("This build hydrates every family B1 and B2 cover")
     func everyFamilyHydratesNow() {
         #expect(PersistenceAuthority.hydratedFamilies
                 == [.plan, .extras, .athlete, .authored, .decisions, .moves])
@@ -73,8 +77,10 @@ struct AuthoredHydrationTests {
         #expect(PersistenceAuthority.hydrates(.authored))
         #expect(PersistenceAuthority.hydrates(.decisions))
         #expect(PersistenceAuthority.hydrates(.moves))
-        #expect(PersistenceAuthority.Family.allCases.count == 6,
-                "six families, all six fed from the database at B2")
+        #expect(!PersistenceAuthority.hydrates(.activities),
+                "the seventh family is read at B3 and fed at 381")
+        #expect(PersistenceAuthority.Family.allCases.count == 7,
+                "seven families read, six fed — the gap is the slice")
     }
 
     // MARK: The two verdicts — §12.92
@@ -115,12 +121,12 @@ struct AuthoredHydrationTests {
 
     // MARK: The bootstrap, over a real empty database
 
-    @Test("Six families, read cleanly, holding nothing")
-    func theBootstrapReadsSixFamilies() throws {
+    @Test("Seven families, read cleanly, holding nothing")
+    func theBootstrapReadsSevenFamilies() throws {
         let db = try Sub4Database.inMemory()
         let b = DatabaseBootstrapReader.read(db)
 
-        #expect(DatabaseBootstrap.fieldCount == 6)
+        #expect(DatabaseBootstrap.fieldCount == 7)
         #expect(b.wasReadCleanly, "a migrated empty database reads cleanly")
         #expect(b.firstFault == nil)
         #expect(!b.canHydrate, "and holds no plan, which is a fresh install")
@@ -148,7 +154,7 @@ struct AuthoredHydrationTests {
         // is NOT to be compared against into this line. What this test pins is
         // that the family count is the first thing said, which is what it
         // always meant.
-        #expect(lines.first?.hasPrefix("Database bootstrap: 6 families") == true)
+        #expect(lines.first?.hasPrefix("Database bootstrap: 7 families") == true)
     }
 
     // MARK: An empty family is not hydratable

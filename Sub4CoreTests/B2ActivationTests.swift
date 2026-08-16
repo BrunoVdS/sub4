@@ -95,26 +95,40 @@ struct B2ActivationTests {
             plan: plan(), extras: extras(), athlete: athlete(),
             authored: .loaded(notes: [note()], commutes: [commute()], skipped: 0),
             decisions: .loaded(decisions: [decision()], skipped: 0),
-            moves: .loaded(moves: [], skipped: 0))
+            moves: .loaded(moves: [], skipped: 0),
+            activities: .loaded(activities: [], skipped: 0))
     }
 
     // MARK: The line this patch is
 
-    @Test("Every family the bootstrap reads is now hydrated")
-    func everyFamilyHydrates() {
+    /// **REWRITTEN AT 379, AND THE REWRITE IS THE SLICE — §12.123.**
+    ///
+    /// This read "Every family the bootstrap reads is now hydrated" and
+    /// asserted that `hydratedFamilies.count == Family.allCases.count` —
+    /// *"B2 is the slice where those two numbers meet"*. Both were true, and
+    /// B3's groundwork is precisely the patch that ends them: the bootstrap
+    /// reads seven families and this build feeds six.
+    ///
+    /// **NOT RENUMBERED.** A loop asserting `hydrates(f)` for every case would
+    /// have to grow an exception for `.activities`, and a test with an
+    /// exception list in it stops being a statement about the build. What B2
+    /// owns is that ITS six families hydrate; that `.activities` does not is
+    /// `ActivitiesAreReadTests`' business, where the gap is the subject rather
+    /// than a footnote.
+    @Test("Every family B2 covers is hydrated, and the seventh is not")
+    func everyFamilyB2CoversHydrates() {
         #expect(PersistenceAuthority.hydratedFamilies
                 == [.plan, .extras, .athlete, .authored, .decisions, .moves])
-        #expect(PersistenceAuthority.hydratedFamilies.count
-                == PersistenceAuthority.Family.allCases.count,
-                "B2 is the slice where those two numbers meet")
         // A LITERAL COMMENT, NOT AN INTERPOLATED ONE — 343b. `Comment` is
         // `ExpressibleByStringLiteral`; anything that is an expression rather
         // than a literal does not convert, and the failure is a compile error
         // in a file nobody has compiled yet.
-        for f in PersistenceAuthority.Family.allCases {
+        for f in PersistenceAuthority.hydratedFamilies {
             #expect(PersistenceAuthority.hydrates(f),
-                    "a family the bootstrap reads and this build does not feed")
+                    "a family this set names and the build does not feed")
         }
+        #expect(!PersistenceAuthority.hydrates(.activities),
+                "B3 reads the activities and 381 is the line that feeds them")
     }
 
     /// §12.43, as the constant's own doc demands: B2 EXTENDS the sentence
@@ -215,7 +229,8 @@ struct B2ActivationTests {
             plan: plan(), extras: extras(), athlete: athlete(),
             authored: .loaded(notes: [note()], commutes: [], skipped: 0),
             decisions: .loaded(decisions: [], skipped: 0),
-            moves: .loaded(moves: [], skipped: 0))
+            moves: .loaded(moves: [], skipped: 0),
+            activities: .loaded(activities: [], skipped: 0))
 
         #expect(b.hydratableAuthored != nil, "one note is content")
         #expect(b.hydratableDecisions == nil, "and no decision is not")
@@ -305,7 +320,7 @@ struct B2ActivationTests {
         let lines = DatabaseBootstrapReader.read(db).diagnosticLines
         let head = try #require(lines.first)
 
-        #expect(head.hasPrefix("Database bootstrap: 6 families"),
+        #expect(head.hasPrefix("Database bootstrap: 7 families"),
                 "the prefix every earlier pin was written against")
         #expect(head.contains("read at launch"))
         #expect(head.lowercased().contains("live"),

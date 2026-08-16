@@ -64,19 +64,20 @@ struct DatabaseBootstrapTests {
     /// ONE STRING LITERAL, NOT A CONCATENATION — `Comment` is
     /// `ExpressibleByStringLiteral` and `"a" + "b"` is an expression, not a
     /// literal, so it does not convert. Patch 343b.
-    @Test("Six families at B2, and adding one is a decision")
+    @Test("Seven families at B3, and adding one is a decision")
     func theFieldCountIsPinned() {
         // SIX AT 377, AND THIS PIN IS WHY THE PATCH TOOK FOUR ROUNDS. The
         // compiler found every `DatabaseBootstrap(` that gained an argument
         // and had nothing to say about a `== 5` that stopped being true.
         // `check-invariants.py` RULE 5 now reads the constant and compares.
         // §12.121.8.
-        #expect(DatabaseBootstrap.fieldCount == 6,
-                "plan, trimmings, athlete, notes and commutes, decisions, moves")
-        // TWELVE, AND THE FIVE IS NOT A TYPO. The count is a header, one line
-        // per family, and five verdict lines: 1 + 6 + 5. It is written
-        // `fieldCount + 6` in the source, so only the family term moved.
-        #expect(DatabaseBootstrap.diagnosticLineCount == 12,
+        #expect(DatabaseBootstrap.fieldCount == 7,
+                "plan, trimmings, athlete, notes, decisions, moves, activities")
+        // THIRTEEN, AND THE FIVE IS STILL NOT A TYPO. The count is a
+        // header, one line per family, and five verdict lines: 1 + 7 + 5. It
+        // is written `fieldCount + 6` in the source, so only the family term
+        // moves — which is the whole reason it is written that way.
+        #expect(DatabaseBootstrap.diagnosticLineCount == 13,
                 "a header, one line per family, and the five verdict lines")
     }
 
@@ -145,7 +146,8 @@ struct DatabaseBootstrapTests {
                                      athlete: .missing,
                                      authored: .noneWritten,
                                      decisions: .noneRecorded,
-                                     moves: .loaded(moves: [], skipped: 0))
+                                     moves: .loaded(moves: [], skipped: 0),
+                                     activities: .loaded(activities: [], skipped: 0))
         #expect(!boot.wasReadCleanly)
         #expect(boot.firstFault?.contains("plan") == true)
         #expect(!boot.canHydrate)
@@ -159,7 +161,8 @@ struct DatabaseBootstrapTests {
                                      athlete: .failed("disk I/O error"),
                                      authored: .noneWritten,
                                      decisions: .noneRecorded,
-                                     moves: .loaded(moves: [], skipped: 0))
+                                     moves: .loaded(moves: [], skipped: 0),
+                                     activities: .loaded(activities: [], skipped: 0))
         #expect(!boot.wasReadCleanly)
         #expect(boot.firstFault?.contains("athlete") == true)
         #expect(boot.firstFault?.contains("disk I/O error") == true)
@@ -188,7 +191,8 @@ struct DatabaseBootstrapTests {
                                          athlete: .missing,
                                          authored: .noneWritten,
                                          decisions: .noneRecorded,
-                                         moves: .loaded(moves: [], skipped: 0))
+                                         moves: .loaded(moves: [], skipped: 0),
+                                         activities: .loaded(activities: [], skipped: 0))
         #expect(noExtras.hydratablePlan == nil,
                 "the trimmings are missing, so there is no whole plan to give")
 
@@ -198,7 +202,8 @@ struct DatabaseBootstrapTests {
             athlete: .missing,
             authored: .noneWritten,
             decisions: .noneRecorded,
-            moves: .loaded(moves: [], skipped: 0))
+            moves: .loaded(moves: [], skipped: 0),
+            activities: .loaded(activities: [], skipped: 0))
         // Bound rather than chained: `whole.hydratablePlan?.fuel` is a
         // `Fuel??`, and comparing THAT to nil asks about the outer optional —
         // the plan, not the fuelling section. Two different questions wearing
@@ -235,17 +240,24 @@ struct DatabaseBootstrapTests {
     /// line, and does not read like an empty database.
     @Test("A failed read says so, per family, and does not read as empty")
     func aFailureIsVisiblePerFamily() {
-        // .unavailable ON ALL FIVE, AND THAT IS THE TEST. The loop below
-        // asserts every family line says the database is not open; a
-        // clean-and-empty authored family would leave two of the five saying
+        // .unavailable ON EVERY FAMILY, AND THAT IS THE TEST. The loop
+        // below asserts every family line says the database is not open; a
+        // clean-and-empty authored family would leave two of them saying
         // "0 notes, 0 commute decisions." This is the one site in the suite
         // where `.noneWritten` would be wrong. Patch 357b.
+        //
+        // IT SAID "ALL FIVE" UNTIL 379, and there were six by then — 377 added
+        // `moves` to the construction below and left the sentence counting
+        // what it used to be. The count is gone rather than corrected: it is
+        // `fieldCount`'s job, it is asserted three lines down, and a number
+        // written twice goes stale in one of the two places. §12.123.5
         let boot = DatabaseBootstrap(plan: .unavailable,
                                      extras: .unavailable,
                                      athlete: .unavailable,
                                      authored: .unavailable,
                                      decisions: .unavailable,
-                                     moves: .unavailable)
+                                     moves: .unavailable,
+                                     activities: .unavailable)
         let lines = boot.diagnosticLines
         #expect(lines.count == DatabaseBootstrap.diagnosticLineCount)
 
@@ -259,7 +271,8 @@ struct DatabaseBootstrapTests {
                                       athlete: .missing,
                                       authored: .noneWritten,
                                       decisions: .noneRecorded,
-                                      moves: .loaded(moves: [], skipped: 0))
+                                      moves: .loaded(moves: [], skipped: 0),
+                                      activities: .loaded(activities: [], skipped: 0))
         #expect(empty.diagnosticLines != lines,
                 "an unreadable database must not paste identically to an empty one")
         #expect(empty.wasReadCleanly && !boot.wasReadCleanly,
@@ -275,7 +288,8 @@ struct DatabaseBootstrapTests {
                                      athlete: .unavailable,
                                      authored: .noneWritten,
                                      decisions: .noneRecorded,
-                                     moves: .loaded(moves: [], skipped: 0))
+                                     moves: .loaded(moves: [], skipped: 0),
+                                     activities: .loaded(activities: [], skipped: 0))
         #expect(boot.diagnosticLines.joined(separator: "\n").contains("disk I/O error"))
     }
 

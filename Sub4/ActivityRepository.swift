@@ -96,6 +96,29 @@ nonisolated enum ActivityLoad: Sendable {
         return false
     }
 
+    // MARK: The two verdicts — patch 379, §12.92
+
+    /// DID THE READ SUCCEED. True for a clean read of a database holding no
+    /// activities.
+    ///
+    /// `isTrustworthy` above answers the same question and keeps its name
+    /// because `ReadBacks` and the health screen ask it; this exists so the
+    /// bootstrap can ask it in the same words as the other six families.
+    /// `AuthoredLoad` carries the identical pair for the identical reason.
+    var wasReadCleanly: Bool { isTrustworthy }
+
+    /// IS THERE ANYTHING HERE TO HYDRATE A STORE FROM.
+    ///
+    /// **FALSE IS NOT A FAULT AND IS NOT RARE HERE.** A database with a
+    /// bundled plan imported and no Strava sync yet reads cleanly and holds no
+    /// activities — that is a fresh install between the first launch and the
+    /// first sync, and it is why `.activities` is deliberately absent from
+    /// `DatabaseBootstrap.canHydrate`. §12.123.
+    var holdsContent: Bool {
+        guard case .loaded(let a, _) = self else { return false }
+        return !a.isEmpty
+    }
+
     /// The rows, or `nil` — deliberately not `[]`, so a caller cannot reach
     /// for the happy path without deciding what an untrustworthy read means.
     var activities: [Activity]? {
