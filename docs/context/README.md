@@ -8,6 +8,12 @@ the code.
 a line reference, verify it against the code before building on it — that is the standing
 rule in `working-agreement.md`, and it applies to these files most of all.
 
+**NONE OF THEM IS CURRENT STATE — patch 384.** `CLAUDE.md` §5 is the only place this
+project says what is true now, and `scripts/check-invariants.py` RULE 6 keeps it that way.
+`sub4-database.md` is the one to be careful with: its rules are the best short account of
+the persistence work in the repository, and its "Where it stood" section is marked history
+because it stopped at patch 319 while the code went on to 383.
+
 | File | Date of state | Read before |
 |---|---|---|
 | `working-agreement.md` | 2026-07-27 | anything |

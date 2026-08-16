@@ -13,7 +13,12 @@ before §12.10). Every rule here is stated there with its reasoning.
 `HANDOFF-2026-08-05-late.md` and `HANDOFF-2026-08-06.md` were snapshots and all three are
 now behind. ADR §12 supersedes them.
 
-## Where it stands — 2026-08-08, patch 319
+## Where it STOOD — 2026-08-08, patch 319 · HISTORICAL
+
+> **This section is history and is kept as history — patch 384.** D6c closed at
+> 330 and D7 is four slices in as of 383. **`CLAUDE.md` §5 is current state.**
+> The rules and the reasoning below are still good and are why this file is
+> worth reading; the counts are not.
 
 **D0–D5 complete. D6a complete. D6b complete. D6c four slices of eight. D7 not started.**
 

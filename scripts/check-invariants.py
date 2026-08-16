@@ -550,12 +550,103 @@ def pinned_counts_match_the_source():
     # than trust a green run here.
 
 
+# --------------------------------------------------------------------------
+# RULE 6 — patch 384, §12.128
+# --------------------------------------------------------------------------
+
+# How far a state document may fall behind `AppVersion.patch` before this fails.
+#
+# TWELVE RATHER THAN ZERO, AND THE NUMBER IS THE WHOLE DESIGN. A slice is five
+# to ten patches. A rule that demanded a documentation edit in every patch would
+# be edited out inside a week, and a rule nobody keeps is worse than none — it
+# reads as a check while checking nothing. Twelve lets a slice finish and fails
+# before a second one starts.
+#
+# The drift is PRINTED on every run whether or not it fails, which is the half
+# that matters: the ceiling stops the rot, the printout is how somebody sees it
+# coming. Same shape as UNPROTECTED_STORE_CEILING above.
+STATE_DOC_DRIFT_CEILING = 12
+
+# (file, regex capturing the patch number, what to call it in the message).
+#
+# THE MASTER PLAN IS DELIBERATELY NOT HERE. Its baseline is legitimately
+# historical — a plan written against a patch stays written against it. What it
+# owes is a POINTER to the current state, and that is prose a regex should not
+# be asked to police.
+STATE_DOCS = [
+    ("CLAUDE.md", r"\*\*Current at patch (\d+)", "CLAUDE.md's header"),
+    ("CLAUDE.md", r"## 5\. State — patch (\d+)", "CLAUDE.md §5"),
+    ("README.md", r"\*Current at patch (\d+)", "README.md"),
+]
+
+
+def the_state_documents_name_the_current_patch():
+    """**FOUR DOCUMENTS, FOUR ANSWERS, ONE QUESTION.** At patch 383 this
+    repository said 338, 343, 332 and 334 in four files a reader meets before
+    any code. Every one had been true. §5's own header carried a warning telling
+    the reader to distrust it, which is a document apologising for itself rather
+    than a fix.
+
+    This reads the truth out of `AppVersion.swift` — the number that is wrong
+    only if a patch did not install — and compares it against what each state
+    document claims.
+
+    A document naming a patch AHEAD of the source is also a failure, and a
+    different one: it describes a build nobody has installed."""
+    rule = "state documents name the current patch"
+
+    p = ROOT / "Sub4" / "AppVersion.swift"
+    if not p.exists():
+        fail(rule, "Sub4/AppVersion.swift is missing — this rule cannot read "
+                   "the truth")
+        return
+    m = re.search(r"static let patch = (\d+)", p.read_text())
+    if not m:
+        fail(rule, "AppVersion.patch could not be read")
+        return
+    current = int(m.group(1))
+
+    read = 0
+    for name, pattern, label in STATE_DOCS:
+        f = ROOT / name
+        if not f.exists():
+            fail(rule, f"{name} is missing")
+            continue
+        found = re.search(pattern, f.read_text())
+        if not found:
+            fail(rule, f"{label} does not state a patch number. The pattern "
+                       f"{pattern!r} matched nothing, so this rule has checked "
+                       "nothing there — restore the line or fix the rule. "
+                       "§12.69")
+            continue
+        read += 1
+        claimed = int(found.group(1))
+        drift = current - claimed
+        REPORT.append(f"  {rule}: {label} says {claimed}, source says "
+                      f"{current} (drift {drift}, ceiling "
+                      f"{STATE_DOC_DRIFT_CEILING})")
+        if drift < 0:
+            fail(rule, f"{label} names patch {claimed} and the source is at "
+                       f"{current}. A document describing a build nobody has "
+                       "installed is worse than one behind: it cannot be "
+                       "checked against anything.")
+        elif drift > STATE_DOC_DRIFT_CEILING:
+            fail(rule, f"{label} is {drift} patches behind ({claimed} against "
+                       f"{current}). Bring it up to date, or if the state has "
+                       "genuinely not moved, say so there with today's number. "
+                       "Four documents disagreeing about the present is what "
+                       "this rule exists to stop. §12.128")
+
+    counted(rule, read, 3, "state declarations read")
+
+
 RULES = [
     every_store_that_records_a_read_refuses_a_write,
     every_removal_counter_is_in_the_total,
     no_expect_message_is_a_concatenation,
     minutes_are_never_accumulated,
     pinned_counts_match_the_source,
+    the_state_documents_name_the_current_patch,
 ]
 
 for r in RULES:

@@ -8962,6 +8962,104 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.128 One document says what is true now — patch 384
+
+Not a code patch. It fixes the thing that made three of the last four sessions
+start by working out which document to believe.
+
+### 12.128.1 Six answers to one question
+
+At patch 383 this repository said, in six files a reader meets before any code:
+
+| document | claimed | what it read like |
+|---|---|---|
+| `CLAUDE.md` header | patch 338 | current |
+| `CLAUDE.md` §5 | patch 343 | "D7 has not started" |
+| `README.md` | patch 332 | "production still reads the legacy stores" |
+| the master plan | baseline 334 | a plan for work already done |
+| `docs/context/sub4-database.md` | patch 319 | "D6c four slices of eight" |
+| `SUB4_CURRENT_PEER_REVIEW_AND_REMEDIATION_PLAN.md` | patch 338 | "**Status:** active", "not yet running from the database" |
+
+Every one of them was true when written. The damage is not that any is wrong —
+it is that a reader cannot tell which to trust without reading the code, which
+is the labour these documents exist to save.
+
+**The sixth is the worst and was the last one found**, because it was found by
+listing the repository root rather than by remembering which documents exist.
+It is tracked, it sits beside `README.md`, its Status line says *active*, its
+executive conclusion is 46 patches out of date — and **the word CURRENT is in
+its filename**. Its evidence and its argument still stand, which is why it is
+banner-marked rather than deleted: the 2026-08-09 device audit, the gap between
+mapped-field agreement and information identity (§12.86, unmoved), and the
+separation of the database gate from the Strava gate.
+
+**A document naming itself CURRENT is a claim with no expiry and nothing
+holding it.** `git mv` it to `docs/REVIEW-2026-08-10-cutover-and-strava-exit.md`
+when convenient; an apply script does not move tracked files.
+
+**§5's own header made it worse by admitting it**: *"if the patch number in its
+heading is far behind `AppVersion.swift`, trust the ADR and the code, not §5."*
+A document that tells you to distrust it has not solved anything; it has moved
+the problem to the reader and charged them for it.
+
+### 12.128.2 §5 had become the CHANGELOG this repo says twice it must not have
+
+435 lines, and most of them narrative: what 328 found, what 330 closed, what 333a
+corrected, what 335b fixed, what 337 removed, what 340 gave a reader. Every one
+of those paragraphs is in ADR §12 in more detail, with its reasoning.
+
+**A state section that grows by one paragraph per patch is a changelog**, and
+`README.md` says in as many words that there is not one and should not be. It is
+now 157 lines and holds only what is true: the ladder, what reads from where, the
+device evidence, the open items, and the next steps in order.
+
+### 12.128.3 One authority, and the others say what they are
+
+`CLAUDE.md` §5 is the only statement of current state. `README.md`, the master
+plan's header, `HANDOFF-2026-08-16.md`, `docs/context/sub4-database.md`, the
+context index and the root-level peer review each now say so and say what they
+are instead — repository shape, future sequence, a day's snapshot, an export
+dated at 319, a review dated at 338.
+
+The hierarchy is written into §1 as a four-row table, because *which document
+answers which question* was itself an undocumented piece of knowledge.
+
+### 12.128.4 And a rule, because a convention would have lasted a week
+
+RULE 6 reads `AppVersion.patch` and compares it against the number each state
+document names. Over the ceiling, it fails. **Ahead of the source, it also
+fails** — a document describing a build nobody has installed cannot be checked
+against anything.
+
+**The ceiling is twelve, and the number is the design.** A slice is five to ten
+patches; a rule demanding a documentation edit in every patch would have been
+edited out inside a week, and a rule nobody keeps reads as a check while
+checking nothing — which is exactly what §5's warning line already was. Twelve
+lets a slice finish and fails before a second one starts. The drift is printed on
+every run whether or not it fails: the ceiling stops the rot, the printout is how
+somebody sees it coming. `UNPROTECTED_STORE_CEILING`'s shape, one subject over.
+
+It is the second rule in this file that derives its answer from the source rather
+than holding a list — RULE 5 was the first, at 377d. **Both exist because a
+number kept by hand in a different file from the thing it counts is this
+project's most expensive recurring defect**: 369a, 372, 377, 377d, 381a, 383, and
+now the state documents themselves.
+
+### 12.128.5 The strays, and why `.gitignore` is the fix rather than a delete
+
+`README-381.md` and `sub4-commit-381.txt` were committed by a `git add -A` on
+16 August. A patch zip drops both at the repository root and the workflow moves
+them to `~/Downloads` before committing; when that step is skipped they land in
+git. `.gitignore` has ignored `scripts/apply-*.py` since the switchover for the
+same reason — delivery is not source — and now ignores the other two, anchored
+so `docs/context/README.md` is untouched.
+
+The two already tracked have to be removed by hand: a `.gitignore` entry does not
+untrack a file, and an apply script that deleted repository files would be a class
+of operation this workflow has deliberately never had.
+
+---
+
 ## 12.127 The twin did not apply the athlete's moves — patch 383
 
 Found by the device on the Compare pressed to gate B3's flip. It is the first

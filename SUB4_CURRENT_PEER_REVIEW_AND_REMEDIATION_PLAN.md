@@ -6,9 +6,28 @@
 
 **Device evidence:** `be.apatch.Sub4 2026-08-09 16:35.24.476.xcappdata`
 
-**Status:** active remediation plan; supersedes the 2026-08-02 baseline review
+**Status:** HISTORICAL — a review of the patch 338 worktree. Its evidence and
+its argument stand; its statement of where the project is does not.
+
+> **THIS IS NOT CURRENT STATE — patch 384.** The filename says CURRENT and the
+> file is 46 patches behind. Two things below have been overtaken:
+> **"not yet running from the database"** was true at 338 and is not now — D7's
+> B0, B1, B2 and B3 landed at 342, 346, 358/377 and 383, so the plan, the
+> athlete, the authored data and all 694 activities are read from SQLite on
+> every launch. And the destructive-disconnect lifecycle it describes was
+> stopped at 372.
+>
+> **What still stands, and is why this file is kept:** the 2026-08-09 device
+> audit, the gap between *mapped-field agreement* and *information identity*
+> (ADR §12.86 draws the same line and it has not moved), and the separation of
+> the database gate from the Strava gate.
+>
+> **`CLAUDE.md` §5 is this project's only statement of current state.**
 
 ## Executive conclusion
+
+*Written against patch 338 on 2026-08-10. The first sentence is the one that
+has been overtaken — see the banner above.*
 
 Sub4 is **not ready to disconnect Strava** and is **not yet running from the
 database**.

@@ -7,9 +7,10 @@ to state a number it cannot support.
 Built for Operation Sub-4: a 34-week block starting 27 July 2026, targeting a
 sub-4:00 marathon in March 2027.
 
-*Current at patch 332, 9 August 2026. Exact live counts and patch decisions belong on the
-Database screen and in `docs/ADR-0003-database-contract.md` §12; this README records the
-current stage without creating a second counter that can drift.*
+*Current at patch 383, 16 August 2026. **`CLAUDE.md` §5 is this project's only statement
+of current state**; this README says what the repository IS and points there for where the
+work has got to. Exact live counts belong on the Database screen, and every patch decision
+is in `docs/ADR-0003-database-contract.md` §12.*
 
 ## Requirements
 
@@ -106,18 +107,22 @@ place to write the same thing is how two answers to one question start.
 
 ## Where the project actually is
 
-The persistence rewrite is most of the way through a lettered ladder, D0 to D8.
-**D0–D5, D6a, D6b and all eight D6c shadow-parity slices are complete and have been
-verified on the device.** The phone is currently completing the detail/recording backfill
-after the 9 August reinstall; read-back/parity evidence is not treated as final until that
-recovery is settled.
+The persistence rewrite is a lettered ladder, D0 to D8. **D0 through D6c are complete, and
+D7 is four slices in: the plan, the athlete, the authored data and — since patch 383 — the
+activities are read from SQLite on every launch.** Details, traces, weather, gear, reviews
+and the `UserDefaults`-backed state are still read from the legacy stores; those are D7's
+remaining slices.
 
-**Production still reads the legacy stores.** D6c proves the database can reproduce the
-current records and derivations; switching every production read to the repositories is
-D7. `CLAUDE.md` §5 has the current state and open items; ADR-0003 §12 has the reasoning
-behind every decision. The complete sequence from recovery through D7, Health, D8,
-restructure and feature delivery is in
-`docs/PLAN-codebase-modernization-and-feature-delivery.md`.
+**Every JSON store is still written and still complete.** That is what makes each slice
+reversible, and it is why the shadow-parity comparison reads `activities.json` directly
+rather than asking the store it is checking.
+
+**One document says what is true now: `CLAUDE.md` §5.** It carries the ladder, what reads
+from where, the device evidence, the open items and the next steps, and
+`scripts/check-invariants.py` RULE 6 fails the build if it falls more than twelve patches
+behind `Sub4/AppVersion.swift`. ADR-0003 §12 has the reasoning behind every decision;
+`docs/PLAN-codebase-modernization-and-feature-delivery.md` has the sequence from here
+through Health, D8, restructure and feature delivery.
 
 ## Known release blockers
 

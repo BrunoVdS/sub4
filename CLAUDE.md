@@ -6,10 +6,20 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 338 (2026-08-10).** Patch 318 installed this file with its state
-sections still describing patch 278c — forty patches behind — which is the failure
-this file exists to prevent. §5 is the part that goes stale; if the patch number in
-its heading is far behind `Sub4/AppVersion.swift`, trust the ADR and the code, not §5.
+**Current at patch 384 (2026-08-16).** 384 is documentation only — it changes no
+behaviour, so every fact about the app in §5 is the state proved on the device at 383.
+
+**§5 IS THIS PROJECT'S ONLY STATEMENT OF CURRENT STATE.** Every other document
+either points at it or is dated history. That rule exists because the opposite
+kept happening: patch 318 installed this file describing patch 278c, forty
+patches behind, and by 383 it was describing 343 while `README.md` said 332 and
+the master plan's baseline said 334 — four documents, four different answers to
+one question.
+
+**And it is now checked.** `scripts/check-invariants.py` RULE 6 reads
+`Sub4/AppVersion.swift` and fails the build if this file, §5 or `README.md`
+names a patch more than twelve behind it. A stale state document is no longer
+something somebody has to notice.
 
 ---
 
@@ -29,10 +39,31 @@ In this order, and only what the task needs:
 5. **`docs/D6C-SLICE-8-GROUNDWORK.md`** — if the task is slice 8. Checked against the
    source at 328a; §1.1 lists what slices 1–7 already cover and must not be re-proved.
 
+**Where each kind of answer lives, and there is one place for each:**
+
+| question | document |
+|---|---|
+| what is true right now | **§5 of this file** |
+| why a decision was taken | `docs/ADR-0003-database-contract.md` §12 |
+| what happened on a given day | `git log`, and the handoffs |
+| where the work is going | `docs/PLAN-codebase-modernization-and-feature-delivery.md` |
+
 **The handoffs are history, not state.** `HANDOFF-2026-08-05.md`,
-`HANDOFF-2026-08-05-late.md` and `HANDOFF-2026-08-06.md` were snapshots; the newest is
-already three days and forty patches old. Read one only to understand how something got
-the way it is. ADR §12 supersedes all three.
+`HANDOFF-2026-08-05-late.md`, `HANDOFF-2026-08-06.md` and `HANDOFF-2026-08-16.md`
+were snapshots and every one of them is behind. Read one only to understand how
+something got the way it is. ADR §12 supersedes all four.
+
+**The `docs/context/` files are dated exports and several are months behind.**
+Their index says so per file. `sub4-database.md` is the one to be careful with:
+its rules are still good and its state section stopped at patch 319.
+
+**`SUB4_CURRENT_PEER_REVIEW_AND_REMEDIATION_PLAN.md` is a review of patch 338,
+not the present, whatever its filename says.** It sits at the repository root
+beside `README.md` and it is the easiest document here to mistake for current —
+384 banner-marked it for that reason. Its device audit, its information-identity
+argument (ADR §12.86 draws the same line) and its separation of the database gate
+from the Strava gate all still stand; its "not yet running from the database"
+stopped being true at 342. Rename it `docs/REVIEW-2026-08-10-…` when convenient.
 
 ---
 
@@ -212,11 +243,30 @@ the way it is. ADR §12 supersedes all three.
   the same TRIMP. They cannot — both come from one walk over one set of bins, and the
   histogram determines the TRIMP. The argument was rewritten rather than the patch dropped.
 
+**Four bought on 16 August, over the B3 slice:**
+
+- **The patch before a flip is the one that asks what the flip is about to make
+  vacuous.** 381 exists because switching `ActivityStore` to the database would have made
+  shadow parity compare the database with itself — agreeing perfectly, proving nothing, and
+  saying so nowhere, because two sides agreeing is what a pass looks like. §12.125.
+- **A grep piped through `head` is an enumeration with a silent cap on it.** It looks
+  exactly like a complete answer. It hid a file from the B3 enumeration twice in one
+  session, and both times `check-invariants.py` found what it had missed. §12.72.7's cousin.
+- **When a patch adds a line to any `diagnosticLines`, grep `Sub4CoreTests/` for
+  `.count ==` BEFORE the build.** Seven such pins exist; three are literals. §12.125.7.
+- **A sentence about what a store currently HOLDS cannot be a constant.** `"none —
+  match_decision holds no rows"` was true at 330 and false from 358, printed unchanged
+  until 383. The same shape at 356 and 381: a value describing the world, stored as though
+  it described the code. Derive it from the counts and keep the constant as the default
+  that announces a caller nobody updated. §12.127.5.
+
 ---
 
 ## 3. Build, test, run
 
-**The suite is the gate, and it is fast.** 931 tests in 88 suites, well under a second.
+**The suite is the gate, and it is fast.** 1,614 tests in 148 suites, well under a second
+at patch 383. The run prints the current total; this figure is here for the order of
+magnitude, and `test.sh` fails below 500 for the same reason.
 
 ```sh
 ./scripts/test.sh          # xcodebuild test on the simulator — run before every device build
@@ -292,438 +342,160 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 343, 2026-08-10
+## 5. State — patch 384, 2026-08-16
 
-**The database ladder: D0–D5 complete. D6a complete. D6b complete. D6c COMPLETE — all eight
-slices, at 330. D7 has not started, and nothing in the app reads the database yet.**
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** 384 is a documentation
+patch and changes no behaviour; everything below is the app as it stood at 383,
+read off the device on 16 August. Anything older than
+this section is history and lives in ADR §12; if a number here disagrees with
+the code, the code wins and this section is the defect.
 
-**Two sentences belong together in the D7 decision, and §12.75.8 states them:** D6c proves
-the explicitly mapped operational fields can feed the app and the covered derivations agree
-from either side. It does **not** prove a lossless round trip or that the app is right. The
-9 August external audit found unmodelled fields and list order that the in-app checks do not
-ask about; §12.86 records that exact boundary.
+### 5.1 Where the ladder is
 
-**That last clause is the core of the remaining read-path work, and it is worth restating because the
-read-backs make it easy to forget.** All nine repositories are reachable only from
-`DatabaseHealthView` and the parity types. `ActivityStore.load()` still opens
-`activities.json`; so does every other store. D6c proves the data can be *reconstituted*;
-it does not prove a store *fed from* the database would behave identically, and only
-`ActivityStore` has the extracted-rules shape (`ActivityRoster`) that would make that
-provable. Repointing each store's load path is the substance of D7 and is covered by no
-slice completed so far.
+| stage | state |
+|---|---|
+| D0–D5 | complete |
+| D6a, D6b, D6c (all eight slices) | complete |
+| **D7 B0** — `PersistenceMode`, one authority | done, 342 |
+| **D7 B1** — the plan, the athlete, the constants | done, 344–346 |
+| **D7 B2** — notes, commutes, match decisions, plan moves | done, 355–358 and 377 |
+| **D7 B3** — the activities | **done, 379–383** |
+| D7 B4 — details, traces | not started |
+| D7 B5 — weather, gear | not started |
+| D7 B6 — derived metrics | not started |
+| D7 B7 — reviews | not started, and blocked until a real review exists |
+| D7 B8 — sync cursor, work queue, rejections, revisions | not started |
+| D7 B9 — activate, fail closed | not started |
+| D8 — retire the JSON writers | not started |
 
-- **The source now defines fourteen migrations; the captured phone had thirteen.** The
-  off-device package at 9 August 14:35Z held 678 activities, 483 details, 470 recordings,
-  140,790 trace samples, 5,941 splits, 1,771 laps, 586 weather, 11 gear, 15 resting months,
-  5 HR zones, no notes or corrections, and 3 rejections. The older 674/674/649 figures
-  below are explicitly pre-wipe evidence, not the current captured state.
-- **1,218 tests in 105 suites pass** at patch 338. The run prints the current total.
-  165 Swift files in `Sub4/`, ~60,000 lines.
-- **`migration_run` CAN reach `verified` and on this database never has.** That sentence
-  used to read "reaches", and it described the PRE-WIPE database — an off-device read of the
-  container on 9 August found 53 `pending`, 3 `running` and **zero `verified`, ever**.
-  Nothing but the Verify button writes it: `SemanticVerifier.record` is the only writer and
-  the ledger deliberately stops at `pending`, so an import can never produce it. The
-  verifier compares per-table counts, sync state, identity, an activity fingerprint and the
-  domain checks; **the number of comparisons is printed on the screen and is not restated
-  here.** Every import opens a NEW row at `pending`, so a verified run is immediately
-  buried — **verify LAST**, after the backfill and the final snapshot. §12.86.4.
+### 5.2 What the app reads from the database today
 
-**D6a — nine repositories, mapped fields compared.**
-`ActivityRepository` (289), `ActivityDetailRepository` (291), `RecordingRepository` (294),
-`AthleteRepository` (317), `AuthoredRepository` (322), `PlanRepository` (323),
-`WeatherGearRepository` (324), `PlanExtrasRepository` (326), `ReviewRepository` (327). Each returns a load type that distinguishes *nothing there*
-from *could not look* — §12.15, twelve instances, and 323's has four shapes rather than
-three because "stored but not activated" and "two plans both active" are states the schema
-permits and nothing else could name.
+Eight lines in the diagnostics paste say it, and they are the fact to check
+first when a screen looks wrong:
 
-**D6b — write-through (302–307).** Every path that writes a store now reaches the database.
-**Its boundary, learned at 325:** gear distance is not a store write — it is a refresh from
-Strava's athlete endpoint — so it was never in D6b's scope, and the value sat frozen at
-first import until 324's read-back found it. The boundary of a completeness claim is the
-thing worth writing down, because everything outside it looks finished from inside.
+- **the database**: the plan and its trimmings, the constants, the athlete's
+  zones and FTP, the notes, the commute decisions, the match decisions, the
+  plan moves, **and the activities**
+- **the app's own files, still**: gear (B5), weather (B5), details and traces
+  (B4), reviews and proposals (B7), the sync cursor, work queue and rejection
+  receipts (B8, all `UserDefaults`)
 
-**D6c — shadow parity.** Slice order is in `docs/D6C-SHADOW-PARITY-GROUNDWORK.md` §6.
+`AthleteStore` is deliberately half-and-half and says so: `partial(fromDatabase:
+"zones and FTP", fromFiles: "gear")`.
 
-| slice | what | patch |
-|---|---|---|
-| 1 activities — identity, order, days | `ActivityParity` | 312 ✔ |
-| 2 daily and weekly volume | `VolumeParity` | 313 ✔ |
-| 3 fitness and load, incl. the HR histogram | `LoadParity` | 314–316 ✔ |
-| 4 details, splits, laps, reps | `DetailParity` | 320 ✔ |
-| 5 plan matching | `MatchResolver` + `MatchParity` | 321 ✔ |
-| 5b notes and corrections | `AuthoredRepository` + `AuthoredRoundTrip` | 322 ✔ |
-| 6 zones, weather, gear | `AthleteRoundTrip` (317) + `WeatherGearRepository` | 324 ✔ |
-| 6b the plan — weeks, sessions, breakdowns, blocks | `PlanRepository` + `PlanRoundTrip` | 323 ✔ |
-| 6c the plan's trimmings — exercises, fuel, warm-up | `PlanExtrasRepository` | 326 ✔ |
-| 7 review payloads | `ReviewRepository` + `ReviewRoundTrip` | 327 ✔ |
-| 8 Today / Week / Plan / Progress summaries | `SessionTally` 328 + `TabSummary` 329 + `SummaryParity` | 330 ✔ |
+**Every JSON store is still written and still complete.** That is what makes any
+slice reversible by deleting one family from `PersistenceAuthority.hydratedFamilies`,
+and it is why hydration must never write.
 
-**9 AUGUST: THE PHONE WAS WIPED.** The app was deleted by hand during the 330b crash loop,
-which took every JSON store with it. Recovered from Strava: 674 activities, 586 weather
-readings, 11 gear. **Gone for good:** 7 session notes with their sRPEs (`notes.json`) and
-4 commute decisions (`commutes.json`, which is what fills the `correction` table — the
-`DataCorrections` overrides are source and survived). Also gone: the eleven review
-rehearsal records, which had to be deleted before 24 August anyway. **The first protected
-snapshot in this project's history was taken at 08:39:14 UTC on 9 August** — 67 of 67 files,
-zero failures, `2026-08-09-083914`. D0 contract item 3 had been open since patch 246.
+### 5.3 The evidence, from the device at 383
 
-**The detail backfill is a two-day job and that is Strava's ceiling, not ours.**
-`DetailStore` drains 30 activities per sync at up to two requests each; Strava allows
-**100 reads per 15 minutes and 1,000 per day**, windows resetting at :00/:15/:30/:45 and
-the day at midnight UTC. ~1,180 requests are needed. A bigger batch would mean fewer
-presses, not more activities per day. **Do not read shadow parity as a verdict until
-`Still to fetch` reaches zero** — the detail and recording slices will report gaps that
-are the drain. §12.77.
+Compare and the nine read-backs, 16 August:
 
-**Slice 8's code was right at 330a and the SCREEN was not.** 330, 330b and 330c are three
-consecutive fix-ups on one patch, two of them shipped on a wrong diagnosis, and the
-Database tab could not be opened in between. Nothing about the comparison changed; the
-crash was `DatabaseHealthView`'s own size. 330c moved the six parity sections into
-`Sub4/ShadowParitySections.swift` and grouped the rest. **No test in this project can see
-a stack overflow** — 1136 were green through all three. §12.76.
+- **six parity slices, zero differences**: 694 activities · 332 days; volume
+  0 of 332 days and 0 of 284 week figures; load 412 days with fitness 35 vs 35
+  and fatigue 47 vs 47; details 694 with 8,328 pace figures and 8,129 splits;
+  matching 518 days, adherence 15 of 207 both sides; summaries 3 weeks and
+  4 volume rows, block sessions 15 of 18 both sides
+- **activity parity's app side is `activities.json`, read directly** — patch 381,
+  so the comparison survived B3's flip instead of becoming the database agreeing
+  with itself
+- `Activities hydrated: 694 kept of 694 offered from the database` — settling the
+  stored rows drops nothing
+- nine read-backs, zero unexplained differences, all approved differences named
 
-**328 is slice 8's extraction, shipped alone because it CHANGES WHAT TWO TABS PRINT.**
-"Done of total" had **seven** implementations; six counted the plan's 30 optional Zwift
-rides and one did not, so the Week tab and the Progress tab printed different denominators
-for the same week — since patch 98, which fixed one site of seven. `SessionTally` is now
-the only copy. **Verified on the device:** week 2 reads 6/7 on Week, Plan and Progress
-(three screens that had not agreed before), week 1 stays 4/4, the block total is 10/208 =
-238 − 30. §12.72.
+**What that does and does not prove.** It proves the app derives the same
+answers from either side for everything the slices cover. It does not prove a
+lossless round trip: gear classification and status, rejection and match-date
+metadata, plan source and top-level order, and fractional fetch-time precision
+are still outside the mapped set — §12.86 draws that line and it has not moved.
 
-**328 found five of the seven and the device found the other two**, because the campaign
-predicted a NUMBER — adherence 236 → ~206 — and the screen read 236. `MatchParity` had its
-own loop whose comment described a delegation it did not perform, and `Review.swift`'s
-`countable` is what the MODEL is told each month: left alone it would have reported "6 of 8"
-for a week the athlete's screens call "6 of 7", live on 24 August. Both fixed at 328a.
+### 5.4 The verifier's accounting
 
-**No D6c slice could have found this**, and that bounds what D6c is evidence of: shadow
-parity proves the database can feed the app, and says nothing about whether the app is
-right. Slice 8's comparison is patch 329.
+`HydratedStores.all` holds **eight** entries: `heart-rate zones` (B1), `notes`,
+`commute corrections`, `match decisions`, `session moves` (B2), and `activities`,
+`activity identities`, `volume by discipline` (B3). Each names a comparison whose
+expectation now comes from a store the database feeds, so each is the database
+agreeing with itself.
 
-**Slice 7 was verified on the device on 8 August, earlier than expected.** The rehearsal
-button was pressed about eleven times, and the import reported `Reviews: 5 new, 6 refreshed`
-— eleven records where one was expected. The read-back: **56 compared · 3 differences**,
-`11 vs 8` reviews, 224 field comparisons with **zero** differences, **16 of 16** changes
-resolving against 260 plan uids, and the only red row being *App records sharing a run
-time: 3*. Every denominator is an exact product — 8×5, 8×4, 8×5, 16×6.
+**`runs ever verified: 12`, the newest at patch 368 — and none since the flip.**
+The independent count in that row is 18 and is expected to fall by three the next
+time Verify runs. Until it does, no verified run exists over the current data,
+which is D7's own exit criterion and step 5 of §5.6.
 
-**It found a real identity mismatch** — see §12.71.12. The app keys a review by
-`Record.id` (window + run count); the database keys it by `(accountID, ranUTC)` at
-**one-second** resolution, with no unique constraint behind it. Eleven records became eight
-rows, silently on the writing side; `duplicateRunTimes` is the only thing in the app that
-noticed. **Asked and answered on 8 August: record it, do not fix it** — unreachable outside
-the internal-build rehearsal button, and D7 is the next rung. It becomes a defect rather
-than a note if a second writer of `review` appears.
+### 5.5 Open, and the first one is Bruno's call
 
-**The eleven rehearsal records must be deleted before 24 August**, or `ReviewDue` pushes
-the first real review to 21 September.
-
-**The slice still has no evidence from a REAL review, and cannot before
-24 August 2026.** `ReviewDue.state()` needs four finished plan weeks; the first review is
-due Monday 24 August. Until then `ProposalStore` holds nothing or the rehearsal record,
-the six review tables hold nothing or one synthetic tree, and the read-back's correct
-output is *"no review stored yet · first due 24 Aug 2026"* — green, because both sides are
-empty. Its 23 tests are the only evidence the reader works. Two findings it surfaced stay
-open: **nothing writes `review_evidence_source`**, so ADR-0002's lineage purge has no rows
-to query (§12.71.3); and **`confidence` has two live contracts** — the type says 1–5, the
-column's CHECK says 0–100, and 70 has been written since patch 225 (§12.71.4).
-
-**On the device, every slice run so far is clean.** 674 activities · 324 days · no
-differences; 403 vs 403 load days, 222 vs 222 traces, 7,112 heart-rate buckets, Fitness
-33 vs 33; athlete 27 compared, 0 differences, HR max 181 vs 181, FTP 270 vs 270; 674
-details with 8,088 pace figures (6,562 answered), 7,986 splits, 4,700 laps, 1,141 reps,
-all zero; 518 days matched, 252 sessions, 10 matched and 664 extras — and
-`extras + matches = 674` exactly — with adherence 10 of 236 on both sides. **Slice 5b
-(322) has not been verified on the device yet.**
-
-**`LoadParity` now verifies sRPE outright** and `MatchParity` verifies the plan — both
-lines shortened at 323 because `plan_session` is read back. The match decisions are the
-only held input still uncorroborated, and `match_decision` holding zero rows is why.
-
-**The in-app approved-difference list has five entries, but it is not a field-coverage
-inventory.** It names `AthleteConstants.version`, two currently unwritten note-link fields,
-`Shoe.primary`, and `gear.retiredUTC`. The external audit found additional mappings that
-never reach that list at all: bike-vs-shoe and active-vs-retired gear membership, athlete
-fetch time, rejection `label`/`dateIsKnown`, match-decision `dateIsKnown`, plan
-`meta.source`, top-level session/exercise order, and fractional fetch-time precision.
-Those are D7 decisions or fixes; a green current verifier does not waive them.
-
-### Still open, and the first one is Bruno's call
-
-> **THE MATCH PICKER OFFERS ACTIVITIES THE MATCHER WILL REFUSE.** Confirmed on device
-> 2026-08-05 22:00, still open at 322a. `MatchPickerView.choiceSection` lists
+> **THE MATCH PICKER OFFERS ACTIVITIES THE MATCHER WILL REFUSE.** Confirmed on
+> device 2026-08-05 and still open. `MatchPickerView.choiceSection` lists
 > `activities(on: dayKey)` unfiltered; `Matcher.resolve` builds its pool from
-> `all.filter(\.isPlanEligible)`, and `Activity.isPlanEligible` returns `false` by
-> `default:` — so a walk is never eligible. Choosing the walk stores the override, the
-> matcher cannot find it, and the session falls through to the same branch as "explicitly
-> nothing". Week showed *Not done*, Sessions went 4/4 → 3/4, nothing on screen said why.
-> Worse since 272: the import *does* write the row, so the store, `match_decision` and the
-> screen disagree — and the verifier cannot see it, because it counts rows and the count
-> is right.
->
-> **Two fixes and the decision is Bruno's, not yours:**
-> (a) the picker lists only plan-eligible activities, extras greyed with a reason;
-> (b) an explicit override wins over `isPlanEligible` — which is patch 251's own argument,
-> three lines above the walk case: *"the athlete's answer has to be able to win in BOTH
-> directions."* (b) has consequences: the walk's distance and load would enter that
-> session's adherence and effort figures.
-> **Ask, then implement. Do not pick.**
->
-> **321 asserted it as it behaves today.** `MatchResolverTests`
-> `.anOverrideNamingAnIneligibleActivityIsLost` states the defect in a test, so the day it
-> is fixed the test inverts rather than the change going unnoticed. The decision is still
-> Bruno's.
+> `all.filter(\.isPlanEligible)` and a walk is never eligible, so choosing one
+> stores an override the matcher cannot find and the session reads *Not done*
+> with nothing on screen saying why. **Two fixes and the decision is yours:**
+> (a) the picker lists only eligible activities, extras greyed with a reason;
+> (b) an explicit override wins over `isPlanEligible`, which is patch 251's own
+> argument — and would let that walk's distance and load into the session's
+> figures. `MatchResolverTests.anOverrideNamingAnIneligibleActivityIsLost`
+> states the defect as a test, so the day it is fixed the test inverts.
 
-- ~~Background refresh has never fired.~~ **Closed.** `backgroundRefresh: 1` appeared in
-  the ledger during the 320 device run. Patch 307's path works; iOS had simply never woken
-  the app. Open from 311 to 320 on evidence that was an absence, which is §12.54.2's
-  shape.
-- ~~**`Interrupted runs` only ever climbs**~~ **Closed at 338.** `running` meant two
-  things — open right now, and open when the process was killed — and no column could
-  separate them: the container held three, one of them opened 46 seconds before capture and
-  genuinely live. `2026-08-15-interrupted-run` adds a sixth state; `Sub4Launch` closes every
-  open row as `interrupted` immediately after the database opens, which is the one moment
-  the ambiguity resolves for free. The census prints **two** numbers now — `open right now`
-  and `interrupted, recovered at a later launch`. Automatic interruption evidence is
-  bounded to the newest 20; manual and unclassified rows remain. §12.86.2.
-- **`Sub4/manual.html` is 38 patches stale** — last touched at 284, and it has zero
-  mentions of the Database screen, shadow parity, write-through, GRDB or migrations. It is
-  a *user* document and §11 "Where the data lives" is the part that will be wrong; deferred
-  until D7 settles that answer rather than writing it twice.
-- ~~**`SUB4_CURRENT_PEER_REVIEW_AND_REMEDIATION_PLAN.md` was the 2 August baseline**~~
-  **Updated at 338** from the external package audit. It now separates mapped parity,
-  information-loss decisions, D7 database activation and the later HealthKit/Strava exit.
-- ~~`review_evidence_source` — **nothing writes it**~~ **Closed at 335.** One row per source
-  in `ReviewLineage.sourceIDs` — `authored`, `bundled`, `strava` — written beside the
-  evidence row. **A property of the BUILDER, not of the pack:** a review that consulted
-  Strava and found nothing is still derived from Strava, so deriving the set per instance
-  would under-report the exact case the purge exists for. That decision also kept it out of
-  `ProposalStore.Record` and its persisted `Codable`. Frozen literals rather than
-  `DataSource` cases, following `Sub4Migrations`' precedent and avoiding a MainActor value
-  read from the nonisolated importer. §12.83. **Still unproved against a REAL review until
-  24 August 2026** — that limit is unchanged.
-- ~~**Two identities for one review**~~ **Closed at 337, by the failure it predicted.**
-  `(accountID, ranUTC)` was never a key: one-second resolution, no unique constraint. On
-  9 August the rehearsal wrote six records, two in the same second, and the importer's
-  UPDATE branch **replaced one review's evidence, lineage, proposal, changes and watch
-  items with another's** — silently, `review: 5` looking perfectly reasonable. The only
-  thing that noticed was `duplicateRunTimes`, written at 327 for exactly this and never
-  fired until then. `2026-08-14-review-record-key` gives `review` a nullable `recordKey`
-  carrying `ProposalStore.Record.id` — a value already unique since 269, already `Codable`,
-  already in every `proposals.json` — with a partial unique index. The importer **adopts**:
-  a keyless row whose run time matches claims a record's key, once. The sixth review comes
-  BACK on the next import rather than merely stopping it recurring. `Record.id` was
-  **deleted** from the approved-difference list, not reworded: when the harm arrives an
-  approved difference gets a column, not a caveat. §12.85.
-- ~~**`confidence` has two live contracts**~~ **Closed at 334.** `2026-08-13-confidence-scale`
-  rebuilds `proposal` with `CHECK (confidence >= 1 AND confidence <= 5)`; an out-of-range
-  value becomes NULL, because 70 out of 100 is not 4 out of 5. Five fixture write sites
-  across three test files went 70 → 4, and `theConfidenceRangeIsReported` **inverted** —
-  it asserted the contradiction on purpose since 327 and now asserts the refusal. §12.82.
-- `content_revision` — **reserved and unoccupied, decided at 334.** The occupant this file
-  used to guess at already exists: `plan_version.contentHash`, written by
-  `Sub4Import+Plan.contentHash(of:)` and checked on every seed. Filling it with the same
-  hash would be two answers to one question. Its real subject is per-ACTIVITY hashes so a
-  re-sync can skip unchanged rows — an optimisation, and the last full import of 677
-  activities took 0.254 s. Revisit when the import is slow enough to be worth a cache.
-  §12.82.6.
-- `lateArrivals` has been computed since patch 45 and is displayed nowhere.
-- **The protected snapshot is operationally stale.** The mechanism first worked on 9 August
-  — and was learned the hard way.
-  The button shipped at 247 and had never been pressed, so a hand-delete of the app took
-  every store AND the thing that would have protected them. All four current copies omit
-  UserDefaults and the backfill was incomplete. **Close this only after a post-338,
-  preferences-inclusive capture when `Still to fetch` reaches zero.** §12.78.
-- ~~**Snapshots accumulate for ever**~~ **Closed at 338.** Four copies held 40.6 MB against a
-  27 MB database and 14 MB of live stores, two of them byte-identical and taken 58 seconds
-  apart, and `LegacySnapshot` had no prune of any kind. It now keeps **two**, pruning only
-  after `isComplete` — every file copied AND its copy re-hashed equal. **Deleting the old
-  one as the new one is written is the wrong policy**: it destroys the only good copy at the
-  moment the new one is unproven. An older full folder becomes a root audit receipt that
-  embeds its complete manifest (every name, size and SHA-256) plus the digest of the exact
-  original manifest bytes; payload bytes are removed. The newest 20 understood, verified
-  receipts are retained. Invalid/unknown receipts and incomplete folders are deliberately
-  never auto-deleted, remain visible in diagnostics, and require manual review if they
-  accumulate. §12.86.5.
-- ~~**Snapshots omitted UserDefaults-backed migration inputs**~~ **Closed for new captures
-  at 338.** The four existing snapshots protect the file stores only. New captures add a
-  filtered, lossless `preferences.plist` containing every key declared by `DataLifecycle`,
-  including Data-valued rejection/match payloads; they do not copy the process-owned
-  physical plist or Keychain. A fresh post-338 snapshot is therefore required. §12.86.5.
-- ~~**`SnapshotManifest.createdUTC` was not a UTC time**~~ **Closed at 338.** It held the
-  folder name — `id` and `createdUTC` were the same string in all four manifests. §12.48
-  from the other direction. The key is NOT renamed (four manifests on disk, non-optional
-  `Codable` field); the value becomes a real timestamp and `createdDate` returns nil for the
-  old shape rather than inventing a date nobody recorded. §12.86.6.
-- **`ActivityStore.load()` still has the two-`try?` shape** patch 273 fixed on the four
-  authored stores. Left deliberately: it is a cache and re-fetchable.
-- **STRAVA IS PLANNED TO BE SWITCHED OFF, BUT MUST REMAIN CONNECTED TODAY.** Production
-  activity ingestion still calls Strava, and every captured activity has Strava provenance;
-  disconnecting now stops new activity ingestion. After D7/D8, Phase 4A must first build
-  and prove the HealthKit adapter, source priority/deduplication, moving-time, route, gear
-  and local-zone replacements before revocation. That is ADR-0002's Phase 4A, and
-  the athlete's stated intent as of 325. Two consequences that change how patches are
-  judged: **a cache that stops being refreshed is harmless until it becomes the only
-  copy**, so any importer-fed column freezing an old value is a permanent loss with a
-  date on it; and **any rule built on a Strava-only signal has a shelf life shorter than
-  the patch that writes it** — which is why `gear.retiredUTC` stays unwritten (§12.68.4).
-- **2026-09-01 — GitHub Actions allowance resets.**
+- **Five authored stores have no restore path.** `notes.json`, the match
+  decisions, `moves.json`, `commutes.json` and `proposals.json` cannot be put
+  back if something destroys them. 372 stopped the mechanism that was destroying
+  them; weather got a restore at 374 because its repository was finished and
+  unused. **Largest open risk in the project.**
+- **`newest removal` names the trigger and the count, not the family.** A
+  breakdown needs a migration — a column or a `migration_run_removal` table.
+  369's argument one level down.
+- **`canReconcile` tests readable, not correct** (§12.120.3). A clean read of a
+  wrong file goes through that gate; the 601 weather readings survived only
+  because weather is not in `reconcileRequires`, and it is not in there for an
+  unrelated reason.
+- **The import no longer carries the file into the database for activities**
+  (§12.126.5). `AppStores.gather` feeds `Sub4Import` from the hydrated store, so
+  Import writes the database's own rows back. Idempotent and harmless; not a
+  repair path. `resetCache` and a re-sync are.
+- **`LoadParity`'s app side is `LoadStore`**, which derives from the hydrated
+  store, so slice 3 compares a database-derived app side after the flip. Slices
+  1, 2, 5 and 8 were rescued at 381; this one cannot be without comparing
+  something no screen shows. §12.125.4.
+- **`ReadBacks.knownActivityIDs` is B5's**, under the rule 381 made general: a
+  read-back gets its own read in the slice that hydrates its own store.
+- **The protected snapshot is `2026-08-10-084723`**, taken by patch 340 — before
+  the flip. It holds `preferences.plist`, which is what 338 fixed, and it now
+  protects files the app no longer reads for activities. A fresh capture is
+  step 1 below.
+- **`Sub4/manual.html` is a hundred patches stale** — last touched at 284. It is
+  a *user* document and §11 "Where the data lives" is the part that is wrong;
+  deferred until D7 settles that answer rather than writing it twice.
+- **Two stores remain unprotected** by §12.116's guard: `AthleteStore` and
+  `AthleteConstants`, both the milder `guard … else { return }` shape, both
+  re-fetchable, both hydrated at B1. `UNPROTECTED_STORE_CEILING` is 2 and may
+  only go down.
+- **`content_revision` is reserved and unoccupied**, decided at 334: its real
+  subject is per-activity hashes so a re-sync can skip unchanged rows, and the
+  last full import of 694 took 1.1 s. Revisit when that is slow enough to matter.
+- **Dates:** first real monthly review **24 August 2026**; GitHub Actions
+  allowance resets **1 September 2026**; Japan **7–12 September**, the first time
+  `DayKey.key(_:in:)` runs outside Europe/Brussels — exercise it before flying.
 
-**329 landed the extraction.** `TabSummary` holds `weekPoints`, `actualVolume` and
-`weekActuals`; `PlanStore.plannedRunKm`, `plannedVolume`, `sessions(inWeek:)` and
-`accumulate` gained static forms taking their inputs, with the instance methods as
-one-line wrappers. Behaviour-neutral. **`todayKey` is a parameter** — groundwork §7's
-cutoff, and the hinge the whole slice turns on. §12.73.
+### 5.6 Next, in order
 
-**330 closed slice 8, and D6c with it.** `SummaryParity` compares the Progress chart's week
-points, the four volume rows and the block tally. **It is the only slice that reads the plan
-from the database** — every other one holds it from the app and lets `PlanRoundTrip` verify
-it — so it holds only the match decisions, which makes it the closest thing on that screen
-to what D7 does. §12.75.
+1. **A fresh protected snapshot**, post-383 and preferences-inclusive. The
+   current one predates the flip.
+2. **Press the read-back roll-up** and get `provesSomething`, not merely
+   healthy — it needs every read-back to have looked at something.
+3. **Import once, then Verify immediately.** This is the first verification over
+   data the database feeds. Watch the ledger row beside the verdict, and expect
+   `independent` to fall by three.
+4. **B4 — details and traces.** The 1.5-million-sample read stays off the main
+   actor; the read-back keeps its own read, per 381's rule.
+5. **B5 — weather and gear**, including `ReadBacks.knownActivityIDs` and the
+   `WeatherGearRoundTrip` read-back's own read.
+6. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
+   time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed
+   recovery screen `RootView` does not yet have.
+7. **D8** — stabilise one release window, then remove the JSON writers.
 
-**338 came from reading the container from outside the app.** The .xcappdata was pulled
-off the phone and the JSON stores compared against `sub4.sqlite` by code sharing nothing
-with Sub4. It found **zero differences among the mapped and normalised fields** for 678
-activities, 586 weather records, 483 details (5,941 splits, 1,771 laps, 599 efforts), 470
-traces (140,790 samples), six rehearsal review rows and the bundled plan. It also verified
-2,709 snapshot files by SHA-256. This is strong operational parity evidence, not a claim of
-literal information identity: gear classification/status, rejection and match-date
-metadata, plan source/top-level order, and fractional fetch-time precision are not fully
-preserved. It also found four housekeeping defects and the snapshot-input boundary,
-addressed in this patch but still awaiting installation and device proof. §12.86.
-
-**337 removed the key that could lose a review.**
-The 9 August rehearsal collided two records in one second and one review's whole subtree
-was overwritten by another's. `review.recordKey` now carries the app's own record id;
-pairing is by that, with the run time surviving as a one-import ADOPTION fallback for the
-five rows already on the device. **Two pairing counts are printed, not one** — "5 paired"
-cannot tell a migrated device from an un-migrated one, and `paired by run time: 0` is what
-says the window shut. `duplicateRunTimes` left `unexplained` and stopped being red: the run
-time is no longer the key, so a collision is a fact about the clock. **Fourth test inverted
-in three days**, all four written by the patch that found a problem and declined to fix it.
-§12.85.
-
-**336 cleaned the two zeros the paste could not show, so D7 starts on a readable one.**
-The diagnostics listed 38 tables under a header saying 51 — `for row in counts where
-row.rows > 0` — and the thirteen it hid are every table this project has argued about:
-`review_evidence_source`, `content_revision`, `match_decision`, `user_note`, `correction`.
-And `Declared but not present: 5` counted three lost stores beside two RETIRED FILE
-FORMATS: `details.json` and `streams.json` cannot exist on an install after the
-per-activity split, so **that row has a floor of two** and read as five losses when it was
-three. Both §12.54.2, both in the artefact read later by somebody who cannot see the
-screen. §12.84.
-
-**335b fixed a zero whose explanation was wrong.** 335 wrote the writer and left the
-Database screen saying `0 — nothing writes this table`, plus a footer calling it an
-unapproved finding. Both true before the patch, both false after it. Three zeros now, and
-only the middle one is red: *no review stored yet* (correct until 24 August), *reviews
-stored but no lineage* (the writer did not run), *N — one per source*. **Found while
-writing the manual campaign, by asking where on the screen the number appears.** §12.83.6.
-
-**335 wrote the lineage, and it is the third test inverted in one day.**
-`review_evidence_source` had held zero rows since the schema was built, leaving ADR-0002's
-purge with nothing to query. `nothingWritesEvidenceLineage` asserted that absence on
-purpose since 327; it is now `theEvidenceLineageIsWritten`. Same shape as 327b's
-`noPlanMeansNoResolution` and 334's `theConfidenceRangeIsReported` — **all three were
-written by the patch that found the problem and declined to solve it, and all three changed
-on the day somebody decided.** That is the argument for recording a finding as a test
-rather than a comment. §12.83.
-
-**333a corrected two counters that could not say why they were zero**, both found on the
-device within an hour of 333 shipping and both the defect 333 existed to prevent. The trace
-backlog and the roll-up's blind-read test are now derived from the predicate and from
-`isTrustworthy` rather than from a transient array and a mis-read property. The roll-up has
-**four** states — agreed, differed, could not look, nothing to compare — and two verdicts:
-`isHealthy` (no differences, no blind reads) and **`provesSomething`**, which additionally
-requires that every read-back looked at something. **`provesSomething` is what D7's gate
-needs**, and today it is false: the wipe left notes, commutes and reviews empty on both
-sides. §12.81.
-
-**333 closed the last pre-D7 item that is not a slice.** `ReadBacks` holds the nine reads
-(two callers now: the write-through's `onChange`, one at a time, and the roll-up, all nine)
-and `ReadBackRollUp.shared` holds the verdict, shaped like `ShadowParity` and outliving the
-sheet. **It was §12.57 nine times over and nobody had counted** — every read-back's report
-lived in a `@State` property and died with the screen. The summary names **three** states,
-not two: agreed, differed, and could not look, because *"eight of nine agree"* said over a
-read that failed is the sentence somebody would quote as the reason it was safe to press
-D7. §12.80.
-
-**331 and 332 are the backfill's tooling, not the ladder.** 331 pulled the trace account out
-from behind `if let importReport` so `Still to fetch` is readable without pressing Import,
-and drew every row unconditionally — §12.77. 332 added **Share diagnostics** beside Copy:
-same text, written to `sub4-diagnostics-<day>-p<patch>.txt` and handed to the existing
-`ShareSheet`, so it AirDrops to the Mac and the capture names its own build — §12.79.
-Neither touches the database.
-
-**Next, and in this order.** What remains before D7:
-
-1. **Finish the backfill** — `Still to fetch: 0`, `unexplained: 0`, `fetching now: no`.
-2. **Fresh post-338 protected snapshot**, once the details are in. Four pre-338 snapshots
-   already exist; all omit UserDefaults. The new capture must include `preferences.plist`
-   and will retain two verified full copies — the new capture and the newest other verified
-   copy — plus bounded understood audit receipts.
-3. **Press the roll-up** and get `provesSomething` — not merely healthy. On the rebuilt
-   data that needs at least one session note and one commute decision to exist, because
-   `nothing on either side` is an absence of evidence and D7 is where absences stop being
-   acceptable. The pre-wipe evidence died with the pre-wipe data.
-4. **Import once manually, then Verify immediately** — this is the FIRST verification on
-   this database, not a re-run. Patch 338 recovers the three captured `running` rows as
-   interrupted, so an older pending run is intentionally ineligible. Watch the new
-   `Ledger` row beside the verdict: until 338 the write that moves the run to `verified` sat
-   behind a `try?`, so a passing report over a failed ledger write looked identical to a
-   clean pass. The guarded transition accepts only the newest completed pending run and
-   preserves its original finish time. §12.86.4.
-5. **Bind currentness, then compare with explicit field coverage** — today `snapshotID` is
-   only an association: Import and Verify each read live stores. Add a dataset/manifest
-   fingerprint (or import directly from the snapshot), hold automatic writers during the
-   final window, then require the same fingerprint at import and verification. Run all
-   parity slices clean, plus a reproducible
-   external audit whose coverage matrix accounts for every source field. A historical
-   `verified` count is not proof that today's dataset is verified.
-6. ~~**`confidence`**~~ done at 334 · ~~**`content_revision`**~~ decided at 334 ·
-   ~~**`review_evidence_source`**~~ written at 335 · ~~the paste's hidden tables and the
-   snapshot's absence floor~~ cleaned at 336 · ~~**two identities for one review**~~
-   closed at 337.
-
-**340 gave the gate's own sentence a reader, and it had none.** D7's criterion is *"a
-verified run exists over the current data"*, and on 10 August nothing on the device could
-state it: `LedgerCensus` did not count the state, the ledger card draws only the NEWEST run
-— and every import, backgrounding and return opens a newer one — while the verifier's
-report was `@State` and left the diagnostics paste the moment the sheet was dismissed.
-**§12.57 for the fourth time**, after 313 and 333, on the one control the whole ladder
-turns on. The census now prints three unconditional lines — `runs ever verified`, the
-newest one named, and `runs opened since it` — and `VerificationResult.shared` holds the
-report the way `ShadowParity` and `ReadBackRollUp` hold theirs. **It does not close step
-5's currentness question**: zero runs since a verified row means the LEDGER has not moved,
-not that the stores have not. §12.88.
-
-**Compare runs SIX slices, not eight.** `ShadowParity.Outcome.ran` carries `activities,
-volume, load, details, matches, summaries`. Slices 5b, 6, 6b, 6c and 7 in the D6c table
-above are READ-BACKS, run by the roll-up. Any gate document counting eight parity sections
-is counting the table rather than the code. §12.88.6.
-
-**The two authored controls, exactly where they are.** The session-note card draws only on
-an activity MATCHED to a plan session — `NoteEditorView(session:)` is keyed by session uid,
-so an unmatched extra has nowhere to hang a note. The commute control is a row labelled
-*Commute* with an ⓘ and a bicycle, drawn only for `discipline == .bike`, not a header
-glyph. **One tap moves training data**: `setCommute(!activity.isCommuteRide)` inverts
-whatever the distance rule says, changing that ride's volume and its plan eligibility. Two
-taps on a short ride leave an explicit `correction` row that AGREES with the rule — one row
-for the read-back, and nothing moved. §12.88.6.
-
-~~**Step 1 now has a companion: press Import once after installing 338.**~~ **Done.** The
-adoption import ran on 10 August and the 339 paste reads `reviews paired by record key: 6`,
-`reviews paired by run time, not yet keyed: 0`, `database rows awaiting a record key: 0`.
-The sixth review came back. §12.85.
-
-**D7 still contains code work.** Repoint store/front-end loads to database repositories;
-fail closed on database-open failure; provide a readable authoritative database export;
-replace whole-folder disconnect with lineage-aware row removal that preserves authored,
-Health and bundled data; close/reopen the GRDB handle around destructive lifecycle work;
-and implement/test rollback before activation. Retain and exercise that rollback through
-the D8 release window, then retire JSON writers. Phase 4A (Apple Health canonical) follows and must pass its own live
-new-workout ingestion test before Strava credentials or Strava lineage are removed.
+Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
+`docs/context/review-data-pool.md` and `docs/ADR-0002-strava-retirement.md`.
 
 ---
 
@@ -753,6 +525,19 @@ new-workout ingestion test before Strava credentials or Strava lineage are remov
 - **A step that can be skipped without symptom will be** (§12.59.6). The `apply-NNN.py`
   script was dropped from patches at 315 for exactly this: twice it was not run and nothing
   showed, because its only remaining job was the ADR.
+- **A count derived from the thing it counts never needs chasing.** Paid for at 369a, 372,
+  377, 377d, 381a and 383; RULE 5 and RULE 6 are what that lesson looks like as code.
+- **A document that names itself CURRENT is a claim with nothing holding it up.**
+  `SUB4_CURRENT_PEER_REVIEW_AND_REMEDIATION_PLAN.md` sat at the repository root for
+  46 patches saying *Status: active* and *not yet running from the database*, and it
+  was found by listing the root directory — not by anybody remembering it. **Enumerate
+  the tree when you audit documentation; the stale document is the one nobody names.**
+  §12.128.1.
+- **Two patches must never share a delivery filename.** On 16 August the flip and the patch
+  meant to precede it were both delivered as `sub4-patch-382.zip`; the one already in
+  Downloads won, and the flip went in a patch early. Nothing broke — the tree stayed
+  self-consistent and the device proved the flip — but the ordering that had been argued
+  for was spent by a file name. §12.127.
 
 ---
 
@@ -773,7 +558,13 @@ new-workout ingestion test before Strava credentials or Strava lineage are remov
 | `mac-readiness.md` | Mac work |
 
 **Every one of those carries a date, and most are from late July.** They are a map, not the
-territory — verify a number against the code before building on it.
+territory — verify a number against the code before building on it. `docs/context/README.md`
+gives the date of each.
+
+**None of them states current state, and `sub4-database.md` is the one to watch**: its rules
+are still the best short account of the persistence work, and its "Where it stands" section
+stopped at patch 319 and is now marked as history. §5 of this file is the only current
+answer; RULE 6 in `check-invariants.py` is what keeps it that way.
 
 Other documents worth knowing exist: `docs/D6A-DETAIL-GROUNDWORK.md`,
 `docs/D6A-RECORDING-GROUNDWORK.md`, `docs/D6B-WRITE-THROUGH-GROUNDWORK.md`,

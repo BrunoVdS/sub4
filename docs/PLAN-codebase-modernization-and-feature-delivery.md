@@ -2,13 +2,25 @@
 
 | | |
 |---|---|
-| **Status** | Proposed execution companion |
-| **Baseline read** | Source patch 334 working tree, 9 August 2026 |
+| **Status** | Execution companion. **Its early stages have shipped — see the note below.** |
+| **Baseline read** | Source patch 334 working tree, 9 August 2026 — **historical** |
 | **Owner and decider** | Bruno |
 | **Purpose** | Turn the accepted database, Health, restructure and product roadmap into implementable slices |
 | **Architecture source** | `docs/PLAN-post-database-strava-project-restructure.md` |
 | **Persistence authority** | `docs/ADR-0003-database-contract.md` |
 | **Source-transition authority** | `docs/ADR-0002-strava-retirement.md` and `docs/PLAN-cutover-v2.md` |
+
+> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 384.**
+>
+> It was written against patch 334 and its opening stages describe work that has
+> since shipped: D6c closed at 330, and D7's B0, B1, B2 and B3 landed at 342,
+> 346, 358/377 and 383. Its A-stage items about "committing patch 334" are
+> history.
+>
+> **`CLAUDE.md` §5 is the one place this project states what is true now.** This
+> plan remains the authority for what comes NEXT — B4 onward, then Health, D8,
+> the restructure and feature delivery. Where the two disagree about the present,
+> §5 wins; where they disagree about the sequence, this document does.
 
 ## 1. Outcome
 

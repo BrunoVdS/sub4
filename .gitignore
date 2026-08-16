@@ -52,3 +52,16 @@ playground.xcworkspace
 *.mobileprovision
 secrets.plist
 scripts/apply-*.py
+
+# Patch delivery artefacts — patch 384.
+#
+# A patch zip drops a README and a commit message at the repository root; the
+# workflow moves both to ~/Downloads before committing. When that step is
+# skipped, `git add -A` tracks them — which is how `README-381.md` and
+# `sub4-commit-381.txt` ended up in the tree on 16 August. Same reason
+# `scripts/apply-*.py` is ignored above: it is delivery, not source.
+#
+# Anchored with a leading slash so `docs/` and `docs/context/README.md` are
+# untouched, and `README.md` itself does not match the pattern.
+/README-*.md
+/sub4-commit-*.txt
