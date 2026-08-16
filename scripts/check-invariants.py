@@ -259,7 +259,7 @@ def no_expect_message_is_a_concatenation():
                     fail(rule, f"{f.name} line ~{line}: the {macro} message is "
                                "a concatenation, so the text that prints on "
                                "failure is not the text written. §12.110.8")
-    # 115 files and 1069 messages as of 373. Half of each: a rule that
+    # 115 files and 1096 messages as of 375. Half of each: a rule that
     # parsed nothing, or a directory that moved, lands far below.
     counted(rule, files, 60, "test files read")
     counted(rule, checked, 500, "messages examined")
@@ -267,10 +267,43 @@ def no_expect_message_is_a_concatenation():
 
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# RULE 4 — patch 375, §12.119
+# --------------------------------------------------------------------------
+
+def minutes_are_never_accumulated():
+    """`Activity.minutes` is `movingTime / 60`. Adding those up loses up to a
+    minute per activity, and seven places did it — the day total, the Extra
+    movement header, `DayDistance`, the week's moving time and three in the
+    commute view, one of which then divided the result by 60 again.
+
+    `MergedActivity` had the correct shape since patch 177 and nothing said so,
+    which is 369a's finding again: a total assembled from parts by hand.
+
+    Seconds add. Minutes are derived at the end, once.
+    """
+    rule = "minutes are derived, never accumulated"
+    seen = 0
+    for f in app_sources():
+        for n, raw in enumerate(strip_comments(f.read_text()).split("\n"), 1):
+            if ".minutes" not in raw:
+                continue
+            seen += 1
+            # An accumulation is a `reduce` over it or a `+=` into it. Reading
+            # one activity's minutes to print is not, and is most of the hits.
+            if re.search(r"reduce\(.*\.minutes|\+=\s*.*\.minutes", raw):
+                fail(rule, f"{f.name} line {n}: `{raw.strip()[:56]}` adds up "
+                           "values that were already truncated. Sum "
+                           "`movingTime` and divide once — `totalMinutes`. "
+                           "§12.119")
+    counted(rule, seen, 10, "uses of .minutes examined")
+
+
 RULES = [
     every_store_that_records_a_read_refuses_a_write,
     every_removal_counter_is_in_the_total,
     no_expect_message_is_a_concatenation,
+    minutes_are_never_accumulated,
 ]
 
 for r in RULES:

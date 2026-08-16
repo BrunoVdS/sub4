@@ -178,8 +178,18 @@ enum TabSummary {
     /// with the code.
     struct WeekActuals: Equatable {
         var runKm = 0.0
-        var minutes = 0
+        /// **SECONDS, NOT MINUTES — patch 375, §12.119.**
+        ///
+        /// This field held minutes and was fed `a.minutes`, so a week of ten
+        /// sessions could be nine minutes short and `WeekView` printed it.
+        ///
+        /// `minutes` below keeps every reader working unchanged — `WeekView`
+        /// at 284 and 426, and `TabSummaryTests`, all still ask for minutes and
+        /// still get them. Only the accumulation changed.
+        var movingSeconds = 0
         var recorded = 0
+
+        var minutes: Int { movingSeconds / 60 }
     }
 
     static func weekActuals(_ days: [MatchResolver.Day]) -> WeekActuals {
@@ -187,7 +197,7 @@ enum TabSummary {
         for d in days {
             for a in d.matches.compactMap(\.activity) + d.extras {
                 if a.discipline == .run { w.runKm += a.km }
-                w.minutes += a.minutes
+                w.movingSeconds += a.movingTime
                 w.recorded += 1
             }
         }

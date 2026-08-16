@@ -350,9 +350,13 @@ struct TodayView: View {
                 Text(isPrePlan ? "RECORDED" : "EXTRA MOVEMENT")
                     .font(.caption2.weight(.bold)).tracking(0.5)
                 Spacer()
+                // `totalMinutes`, not a sum of `minutes` — patch 375.
+                // The kilometres are Doubles and always added correctly; the
+                // minutes beside them did not, which is what made the two
+                // halves of one line disagree about arithmetic.
                 Text(String(format: "%.1f km · %d min",
                             acts.reduce(0) { $0 + $1.km },
-                            acts.reduce(0) { $0 + $1.minutes }))
+                            acts.totalMinutes))
                     .font(.caption2.weight(.semibold))
             }
             .foregroundStyle(isPrePlan ? Color.accent4.opacity(0.9) : Color.dim)
@@ -440,8 +444,10 @@ struct TodayView: View {
         let extra   = DayDistance.of(others)
         let commute = DayDistance.of(commutes)
         let total   = DayDistance.of(done + others)
-        let mins    = done.reduce(0) { $0 + $1.minutes }
-                    + r.extras.reduce(0) { $0 + $1.minutes }
+        // ONE SEQUENCE, ONE DIVISION — patch 375, §12.119. Two sums of
+        // truncated minutes, then added, lost up to a minute per activity
+        // twice over.
+        let mins    = (done + r.extras).totalMinutes
         let steps   = health.steps(on: key)
 
         return HStack(spacing: 0) {

@@ -64,7 +64,10 @@ enum DayDistance: Equatable {
         // stray 40 m of GPS drift is a real edge, and it is caught by the
         // threshold below rather than by guessing from the sport.
         let moved = activities.filter { $0.km >= 0.05 }
-        let minutes = activities.reduce(0) { $0 + $1.minutes }
+        // SECONDS FIRST — patch 375, §12.119. This summed truncated
+        // minutes, so a day of four activities could report three
+        // minutes short, and `VolumeParity` compared that figure.
+        let minutes = activities.totalMinutes
 
         guard let first = moved.first else { return .none(minutes: minutes) }
         let disciplines = Set(moved.map { $0.discipline ?? .other })

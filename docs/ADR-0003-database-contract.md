@@ -8962,6 +8962,137 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.119 Seconds add, minutes do not — patch 375
+
+`Activity.minutes` is `movingTime / 60`. That is right for one activity and
+wrong for two, and seven places added them up.
+
+### 12.119.1 What it cost
+
+| where | what it reports |
+|---|---|
+| `TodayView:355` | the Extra movement header |
+| `TodayView:443-444` | the day's total minutes |
+| `DayDistance:67` | what a mixed-discipline day is reported as |
+| `TabSummary:190` | the week's moving time, printed by `WeekView` |
+| `CommuteView:57` | the weekly buckets |
+| `CommuteView:75` | the all-time total |
+| `CommuteView:275` | …divided by 60 again, for hours |
+
+Each lost up to 59 seconds per activity, so the error grew with the count: a
+week of ten sessions read nine minutes short. The commute card truncated twice
+and could be a full hour low over a season.
+
+### 12.119.2 The rule was already in the file next door
+
+`MergedActivity`, patch 177:
+
+```swift
+var movingTime: Int { parts.reduce(0) { $0 + $1.movingTime } }
+var minutes: Int { movingTime / 60 }
+```
+
+Sum the seconds, divide once. `summarise` does the same at line 292. **The
+correct pattern existed, worked, and was never named** — so seven other places
+invented the other one. That is §12.113.5 again in a different subject: a
+total assembled from parts by hand, wrong in a way nobody re-derived.
+
+`Sub4/ActivityMinutes.swift` is the rule with a name and one implementation.
+Both accumulating types — `TabSummary.WeekActuals` and `CommuteView.WeekBucket`
+— now store SECONDS and expose `minutes` as a computed property, so every
+reader is untouched and only the accumulators changed.
+
+### 12.119.3 Flooring the sum, not rounding it
+
+`totalMinutes` floors, like `minutes` does.
+
+Rounding is closer to the true figure and would produce totals larger than the
+rows printed above them: two 29:59 rides showing 29 and 29 under a total of 60.
+Flooring the SUM gives 59 — true, and addable by eye. The residual error is
+under one minute regardless of count, where it used to grow with it.
+
+### 12.119.4 It makes `VolumeParity` finer, which is the point
+
+Both sides go through `DayDistance.of`, so they move together and parity holds.
+What changes is sensitivity: two sides whose moving times differ by seconds
+were previously hidden by the truncation and are now reported. A comparison
+that could not see a difference was not agreeing about it.
+
+### 12.119.5 Rule 4
+
+`check-invariants.py` now refuses any `reduce` over `.minutes` or `+=` into
+one. It meets §12.117.3's bar on both counts: it has caught a real defect, and
+no expression in Swift states it — the compiler is equally happy with either
+arithmetic, which is exactly why this survived from patch 177 to 375.
+
+---
+
+### 12.119.6 A fixture the code under test threw away — patch 375a
+
+375's production changes were all correct: it compiled, the four invariants
+passed, and `check-invariants.py` found zero remaining accumulations. Two of
+its new tests failed:
+
+    ✘ (thisWeek.count → 0) == 10
+
+`CommuteSummary.init` keeps `discipline == .bike && !isPlanEligible`, and for
+a bike `isPlanEligible` is `!isCommuteRide` — the filter means "a bike ride
+that is a commute". The fixtures were 10 km runs. Every one was discarded, so
+the assertions ran against an empty set.
+
+**The cause is the same as 374a, b and c: reading part of a construct.** I read
+the init with `grep -A 12`, the output ended on `commutes = all`, and the
+`.filter` was on the next line outside the window.
+
+**What is new is the failure mode.** A wrong fixture does not report a wrong
+answer — it reports zero, and a test asserting `== 10` fails honestly. Had the
+expectations been `>= 0`, or had the test only checked that nothing crashed,
+it would have passed while checking nothing. That is §12.69 with the polarity
+reversed: not a guard that cannot fire, but a subject that was never present.
+
+So both tests now assert that their fixture survives the filter before asking
+what it sums:
+
+```swift
+#expect(rides.allSatisfy(\.isCommuteRide),
+        "the fixture must be commutes or the summary discards it")
+```
+
+**And one disclosed dependency.** `isCommuteRide` reads `CommuteStore.shared`,
+so these two tests touch the athlete's real decisions; `CommuteSummary` offers
+no seam that avoids it. `decision(for:)` returns nil for an unknown id and the
+distance rule then decides, so the fixture ids are namespaced to this patch
+rather than left as `c0`…`c9`, which a stored answer could collide with.
+
+---
+
+### 12.119.7 A `rethrows` the macro could not see through — patch 375b
+
+375a's fixture assertions would not compile:
+
+    error: call can throw, but it is not marked with 'try'
+
+`#expect(rides.allSatisfy(\.isCommuteRide), "…")`. `allSatisfy` is `rethrows`
+and cannot throw when handed a key path; as an ordinary statement it compiles.
+Inside `#expect` it does not — the macro lifts the expression into a closure
+of its own and the `rethrows` inference does not survive the move.
+
+The fix is a local `let` and then the Bool. `try #expect(…)` would have worked
+in the first test, which is already `throws`, and not in the second; marking a
+test `throws` to satisfy a macro's view of a call that cannot throw is fitting
+the code to the tool.
+
+**This is not 374a–c's failure.** Those were one mistake three times: editing
+inside a construct without reading all of it. This expression is correct Swift,
+correct two lines away in the same file, and wrong only where a macro moved it.
+
+It earns no rule in `check-invariants.py` — §12.118.8's bar, and the compiler
+caught it in seconds. It earns a habit: anything past a plain comparison gets
+computed into a `let` before `#expect`, because the expression inside that
+macro is not evaluated where it is written.
+
+---
+
 ## 12.118 Putting the readings back — patch 374
 
 371 stopped the file being destroyed. It did not put anything back. The 601

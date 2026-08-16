@@ -27,9 +27,13 @@ struct CommuteSummary {
     struct WeekBucket: Identifiable {
         let start: Date
         var km: Double
-        var minutes: Int
+        /// SECONDS since 375, for `TabSummary.WeekActuals`'s reason — this
+        /// held minutes and was fed `a.minutes`. §12.119.
+        var movingSeconds: Int
         var count: Int
         var id: Date { start }
+
+        var minutes: Int { movingSeconds / 60 }
     }
 
     let commutes: [Activity]
@@ -46,7 +50,8 @@ struct CommuteSummary {
         var buckets: [Date: WeekBucket] = [:]
         for offset in stride(from: -(weeks - 1), through: 0, by: 1) {
             if let d = cal.date(byAdding: .weekOfYear, value: offset, to: thisMonday) {
-                buckets[d] = WeekBucket(start: d, km: 0, minutes: 0, count: 0)
+                buckets[d] = WeekBucket(start: d, km: 0,
+                                        movingSeconds: 0, count: 0)
             }
         }
         for a in commutes {
@@ -54,7 +59,7 @@ struct CommuteSummary {
                   let monday = cal.dateInterval(of: .weekOfYear, for: d)?.start,
                   buckets[monday] != nil else { continue }
             buckets[monday]?.km += a.km
-            buckets[monday]?.minutes += a.minutes
+            buckets[monday]?.movingSeconds += a.movingTime
             buckets[monday]?.count += 1
         }
         weekly = buckets.values.sorted { $0.start < $1.start }
@@ -69,10 +74,19 @@ struct CommuteSummary {
         return (m.reduce(0) { $0 + $1.km }, m.count)
     }
 
-    var allTime: (km: Double, count: Int, minutes: Int) {
+    /// **SECONDS IN THE TUPLE — patch 375, §12.119.**
+    ///
+    /// It carried minutes, summed from truncated minutes, and the card then
+    /// divided that by 60 again for hours. Two truncations over hundreds of
+    /// rides: the displayed hour count could be a full hour low.
+    ///
+    /// The label changed rather than staying `minutes`, because the one reader
+    /// wants HOURS and should divide the seconds itself rather than divide a
+    /// figure that has already been rounded once.
+    var allTime: (km: Double, count: Int, movingSeconds: Int) {
         (commutes.reduce(0) { $0 + $1.km },
          commutes.count,
-         commutes.reduce(0) { $0 + $1.minutes })
+         commutes.movingSeconds)
     }
 }
 
@@ -272,7 +286,10 @@ struct CommuteView: View {
             HStack(spacing: 0) {
                 stat("Rides", "\(s.allTime.count)", "", .dim)
                 divider
-                stat("Time", "\(s.allTime.minutes / 60)", "h", .dim)
+                // ONE DIVISION FROM SECONDS — patch 375. This read
+                // `allTime.minutes / 60`, which is a truncated sum truncated
+                // again.
+                stat("Time", "\(s.allTime.movingSeconds / 3600)", "h", .dim)
                 divider
                 stat("Average",
                      String(format: "%.1f", s.allTime.count > 0
