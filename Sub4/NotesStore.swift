@@ -328,6 +328,19 @@ final class NotesStore {
     /// data in this app that cannot be fetched again was the least protected
     /// thing in it.
     private func save() throws {
+        // **THE 371 GUARD, ON THE STORE THAT CANNOT BE FETCHED AGAIN.**
+        //
+        // §12.116. An unreadable file read as an empty store, and the
+        // first write after it saved that empty over thirteen months of
+        // the real thing. THROWN rather than returned — the callers above
+        // roll memory back and the alert already says what happened, and a
+        // silent refusal here would be a quieter version of the defect
+        // this file was written to end.
+        guard lastLoad.isTrustworthy else {
+            throw StoreWriteError(store: "notes.json", stage: .refused,
+                                  reason: "the store was not read cleanly at launch")
+        }
+
         try StoreWrite.encode(notes, to: fileURL, store: "notes.json")
         // AFTER the write, so a throw above means no trigger — there is
         // nothing to catch the database up to. Patch 348, §12.94.

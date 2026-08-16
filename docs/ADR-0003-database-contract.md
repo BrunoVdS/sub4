@@ -8962,6 +8962,89 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.116 Nothing overwrites a store it could not read — patch 372
+
+§12.115.6 wrote the finding down; this is the fix. Five stores, one rule: a
+save is refused when the load that preceded it was not clean.
+
+### 12.116.1 There were five, and the fifth is the one that mattered
+
+§12.115.6 named `notes.json`, `moves.json`, `commutes.json` and
+`proposals.json`. It missed `Matcher`.
+
+That is not a small miss. Match decisions are authored — nothing re-derives
+what the athlete said a session was satisfied by — and `MatchPickerView.choose`
+calls `setOverride` on every match made, which makes it the most-used authored
+write in the app. `Matcher.load` already refused to overwrite a blob it could
+not decode, and says so in a comment; `persist()` never asked, so the next
+decision did what the load had declined to.
+
+**It was missed because the list was assembled by the shape of the fix rather
+than the shape of the risk.** §12.115.6 was written by looking for stores that
+read through `StoreRead.decode`. `Matcher` sets `lastLoad` by hand, so it did
+not answer that search — while carrying the same `lastLoad`, the same
+exposure, and worse consequences.
+
+### 12.116.2 The refusal is three shapes, because the cost is three costs
+
+Weather's refusal at §12.115.3 is a silent `return`, and that was right: the
+reading comes back from the network next launch, and no caller could act on
+being told. A note is not re-fetchable. `StoreWrite.swift`'s header describes
+the defect exactly — the athlete types it, sees it in the list, loses it
+overnight — so a silent refusal there would be a quieter version of the thing
+being fixed.
+
+| store | shape | who finds out |
+|---|---|---|
+| notes, commutes, moves | `save() throws` | the throw; existing rollback; existing alert |
+| proposals | throw inside `attempt` | the write journal, and `remove`'s caller |
+| match decisions | `persist()` returns false | the control does not stick |
+| weather (371) | silent `return` | "Unreadable stores", next launch |
+
+The first three needed no call-site changes at all: those stores already roll
+memory back when a save throws, and the views already present
+`StoreWriteError`. The guard is one statement each and everything downstream
+was built for it three hundred patches ago.
+
+### 12.116.3 `.refused` is a stage, not a flag
+
+`Stage` had `.encoding` — a defect in this app, never worth retrying — and
+`.writing`: the phone, and worth another go. A refusal is neither. Nothing is
+broken, nothing was attempted, and retrying inside this session runs the same
+refusal, because the read that failed happened once at launch.
+
+`isWorthRetrying` is false, so every alert in the app omits *Try again*
+without being told, and `NoteEditorView` keeps offering *Copy the text* —
+which is exactly the right first action for a write that will not happen.
+
+**A case rather than a flag because the switch is exhaustive.** The compiler
+names every site that has to answer the new condition, which is the difference
+between adding a state and hoping it was handled.
+
+### 12.116.4 Match decisions roll back, and that is the whole report
+
+`setOverride` returns Void and `UserDefaults.set` has no failure to surface —
+§12.19's disclosed gap, unchanged. This patch does not invent an alert for it.
+It rolls memory back on a failed persist, which is §12.17's own argument
+arriving late: the store is what the screen reads, so putting the old answer
+back IS the visual revert, and a second mechanism would be a second opinion
+that could drift.
+
+Worth naming: the rollback fires on an ENCODING failure too, which
+`persist()` could always return false for and every caller discarded. A
+decision that never reached `UserDefaults` used to keep its tick until the
+next launch quietly removed it.
+
+### 12.116.5 What it does not do
+
+It does not change weather — §12.115.3's silent return is still right for a
+store the network refills. It does not recover the 601 readings; they are
+still in the database and still unclaimed. And it does not explain why any
+store would become unreadable — from 371 the read journal records that, which
+remains the difference between this happening once and this happening twice.
+
+---
+
 ## 12.115 The store that could not tell empty from unreadable — patch 371
 
 On 15 August at about 23:40, `weather.json` went from 602 readings to one. The

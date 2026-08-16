@@ -74,6 +74,20 @@ final class ProposalStore {
         migrateIfNeeded()
     }
 
+    /// A store rooted somewhere else — patch 372, and the last of the five to
+    /// get one. `ProposalDeleteTests` has been writing into the athlete's real
+    /// `proposals.json` since 270 for want of it.
+    ///
+    /// The same two omissions as `NotesStore(directory:)` and for the same two
+    /// reasons: it does not record to `StoreReadJournal`, because a test store
+    /// in the journal that gates deletion votes on real data; and it does not
+    /// run `migrateIfNeeded`, because that reads a shared `UserDefaults` key
+    /// and a temporary store has no business touching the real one.
+    init(directory: URL) {
+        fileURL = directory.appendingPathComponent("proposals.json")
+        load()
+    }
+
     // MARK: Reading
 
     /// Newest first — the order they are read in.
@@ -199,6 +213,19 @@ final class ProposalStore {
     @discardableResult
     private func save() -> Bool {
         StoreWriteJournal.shared.attempt("proposals.json") {
+            // **INSIDE THE ATTEMPT, DELIBERATELY — patch 372, §12.116.**
+            //
+            // Throwing here rather than returning false above is what makes
+            // the journal record the refusal and `remove` throw the right
+            // error, both without a line of their own. A guard placed outside
+            // would have needed its own copy of each.
+            //
+            // A review is not re-fetchable — §12.8.1 is the record of what
+            // that cost once already.
+            guard lastLoad.isTrustworthy else {
+                throw StoreWriteError(store: "proposals.json", stage: .refused,
+                                      reason: "the store was not read cleanly at launch")
+            }
             try StoreWrite.encode(records, to: fileURL, store: "proposals.json")
         }
     }

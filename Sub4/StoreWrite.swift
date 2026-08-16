@@ -53,6 +53,17 @@ nonisolated struct StoreWriteError: LocalizedError, Equatable {
         /// The bytes existed and did not reach the disk. Full, locked, or
         /// gone. Worth another attempt.
         case writing
+        /// **THE APP DECLINED — patch 372, §12.116.**
+        ///
+        /// The store's file could not be read at launch, so what is in memory
+        /// is not known to be what is on disk, and writing it would destroy
+        /// the copy nobody has finished reading. Nothing is broken and nothing
+        /// was attempted; retrying this session runs the same refusal, because
+        /// the read that failed happened once, at launch.
+        ///
+        /// 371 is what this case is made of: `weather.json` went from 602
+        /// readings to one because a save believed a load that had failed.
+        case refused
 
         var isWorthRetrying: Bool { self == .writing }
     }
@@ -73,6 +84,10 @@ nonisolated struct StoreWriteError: LocalizedError, Equatable {
         case .writing:
             "\(store) could not be written. The phone may be out of space, or "
             + "locked in a way that blocks writing."
+        case .refused:
+            "\(store) could not be read when the app started, so it has not "
+            + "been overwritten. Everything already saved is still there. "
+            + "Restart the app to read it again."
         }
     }
 }

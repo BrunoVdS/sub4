@@ -430,6 +430,19 @@ final class PlanMoveStore {
     }
 
     private func save() throws {
+        // **THE 371 GUARD, ON THE STORE THAT CANNOT BE FETCHED AGAIN.**
+        //
+        // §12.116. An unreadable file read as an empty store, and the
+        // first write after it saved that empty over thirteen months of
+        // the real thing. THROWN rather than returned — the callers above
+        // roll memory back and the alert already says what happened, and a
+        // silent refusal here would be a quieter version of the defect
+        // this file was written to end.
+        guard lastLoad.isTrustworthy else {
+            throw StoreWriteError(store: "moves.json", stage: .refused,
+                                  reason: "the store was not read cleanly at launch")
+        }
+
         try StoreWrite.encode(moves, to: fileURL, store: "moves.json")
         // AFTER THE FILE WRITE, NEVER BEFORE — §12.94. A write-through fired
         // on an intention rather than on a fact imports a state that is not on

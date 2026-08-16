@@ -186,6 +186,19 @@ final class CommuteStore {
     }
 
     private func save() throws {
+        // **THE 371 GUARD, ON THE STORE THAT CANNOT BE FETCHED AGAIN.**
+        //
+        // §12.116. An unreadable file read as an empty store, and the
+        // first write after it saved that empty over thirteen months of
+        // the real thing. THROWN rather than returned — the callers above
+        // roll memory back and the alert already says what happened, and a
+        // silent refusal here would be a quieter version of the defect
+        // this file was written to end.
+        guard lastLoad.isTrustworthy else {
+            throw StoreWriteError(store: "commutes.json", stage: .refused,
+                                  reason: "the store was not read cleanly at launch")
+        }
+
         try StoreWrite.encode(decisions, to: fileURL, store: "commutes.json")
         DatabaseWriteThrough.shared.noteAuthoredChange("a commute decision was saved")
     }

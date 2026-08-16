@@ -434,6 +434,20 @@ final class Matcher {
     /// to report a `UserDefaults` failure to — see the header.
     @discardableResult
     private func persist() -> Bool {
+        // **THE FIFTH STORE, AND §12.115.6 MISSED IT — patch 372.**
+        //
+        // `load()` above already refuses to overwrite a blob it could not
+        // decode, and says so in as many words. This is the other half: the
+        // NEXT write would have done what the load declined to, with one
+        // decision standing in for all of them.
+        //
+        // FALSE, NOT A THROW. Nothing here can report — `setOverride` returns
+        // Void and `UserDefaults.set` has no failure to surface, which is
+        // §12.19's disclosed gap. The mutators roll memory back instead, so
+        // the tick does not stick, and the reason is on the Database screen
+        // under "Unreadable stores".
+        guard lastLoad.isTrustworthy else { return false }
+
         let list = decisions.values.sorted { $0.sessionUid < $1.sessionUid }
         guard let data = try? JSONEncoder.sub4.encode(list) else { return false }
         defaults.set(data, forKey: Self.decisionsKey)
@@ -475,21 +489,44 @@ final class Matcher {
     /// what the store holds and what a test can supply. Constructing a whole
     /// `Session` to record one decision about it is how a store ends up
     /// untestable.
+    /// **MEMORY FOLLOWS THE BLOB — patch 372, §12.116.**
+    ///
+    /// `persist()` returning false used to be discarded, which meant a
+    /// decision that never reached `UserDefaults` still showed a tick until
+    /// the next launch took it away. §12.17's rule, arriving here late: the
+    /// store is what the screen reads, so putting the old answer back IS the
+    /// visual revert and there is no second opinion to drift from.
+    ///
+    /// This is the report. There is no alert on this path and this patch does
+    /// not invent one — the control not sticking is what the athlete sees, and
+    /// "Unreadable stores" is where the reason is written down.
     func setOverride(sessionUid: String, activityId: String?, now: Date = Date()) {
+        let previous = decisions[sessionUid]
         decisions[sessionUid] = MatchDecision(sessionUid: sessionUid,
                                               activityId: activityId,
                                               decided: now,
                                               dateIsKnown: true)
-        persist()
+        guard persist() else {
+            if let previous { decisions[sessionUid] = previous }
+            else { decisions.removeValue(forKey: sessionUid) }
+            return
+        }
     }
 
     func clearOverride(session: Session) {
         clearOverride(sessionUid: session.uid)
     }
 
+    /// The same rollback as `setOverride`, and it matters more here: a
+    /// clear that silently did not happen leaves the athlete believing a
+    /// session is unmatched while the stored decision still says otherwise —
+    /// and it looks right, because the screen is reading the memory that lied.
     func clearOverride(sessionUid: String) {
-        decisions.removeValue(forKey: sessionUid)
-        persist()
+        guard let previous = decisions.removeValue(forKey: sessionUid) else { return }
+        guard persist() else {
+            decisions[sessionUid] = previous
+            return
+        }
     }
 
     // MARK: Core
