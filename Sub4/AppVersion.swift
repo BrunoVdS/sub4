@@ -73,7 +73,7 @@ enum AppVersion {
     /// prevent, and it is worse than having no number at all: a stale reading
     /// here normally means nothing landed, so it argues for re-installing
     /// patches that are already in place.
-    static let patch = 375
+    static let patch = 376
 
     /// The letter fix-up sitting on top of `patch`, or `nil` for a clean
     /// numbered patch. See the header: 283a was installed while the phone said
@@ -81,7 +81,7 @@ enum AppVersion {
     ///
     /// One lowercase letter. `AppVersionTests` holds it to that, because "a1"
     /// or "A" would sort and read differently everywhere this is printed.
-    static let revision: String? = "b"
+    static let revision: String? = nil
 
     /// "284", or "284a" once a fix-up has landed on it. THE FORM TO DISPLAY —
     /// `patch` alone cannot tell a device that has the fix-up from one that

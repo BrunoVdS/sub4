@@ -2643,8 +2643,15 @@ struct DatabaseHealthView: View {
         Task {
             defer { restoringWeather = false }
             do {
-                lastWeatherRestore = try WeatherStore.shared.restore(
-                    from: WeatherGearRepository.load(db))
+                // OFF THE MAIN ACTOR — patch 376, §12.120.2. 374 called this
+                // synchronously inside a Task that is already main-actor, so a
+                // whole-table read ran on the main thread. This is
+                // `ReadBacks.weatherGear`'s line, unchanged, reading the same
+                // table one section below.
+                let stored = await Task.detached(priority: .utility) {
+                    WeatherGearRepository.load(db)
+                }.value
+                lastWeatherRestore = try WeatherStore.shared.restore(from: stored)
                 await reloadWeatherGear(db)
             } catch {
                 weatherRestoreError = error.localizedDescription

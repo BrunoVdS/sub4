@@ -8962,6 +8962,67 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.120 A number nobody was told — patch 376
+
+### 12.120.1 `lateArrivals`
+
+`ActivityStore` counts, on every sync, activities that arrived with a date the
+cursor had already passed: new to the store, older than the high-water mark,
+kept by the roster's rules.
+
+That is the one case a cursor-based sync can miss. If the source serves a ride
+three days late and the cursor has moved beyond its date, nothing but this
+count says so — and nothing read the count. Two lines existed, a declaration
+and an assignment, since the store was written.
+
+The file's own header has pointed at it the whole time: *"arrival is DETECTED
+rather than how one is missed. See `lateArrivals`."* The pointer was right and
+the destination was empty.
+
+**It is `Int?` now, and that is as much of the patch as the row is.** `= 0` on
+a launch where no sync has run reads as "none arrived late" while meaning
+"nobody has looked" — §12.15, applied to the one screen whose whole purpose is
+telling those apart.
+
+The sentence is built by a `nonisolated static` function over the optional,
+for `PersistenceMode.derive`'s reason: its two states are exactly the ones no
+device produces on demand.
+
+### 12.120.2 A whole-table read on the main thread
+
+374's `runWeatherRestore` called `WeatherGearRepository.load(db)` directly
+inside a `Task` on the main actor. `nonisolated` describes where a function
+*may* run, not where it *does* — called from main-actor code it stays there,
+so 602 rows were read on the main thread on every press.
+
+`ReadBacks.weatherGear`, one section below and reading the same table, has done
+it correctly since 324. Its line is copied verbatim rather than reinvented.
+
+### 12.120.3 The gate tests readable, not correct
+
+No code — a finding from the restore, recorded where the next person will be
+standing.
+
+`canReconcile` blocks reconciliation for a store that could not be READ. On 15
+August `weather.json` read perfectly: it held one entry where 602 belonged. A
+clean read of a wrong file goes straight through that gate.
+
+The 601 rows survived only because weather is not in `reconcileRequires`, and
+it is not in there because it is fetched rather than authored — there is no
+"the athlete deleted this reading" event to reconcile. **The rule that saved
+the data was written for an unrelated reason.**
+
+What this does not mean is that the five reconciled families are exposed: 372
+closed the mechanism that produces a readable-but-wrong file, and a store that
+fails to read is already gated. What it means is that the gate answers "could I
+read it", and "does it hold what it should" is a different question that only
+the read-backs ask — after reconciliation has already run.
+
+Not fixed here. Written down because it took a data loss to notice, and the
+next person should not have to lose something to notice it again.
+
+---
+
 ## 12.119 Seconds add, minutes do not — patch 375
 
 `Activity.minutes` is `movingTime / 60`. That is right for one activity and

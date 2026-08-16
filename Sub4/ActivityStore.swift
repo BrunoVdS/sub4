@@ -198,11 +198,42 @@ final class ActivityStore {
 
     /// For the redacted paste, unconditional.
     var loadDiagnosticLines: [String] {
-        loadRoster?.diagnosticLines ?? ["Activity roster: no cached file read"]
+        var lines = loadRoster?.diagnosticLines
+            ?? ["Activity roster: no cached file read"]
+        // PATCH 376. NOT indented under the roster: the roster describes what
+        // the LOAD kept, and this describes what the last SYNC brought. Two
+        // facts about the same activities, arrived at differently, and an
+        // indent would claim they came from one place.
+        lines.append(Self.lateArrivalLine(lateArrivals))
+        return lines
     }
 
+    /// **HOW MANY ARRIVED BEHIND THE CURSOR — patch 376, §12.120.**
+    ///
+    /// New to the store, dated before the high-water mark, and kept by the
+    /// roster's rules. That combination is the one case a cursor-based sync can
+    /// miss: the source served something whose date this app had already
+    /// walked past.
+    ///
+    /// The header of this file has pointed at this field since it was written —
+    /// *"arrival is DETECTED rather than how one is missed"* — and until 376
+    /// nothing read it. A count computed and never told is a fact the app has
+    /// and the reader does not.
+    ///
+    /// **OPTIONAL, AND THAT IS THE PATCH AS MUCH AS THE ROW IS.** It was `= 0`,
+    /// so a launch with no sync yet reported "none arrived late" when it meant
+    /// "nobody has looked". §12.15.
+    private(set) var lateArrivals: Int?
 
-    private(set) var lateArrivals: Int = 0
+    /// Pure, for `PersistenceMode.derive`'s reason: the two states this
+    /// sentence tells apart are exactly the ones a device cannot be made to
+    /// produce on demand.
+    nonisolated static func lateArrivalLine(_ late: Int?) -> String {
+        guard let late else {
+            return "Activities arriving late: no sync this launch"
+        }
+        return "Activities arriving late: \(late) in the most recent sync"
+    }
 
     private let fileURL: URL
     private let cursorKey = "strava.cursor"
