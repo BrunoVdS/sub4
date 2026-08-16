@@ -154,6 +154,13 @@ struct DatabaseHealthView: View {
     @State private var planPrune = PlanVersionPrune()
     @State private var weatherGearLoad: WeatherGearLoad?
     @State private var weatherGearTrip: WeatherGearRoundTrip.Report?
+    // PATCH 374. `lastWeatherRestore` is an optional and `planPrune` above is
+    // not, and the difference is real: a prune that never ran and a prune that
+    // ran and pruned nothing are both facts the screen states, while a restore
+    // that has not run has nothing to say at all.
+    @State private var restoringWeather = false
+    @State private var weatherRestoreError: String?
+    @State private var lastWeatherRestore: WeatherStore.Restored?
     // PATCH 327 — D6c slice 7. The ninth read-back, and the only one whose
     // subject may legitimately not exist yet: the first real review is due
     // 24 August 2026.
@@ -240,7 +247,7 @@ struct DatabaseHealthView: View {
                     inputSections(db)
                     ledgerSections(db)
                     activityReadBackSections(db)
-                    recordReadBackSections
+                    recordReadBackSections(db)
                     // AFTER the read-backs, because it asks the question they
                     // cannot: they compare RECORDS, this compares the list the
                     // app would DERIVE from them. The screen reads in the
@@ -357,14 +364,28 @@ struct DatabaseHealthView: View {
         recordingReadBackSection(db)
         // PATCH 352 — §12.97. It is in THIS group and not beside the plan
         // read-back because it needs the database: it carries the only
-        // destructive button on this screen, and the sections above the
-        // read-backs are the ones that take `db`.
+        // destructive button on this screen.
+        //
+        // THE SECOND HALF OF THIS NOTE WAS TRUE UNTIL 374c. It read "and the
+        // sections above the read-backs are the ones that take `db`", which
+        // stopped being so when `recordReadBackSections` took it — weather's
+        // repair button has to sit beside the count that justifies it, and
+        // moving the section up here the way this one moved would have
+        // separated them. §12.118.9.
         planVersionSection(db)
     }
 
     /// The six that run themselves on open, because each costs one read.
+    ///
+    /// **IT TAKES THE DATABASE SINCE 374c, AND 352 SAID IT WOULD NOT.**
+    /// That patch had a section needing `db` for a button and moved the
+    /// SECTION into a group that had one, accepting the loss of adjacency with
+    /// the numbers beside it. Weather went the other way: "only in the
+    /// database: 601" and the button that acts on it have to be one row apart,
+    /// so the database comes down here instead. The note in `ledgerSections`
+    /// is corrected to match. §12.118.9.
     @ViewBuilder
-    private var recordReadBackSections: some View {
+    private func recordReadBackSections(_ db: Sub4Database) -> some View {
         // PATCH 317. The fourth, and the one that closes D6a's gap:
         // `athlete_profile`, `resting_month` and `hr_zone` were the only
         // imported tables nothing ever read back. FIRST of these because the
@@ -388,7 +409,7 @@ struct DatabaseHealthView: View {
         planReadBackSection
         // PATCH 324. The one that closes slice 6 — 583 readings and eleven
         // shoes.
-        weatherGearReadBackSection
+        weatherGearReadBackSection(db)
         // PATCH 327. Ninth and last of the read-backs, and the one that
         // finishes D6c's record side. It sits at the end because it is the
         // only one that can legitimately compare nothing: the first real
@@ -2429,10 +2450,50 @@ struct DatabaseHealthView: View {
     /// missing, and the line is unconditional so a device with none still says
     /// zero.
     ///
-    /// NO BUTTON, and every row unconditional — §12.54.2.
+    /// **IT HAS A BUTTON SINCE 374, AND THIS LINE USED TO SAY IT DID NOT.**
+    ///
+    /// §12.54.2 cuts both ways: a screen that stops describing itself is the
+    /// defect whether the drift is in a row or in the note above it. The rows
+    /// stay unconditional; what changed is that the section which REPORTS the
+    /// discrepancy now offers the repair.
+    ///
+    /// Here rather than on Data controls, because "only in the database: 601"
+    /// and the button that acts on it belong in one place — a repair the
+    /// athlete has to go looking for is one he takes at the wrong moment. The
+    /// weather row over there gains a sentence pointing at this.
     @ViewBuilder
-    private var weatherGearReadBackSection: some View {
+    private func weatherGearReadBackSection(_ db: Sub4Database) -> some View {
         Section {
+            // PATCH 374. First in the section, like `Import and verify`: the
+            // action, then the numbers that justify it.
+            if restoringWeather {
+                HStack { ProgressView(); Text("Restoring…").font(.caption) }
+            } else {
+                Button("Restore weather from the database") { runWeatherRestore(db) }
+                    .font(.caption)
+            }
+
+            if let e = weatherRestoreError {
+                Text(e).font(.caption).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // UNCONDITIONAL ONCE IT HAS RUN, and the zero cases are worth as
+            // much as the others: "added 0, already held 602" is the store
+            // agreeing with the database, and "added 0, already held 0" is a
+            // database with no weather in it. §12.15.
+            if let r = lastWeatherRestore {
+                LabeledContent("Restored", value: "\(r.added) added, "
+                               + "\(r.alreadyHeld) already held")
+                    .font(.caption).foregroundStyle(Color.dim)
+                if let aside = r.setAside {
+                    Text("The unreadable file was kept as "
+                         + aside.lastPathComponent)
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             if let load = weatherGearLoad {
                 LabeledContent("The read", value: load.line)
                     .font(.caption)
@@ -2564,6 +2625,31 @@ struct DatabaseHealthView: View {
         let r = await ReadBacks.weatherGear(db)
         weatherGearLoad = r.load
         weatherGearTrip = r.report
+    }
+
+    /// PATCH 374, §12.118.
+    ///
+    /// **IT READS THE DATABASE AGAIN RATHER THAN USING `weatherGearLoad`.**
+    /// That value was read when the screen appeared and an import may have run
+    /// since; a write must act on what is there now, not on what was displayed.
+    /// The cost is one read of a table this screen already reads on appear.
+    ///
+    /// The read-back is refreshed afterwards so the counts underneath describe
+    /// the store as it is now — otherwise the section reports "only in the
+    /// database: 601" directly beneath a line saying 601 were just added.
+    private func runWeatherRestore(_ db: Sub4Database) {
+        restoringWeather = true
+        weatherRestoreError = nil
+        Task {
+            defer { restoringWeather = false }
+            do {
+                lastWeatherRestore = try WeatherStore.shared.restore(
+                    from: WeatherGearRepository.load(db))
+                await reloadWeatherGear(db)
+            } catch {
+                weatherRestoreError = error.localizedDescription
+            }
+        }
     }
 
     /// PATCH 327 — the ninth read-back, D6c slice 7, ADR-0003 §12.71.

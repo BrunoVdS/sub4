@@ -8962,6 +8962,217 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.118 Putting the readings back — patch 374
+
+371 stopped the file being destroyed. It did not put anything back. The 601
+readings have been in `weather` since, with the one reading the two sides
+share comparing `fields that differ: 0` — nothing was ever corrupt, the file
+was overwritten, and the database still holds what it held.
+
+### 12.118.1 A restore is not a hydration, and the difference is the patch
+
+`PersistenceMode` states it outright: **hydration MUST NOT WRITE.** That is
+what makes a D7 slice reversible — the JSON files stay complete and
+authoritative while the database feeds the stores in memory, so removing a
+family from `hydratedFamilies` restores the previous build exactly.
+
+Weather is not in `Family` at all. `WeatherGearRepository.load` has two
+callers — `ReadBacks`, and the screen displaying its result — so the reader
+was finished, proven and feeding nothing.
+
+Adding `weather` to the hydrated families would have been the shortest diff
+available and would have broken the single invariant that framework rests on.
+This is a **restore**: explicit, one-directional, and it writes.
+
+### 12.118.2 Strictly additive
+
+It adds what the store does not hold and changes nothing it does.
+
+The obvious reason is that a restore which overwrites is indistinguishable
+from the defect it repairs. The one that actually decided it: **a reading
+fetched since the last import exists in the file and not in the database.**
+Replacing the file wholesale would delete precisely those — 15 August again,
+at smaller scale, with the repair as the cause.
+
+### 12.118.3 The guard is satisfied, not bypassed
+
+371's `save()` refuses while `lastLoad` is untrustworthy — which is exactly
+the state a restore is most needed in. The first draft of this gave the
+restore its own write path around the guard.
+
+That was wrong, and the corrected shape is better than the problem. The guard
+protects bytes nobody could read, so the restore **moves them** to
+`weather.json.unreadable-<stamp>`. After the move there is nothing at
+`fileURL` to destroy, `lastLoad` is honestly `.absent`, and the ordinary
+`save()` runs on the ordinary path.
+
+No bypass, no second writer, and the unreadable original is still on disk
+where it can be examined — which is more than the app could offer before,
+since `resetCache` deletes it.
+
+A restore that cannot move the file writes nothing. `try`, not `try?`: a move
+that silently did not happen leaves the bytes exactly where the write is about
+to land, which is the whole defect with an extra step.
+
+### 12.118.4 `save()` returns a Bool now
+
+It always computed one inside `StoreWriteJournal.attempt` and discarded it —
+correct under §12.17.2, because a weather fetch has nobody standing in front
+of it.
+
+A restore does. It reads that answer, puts memory back when the write did not
+land, and throws. §12.17, arriving on this store for the first time and only
+on the path that has a person on the other end.
+
+### 12.118.5 The button is on the row that reports the problem
+
+`weatherGearReadBackSection` prints "only in the database: 601". Anywhere else
+and the athlete reads that number with no way to act on it.
+
+Its doc comment said "NO BUTTON, and every row unconditional". That sentence
+is now rewritten rather than left to rot: §12.54.2 is about a screen that has
+stopped describing itself, and a stale note above the rows is the same defect
+as a stale row.
+
+"Clear cached weather" on Data controls gains one sentence pointing here,
+because that button DELETES `weather.json` and somebody reaching for it to fix
+a problem should not need to already know the repair exists.
+
+### 12.118.6 What is still not recoverable
+
+Notes, match decisions, moves, commutes and reviews have no restore. The
+difference is not importance — it is that weather had a finished reader
+sitting unused, and they do not. 372 stopped all five being destroyed by the
+same mechanism; none of them can be put back if something else destroys them.
+
+### 12.118.9 The group between the call and the database — patch 374c
+
+    DatabaseHealthView.swift:398: cannot find 'db' in scope
+
+374 gave `weatherGearReadBackSection` a parameter and updated its call site.
+That call site is inside `recordReadBackSections`, a `some View` property with
+no parameters, so the argument came from a scope with nothing to pass. `db`
+lives two frames up in `case .success(let db)`.
+
+**Patch 352 had already answered this question, the other way.** It needed
+`db` for a destructive button and moved the SECTION up into a group that had
+one, writing down that it cost adjacency with the plan read-back. Weather
+cannot pay that: "only in the database: 601" and the button acting on it have
+to be one row apart, or the repair is something the athlete finds at the wrong
+moment. So the database comes down into the group, and 352's sentence — "the
+sections above the read-backs are the ones that take `db`" — is corrected
+rather than left standing as a false description of the file.
+
+### 12.118.10 Three compile breaks in three patches, one cause
+
+| | attribute or scope | what the file already said |
+|---|---|---|
+| 374a | `@ViewBuilder` | *"not a `@ViewBuilder` and would not have compiled"*, three lines above the edit |
+| 374b | `@Observable` | the attribute sat directly above the anchor |
+| 374c | `db` in scope | *"the sections above the read-backs are the ones that take `db`"* |
+
+Every one is the same failure: anchoring an edit on a substring and not reading
+the structure that substring sits inside. `count(anchor) == 1` proves a match
+is unambiguous and says nothing about whether the position is legal — and in
+all three the file carried a comment describing precisely the constraint being
+broken.
+
+The guards written for each are worth less than they look. Two of them checked
+the wrong thing on their first version and only fired after being run against
+the broken tree — a lookback that found `@ViewBuilder` inside the sentence
+warning about its absence, and a rule satisfied by `@Observable` preceding an
+`enum`. The pattern in both: a guard that asserts a SHAPE near the edit rather
+than the FACT that was false.
+
+For this one the fact is not "does the signature take `db`". It is **"is the
+call lexically inside a scope that has one"**, and that is what the guard for
+it brace-matches.
+
+**A fourth generalisation was written for this patch and thrown away.** It
+swept every `foo(db)` call in the file and asked whether the enclosing
+declaration named `db` — and reported three violations in code that compiles,
+because it tracked function signatures and `case .success(let db)` but not
+`let db = try Sub4Database.open()`. A guard that cannot see a `let` binding is
+not a scope checker.
+
+Three attempts at a general rule today produced one fake, one false-positive
+sweep, and one narrow rule that works. The narrow ones are all that shipped.
+The compiler is the general check; it exists, it is on the machine with Xcode,
+and the honest place for that check is a build rather than a Python
+approximation of one.
+
+### 12.118.8 The enum in the middle of a declaration — patch 374b
+
+    Weather.swift:218: '@Observable' cannot be applied to enumeration type
+    'WeatherRestoreFault'
+
+374 inserted the error type at the anchor `@MainActor\nfinal class
+WeatherStore`. That anchor matched — once, as required — in the middle of
+
+    @Observable
+    @MainActor
+    final class WeatherStore {
+
+so the enum landed between the two attributes. `@Observable` bound to it,
+`@MainActor` stayed with the class, and five paragraphs of the store's own
+documentation ended up introducing an error type.
+
+**Second compile break in two patches, same root.** 374a was `@ViewBuilder`;
+this is `@Observable`. Both are one patch inserting text at an anchor without
+reading what surrounds it. A `count(anchor) == 1` check proves the anchor is
+unambiguous and says nothing about whether the position is legal — and both
+times the illegal position was inside a construct the anchor cut in half.
+
+**It does not go into `check-invariants.py`.** 373 set two conditions: the rule
+must have caught a real defect, and it must be a fact the compiler cannot see.
+This fails the second — the compiler caught it in four seconds. That file
+exists for sums that must name every declared counter and stores that must
+refuse before writing, because nothing in the language states those. Padding it
+with things `swiftc` already enforces is exactly what §12.117.3 said not to do.
+
+The check belongs in the apply script, where the mistake is made — and the
+first attempt at it was itself a guard that checked nothing. "Every attribute
+must be followed by a declaration" never fired on either broken tree, because
+`@Observable` followed by `enum` satisfies it exactly: the defect is not a
+missing declaration but the wrong one, and knowing which declaration an
+attribute was meant for is the compiler's job.
+
+What is left is narrow and true: `@Observable` cannot apply to an enum or a
+struct, so it must be followed by a class. A rule that only looks like it is
+checking is worse than no rule, because it is counted.
+
+### 12.118.7 The caption that would not compile — patch 374a
+
+374 added a sentence under "Clear cached weather" and the app target stopped
+building: `weatherRow` is a plain `some View` with one expression in it, and a
+second view needs `@ViewBuilder` to combine.
+
+The comment immediately above the line reads: *"Its own property rather than a
+second view inside `deleteRow`, which is not a `@ViewBuilder` and would not
+have compiled."* Patch 2.1.6 hit the same wall, wrote down what it cost, and
+left the note exactly where the next person would be standing. Three lines
+later, this patch appended a sibling view.
+
+**The finding is about the verification, not the fix.** 374 was reported as
+verified on 28 fault injections, balanced braces, an idempotent apply and
+correct string interpolation. All of that passed and none of it can see a type
+error: there is no Swift toolchain where these patches are written, so brace
+counting was standing in for compilation while being described as though it
+were the same thing.
+
+`test.sh` caught it in seconds and refused to call a non-building target a
+pass — the guard 325b added after that script spent seven patches reporting
+cheerfully on nothing. The check worked. The claim that preceded it was too
+wide.
+
+So: **a patch that touches a SwiftUI view body is unverified until it compiles
+on the machine with Xcode.** Everything checkable without a compiler still
+gets checked, and none of it is called verification of the build.
+
+---
+
+---
+
 ## 12.117 The rules that caught something, kept running — patch 373
 
 Not a defect in the app. A defect in how this project verifies itself.

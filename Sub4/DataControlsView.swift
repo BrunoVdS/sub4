@@ -164,6 +164,13 @@ struct DataControlsView: View {
     ///
     /// Its own property rather than a second view inside `deleteRow`, which is
     /// not a `@ViewBuilder` and would not have compiled.
+    ///
+    /// **AND 374 MADE THAT MISTAKE HERE, THREE LINES BELOW THIS SENTENCE.**
+    /// A caption was appended beside the button, which is two statements in a
+    /// body that had one and no builder to combine them. The attribute is what
+    /// the note above was pointing at; `importSection` and
+    /// `weatherGearReadBackSection` have carried it all along. §12.118.7.
+    @ViewBuilder
     private var weatherRow: some View {
         Button {
             WeatherStore.shared.resetCache()
@@ -179,6 +186,16 @@ struct DataControlsView: View {
         }
         .buttonStyle(.plain)
         .disabled(clearedWeather)
+
+        // PATCH 374. This button DELETES weather.json, and since 374 the
+        // database can put it back — so the two facts are one sentence apart
+        // rather than two screens apart. Somebody clearing the cache to fix a
+        // problem should not have to already know the repair exists.
+        Text("Cleared weather is re-fetched as you browse. Readings already "
+             + "copied to the database can be put back at once, under "
+             + "Weather and gear on Database health.")
+            .font(.caption2).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var deleteRow: some View {

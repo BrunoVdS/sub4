@@ -205,6 +205,28 @@ nonisolated struct ActivityWeather: Codable, Hashable {
     }
 }
 
+/// Why a restore did not happen — patch 374, §12.118.
+///
+/// Its own type rather than a `StoreWriteError`: nothing was written and
+/// nothing failed to write. The database could not be read, which is a
+/// different sentence and gets a different one on screen.
+///
+/// AT FILE SCOPE, ABOVE THE STORE — patch 374b. It spent one patch between
+/// `@Observable` and `@MainActor`, where the macro bound to it instead of to
+/// `WeatherStore` and the store's own doc comment ended up describing an
+/// error type. §12.118.8.
+nonisolated enum WeatherRestoreFault: LocalizedError, Equatable {
+    case databaseUnreadable(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .databaseUnreadable(let line):
+            "The stored weather could not be read, so nothing was restored "
+            + "and weather.json was not touched. The database said: \(line)"
+        }
+    }
+}
+
 // MARK: - The store
 
 /// Fetch once, keep for ever. On demand by default, in bulk when asked.
@@ -644,7 +666,19 @@ final class WeatherStore {
         inFlight = []
     }
 
-    private func save() {
+    /// **RETURNS WHAT IT ALWAYS KNEW — patch 374.**
+    ///
+    /// `attempt` has produced this Bool since the journal was written and every
+    /// caller discarded it, which was right: a weather fetch has nobody
+    /// standing in front of it, and §12.17.2 says such a write reports to the
+    /// journal and no further.
+    ///
+    /// `restore(from:)` is the exception the rule was always going to meet. The
+    /// athlete pressed a button, so the answer has to reach him — and memory
+    /// has to follow the disk, which cannot happen if the writer will not say
+    /// whether the disk moved.
+    @discardableResult
+    private func save() -> Bool {
         // **THE GUARD THAT WOULD HAVE KEPT 601 READINGS — patch 371.**
         //
         // §12.20 on a file rather than a row: nothing is overwritten on the
@@ -658,16 +692,132 @@ final class WeatherStore {
         // they are re-fetched next launch. That is the cheap failure. The
         // expensive one is the file. "Unreadable stores" names weather.json
         // now, which is how anybody finds out.
-        guard lastLoad.isTrustworthy else { return }
+        guard lastLoad.isTrustworthy else { return false }
 
         // Bare encoder, like `athlete.json` and for the same reason: the
         // numeric date encoding on disk is thirteen months old and `LegacyStore`
         // declares it.
-        StoreWriteJournal.shared.attempt("weather.json") {
+        return StoreWriteJournal.shared.attempt("weather.json") {
             try StoreWrite.encode(byActivity, to: fileURL, store: "weather.json",
                                   encoder: JSONEncoder())
         }
     }
+
+    // MARK: - Restore — patch 374, §12.118
+
+    /// What a restore did.
+    ///
+    /// Counts rather than a Bool, for §12.15's reason: "ran and added nothing"
+    /// and "never ran" are different facts, and on this screen the difference
+    /// is whether the database has anything to give.
+    struct Restored: Equatable {
+        let added: Int
+        let alreadyHeld: Int
+        /// Where an unreadable file was moved to. Nil is the ordinary case and
+        /// not a failure — it means the file read cleanly and nothing had to be
+        /// preserved.
+        let setAside: URL?
+    }
+
+    /// **PUTS BACK WHAT THE FILE LOST, FROM THE DATABASE — patch 374.**
+    ///
+    /// STRICTLY ADDITIVE. It adds readings the store does not hold and changes
+    /// nothing it does. A restore that overwrote would be indistinguishable
+    /// from the defect it repairs — and readings fetched since the last import
+    /// exist in the file and NOT in the database, so replacing wholesale would
+    /// delete exactly those. That is 15 August again, smaller.
+    ///
+    /// **IT DOES NOT BYPASS `save()`'s GUARD. IT SATISFIES IT.** The guard
+    /// exists to stop bytes nobody could read being overwritten, so the bytes
+    /// are MOVED somewhere they survive, and only then is there nothing left at
+    /// `fileURL` to destroy. `lastLoad` becomes `.absent`, the ordinary write
+    /// runs on the ordinary path, and the unreadable original is on disk where
+    /// somebody can look at it. A second write path would have been shorter and
+    /// would have made the guard advisory.
+    ///
+    /// NO WRITE-THROUGH. The readings came out of the database; announcing them
+    /// back to it is a loop, and `noteAuthoredChange` is for what the athlete
+    /// wrote — weather is fetched. §12.94.
+    ///
+    /// - Throws: `WeatherRestoreFault.databaseUnreadable` when the load did not
+    ///   produce readings, the underlying error when the unreadable file cannot
+    ///   be moved, and `StoreWriteError` when the write does not land. In every
+    ///   one of those, nothing has been written and memory is as it was.
+    @discardableResult
+    func restore(from load: WeatherGearLoad, now: Date = Date()) throws -> Restored {
+        guard let stored = load.weather else {
+            throw WeatherRestoreFault.databaseUnreadable(load.line)
+        }
+        // Nothing to restore is not a repair. Returning early means an empty
+        // database cannot move a readable file aside or write over anything —
+        // and the counts still tell the two cases apart, because "added 0,
+        // already held 0" is only reachable from here.
+        guard !stored.isEmpty else {
+            return Restored(added: 0, alreadyHeld: 0, setAside: nil)
+        }
+
+        var setAside: URL?
+        if !lastLoad.isTrustworthy,
+           FileManager.default.fileExists(atPath: fileURL.path) {
+            let destination = Self.asideURL(for: fileURL, now: now)
+            // NOT `try?`. A move that silently did not happen would leave the
+            // bytes exactly where the write below is about to land, which is
+            // the whole defect with an extra step. §12.20.
+            try FileManager.default.moveItem(at: fileURL, to: destination)
+            setAside = destination
+            lastLoad = .absent
+        }
+
+        let before = byActivity
+        var added = 0
+        var alreadyHeld = 0
+        for reading in stored {
+            if byActivity[reading.activityId] == nil {
+                byActivity[reading.activityId] = reading
+                added += 1
+            } else {
+                alreadyHeld += 1
+            }
+        }
+
+        guard save() else {
+            // §12.17. The screen reads this store, so putting memory back is
+            // what stops it showing 602 readings that are not on the disk.
+            //
+            // The file moved aside STAYS moved. It is the only copy of bytes
+            // nobody could read, and moving it back is a second operation that
+            // can fail in the same way as the first.
+            byActivity = before
+            throw StoreWriteJournal.shared.unsaved["weather.json"]?.error
+                ?? StoreWriteError(store: "weather.json", stage: .writing,
+                                   reason: "the restore did not reach the disk")
+        }
+        return Restored(added: added, alreadyHeld: alreadyHeld, setAside: setAside)
+    }
+
+    /// `weather.json.unreadable-20260816-084500`, and a suffix if that exists.
+    ///
+    /// The collision is not hypothetical: two restores in the same second are
+    /// two taps, and `ProposalStore.add` already records what a running count
+    /// costs when the second one lands on the first.
+    nonisolated static func asideURL(for file: URL, now: Date) -> URL {
+        let stamp = asideStamp.string(from: now)
+        var candidate = file.appendingPathExtension("unreadable-\(stamp)")
+        var n = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = file.appendingPathExtension("unreadable-\(stamp)-\(n)")
+            n += 1
+        }
+        return candidate
+    }
+
+    private nonisolated static let asideStamp: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
 
     /// **AND IT HAS TO CLEAR `lastLoad` — patch 371.**
     ///
