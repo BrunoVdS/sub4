@@ -8962,6 +8962,244 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.121 The sixth family — patch 377
+
+`Move store reads: the app's own files`, on a build where notes, commute
+decisions and match decisions all read from the database.
+
+### 12.121.1 B2 was finished before its family was
+
+B2 hydrates the authored stores. The plan moves are authored data of exactly
+that kind and were still on `moves.json`, because they were built at 365–367 —
+after the D7 groundwork of 10 August and after B2 shipped at 357. §7's slice
+table has no row for them, and nobody amended it.
+
+Everything else had been ready for a while:
+
+- `PlanMoveRepository` exists and is complete.
+- `PlanMoveLoad` carries `wasReadCleanly`, `holdsContent`, `moves`, `skipped`
+  and `line` — shaped as a bootstrap family at 363, for a bootstrap that never
+  asked.
+- The read-back proves it: moved sessions 1 vs 1, fields that differ 0.
+- `SemanticVerifier` has produced a comparison called `session moves` since 361.
+- `PlanMoveStore.servedFrom` sat at `.files` under a comment written at 363:
+  *"when moves are hydrated this line moves on its own rather than going
+  quietly stale."*
+
+A finished reader feeding nothing — the shape weather was in before 374, found
+the same way.
+
+### 12.121.2 The ordering is the only subtle part
+
+`Sub4Launch.apply` hoisted `let moves = PlanMoveStore.shared.all` above the
+switch at 365. That was right while the store could only hold the file's
+answer. It is wrong the moment the hydrate path replaces them: a value captured
+above the switch is the file's moves applied over a store that has just been
+given the database's.
+
+So the hoist is gone and each path asks when it has an answer. On the hydrate
+path the store is hydrated **before** `applyMoves`, because the plan is
+corrected *from* the store — hydrating afterwards would leave the store right
+and the served plan wrong until the next launch, which is the quietest form
+this bug could take.
+
+Still one main-actor step with no suspension inside it: 365's requirement,
+unchanged.
+
+### 12.121.3 Empty keeps its file
+
+`hydratableMoves` is nil when the family reads cleanly and holds nothing —
+`hydratableAuthored`'s rule, for §12.8.1's reason. It matters more here than
+elsewhere: a move is one row in `correction`, they are made rarely, and a clean
+read of an empty table is indistinguishable from a write-through that has not
+caught up. Hydrating there would blank the legacy side's only copy.
+
+### 12.121.4 The guard watched the list, not the world
+
+`DatabaseBootstrap.fieldCount` is pinned by a test precisely so that *"adding a
+family is a thing somebody has to acknowledge"*.
+
+Moves became a family in the import, in the read-back, in the semantic verifier
+and in `AppStores` — and never became one in `Family`, so the pinned number
+never had to move. **The guard was watching the list rather than the world it
+describes**, and a member that never joined the list cost it nothing.
+
+Third time in nine patches. 369a summed three of six counters; 372's §12.115.6
+named four of five stores; this named five of six families. Each time the fix
+was to read declarations rather than a list — and each time the list was in a
+different file from the thing it was supposed to enumerate.
+
+`check-invariants.py` does not gain a rule for it. There is no declaration to
+read: nothing in the language says "this type is a persistence family", which
+is exactly why `fieldCount` is a hand-pinned number in the first place. What
+the count can be made to do is what it already does — fail when the struct
+gains a field. It did not fail here because the struct never gained one.
+
+---
+
+### 12.121.5 The checker caught the patch that shipped it — patch 377a
+
+    FAIL [expect messages are single literals]
+      MoveHydrationTests.swift: the #expect message is a concatenation
+
+377's own test file broke `check-invariants.py`'s third rule — the one 366b
+found, that 373 installed, and that had been pasted by hand into six apply
+scripts before that.
+
+**It fired in one second, before `xcodebuild` started, on a defect nobody
+planted.** Every previous firing of that file was a fault injection written to
+prove a rule works. This was a rule working.
+
+§12.117 argued that a rule earns its place by having caught something real. It
+had — once, at 366b, before it was standing. This is the case the argument was
+actually about: the same rule catching the same mistake from an author who knew
+about it, wrote it down, installed it, and then made it anyway.
+
+The rest of 377 was correct. Nineteen edits applied and the three invariants
+that describe the app — six stores refusing after an unclean read, six removal
+counters in the total, no accumulated minutes — all held.
+
+---
+
+### 12.121.6 The callers a new parameter did not reach — patch 377b
+
+    error: missing argument for parameter 'moves' in call   × 6
+    error: type 'PersistenceMode' has no member 'Family'    × 3
+
+377 gave `DatabaseBootstrap` a sixth field and `Instruction.hydrate` a seventh
+associated value, updated the one production caller, and never looked for the
+rest. `HydrationDecisionTests` constructs six bootstraps and matches the
+instruction once.
+
+**375 did this correctly two patches earlier.** It changed `WeekBucket`'s
+stored field and the construction sites were grepped across `Sub4/` *and*
+`Sub4CoreTests/` before a line was written — which is exactly why 375 did not
+break this way. The discipline existed and was not applied.
+
+The second error is not a slip. `HydrationPlanner.decide` calls
+`PersistenceAuthority.hydrates(.authored)`; 377's own apply script quotes that
+line; the tests were written against `PersistenceMode` anyway.
+
+The guard for it is the grep, made standing inside the apply script: no test
+may construct a `DatabaseBootstrap` without naming every family. It does not
+go into `check-invariants.py` — §12.118.8's bar, and `swiftc` caught it in
+four seconds.
+
+---
+
+### 12.121.7 Fifteen sites, three rounds — patch 377c
+
+377 added a field to `DatabaseBootstrap`. Fifteen places in the test target
+construct one, across three files. I found them in three rounds: six from the
+compiler, three from 377b's guard, seven from the grep — two extra patches for
+a question one command answers.
+
+**375 ran that command before writing a line.** It changed `WeekBucket`'s
+stored field, grepped `WeekBucket(` across `Sub4/` and `Sub4CoreTests/`, and
+did not break this way. Two patches later the same author skipped it, then
+fixed one file, then fixed the file the guard named, then finally asked the
+whole target.
+
+The lesson is not "write a guard" — 377b's guard was right and found three
+sites the compiler had not reached, because the build stops at the first file.
+The lesson is that a guard run once per patch is a search, and a search run
+against one file at a time is three patches of the same search.
+
+One fixture differs: the all-`.unavailable` construction takes
+`moves: .unavailable` rather than an empty `.loaded`. "Nothing to say" and
+"read cleanly and empty" are the two states `holdsContent` exists to separate,
+and that fixture is the first one.
+
+---
+
+### 12.121.8 A family fans out into assertions the compiler cannot see — patch 377d
+
+377c compiled. 1575 tests ran and eighteen assertions failed, every one an
+existing test describing the five-family world 377 had just replaced.
+
+**The mistake was not missing a call site. It was believing the compiler was
+the enumeration.**
+
+`DatabaseBootstrap(` gained an argument, so `swiftc` listed all fifteen
+constructions across three files — after three rounds, because I greped for
+them one file at a time instead of once across the target. That much was
+recoverable. What was not visible to the compiler at all:
+
+| what moved | how it is written | who finds it |
+|---|---|---|
+| `fieldCount` 5 → 6 | `#expect(… == 5)` | only a test run |
+| `diagnosticLineCount` 11 → 12 | `#expect(… == 11)` | only a test run |
+| `Family.allCases.count` | `#expect(… == 5)` | only a test run |
+| `hydratedFamilies` | an array literal | only a test run |
+| `emptyAuthoredFamilies` | an array of strings | only a test run |
+| `HydratedStores.all.count` 4 → 5 | `#expect(… == 4)` | only a test run |
+| `"Database bootstrap: 5 families"` | a string prefix | only a test run |
+| `session moves` is independent | a claim, not a count | **nothing** |
+
+`#expect(DatabaseBootstrap.fieldCount == 5)` is perfectly well-typed. The
+compiler has no opinion about which number is true.
+
+**THE ENUMERATION THAT WAS AVAILABLE ALL ALONG.** Not `grep 'DatabaseBootstrap('`
+but every literal encoding the old count — `fieldCount`, `diagnosticLineCount`,
+`Family.allCases`, `hydratedFamilies`, `HydratedStores`, `emptyAuthoredFamilies`,
+`"N families"`, `independentChecks`, `selfReferentialChecks`. Run across the
+whole test target it returns exactly eighteen sites in five files: the same
+eighteen the suite reported. One command, before the first line of 377.
+
+**THE ONE THAT IS NOT A NUMBER.** `PlanMoveImportTests` asserted that
+`session moves` was independent evidence, and it was — *because nothing fed
+`PlanMoveStore` from the database.* 377 feeds it. The check now compares a
+store the database filled against the database, which is the definition of
+self-referential. Bumping a number there would have left a test named "The
+moved sessions count as evidence" asserting the opposite of the truth: a
+passing test that lies, which is worse than a failing one. It is inverted,
+renamed, and the reason is written above it.
+
+Two more silent falsehoods 377 left and 377d fixes, neither of which any test
+would ever have caught:
+
+- `sliceUnderTest` still read "B2 — the notes, the commute decisions and the
+  match decisions". B2 feeds four stores as of 377. No test pins that string's
+  contents — `B1ActivationTests` and `B2ActivationTests` both ask only whether
+  it *contains* "B1" and "B2", and §12.15's own rule about a diagnostic that
+  cannot be trusted applies to the label as much as to the numbers.
+- `AuthoredHydrationTests` predicted that a sixth family would separate
+  `hydratedFamilies.count` from `Family.allCases.count` again. It did not. The
+  moves' machinery was already built at 361 and 365, so the family and its flip
+  landed in one patch. **What separates those counts is a family READ before it
+  is FED** — 344 without 346, 357 without 358. B3 is that shape; 377 was not.
+
+**RULE 5.** `check-invariants.py` now reads `fieldCount`, `diagnosticLineCount`,
+the `Family` cases, `hydratedFamilies` and `HydratedStores.all` from the app,
+and compares them against every literal pin in the test target. It holds no
+list of right answers; it derives them.
+
+**AND IT COVERS TEN OF THE EIGHTEEN.** Run against the tree as 377c left it,
+it names ten stale pins with their line numbers and raises nothing false across
+119 test files. The other eight are not counts — two array literals, a list of
+family names, a set of check names, and the two claims about what `session
+moves` MEANS — so no rule of this shape can derive them. `apply-377d.py`'s
+guards cover those, and B3 has to read this section rather than trust a green
+run. A rule that quietly covered eight-eighteenths while reading as complete
+would be §12.69 again, one level up.
+
+Its first version was that failure exactly: `braced()` finds the next `{` after
+a header, `HydratedStores.all` is an ARRAY literal, and the entry count came
+back **0** — so the rule reported thirteen pins compared, well above its floor,
+against nothing. It was caught because `apply-377d.py`'s guard parses the same
+declaration a different way on purpose. A guard that shares the rule's parser
+cannot find the parser's bug.
+
+This is the **fourth** appearance of this project's most expensive defect —
+369a's three of six counters, 372's four of five stores, 377's five of six
+families, and now the tests' own copies of all three. Each time: a number kept
+by hand in a different file from the thing it counts. The pin still earns its
+place — `fieldCount == 6` is how adding a family stays a decision somebody
+takes on purpose — but the decision belongs in the patch that adds the family,
+not in the fourth round of applying it.
+
+---
+
 ## 12.120 A number nobody was told — patch 376
 
 ### 12.120.1 `lateArrivals`

@@ -184,16 +184,40 @@ struct PlanMoveImportTests {
         #expect(r.passed)
     }
 
-    /// §12.99. Nothing hydrates `PlanMoveStore` from the database, so this
-    /// comparison's expectation comes from a file the database does not feed.
-    /// It is the first check added since B1 that could actually disagree.
-    @Test("The moved sessions count as evidence")
-    func theMoveComparisonIsIndependent() throws {
+    /// **INVERTED AT 377, AND THE INVERSION IS THE POINT — §12.121.8.**
+    ///
+    /// This test read "The moved sessions count as evidence" and asserted that
+    /// `session moves` was an INDEPENDENT comparison. That was true, and it was
+    /// true for one reason: nothing hydrated `PlanMoveStore` from the database,
+    /// so the expectation came from a file the database did not feed.
+    ///
+    /// 377 feeds it. The comparison now reads a store the database filled and
+    /// compares it against the database, which is the definition of
+    /// self-referential and exactly what `HydratedStores` exists to declare.
+    /// §12.69: a check that cannot fail has not been tested.
+    ///
+    /// **THIS IS NOT A NUMBER THAT MOVED.** The other sixteen assertions 377d
+    /// touches are counts. These two are a claim about what the check MEANS,
+    /// and 377 made the claim false. Renumbering them would have left the file
+    /// asserting the opposite of the truth in a test still named "as evidence",
+    /// which is worse than a failing test — it is a passing one that lies.
+    ///
+    /// What B2 gave up in exchange is recorded where it belongs: the slice now
+    /// feeds four of the verifier's comparisons and `B2ActivationTests`
+    /// counts them.
+    @Test("The moved sessions stopped being evidence at 377")
+    func theMoveComparisonIsSelfReferential() throws {
         let db = try Sub4Database.inMemory()
         let r = try SemanticVerifier.verify(db, activities: [])
 
-        #expect(HydratedStores.entry(for: "session moves") == nil)
-        #expect(r.independentChecks.contains { $0.name == "session moves" })
+        let entry = try #require(HydratedStores.entry(for: "session moves"),
+                                 "377 hydrates the moves and must declare it")
+        #expect(entry.store == "PlanMoveStore.moves")
+        #expect(entry.slice == "B2")
+        #expect(!r.independentChecks.contains { $0.name == "session moves" },
+                "a store the database feeds cannot be evidence about it")
+        #expect(r.selfReferentialChecks.contains { $0.name == "session moves" },
+                "and it must land on the other side rather than vanish")
     }
 
     /// §12.69. A comparison that counted the whole table, or nothing at all,

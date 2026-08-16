@@ -321,6 +321,21 @@ final class PlanMoveStore {
     /// own rather than going quietly stale.
     private(set) var servedFrom: StoreSource = .files
 
+    // MARK: Hydration — D7 slice B2, patch 377
+
+    /// Replaces the moves with the stored ones — and the comment above this
+    /// property has been waiting for this function since 363.
+    ///
+    /// DOES NOT WRITE, for `NotesStore.hydrate`'s reason and
+    /// `PersistenceMode`'s rule: `moves.json` stays complete and authoritative
+    /// while the slice is under test, which is what makes taking `.moves` back
+    /// out of `hydratedFamilies` a full rollback rather than a data loss.
+    func hydrate(from stored: [PlanMove]) {
+        moves = Dictionary(stored.map { ($0.sessionUid, $0) },
+                           uniquingKeysWith: { first, _ in first })
+        servedFrom = .database
+    }
+
     private let fileURL: URL
 
     private init() {

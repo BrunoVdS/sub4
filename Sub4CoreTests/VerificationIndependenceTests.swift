@@ -85,8 +85,8 @@ struct VerificationIndependenceTests {
     /// and the machinery around it.
     @Test("The list names the comparison B1 made self-referential")
     func theListNamesTheZoneCheck() {
-        #expect(HydratedStores.all.count == 4,
-                "one from B1, three from B2; B5 and B9 will each add more")
+        #expect(HydratedStores.all.count == 5,
+                "one from B1, four from B2; B5 and B9 will each add more")
         let e = HydratedStores.entry(for: "heart-rate zones")
         #expect(e != nil)
         #expect(e?.store == "AthleteStore.hrZones")

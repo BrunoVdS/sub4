@@ -6,8 +6,14 @@
 //
 //  WHAT THE FLIP IS. One line: `hydratedFamilies` gains `.authored` and
 //  `.decisions`. Everything else this patch touches is a consequence of that
-//  line — the slice label, the three comparisons that stop being evidence, and
-//  a diagnostic header that could no longer be read without lying.
+//  line — the slice label, the comparisons that stop being evidence, and a
+//  diagnostic header that could no longer be read without lying.
+//
+//  B2 FINISHED AT 377 AND THIS SUITE IS WHERE THAT SHOWS — patch 377d.
+//  `.moves` is authored data of B2's own kind and was the last of the slice
+//  still served from a file. It joins `hydratedFamilies` here rather than
+//  starting a slice of its own, so every count below went up by one and the
+//  numbers in two test NAMES stopped being true. §12.121.8.
 //
 //  WHY IT IS ITS OWN PATCH. 344 built B1's machinery and 346 flipped it; the
 //  flip found four failures, and every one of them was attributable BECAUSE
@@ -88,7 +94,8 @@ struct B2ActivationTests {
         DatabaseBootstrap(
             plan: plan(), extras: extras(), athlete: athlete(),
             authored: .loaded(notes: [note()], commutes: [commute()], skipped: 0),
-            decisions: .loaded(decisions: [decision()], skipped: 0))
+            decisions: .loaded(decisions: [decision()], skipped: 0),
+            moves: .loaded(moves: [], skipped: 0))
     }
 
     // MARK: The line this patch is
@@ -96,7 +103,7 @@ struct B2ActivationTests {
     @Test("Every family the bootstrap reads is now hydrated")
     func everyFamilyHydrates() {
         #expect(PersistenceAuthority.hydratedFamilies
-                == [.plan, .extras, .athlete, .authored, .decisions])
+                == [.plan, .extras, .athlete, .authored, .decisions, .moves])
         #expect(PersistenceAuthority.hydratedFamilies.count
                 == PersistenceAuthority.Family.allCases.count,
                 "B2 is the slice where those two numbers meet")
@@ -150,7 +157,8 @@ struct B2ActivationTests {
                 "a clean read of nothing must not be able to blank notes.json")
         #expect(b.hydratableDecisions == nil)
         #expect(b.emptyAuthoredFamilies == ["notes and commutes",
-                                            "match decisions"])
+                                            "match decisions",
+                                            "plan moves"])
     }
 
     /// The other half of the same decision, in the planner rather than the
@@ -177,7 +185,7 @@ struct B2ActivationTests {
     func thePayloadsTravel() {
         switch HydrationPlanner.decide(mode: .shadow("B2 — a test"),
                                        bootstrap: full()) {
-        case .hydrate(_, _, _, _, let authored, let decisions):
+        case .hydrate(_, _, _, _, let authored, let decisions, _):
             #expect(authored != nil)
             #expect(authored?.notes.count == 1)
             #expect(authored?.commutes.count == 1)
@@ -206,26 +214,34 @@ struct B2ActivationTests {
         let b = DatabaseBootstrap(
             plan: plan(), extras: extras(), athlete: athlete(),
             authored: .loaded(notes: [note()], commutes: [], skipped: 0),
-            decisions: .loaded(decisions: [], skipped: 0))
+            decisions: .loaded(decisions: [], skipped: 0),
+            moves: .loaded(moves: [], skipped: 0))
 
         #expect(b.hydratableAuthored != nil, "one note is content")
         #expect(b.hydratableDecisions == nil, "and no decision is not")
-        #expect(b.emptyAuthoredFamilies == ["match decisions"])
+        #expect(b.hydratableMoves == nil, "nor is no move — 377")
+        #expect(b.emptyAuthoredFamilies == ["match decisions", "plan moves"])
         #expect(b.firstFault == nil, "neither of those is a fault")
     }
 
     // MARK: What stopped being evidence — §12.99
 
-    /// THREE COMPARISONS DIE HERE, and the list is what says so. `notes`,
-    /// `corrections` and `match decisions` all read a store this build now
-    /// feeds from the database, so each is the database agreeing with itself.
-    /// §12.69: a check that cannot fail has not been tested.
-    @Test("The three comparisons B2 made self-referential are declared")
+    /// FOUR COMPARISONS DIE HERE, and the list is what says so. `notes`,
+    /// `commute corrections`, `match decisions` and — since 377 — `session
+    /// moves` all read a store this build now feeds from the database, so each
+    /// is the database agreeing with itself. §12.69: a check that cannot fail
+    /// has not been tested.
+    ///
+    /// `session moves` WAS THE LAST INDEPENDENT COMPARISON B2 HAD, and 377
+    /// spent it. `PlanMoveImportTests.theMoveComparisonIsIndependent` said so
+    /// in as many words and is inverted in the same patch.
+    @Test("The four comparisons B2 made self-referential are declared")
     func theListNamesWhatB2Took() {
-        #expect(HydratedStores.all.count == 4, "one from B1 and three from B2")
+        #expect(HydratedStores.all.count == 5, "one from B1 and four from B2")
         for (check, store) in [("notes", "NotesStore.notes"),
                                ("commute corrections", "CommuteStore.decisions"),
-                               ("match decisions", "Matcher.decisions")] {
+                               ("match decisions", "Matcher.decisions"),
+                               ("session moves", "PlanMoveStore.moves")] {
             let e = HydratedStores.entry(for: check)
             #expect(e != nil, "a comparison B2 made self-referential is undeclared")
             #expect(e?.store == store)
@@ -248,23 +264,24 @@ struct B2ActivationTests {
 
         #expect(r.unmatchedHydratedEntries.isEmpty,
                 "an entry naming no comparison is a rename nobody finished")
-        #expect(r.selfReferentialChecks.count == 4)
+        #expect(r.selfReferentialChecks.count == 5)
         #expect(Set(r.selfReferentialChecks.map(\.name))
                 == ["notes", "commute corrections", "match decisions",
-                    "heart-rate zones"])
+                    "session moves", "heart-rate zones"])
         #expect(!r.independentChecks.isEmpty,
                 "B2 is not B9 — there is still evidence left")
-        #expect(r.independentChecks.count == r.checks.count - 4)
+        #expect(r.independentChecks.count == r.checks.count - 5)
     }
 
     /// THE NUMBER THAT MOVED, and the reason 354 built this accounting at all.
-    /// It went 20 to 19 at B1 and nobody noticed. Three more go here, and the
-    /// paste is what says so before somebody reads a green run as evidence.
-    @Test("The independent count falls by exactly three")
+    /// It went 20 to 19 at B1 and nobody noticed. Four more go here — three at
+    /// 358 and `session moves` at 377 — and the paste is what says so before
+    /// somebody reads a green run as evidence.
+    @Test("The independent count falls by exactly four")
     func theIndependentCountFalls() throws {
         let db = try Sub4Database.inMemory()
         let r = try SemanticVerifier.verify(db, activities: [])
-        #expect(r.checks.count - r.independentChecks.count == 4)
+        #expect(r.checks.count - r.independentChecks.count == 5)
         #expect(r.ledgerNote.contains("\(r.independentChecks.count) independent"))
     }
 
@@ -288,7 +305,7 @@ struct B2ActivationTests {
         let lines = DatabaseBootstrapReader.read(db).diagnosticLines
         let head = try #require(lines.first)
 
-        #expect(head.hasPrefix("Database bootstrap: 5 families"),
+        #expect(head.hasPrefix("Database bootstrap: 6 families"),
                 "the prefix every earlier pin was written against")
         #expect(head.contains("read at launch"))
         #expect(head.lowercased().contains("live"),

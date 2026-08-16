@@ -18,6 +18,10 @@ times a mechanical check found it:
           `Matcher` was missed because the list was built by searching for
           the shape of the FIX — `StoreRead.decode` — rather than the shape
           of the RISK, which is `lastLoad`.
+  · 377d  Eighteen test assertions pinned a five-family bootstrap that had
+          become six. The compiler found every constructor that gained an
+          argument and had no opinion about `== 5`, which is a well-typed
+          expression about a number that changed. Four apply rounds.
 
 Both checks existed. Both ran once, inside an apply script, and died with the
 patch. Nothing re-ran them, so the same class of miss was free to recur — and
@@ -299,11 +303,184 @@ def minutes_are_never_accumulated():
     counted(rule, seen, 10, "uses of .minutes examined")
 
 
+
+# --------------------------------------------------------------------------
+# RULE 5 — patch 377d, §12.121.8
+# --------------------------------------------------------------------------
+
+def pinned_counts_match_the_source():
+    """Eighteen test assertions pinned the five-family world. 377 made it six
+    and the compiler found none of them, because `== 5` is a well-typed
+    expression about a number that changed.
+
+    THE FOURTH TIME THIS SHAPE HAS COST A PATCH — 369a's three of six
+    counters, 372's four of five stores, 377's five of six families, and now
+    the tests' own copies of all three. A number kept by hand in a different
+    file from the thing it counts.
+
+    So this reads the counts FROM THE APP and compares them against every
+    literal pin in the test target. It does not have a list of the right
+    answers; it derives them.
+
+    A pin is still worth having: `fieldCount == 6` is how adding a family
+    becomes a decision somebody takes on purpose. This rule does not remove
+    the decision, it removes the four rounds of discovering which pins exist.
+    """
+    rule = "pinned counts match the source"
+
+    boot = APP / "DatabaseBootstrap.swift"
+    mode = APP / "PersistenceMode.swift"
+    for p in (boot, mode):
+        if not p.exists():
+            fail(rule, f"{p} is missing — this rule cannot read the truth")
+            return
+    bsrc = strip_comments(boot.read_text())
+    msrc = strip_comments(mode.read_text())
+
+    truth = {}
+
+    m = re.search(r"static let fieldCount\s*=\s*(\d+)", bsrc)
+    if not m:
+        fail(rule, "DatabaseBootstrap.fieldCount could not be read")
+        return
+    truth["fieldCount"] = int(m.group(1))
+
+    m = re.search(r"static let diagnosticLineCount\s*=\s*fieldCount\s*\+\s*(\d+)",
+                  bsrc)
+    if not m:
+        fail(rule, "diagnosticLineCount is no longer `fieldCount + N` — this "
+                   "rule was reading a shape that has changed")
+        return
+    truth["diagnosticLineCount"] = truth["fieldCount"] + int(m.group(1))
+
+    fam = braced(msrc, "nonisolated enum Family: String, CaseIterable, Sendable")
+    if fam is None:
+        fail(rule, "PersistenceAuthority.Family could not be located")
+        return
+    cases = []
+    for line in fam.split("\n"):
+        s = line.strip()
+        if s.startswith("case "):
+            cases += [c.strip() for c in s[5:].split(",") if c.strip()]
+    truth["Family.allCases.count"] = len(cases)
+
+    m = re.search(r"static let hydratedFamilies: Set<Family> = \[(.*?)\]",
+                  msrc, re.S)
+    if not m:
+        fail(rule, "hydratedFamilies could not be read")
+        return
+    truth["hydratedFamilies.count"] = len(re.findall(r"\.(\w+)", m.group(1)))
+
+    # BRACKET-MATCHED, NOT BRACE-MATCHED. `braced` finds the next `{` after a
+    # header; `all` is an ARRAY literal, so the nearest brace belongs to some
+    # later declaration entirely and the entry count came back 0. The rule
+    # reported a number of pins well above its floor while comparing them all
+    # against nothing — §12.69's exact failure, in the rule written to enforce
+    # §12.69. Caught by 377d's own guard, which parses this differently on
+    # purpose.
+    i = msrc.find("nonisolated static let all: [Entry] = [")
+    if i < 0:
+        fail(rule, "HydratedStores.all could not be located")
+        return
+    j = msrc.index("[", msrc.index("= [", i))
+    depth, k = 0, j
+    while k < len(msrc):
+        if msrc[k] == "[":
+            depth += 1
+        elif msrc[k] == "]":
+            depth -= 1
+            if depth == 0:
+                break
+        k += 1
+    else:
+        fail(rule, "HydratedStores.all is not bracket-balanced")
+        return
+    truth["HydratedStores.all.count"] = msrc[j:k].count(".init(check:")
+    if truth["HydratedStores.all.count"] == 0:
+        fail(rule, "HydratedStores.all parsed to zero entries — this rule is "
+                   "reading the wrong thing and every comparison below it is "
+                   "meaningless. §12.69")
+        return
+
+    # EVERY FAMILY MUST BE HYDRATED IS *NOT* WHAT THIS ASSERTS. B3 will read a
+    # family before it feeds it and the two counts will differ on purpose.
+    # What it does assert is that a slice cannot feed a family that does not
+    # exist, which would be a typo rather than a decision.
+    if truth["hydratedFamilies.count"] > truth["Family.allCases.count"]:
+        fail(rule, "hydratedFamilies names more families than Family declares")
+
+    # ---- the pins, in the tests
+    if not TESTS.is_dir():
+        fail(rule, f"{TESTS} is not a directory")
+        return
+
+    # (regex, which truth it must equal). Each is anchored on the OWNING TYPE
+    # where one exists: `AppStores.fieldCount` is a different number in the
+    # write direction and pinning it to this one would be a false failure.
+    PINS = [
+        (r"DatabaseBootstrap\.fieldCount\s*==\s*(\d+)", "fieldCount"),
+        (r"DatabaseBootstrap\.diagnosticLineCount\s*==\s*(\d+)",
+         "diagnosticLineCount"),
+        (r"PersistenceAuthority\.Family\.allCases\.count\s*==\s*(\d+)",
+         "Family.allCases.count"),
+        (r"PersistenceAuthority\.hydratedFamilies\.count\s*==\s*(\d+)",
+         "hydratedFamilies.count"),
+        (r"HydratedStores\.all\.count\s*==\s*(\d+)", "HydratedStores.all.count"),
+        (r"selfReferentialChecks\.count\s*==\s*(\d+)",
+         "HydratedStores.all.count"),
+        (r"\.checks\.count\s*-\s*(\d+)", "HydratedStores.all.count"),
+        (r"\.checks\.count\s*-\s*\S*\.independentChecks\.count\s*==\s*(\d+)",
+         "HydratedStores.all.count"),
+        (r'"Database bootstrap:\s*(\d+) families', "fieldCount"),
+    ]
+
+    pins = 0
+    for f in sorted(TESTS.rglob("*.swift")):
+        # BLANKED, NOT REMOVED. `strip_comments` drops lines, so every number
+        # after the first comment is wrong — and a failure message that names
+        # the wrong line sends a reader to the wrong assertion. §12.15.
+        for n, raw in enumerate(f.read_text().split("\n"), 1):
+            if raw.strip().startswith("//"):
+                continue
+            for pattern, key in PINS:
+                for m in re.finditer(pattern, raw):
+                    pins += 1
+                    got, want = int(m.group(1)), truth[key]
+                    if got != want:
+                        fail(rule,
+                             f"{f.name} line ~{n}: pinned {got}, the source "
+                             f"says {key} is {want}. `{raw.strip()[:60]}`. "
+                             "Adding a family is a decision and this pin is "
+                             "how it is taken — but it is taken in the patch "
+                             "that adds the family, not four rounds later. "
+                             "§12.121.8")
+
+    # THIRTEEN PINS ACROSS 119 TEST FILES as of 377d, so the floor is eight —
+    # this file's usual "well under the real figure", not one below it. A
+    # floor sitting on top of the count fires on the next patch that retires
+    # an assertion, which teaches a reader to lower it without thinking.
+    counted(rule, pins, 8, "count pins compared against the source")
+    # NOT THE SAME KIND OF FLOOR. The five above are a DECLARED arity, not a
+    # discovered population: every one of them hard-fails this rule if it
+    # cannot be parsed. It is here so the printed report says what the rule
+    # was comparing against, which is the other half of §12.69.
+    counted(rule, len(truth), 5, "counts derived from the app")
+
+    # WHAT THIS RULE DOES NOT COVER, said out loud. Ten of 377's eighteen
+    # stale assertions are numbers and are above. The other eight are array
+    # literals (`hydratedFamilies == [...]`, `emptyAuthoredFamilies`), a set of
+    # check names, and two claims about what a comparison MEANS. None is a
+    # count, so none can be derived this way. `apply-377d.py`'s guards cover
+    # those, and a future family addition still has to read §12.121.8 rather
+    # than trust a green run here.
+
+
 RULES = [
     every_store_that_records_a_read_refuses_a_write,
     every_removal_counter_is_in_the_total,
     no_expect_message_is_a_concatenation,
     minutes_are_never_accumulated,
+    pinned_counts_match_the_source,
 ]
 
 for r in RULES:

@@ -127,6 +127,11 @@ nonisolated struct DatabaseBootstrap: Sendable {
     /// its trimmings are two entries.
     let authored: AuthoredLoad
     let decisions: MatchDecisionLoad
+    /// **PATCH 377 — D7 slice B2, finished.** A third read that can fail on its
+    /// own, for `decisions`' reason. The moves were built at 365 and the slice
+    /// table of 10 August has no row for them; they are authored data of
+    /// exactly B2's kind and were the last of it still on a file.
+    let moves: PlanMoveLoad
 
     /// THE NUMBER A TEST HOLDS — see `AppStores.fieldCount` and its comment.
     ///
@@ -134,7 +139,7 @@ nonisolated struct DatabaseBootstrap: Sendable {
     /// family a thing somebody has to acknowledge, which is the half that can
     /// be checked cheaply. Three at B1: the plan, its trimmings, and the
     /// athlete.
-    static let fieldCount = 5
+    static let fieldCount = 6
 
     // MARK: The two verdicts
 
@@ -146,6 +151,7 @@ nonisolated struct DatabaseBootstrap: Sendable {
     var wasReadCleanly: Bool {
         plan.wasReadCleanly && extras.wasReadCleanly && athlete.wasReadCleanly
             && authored.wasReadCleanly && decisions.wasReadCleanly
+            && moves.wasReadCleanly
     }
 
     /// Does every family hold something to hydrate a store from.
@@ -184,6 +190,7 @@ nonisolated struct DatabaseBootstrap: Sendable {
         if !decisions.wasReadCleanly {
             return "the match decisions — \(decisions.line)"
         }
+        if !moves.wasReadCleanly { return "the plan moves — \(moves.line)" }
         return nil
     }
 
@@ -210,6 +217,9 @@ nonisolated struct DatabaseBootstrap: Sendable {
         }
         if decisions.wasReadCleanly, !decisions.holdsContent {
             out.append("match decisions")
+        }
+        if moves.wasReadCleanly, !moves.holdsContent {
+            out.append("plan moves")
         }
         return out
     }
@@ -272,6 +282,19 @@ nonisolated struct DatabaseBootstrap: Sendable {
         return d
     }
 
+    /// The stored plan moves, or nil. Same rule, same reason — patch 377.
+    ///
+    /// NIL WHEN EMPTY, and on this store that matters more than on the others:
+    /// a move is one row in `correction`, the athlete makes them rarely, and a
+    /// clean read of an empty table is indistinguishable from a write-through
+    /// that has not caught up. Hydrating there would blank `moves.json`, which
+    /// is the legacy side's only copy. §12.8.1.
+    var hydratableMoves: [PlanMove]? {
+        guard case .loaded(let m, _) = moves, moves.holdsContent
+        else { return nil }
+        return m
+    }
+
     // MARK: The paste
 
     /// UNCONDITIONAL, one line per family plus the two verdicts — §12.54.2.
@@ -303,7 +326,8 @@ nonisolated struct DatabaseBootstrap: Sendable {
                  "  plan trimmings: \(extras.line)",
                  "  athlete: \(athlete.line)",
                  "  notes and commutes: \(authored.line)",
-                 "  match decisions: \(decisions.line)"]
+                 "  match decisions: \(decisions.line)",
+                 "  plan moves: \(moves.line)"]
         l.append("  every read succeeded: \(wasReadCleanly ? "yes" : "no")")
         l.append("  first fault: \(firstFault ?? "none")")
         l.append("  every family holds data: \(canHydrate ? "yes" : "no")")
@@ -333,7 +357,8 @@ nonisolated enum DatabaseBootstrapReader {
                           extras: PlanExtrasRepository.load(db),
                           athlete: AthleteRepository.load(db),
                           authored: AuthoredRepository.load(db),
-                          decisions: MatchDecisionRepository.load(db))
+                          decisions: MatchDecisionRepository.load(db),
+                          moves: PlanMoveRepository.load(db))
     }
 }
 
@@ -416,7 +441,10 @@ nonisolated enum HydrationPlanner {
                      // paste.
                      authored: (notes: [NotesStore.Note],
                                 commutes: [CommuteDecision])?,
-                     decisions: [MatchDecision]?)
+                     decisions: [MatchDecision]?,
+                     // PATCH 377 — the third optional family, nil for the same
+                     // two distinct reasons as the two above it.
+                     moves: [PlanMove]?)
     }
 
     /// ORDER MATTERS AND IT IS THE POINT.
@@ -452,7 +480,9 @@ nonisolated enum HydrationPlanner {
                 authored: PersistenceAuthority.hydrates(.authored)
                     ? bootstrap.hydratableAuthored : nil,
                 decisions: PersistenceAuthority.hydrates(.decisions)
-                    ? bootstrap.hydratableDecisions : nil)
+                    ? bootstrap.hydratableDecisions : nil,
+                moves: PersistenceAuthority.hydrates(.moves)
+                    ? bootstrap.hydratableMoves : nil)
         }
         return .leaveOnFiles(
             .nothingStored(bootstrap.firstEmpty ?? "a family this build does not name"))

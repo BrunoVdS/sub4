@@ -299,20 +299,34 @@ final class Sub4Launch {
         // authored store. Until 365 the store was a lazy singleton first
         // touched by `AppStores.current()`, which meant an unreadable file did
         // not reach Settings until the first import of the session.
-        let moves = PlanMoveStore.shared.all
-
+        // PATCH 377 — THE HOISTED READ IS GONE, AND THAT IS THE PATCH.
+        //
+        // 365 read `PlanMoveStore.shared.all` once here, before the switch,
+        // which was right while the store could only ever hold the file's
+        // moves. Since 377 the hydrate path REPLACES them first, and a value
+        // captured above the switch would have been the file's answer applied
+        // over a store that had just been given the database's.
+        //
+        // Each path now asks at the moment it has an answer. Still one
+        // main-actor step with no suspension inside it — 365's requirement,
+        // unchanged: nothing observes a plan hydrated and not yet corrected.
         switch instruction {
         case .leaveOnFiles(let outcome):
             // THE PLAN IS THE BUNDLE ON THIS PATH and the moves still apply.
             // A move is the athlete's, not the database's; refusing to honour
             // it because a slice is off would be the app quietly disagreeing
             // with something he wrote.
-            PlanStore.shared.applyMoves(moves)
+            PlanStore.shared.applyMoves(PlanMoveStore.shared.all)
             return outcome
         case .hydrate(let plan, let constants, let zones, let ftp,
-                      let authored, let decisions):
+                      let authored, let decisions, let storedMoves):
             PlanStore.shared.hydrate(from: plan)
-            PlanStore.shared.applyMoves(moves)
+            // BEFORE `applyMoves`, NOT AFTER. The plan is corrected FROM this
+            // store, so a store hydrated afterwards would be right and the
+            // served plan would be wrong until the next launch — the quietest
+            // possible version of this bug. Patch 377.
+            if let storedMoves { PlanMoveStore.shared.hydrate(from: storedMoves) }
+            PlanStore.shared.applyMoves(PlanMoveStore.shared.all)
             ConstantsStore.shared.hydrate(from: constants)
             AthleteStore.shared.hydrate(zones: zones, ftp: ftp)
             var what = "the plan, its trimmings, the athlete and the constants"
@@ -337,6 +351,10 @@ final class Sub4Launch {
                 Matcher.shared.hydrate(from: decisions)
                 what += ", the match decisions"
             }
+            // AFTER the others in the sentence and BEFORE them in the code,
+            // because the sentence lists what moved and the code has an
+            // ordering constraint. Patch 377.
+            if storedMoves != nil { what += ", the plan moves" }
             return .hydrated(what)
         }
     }

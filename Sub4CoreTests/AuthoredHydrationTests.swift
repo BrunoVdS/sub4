@@ -57,17 +57,24 @@ struct AuthoredHydrationTests {
     /// It is not deleted, because the property it defends did not go away — it
     /// changed value. `B2ActivationTests` owns the flip; this one stays here so
     /// that the file which built the machinery also says, in one place, what
-    /// the machinery ended up doing. A later slice adding a sixth family
-    /// separates these two counts again, and this is where that shows up.
+    /// the machinery ended up doing.
+    ///
+    /// **THE PREDICTION IN THIS DOC WAS WRONG, AND 377 IS HOW — §12.121.8.**
+    /// It said a later slice adding a sixth family would separate these two
+    /// counts again. The sixth family arrived at 377 and they never separated:
+    /// the moves' machinery had been built at 361 and 365, so the family and
+    /// its flip landed in one patch. What separates the counts is a family
+    /// READ before it is FED, and 377 was not that shape. B3 will be.
     @Test("This build hydrates every family the bootstrap reads")
     func everyFamilyHydratesNow() {
         #expect(PersistenceAuthority.hydratedFamilies
-                == [.plan, .extras, .athlete, .authored, .decisions])
+                == [.plan, .extras, .athlete, .authored, .decisions, .moves])
         #expect(PersistenceAuthority.hydrates(.plan))
         #expect(PersistenceAuthority.hydrates(.authored))
         #expect(PersistenceAuthority.hydrates(.decisions))
-        #expect(PersistenceAuthority.Family.allCases.count == 5,
-                "five families, all five fed from the database at B2")
+        #expect(PersistenceAuthority.hydrates(.moves))
+        #expect(PersistenceAuthority.Family.allCases.count == 6,
+                "six families, all six fed from the database at B2")
     }
 
     // MARK: The two verdicts — §12.92
@@ -108,17 +115,18 @@ struct AuthoredHydrationTests {
 
     // MARK: The bootstrap, over a real empty database
 
-    @Test("Five families, read cleanly, holding nothing")
-    func theBootstrapReadsFiveFamilies() throws {
+    @Test("Six families, read cleanly, holding nothing")
+    func theBootstrapReadsSixFamilies() throws {
         let db = try Sub4Database.inMemory()
         let b = DatabaseBootstrapReader.read(db)
 
-        #expect(DatabaseBootstrap.fieldCount == 5)
+        #expect(DatabaseBootstrap.fieldCount == 6)
         #expect(b.wasReadCleanly, "a migrated empty database reads cleanly")
         #expect(b.firstFault == nil)
         #expect(!b.canHydrate, "and holds no plan, which is a fresh install")
         #expect(b.emptyAuthoredFamilies == ["notes and commutes",
-                                            "match decisions"])
+                                            "match decisions",
+                                            "plan moves"])
     }
 
     /// The pin exists so a family added without a line is a test failure rather
@@ -140,7 +148,7 @@ struct AuthoredHydrationTests {
         // is NOT to be compared against into this line. What this test pins is
         // that the family count is the first thing said, which is what it
         // always meant.
-        #expect(lines.first?.hasPrefix("Database bootstrap: 5 families") == true)
+        #expect(lines.first?.hasPrefix("Database bootstrap: 6 families") == true)
     }
 
     // MARK: An empty family is not hydratable

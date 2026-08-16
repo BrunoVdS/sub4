@@ -170,7 +170,8 @@ nonisolated enum PersistenceAuthority {
     /// it, and it cannot switch B1 off by editing a string. §12.43.
     static let sliceUnderTest: String? =
         "B1 — the plan, the athlete and the constants"
-        + "; B2 — the notes, the commute decisions and the match decisions"
+        + "; B2 — the notes, the commute decisions, the match decisions"
+        + " and the plan moves"
 
     /// WHICH FAMILIES THIS BUILD ACTUALLY HYDRATES — patch 357, §12.102.
     ///
@@ -186,6 +187,9 @@ nonisolated enum PersistenceAuthority {
     /// possible twice.
     nonisolated enum Family: String, CaseIterable, Sendable {
         case plan, extras, athlete, authored, decisions
+        /// PATCH 377. Built at 365, after this enum was written, and authored
+        /// data of B2's own kind — the last of that slice still on a file.
+        case moves
     }
 
     /// **PATCH 358 IS THIS LINE.** Every family the bootstrap reads is now
@@ -198,7 +202,7 @@ nonisolated enum PersistenceAuthority {
     /// written and still complete — that is what makes a slice a slice, and it
     /// is why hydration MUST NOT WRITE. See `NotesStore.hydrate(from:)`.
     static let hydratedFamilies: Set<Family> = [.plan, .extras, .athlete,
-                                                .authored, .decisions]
+                                                .authored, .decisions, .moves]
 
     /// Whether this build feeds a given store from the database. Asked by the
     /// planner and by nothing else — a second caller would be a second opinion
@@ -337,6 +341,14 @@ nonisolated enum HydratedStores {
               slice: "B2"),
         .init(check: "match decisions",
               store: "Matcher.decisions",
+              slice: "B2"),
+        // PATCH 377. `session moves` IS THE VERIFIER'S OWN NAME for this
+        // comparison — `SemanticVerifier` has produced it since 361. An entry
+        // naming a check that does not exist is what
+        // `unmatchedHydratedEntries` reports, so this string is copied from
+        // there rather than invented to match the store.
+        .init(check: "session moves",
+              store: "PlanMoveStore.moves",
               slice: "B2"),
     ]
 
