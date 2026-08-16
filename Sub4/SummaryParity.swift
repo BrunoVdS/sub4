@@ -68,14 +68,45 @@ import Foundation
 @MainActor
 enum SummaryParity {
 
-    /// SHORTER THAN EVERY OTHER SLICE'S, and that is the finding. Slices 1–5
-    /// hold the plan; this one reads it.
-    static let heldFromTheApp = "the match decisions"
+    /// SHORTER THAN EVERY OTHER SLICE'S, and that is still the finding. Slices
+    /// 1–5 hold the plan; this one reads it.
+    ///
+    /// **THE MOVES JOIN AT 382, AND THEY WERE ALWAYS HELD — the line simply did
+    /// not say so.** The app side reads a plan `Sub4Launch` corrected with
+    /// `applyMoves`; until 382 the database side read the stored sessions
+    /// uncorrected, and the device reported two moved sessions as a divergence.
+    /// They are now applied to both sides from one place, which makes them a
+    /// held input exactly like the match decisions.
+    static let heldFromTheApp = "the match decisions and the plan moves"
 
-    /// `match_decision` holds no rows on the device, so there is nothing for a
-    /// read-back to have verified. Stated rather than left blank — an empty
-    /// string here would read as "everything is verified".
+    /// THE LEGACY DEFAULT, AND IT IS KEPT SO A CALLER THAT DOES NOT SET
+    /// `Report.verifiedNote` ANNOUNCES ITSELF — 356's argument, and this
+    /// string is the reason it matters: it said `match_decision` held no rows
+    /// while the table held seven and the authored read-back compared all
+    /// seven. True at 330, false from 358, and printed unchanged until 382.
+    ///
+    /// A sentence about what a store CURRENTLY holds cannot be a constant.
     static let verifiedByReadBack = "none — match_decision holds no rows"
+
+    /// What the authored read-back has actually verified, from what the stores
+    /// actually hold — patch 382.
+    ///
+    /// BOTH COUNTS, NAMED SEPARATELY. Seven decisions and no moves is a
+    /// different sentence from no decisions and two moves, and a reader
+    /// checking this against the authored block wants to see the same numbers.
+    static func verifiedNote(decisions: Int, moves: Int) -> String {
+        switch (decisions, moves) {
+        case (0, 0):
+            "none — the match decisions and the moves are both empty"
+        case (let d, 0):
+            "the match decisions (\(d)), by the authored read-back"
+        case (0, let m):
+            "the plan moves (\(m)), by the authored read-back"
+        case (let d, let m):
+            "the match decisions (\(d)) and the plan moves (\(m)), "
+            + "by the authored read-back"
+        }
+    }
 
     static let toleranceLabel = "1 m · 0.001 h"
     private static let distanceTolerance = 0.001      // km
@@ -131,6 +162,13 @@ enum SummaryParity {
         /// adherence line are already two paths to it.
         var blockLine = "—"
         var blockDiffers = false
+
+        /// **WHAT VERIFIED THE HELD INPUTS, SET BY THE CALLER — patch 382.**
+        /// The default names the state the static constant described, so a
+        /// report nobody told says so rather than inventing a reassurance.
+        /// §12.15, and the same shape `ActivityParity.appSideCameFrom` took at
+        /// 381.
+        var verifiedNote = SummaryParity.verifiedByReadBack
 
         var totalCompared: Int { weeksCompared + volumeRowsCompared }
 
@@ -191,7 +229,7 @@ enum SummaryParity {
             lines.append("  volume figures that differ: \(volumeDifferences.count)")
             lines.append("  tolerance: \(toleranceLabel)")
             lines.append("  held from the app: \(heldFromTheApp)")
-            lines.append("  of those, verified: \(verifiedByReadBack)")
+            lines.append("  of those, verified: \(verifiedNote)")
             lines.append("  unexplained differences: \(unexplained)")
             for d in weekDifferences.prefix(8) { lines.append("    \(d)") }
             if weekDifferences.count > 8 {

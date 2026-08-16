@@ -419,9 +419,31 @@ final class ShadowParity {
 
         let todayKey = DayKey.key()
         let decisions = Matcher.shared.decisions
+        // PATCH 382 — **THE TWIN APPLIES THE ATHLETE'S MOVES, AND UNTIL NOW IT
+        // DID NOT.** Found on the device, on the Compare that gated B3's flip:
+        // `block sessions: 15 of 18 vs 13 of 18` over two moved sessions.
+        //
+        // The app side below reads `PlanStore.shared.plan.sessions`, which
+        // `Sub4Launch` corrected with `applyMoves` at launch. The database side
+        // read `PlanRepository`'s sessions as stored. So the app counted a
+        // session on the day it was done and the twin counted it on the day it
+        // was planned, and the difference was reported as a divergence between
+        // the two sides rather than as a rule one of them had skipped.
+        //
+        // NOTHING WAS MISSING FROM THE DATABASE: `correction` holds both moves
+        // and the authored read-back compares them, 2 vs 2, zero differences.
+        // §12.43 — call the rule, do not leave it out.
+        //
+        // THE MOVES ARE THE SAME ON BOTH SIDES, deliberately, exactly as the
+        // match decisions and the heart-rate zones are. `PlanMoveStore` is
+        // hydrated from the database at B2 and verified by its own read-back;
+        // taking them from two places would make a difference here mean either
+        // the plan or the corrections. §12.61.1.
+        let moves = PlanMoveStore.shared.all
+        let dbSessionsMoved = PlanCorrections.apply(dbSessions, moves: moves)
         let mineByDay = ActivityRoster.byDay(app)
         let theirsByDay = ActivityRoster.byDay(twin)
-        let dbByDate = Dictionary(grouping: dbSessions.filter { $0.date != nil },
+        let dbByDate = Dictionary(grouping: dbSessionsMoved.filter { $0.date != nil },
                                   by: { $0.date! })
 
         var askedApp = 0, hadApp = 0
@@ -442,7 +464,7 @@ final class ShadowParity {
 
         let databasePoints = TabSummary.weekPoints(
             weeks: dbWeeks,
-            sessions: dbSessions,
+            sessions: dbSessionsMoved,
             todayKey: todayKey,
             day: { key in
                 askedDatabase += 1
@@ -459,7 +481,7 @@ final class ShadowParity {
         // figures would also show, but this says it in days.
         let asked = max(askedApp, askedDatabase)
 
-        return SummaryParity.compare(
+        var report = SummaryParity.compare(
             app: appPoints,
             database: databasePoints,
             appActual: TabSummary.actualVolume(app),
@@ -467,8 +489,14 @@ final class ShadowParity {
             appPlanned: PlanStore.plannedVolume(
                 sessions: PlanStore.shared.plan.sessions,
                 weeksByUid: PlanStore.shared.weeksByUid),
+            // MOVED SESSIONS HERE TOO, and it changes nothing today: a move
+            // alters the DAY and never the week membership (§12.106's own
+            // note), so the planned volume per week is identical either way.
+            // Passed for symmetry rather than for effect — the app side is the
+            // corrected plan, and two sides computed from differently-shaped
+            // inputs is how a later change becomes a mystery.
             databasePlanned: PlanStore.plannedVolume(
-                sessions: dbSessions,
+                sessions: dbSessionsMoved,
                 weeksByUid: Dictionary(dbWeeks.map { ($0.uid, $0) },
                                        uniquingKeysWith: { a, _ in a })),
             planSessionsInApp: PlanStore.shared.plan.sessions.count,
@@ -476,6 +504,14 @@ final class ShadowParity {
             daysAskedFor: asked,
             daysWithContentInApp: hadApp,
             daysWithContentInDatabase: hadDatabase)
+        // PATCH 382 — DERIVED, BECAUSE THE STATIC ONE WENT STALE. It read
+        // "none — match_decision holds no rows" while the table held seven and
+        // the authored read-back compared all seven. True at 330, false since
+        // 358, and printed on the screen this stage reads as evidence.
+        // The caller has the counts; the sentence is built from them. §12.15.
+        report.verifiedNote = SummaryParity.verifiedNote(
+            decisions: decisions.count, moves: moves.count)
+        return report
     }
 
     /// Slice 4 — patch 320.

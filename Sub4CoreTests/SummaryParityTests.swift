@@ -292,12 +292,49 @@ struct SummaryParityTests {
     /// SHORTER THAN EVERY OTHER SLICE'S, and the test says so rather than
     /// leaving it to be noticed: this is the only slice that reads the plan
     /// from the database instead of holding it from the app.
-    @Test("This slice holds only the match decisions")
-    func thisSliceHoldsOnlyTheDecisions() {
-        #expect(SummaryParity.heldFromTheApp == "the match decisions")
+    /// 382 — THE MOVES JOIN THE LINE. They were always a held input: the app
+    /// side reads a plan `applyMoves` has corrected. Until 382 the database
+    /// side read the stored sessions uncorrected, and the device reported two
+    /// moved sessions as a divergence between the sides.
+    @Test("This slice holds the match decisions and the moves, and not the plan")
+    func thisSliceHoldsTheDecisionsAndTheMoves() {
+        #expect(SummaryParity.heldFromTheApp
+                == "the match decisions and the plan moves")
         #expect(!SummaryParity.verifiedByReadBack.isEmpty,
                 "an empty string would read as everything being verified")
         #expect(MatchParity.heldFromTheApp.contains("plan"),
                 "slice 5 holds the plan; slice 8 does not, and that is the finding")
+    }
+
+    /// **THE SENTENCE THAT WENT STALE, AND WHY IT IS NOW A FUNCTION.** The
+    /// constant said `match_decision` held no rows; the table has held seven
+    /// since 358 and the authored read-back compares all seven. A sentence
+    /// about what a store currently holds cannot be a constant. §12.15.
+    @Test("What verified the held inputs is derived from what they hold")
+    func theVerifiedNoteIsDerived() {
+        #expect(SummaryParity.verifiedNote(decisions: 0, moves: 0)
+                .hasPrefix("none"),
+                "both empty is the only case that may say none")
+        #expect(SummaryParity.verifiedNote(decisions: 7, moves: 2)
+                .contains("(7)"))
+        #expect(SummaryParity.verifiedNote(decisions: 7, moves: 2)
+                .contains("(2)"))
+        #expect(!SummaryParity.verifiedNote(decisions: 7, moves: 0)
+                .contains("moves"),
+                "no moves is not the same sentence as some")
+        #expect(SummaryParity.verifiedNote(decisions: 0, moves: 2)
+                .contains("plan moves (2)"))
+    }
+
+    /// The default is the legacy constant, so a caller that has not been
+    /// updated announces itself in the paste rather than hiding — 356's
+    /// argument, and this is the report it was written for.
+    @Test("A report nobody told carries the constant")
+    func theDefaultAnnouncesItself() {
+        let r = compare(app: [point(1)], database: [point(1)])
+        #expect(r.verifiedNote == SummaryParity.verifiedByReadBack)
+        #expect(r.diagnosticLines.contains {
+            $0.contains("of those, verified: \(SummaryParity.verifiedByReadBack)")
+        })
     }
 }

@@ -8962,6 +8962,103 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.127 The twin did not apply the athlete's moves — patch 383
+
+Found by the device on the Compare pressed to gate B3's flip. It is the first
+finding this project has had from slice 8, and it arrived exactly where §12.75
+said it would.
+
+**It should have landed before §12.126 and did not**: two patches were
+delivered under one file name and the flip was the one installed. The
+difference it describes was measured at 381a and is unchanged at 382, so it is
+known not to be the flip's — which is the only thing the ordering was
+protecting.
+
+### 12.127.1 What the screen said
+
+    Summary parity: 7 compared · 2 differences
+      block sessions: 15 of 18 vs 13 of 18
+      week fields that differ: 1
+      unexplained differences: 2
+        week 3 · done
+
+Slices 1 to 5 were clean in the same run — 694 activities compared, zero
+differences in identity, order, days, volume, load, details or matching, with
+the app side read from `activities.json` directly (381).
+
+### 12.127.2 The cause, and it is the comparison rather than the data
+
+`ShadowParity.summaryReport` built its app side from
+`PlanStore.shared.plan.sessions`, which `Sub4Launch` corrects with `applyMoves`
+at launch, and its database side from `PlanRepository`'s sessions **as stored**.
+The athlete has moved two sessions. The app counted them on the day they were
+done; the twin counted them on the day they were planned. Two moves, two
+differences, `15 of 18` against `13 of 18`.
+
+**The database was not missing anything.** `correction` holds both moves and
+the authored read-back compares them — 2 vs 2, zero field differences, in the
+same paste. The twin simply never called `PlanCorrections.apply`. §12.43, in
+the one slice that reads the plan from the database instead of holding it from
+the app.
+
+### 12.127.3 Why nothing could have caught it earlier
+
+The moves shipped at 365 and were hydrated at 377. **Every other slice holds
+the plan from the app**, so both of their sides carry the same corrected dates
+and no difference can appear. Slice 8 is the only comparison that reads the
+plan from the database — which makes it the only one that could show this, and
+the last recorded Compare predates the moves entirely.
+
+No test could see it either: `SummaryParityTests` compares week points it
+builds itself, and `ShadowParity.summaryReport` is private and takes its inputs
+from three singletons. **The device was the only instrument.** §12.77's lesson
+in the other direction: real data beats tests, and a comparison nobody has run
+since a feature landed is a comparison that describes the build before it.
+
+### 12.127.4 The moves are held on both sides, deliberately
+
+They now come from `PlanMoveStore.shared.all` and are applied to the database
+side before anything is derived from it. That makes them a HELD input, exactly
+like the match decisions (§12.61.1) and the heart-rate zones (patch 316):
+taking them from two places would make a difference here mean either the plan
+or the corrections, and neither could be told from the other.
+
+The store is hydrated from the database at B2 and verified by its own
+read-back, so holding it is not holding an unchecked value.
+
+`heldFromTheApp` says so now. It said `"the match decisions"` while the app
+side had been reading a corrected plan since 365 — the line was not wrong about
+what it named, it was wrong about what it left out.
+
+### 12.127.5 And a sentence under it that had gone stale
+
+`verifiedByReadBack` was the literal `"none — match_decision holds no rows"`.
+The table has held seven since 358 and the authored read-back compares all
+seven with zero differences — in the same paste, twenty lines further down.
+True when written at 330, false from 358, and printed unchanged until tonight.
+
+**A sentence about what a store CURRENTLY holds cannot be a constant.** It is
+now `verifiedNote(decisions:moves:)`, built by the caller from the counts it
+already has, with the old constant kept as the Report's default so that a
+caller which has not been updated announces itself rather than inventing a
+reassurance. That is 356's shape, used for the third time in three patches —
+and each time it has been the same failure: a value that describes the world
+being stored as if it described the code.
+
+### 12.127.6 What this does not change
+
+No figure on any screen the athlete uses. `PlanStore` already applied the
+moves; this corrects the twin that was checking it. The expected reading after
+this patch is `Summary parity: 7 compared · no differences`, and the block
+tally the same on both sides.
+
+**And it closes the last red row left by the flip.** The 382 paste has slices 1
+to 5 at zero differences and this one at two; when it reads zero, every slice
+on that screen is clean with the activity side hydrated from the database,
+which is what B3 set out to be able to say.
+
+---
+
 ## 12.126 B3 is switched on — patch 382, D7 slice B3
 
 `hydratedFamilies` gains `.activities`. Everything else in the patch is the
