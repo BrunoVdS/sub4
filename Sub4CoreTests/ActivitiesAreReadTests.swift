@@ -33,27 +33,30 @@ struct ActivitiesAreReadTests {
 
     // MARK: THE ONE THAT IS THE POINT
 
-    /// **THE GAP.** Seven read, six fed.
-    @Test("The two counts have separated, and that separation is the slice")
-    func theTwoCountsHaveSeparated() {
+    /// **THE GAP IS CLOSED — patch 382, and this is the inversion 379 wrote
+    /// this test to make visible.** Seven read, seven fed. The `>` became an
+    /// `==` and the `!` went, in a diff that also contains the line that did
+    /// it, which is the whole reason the two were separate patches.
+    @Test("The two counts have met again, and that is the flip")
+    func theTwoCountsHaveMetAgain() {
         #expect(PersistenceAuthority.Family.allCases.count == 7)
-        #expect(PersistenceAuthority.hydratedFamilies.count == 6)
+        #expect(PersistenceAuthority.hydratedFamilies.count == 7)
         #expect(PersistenceAuthority.Family.allCases.count
-                > PersistenceAuthority.hydratedFamilies.count,
-                "a family read before it is fed — that is what a slice is")
-        #expect(!PersistenceAuthority.hydrates(.activities),
-                "381 is the line that changes this, and it is one line")
+                == PersistenceAuthority.hydratedFamilies.count,
+                "every family the bootstrap reads is now fed to a store")
+        #expect(PersistenceAuthority.hydrates(.activities),
+                "and the line that did it is one line in PersistenceMode")
     }
 
-    /// The gap is exactly one family and it is the one this patch added. A
-    /// second family falling out of `hydratedFamilies` would satisfy the
-    /// counts above while meaning something completely different.
-    @Test("The gap is exactly the activities and nothing else")
-    func theGapIsExactlyTheActivities() {
+    /// **THE SET COMPARISON SURVIVES THE FLIP, AND IT IS WHY IT WAS WRITTEN
+    /// AS A SET.** A count of 7 against 7 could hide one family dropping out
+    /// as another joined; the two subtractions cannot.
+    @Test("Nothing is read that is not fed, and nothing fed that is not read")
+    func theTwoSetsAreTheSame() {
         let read = Set(PersistenceAuthority.Family.allCases)
         let fed = PersistenceAuthority.hydratedFamilies
-        #expect(read.subtracting(fed) == [.activities],
-                "if anything else stopped hydrating, that is not this patch")
+        #expect(read.subtracting(fed).isEmpty,
+                "the gap closed at 382 and nothing else opened one")
         #expect(fed.subtracting(read).isEmpty,
                 "and nothing is fed that the bootstrap does not read")
     }
@@ -186,16 +189,34 @@ struct ActivitiesAreReadTests {
     /// `PlanMoveImportTests` asserted the same thing about the moves and 377d
     /// had to invert it four rounds later. This test exists so that inversion
     /// is expected rather than discovered.
-    @Test("The activity comparison is still evidence, and 381 is what ends it")
-    func theActivityComparisonIsStillEvidence() throws {
+    /// **THE INVERSION, AND IT IS THREE COMPARISONS RATHER THAN ONE.**
+    ///
+    /// 379 pinned this so the day it stopped being evidence was a claim
+    /// becoming false rather than a number quietly sliding. That day is 382,
+    /// and the enumeration found two more comparisons taking their expectation
+    /// from the same list: the id set and the volume sums. §12.126.2.
+    ///
+    /// **THE GLOBAL COUNT LIVES HERE AND NOWHERE ELSE NOW.** `B2ActivationTests`
+    /// pinned it too, which meant every future slice broke a suite about a
+    /// past one — 377d's four rounds in miniature. It is rescoped there.
+    @Test("Three comparisons stopped being evidence, and this is where that is said")
+    func threeComparisonsStoppedBeingEvidence() throws {
         let db = try Sub4Database.inMemory()
         let r = try SemanticVerifier.verify(db, activities: [])
 
-        #expect(HydratedStores.entry(for: "activities") == nil,
-                "nothing feeds ActivityStore from the database yet")
-        #expect(r.independentChecks.contains { $0.name == "activities" },
-                "so its expectation is still read from the app's own files")
-        #expect(HydratedStores.all.count == 5,
-                "B1's one and B2's four; B3 adds the sixth at 381, not here")
+        for name in ["activities", "activity identities", "volume by discipline"] {
+            let e = HydratedStores.entry(for: name)
+            #expect(e != nil, "a comparison B3 made self-referential is undeclared")
+            #expect(e?.slice == "B3")
+            #expect(!r.independentChecks.contains { $0.name == name },
+                    "its expectation now comes from a store the database feeds")
+            #expect(r.selfReferentialChecks.contains { $0.name == name })
+        }
+        #expect(HydratedStores.all.count == 8,
+                "B1's one, B2's four, B3's three")
+        #expect(r.unmatchedHydratedEntries.isEmpty,
+                "and every one of them names a comparison the verifier makes")
+        #expect(!r.independentChecks.isEmpty,
+                "B3 is not B9 — there is still evidence left")
     }
 }

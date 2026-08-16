@@ -119,37 +119,64 @@ struct ActivityHydrationTests {
     ///
     /// This is `AuthoredHydrationTests.everyFamilyHydratesNow`'s place in the
     /// B2 pair, and it inverts at 381 for the same reason that one did at 358.
-    @Test("The planner still carries no activities, and that is this patch")
-    func thePlannerStillCarriesNoActivities() {
+    /// **INVERTED AT 382 — the machinery 380 built now carries a payload.**
+    /// The test 380 wrote to prove nothing was fed is the test that proves
+    /// something is, and the diff that changes it holds the line that did it.
+    @Test("The planner carries the activities, and that is the flip")
+    func thePlannerCarriesTheActivities() {
         let b = withActivities([ride("a", at: "2026-04-21T09:00:00")])
 
         #expect(!isNil(b.hydratableActivities),
                 "the bootstrap has something to hand over")
-        #expect(!PersistenceAuthority.hydrates(.activities),
-                "and this build does not want it — 381 is that line")
+        #expect(PersistenceAuthority.hydrates(.activities),
+                "and this build wants it — 382 is that line")
+
+        switch HydrationPlanner.decide(mode: .shadow("B3 — a test"),
+                                       bootstrap: b) {
+        case .hydrate(_, _, _, _, _, _, _, let storedActivities):
+            #expect(!isNil(storedActivities),
+                    "the payload travels once the family is fed")
+            #expect(storedActivities?.count == 1)
+        case .leaveOnFiles:
+            Issue.record("every family loaded, so the plan must still hydrate")
+        }
+    }
+
+    /// **AND THE OTHER HALF OF THE RULE IS UNCHANGED BY THE FLIP.** An empty
+    /// table still hands over nil, so a device between its first launch and
+    /// its first sync keeps its file rather than showing an empty history.
+    /// §12.124.3, and 382 is exactly when it starts to matter.
+    @Test("An empty table still hands over nil after the flip")
+    func anEmptyTableStillHandsOverNil() {
+        let b = withActivities([])
+        #expect(isNil(b.hydratableActivities))
 
         switch HydrationPlanner.decide(mode: .shadow("B3 — a test"),
                                        bootstrap: b) {
         case .hydrate(_, _, _, _, _, _, _, let storedActivities):
             #expect(isNil(storedActivities),
-                    "the machinery is built and the family is not fed")
+                    "the build wants the family and the table holds nothing")
         case .leaveOnFiles:
-            Issue.record("every family loaded, so the plan must still hydrate")
+            Issue.record("the plan is loaded, so this must still hydrate")
         }
     }
 
     /// The counts 379 separated are untouched by this patch. RULE 5 in
     /// `check-invariants.py` derives all four from the source, so a pin that
     /// drifts is a failed run rather than a discovery four rounds later.
-    @Test("380 moves neither count")
-    func theCountsDidNotMove() {
-        #expect(DatabaseBootstrap.fieldCount == 7)
+    /// **382 MOVES BOTH, AND THAT IS THE FLIP.** 380's version of this test
+    /// asserted the counts had not moved; keeping it as an inversion rather
+    /// than deleting it is what makes the change visible in a diff.
+    @Test("382 moves both counts")
+    func theCountsMoved() {
+        #expect(DatabaseBootstrap.fieldCount == 7,
+                "the bootstrap gained no family — 379 did that")
         #expect(PersistenceAuthority.Family.allCases.count == 7)
-        #expect(PersistenceAuthority.hydratedFamilies.count == 6)
-        #expect(HydratedStores.all.count == 5,
-                "the entry is 381's, in the same diff as the flip")
-        #expect(HydratedStores.entry(for: "activities") == nil,
-                "so the verifier's activity comparison is still evidence")
+        #expect(PersistenceAuthority.hydratedFamilies.count == 7)
+        #expect(HydratedStores.all.count == 8,
+                "B1's one, B2's four and B3's three")
+        #expect(HydratedStores.entry(for: "activities")?.slice == "B3",
+                "so the verifier's activity comparison is no longer evidence")
     }
 
     // MARK: What the bootstrap will hand over

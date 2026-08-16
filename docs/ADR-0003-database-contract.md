@@ -8962,6 +8962,132 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.126 B3 is switched on — patch 382, D7 slice B3
+
+`hydratedFamilies` gains `.activities`. Everything else in the patch is the
+accounting that line forces.
+
+### 12.126.1 The fourth pair, and the first that took four patches
+
+344/346, 357/358 and 379/380/381/382. The shape is the same and the reason is
+§12.103's: a flip whose diff contains nothing else makes every failure it
+produces attributable. This one needed four because the enumeration found two
+things the earlier slices did not have — machinery worth its own patch (380),
+and a comparison that the flip would have emptied (381).
+
+**The sentence to keep from this slice: the patch before a flip is the one that
+asks what the flip is about to make vacuous.**
+
+### 12.126.2 Three entries, not the one §12.123 predicted
+
+`HydratedStores` means *a comparison whose expectation came from something the
+database feeds*. Three qualify, and only the first was foreseen:
+
+| check | expectation | what it becomes |
+|---|---|---|
+| `activities` | `activities.count` | the database counting itself |
+| `activity identities` | `storeIDs` vs `activity_alias` | two TABLES agreeing; no longer evidence about the app |
+| `volume by discipline` | Swift sums vs `SUM(...) GROUP BY discipline` | the same rows added up twice |
+
+The middle one is worth a sentence of its own. It can still fail — the
+repository reads `activity` joined to `activity_source_record`, and the check
+reads `activity_alias`, so a divergence between those two tables is exactly
+what it would catch. What it can no longer say is *the app's history reached
+the database*, and that is the only question `independentChecks` asks.
+
+The independent count falls by three, in the same diff as the flip. §12.99
+exists because it fell by one at B1 and nobody noticed.
+
+### 12.126.3 What did not get an entry, and why that is not generosity
+
+Seven expectations are FILTERED by `storeIDs`, which is now database-derived:
+`weather readings`, `traces`, `details`, `splits`, `trace samples`, and the two
+domain checks (`splits of one activity`, `one weather reading`). Their VALUES
+still come from stores the database does not feed.
+
+The direction is what makes this survivable. If the database lost activity
+rows, the filter would shrink the expectation while the child tables kept their
+rows — so `found` would exceed `expected` and the check would FAIL. A filter
+that shrinks makes a check fail rather than pass. The masking direction —
+database rows the file never had — is unreachable, because the importer only
+ever writes what the store gave it.
+
+`ReadBacks.weatherGear` passes the same id set as `knownActivityIDs` and is the
+same shape. **It is B5's, and the rule is now general: a read-back gets its own
+read in the slice that hydrates its own store.** 381 did that for the
+activities because B3 hydrates them; B5 does it for weather and gear.
+
+### 12.126.4 What the flip changes on the device
+
+- `Activity store reads: the database`
+- `Activities hydrated: N kept of M offered from the database`
+- `Hydration: hydrated …, the activities`
+- the verifier's `N independent` falls by three
+- `ActivityStore.shared` is now constructed inside `Sub4Launch.apply`, before
+  `.ready` — it reads `activities.json` in its own `init`, records to
+  `StoreReadJournal`, and is then hydrated over. File first, rows over it, in
+  the one main-actor step with no suspension in it.
+
+**And the number to actually look at is `Activities hydrated`.** If its kept
+count is below the roster's, settling dropped rows the importer wrote — and
+that disagreement would be TRUE (§12.124.2). The device read 694 offered and
+694 kept at 381, so the expected reading is 694 both sides.
+
+### 12.126.5 The import stops carrying the file into the database
+
+`AppStores.gather` reads `ActivityStore.shared.activities`, and it feeds both
+the verifier and `Sub4Import.run`. After this patch the importer imports the
+database's own rows back into the database: idempotent by lookup, harmless, and
+**no longer a repair path.** Before 382, a database missing activity rows could
+be repaired by pressing Import, because the store held the file's list. It
+cannot now.
+
+That is acceptable and it is not silent: activities are re-fetchable (§12.122.1
+is about the fact that nothing re-fetches on its own, not about impossibility),
+and `resetCache` puts the cursor back to the cutoff and rebuilds from the
+source. The authored families have no such recovery, which is why HANDOFF §2.2
+ranks their restore path as the largest open item and why this one is a note
+rather than a blocker.
+
+### 12.126.6 The B2 suite stopped asserting global numbers
+
+`B2ActivationTests` pinned `HydratedStores.all.count == 5`,
+`selfReferentialChecks.count == 5`, a set literal of five names, and
+`checks.count - 5` — four global figures in a suite about one slice. Every
+later slice breaks all four, and the breakage says nothing about B2. That is
+377d's four rounds in miniature.
+
+They are rescoped to B2's own four entries, by `slice`. The global count now
+has exactly one home — `ActivitiesAreReadTests` — plus one expression that
+cannot go stale at all: `r.checks.count - HydratedStores.all.count`.
+
+**A count derived from the thing it counts never needs chasing**, and this
+project has now paid for that lesson at 369a, 372, 377, 377d and 381.
+
+### 12.126.7 And the one RULE 5 found, which my own enumeration had capped
+
+`VerificationIndependenceTests` — the suite that owns §12.99 — pinned the total
+as well, and three of its fixtures passed `check("activities")` as an EXTRA:
+a check deliberately placed on the INDEPENDENT side of the split so that the
+split has something to sort. Declaring `activities` moves it to the other side
+silently, because the split matches by name. Two of those tests would then have
+asserted an empty set against an empty set, and `aFailureIsNotAWithholding`
+would have failed on `withheldReason` for a reason unrelated to its subject.
+
+**It was not the enumeration that found this. It was RULE 5**, comparing the
+pin against the source in one line, on the first preflight run. My sweep for
+`HydratedStores` had been piped through `head`, which caps output without
+saying so — twice in this session, and both times it hid a file.
+
+§12.72.7 says a grep tells you where a symbol appears rather than what the line
+does with it. The cousin, worth its own sentence: **a grep through `head` tells
+you where SOME of them appear, and looks exactly like a complete answer.** The
+fixtures now use `weather readings`, which is a real comparison that stays
+independent — only its id filter moved (§12.126.3) — and a guard in this
+patch's script fails if any extra names a declared check.
+
+---
+
 ## 12.125 The activity parity keeps its own read — patch 381
 
 D7 slice B3. §12.101 one slice later, and it lands BEFORE the flip rather than

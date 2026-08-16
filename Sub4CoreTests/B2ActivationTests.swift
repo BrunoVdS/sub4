@@ -115,10 +115,16 @@ struct B2ActivationTests {
     /// owns is that ITS six families hydrate; that `.activities` does not is
     /// `ActivitiesAreReadTests`' business, where the gap is the subject rather
     /// than a footnote.
-    @Test("Every family B2 covers is hydrated, and the seventh is not")
+    /// RESCOPED AT 382, for `AuthoredHydrationTests.everyFamilyHydratesNow`'s
+    /// reason: a suite about B2 that pins the whole set breaks on every later
+    /// slice, and the breakage says nothing about B2.
+    @Test("Every family B2 covers is hydrated")
     func everyFamilyB2CoversHydrates() {
-        #expect(PersistenceAuthority.hydratedFamilies
-                == [.plan, .extras, .athlete, .authored, .decisions, .moves])
+        for f: PersistenceAuthority.Family in [.plan, .extras, .athlete,
+                                               .authored, .decisions, .moves] {
+            #expect(PersistenceAuthority.hydrates(f),
+                    "a family B2 covers and the build does not feed")
+        }
         // A LITERAL COMMENT, NOT AN INTERPOLATED ONE — 343b. `Comment` is
         // `ExpressibleByStringLiteral`; anything that is an expression rather
         // than a literal does not convert, and the failure is a compile error
@@ -127,8 +133,8 @@ struct B2ActivationTests {
             #expect(PersistenceAuthority.hydrates(f),
                     "a family this set names and the build does not feed")
         }
-        #expect(!PersistenceAuthority.hydrates(.activities),
-                "B3 reads the activities and 381 is the line that feeds them")
+        #expect(PersistenceAuthority.hydrates(.activities),
+                "and B3 fed the seventh at 382 — this is not B2's business")
     }
 
     /// §12.43, as the constant's own doc demands: B2 EXTENDS the sentence
@@ -250,9 +256,14 @@ struct B2ActivationTests {
     /// `session moves` WAS THE LAST INDEPENDENT COMPARISON B2 HAD, and 377
     /// spent it. `PlanMoveImportTests.theMoveComparisonIsIndependent` said so
     /// in as many words and is inverted in the same patch.
+    /// RESCOPED AT 382. This asserted `HydratedStores.all.count == 5` — a
+    /// global figure in a suite about one slice, which every later slice
+    /// breaks. B2's four are what B2 owns; the total lives in
+    /// `ActivitiesAreReadTests`.
     @Test("The four comparisons B2 made self-referential are declared")
     func theListNamesWhatB2Took() {
-        #expect(HydratedStores.all.count == 5, "one from B1 and four from B2")
+        #expect(HydratedStores.all.filter { $0.slice == "B2" }.count == 4,
+                "B2 took four, whatever the later slices take")
         for (check, store) in [("notes", "NotesStore.notes"),
                                ("commute corrections", "CommuteStore.decisions"),
                                ("match decisions", "Matcher.decisions"),
@@ -264,8 +275,11 @@ struct B2ActivationTests {
         }
         #expect(HydratedStores.entry(for: "heart-rate zones")?.slice == "B1",
                 "B1's entry did not move")
-        #expect(HydratedStores.entry(for: "activities") == nil,
-                "activities are read from the app's own files and still can")
+        // 382 — WAS `== nil`. The activities are fed from the database now and
+        // the entry is B3's; what this suite still asserts is that B2 did not
+        // acquire it.
+        #expect(HydratedStores.entry(for: "activities")?.slice == "B3",
+                "the activities are B3's, not B2's")
     }
 
     /// The tripwire, re-run at B2. Every declared entry must name a comparison
@@ -279,24 +293,35 @@ struct B2ActivationTests {
 
         #expect(r.unmatchedHydratedEntries.isEmpty,
                 "an entry naming no comparison is a rename nobody finished")
-        #expect(r.selfReferentialChecks.count == 5)
+        // 382 — B2'S FOUR, NOT THE WHOLE LIST. The set literal pinned five
+        // names and broke the moment B3 declared three more, which is what a
+        // global assertion in a slice's own suite always does.
         #expect(Set(r.selfReferentialChecks.map(\.name))
-                == ["notes", "commute corrections", "match decisions",
-                    "session moves", "heart-rate zones"])
+                .isSuperset(of: ["notes", "commute corrections",
+                                 "match decisions", "session moves"]),
+                "every comparison B2 took is still declared as taken")
         #expect(!r.independentChecks.isEmpty,
                 "B2 is not B9 — there is still evidence left")
-        #expect(r.independentChecks.count == r.checks.count - 5)
+        // DERIVED, NOT PINNED. `- 5` was a literal that had to be chased; this
+        // cannot go stale, because both sides move together by construction.
+        #expect(r.independentChecks.count
+                == r.checks.count - HydratedStores.all.count)
     }
 
     /// THE NUMBER THAT MOVED, and the reason 354 built this accounting at all.
     /// It went 20 to 19 at B1 and nobody noticed. Four more go here — three at
     /// 358 and `session moves` at 377 — and the paste is what says so before
     /// somebody reads a green run as evidence.
+    /// RESCOPED AT 382 — the title kept, because what B2 spent is still four
+    /// and that is what this test is about. The GLOBAL figure it used to pin
+    /// moved to `ActivitiesAreReadTests` and to the derived expression above.
     @Test("The independent count falls by exactly four")
     func theIndependentCountFalls() throws {
         let db = try Sub4Database.inMemory()
         let r = try SemanticVerifier.verify(db, activities: [])
-        #expect(r.checks.count - r.independentChecks.count == 5)
+        #expect(r.selfReferentialChecks.filter {
+            HydratedStores.entry(for: $0.name)?.slice == "B2"
+        }.count == 4, "B2 spent four comparisons and no later slice spends them")
         #expect(r.ledgerNote.contains("\(r.independentChecks.count) independent"))
     }
 

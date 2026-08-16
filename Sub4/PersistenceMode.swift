@@ -172,6 +172,10 @@ nonisolated enum PersistenceAuthority {
         "B1 — the plan, the athlete and the constants"
         + "; B2 — the notes, the commute decisions, the match decisions"
         + " and the plan moves"
+        // PATCH 382. EXTENDS, DOES NOT REPLACE — §12.43 and this constant's
+        // own doc. A label that dropped B1 and B2 would read as those slices
+        // having been switched off, which is the opposite of what happened.
+        + "; B3 — the activities"
 
     /// WHICH FAMILIES THIS BUILD ACTUALLY HYDRATES — patch 357, §12.102.
     ///
@@ -214,8 +218,15 @@ nonisolated enum PersistenceAuthority {
     /// of this set, or set `sliceUnderTest` to nil. The JSON files are still
     /// written and still complete — that is what makes a slice a slice, and it
     /// is why hydration MUST NOT WRITE. See `NotesStore.hydrate(from:)`.
+    /// **PATCH 382 — `.activities` JOINS, AND THE TWO COUNTS MEET AGAIN.**
+    /// 379 separated them on purpose; three patches later the machinery (380)
+    /// and the comparison's own read (381) are both in place, so the family
+    /// can be fed without anything losing its ability to disagree. Reversible
+    /// by deleting `.activities` from this line — `activities.json` is still
+    /// written and still complete, which is what makes a slice a slice.
     static let hydratedFamilies: Set<Family> = [.plan, .extras, .athlete,
-                                                .authored, .decisions, .moves]
+                                                .authored, .decisions, .moves,
+                                                .activities]
 
     /// Whether this build feeds a given store from the database. Asked by the
     /// planner and by nothing else — a second caller would be a second opinion
@@ -363,6 +374,39 @@ nonisolated enum HydratedStores {
         .init(check: "session moves",
               store: "PlanMoveStore.moves",
               slice: "B2"),
+        // PATCH 382 — B3, AND IT IS THREE ENTRIES RATHER THAN THE ONE §12.123
+        // PREDICTED. Every comparison whose EXPECTATION is computed from
+        // `ActivityStore.activities` belongs here, and the enumeration found
+        // three:
+        //
+        //   · `activities`           — the count itself
+        //   · `activity identities`  — the id set, against `activity_alias`.
+        //     It survives as a check that two TABLES agree, and stops being
+        //     evidence that the app's history reached the database.
+        //   · `volume by discipline` — Swift sums of `distance` and
+        //     `movingTime` against `SUM(...) GROUP BY discipline`. The same
+        //     rows, added up twice: the strongest form of a check agreeing
+        //     with itself.
+        //
+        // The names are the VERIFIER'S OWN, copied from `SemanticVerifier`
+        // rather than invented to match the store — an entry naming a
+        // comparison that does not exist is what `unmatchedHydratedEntries`
+        // reports, and that is the symptom a rename produces.
+        //
+        // NOT HERE, DELIBERATELY: the seven expectations FILTERED by
+        // `storeIDs` — weather, traces, details, splits, samples and the two
+        // domain checks. Their values still come from stores the database does
+        // not feed, so they can still disagree; only the population filter
+        // moved. §12.126.3.
+        .init(check: "activities",
+              store: "ActivityStore.activities",
+              slice: "B3"),
+        .init(check: "activity identities",
+              store: "ActivityStore.activities, as an id set",
+              slice: "B3"),
+        .init(check: "volume by discipline",
+              store: "ActivityStore.activities, summed",
+              slice: "B3"),
     ]
 
     static func entry(for checkName: String) -> Entry? {

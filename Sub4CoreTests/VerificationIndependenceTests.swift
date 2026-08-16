@@ -83,16 +83,21 @@ struct VerificationIndependenceTests {
     /// three more; which three, and that they name real comparisons, is
     /// `B2ActivationTests`' business. What this suite still owns is B1's entry
     /// and the machinery around it.
+    /// 5 UNTIL 382, WHICH DECLARED THREE. This is the suite that owns the
+    /// total, and it is the second home the number has had — the first was
+    /// `B2ActivationTests`, which had no business holding it.
     @Test("The list names the comparison B1 made self-referential")
     func theListNamesTheZoneCheck() {
-        #expect(HydratedStores.all.count == 5,
-                "one from B1, four from B2; B5 and B9 will each add more")
+        #expect(HydratedStores.all.count == 8,
+                "one from B1, four from B2, three from B3; B5 and B9 add more")
         let e = HydratedStores.entry(for: "heart-rate zones")
         #expect(e != nil)
         #expect(e?.store == "AthleteStore.hrZones")
         #expect(e?.slice == "B1")
-        #expect(HydratedStores.entry(for: "activities") == nil,
-                "activities are read from the app's own files and still can")
+        // 382 — WAS `== nil`. The activities are fed from the database now;
+        // what this suite still owns is that B1's entry did not move.
+        #expect(HydratedStores.entry(for: "activities")?.slice == "B3",
+                "the activities are B3's, and B1's entry is untouched")
     }
 
     /// **THE TRIPWIRE.** The real verifier, over an empty database, produces
@@ -126,9 +131,18 @@ struct VerificationIndependenceTests {
     /// checks, one fewer of them worth anything.
     @Test("The split follows the declared list and nothing else")
     func theSplitIsWhereItShouldBe() {
-        let r = covering([check("activities"), check("gear")])
+        // 382 — `activities` LEFT THIS FIXTURE, AND THE REASON IS THE PATCH.
+        // These extras are the checks that are NOT declared hydrated, so that
+        // the split has something to put on each side. `activities` was one
+        // until this patch declared it; leaving it here would have added a
+        // second check by that name, put both on the self-referential side,
+        // and quietly emptied the independent one. `weather readings` is a
+        // real comparison and stays independent — only its id FILTER moved.
+        // §12.126.3.
+        let r = covering([check("weather readings"), check("gear")])
 
-        #expect(Set(r.independentChecks.map(\.name)) == ["activities", "gear"],
+        #expect(Set(r.independentChecks.map(\.name))
+                == ["weather readings", "gear"],
                 "both still read the app's own files")
         #expect(Set(r.selfReferentialChecks.map(\.name))
                 == Set(HydratedStores.all.map(\.check)),
@@ -174,7 +188,8 @@ struct VerificationIndependenceTests {
             Issue.record("nothing is declared hydrated, so nothing can be lost")
             return
         }
-        let r = covering([check("activities"), check("gear")], omitting: gone)
+        let r = covering([check("weather readings"), check("gear")],
+                         omitting: gone)
         #expect(r.passed)
         #expect(r.unmatchedHydratedEntries.count == 1)
         #expect(r.unmatchedHydratedEntries.first?.check == gone)
@@ -190,7 +205,12 @@ struct VerificationIndependenceTests {
         // no reason and would have carried three unmatched entries after B2, so
         // it could have gone on passing on the wrong sentence. Now the ONLY
         // thing wrong with this report is the failure, which is what it is for.
-        let r = covering([check("activities", expected: 689, found: 688)])
+        // 382 — `weather readings` FOR `activities`, and it is not cosmetic.
+        // A failing check that is also DECLARED would leave this report with
+        // no independent comparison at all, so `withheldReason` would name the
+        // emptiness rather than being nil — and the assertion below would fail
+        // for a reason that has nothing to do with what this test is about.
+        let r = covering([check("weather readings", expected: 689, found: 688)])
         #expect(!r.passed)
         #expect(r.failures.count == 1)
         #expect(r.withheldReason == nil, "the failure is the story")
@@ -206,12 +226,17 @@ struct VerificationIndependenceTests {
         // while exactly ONE of the three is declared. B5 declares gear; this
         // would then read "3 comparisons · 1 independent" and fail on a patch
         // that changed nothing whatever about the ledger note.
-        let good = covering([check("activities"), check("gear")])
+        // 382 — SAME SUBSTITUTION AS ABOVE. This note reads "N comparisons
+        // · 2 independent", and 2 is the number of extras that are NOT
+        // declared. `activities` became declared in this patch, so leaving it
+        // here would make the note read 1 and fail a test about the ledger
+        // sentence rather than about the list.
+        let good = covering([check("weather readings"), check("gear")])
         #expect(good.ledgerNote
                 == "\(HydratedStores.all.count + 2) comparisons, all agreed "
                  + "· 2 independent")
 
-        let bad = report([check("activities", expected: 1, found: 2)])
+        let bad = report([check("weather readings", expected: 1, found: 2)])
         #expect(bad.ledgerNote == "1 of 1 comparisons disagreed",
                 "a failing note is unchanged — it was never misleading")
     }
@@ -221,14 +246,17 @@ struct VerificationIndependenceTests {
     /// verified migration.
     @Test("The paste says it on a healthy run, and marks the check")
     func thePasteSaysItUnconditionally() {
-        let lines = covering([check("activities")]).diagnosticLines
+        // 382 — the one extra has to be a check the database does not feed,
+        // or "1 independent" becomes 0 and the marked/unmarked assertion
+        // below tests nothing.
+        let lines = covering([check("weather readings")]).diagnosticLines
         #expect(lines.contains(where: { $0.contains("1 independent") }))
         #expect(lines.contains(where: { $0.contains("may be believed: yes") }))
         #expect(lines.contains(where: {
             $0.contains("heart-rate zones") && $0.contains("self-referential")
         }))
         #expect(lines.contains(where: {
-            $0.contains("activities") && !$0.contains("self-referential")
+            $0.contains("weather readings") && !$0.contains("self-referential")
         }), "a real comparison is not marked")
     }
 
@@ -242,7 +270,7 @@ struct VerificationIndependenceTests {
 
     @Test("An unmatched entry is named in the paste in capitals")
     func anUnmatchedEntryIsNamedInThePaste() {
-        let lines = report([check("activities")]).diagnosticLines
+        let lines = report([check("weather readings")]).diagnosticLines
         #expect(lines.contains(where: {
             $0.contains("DECLARED HYDRATED AND NOT COMPARED")
                 && $0.contains("heart-rate zones")

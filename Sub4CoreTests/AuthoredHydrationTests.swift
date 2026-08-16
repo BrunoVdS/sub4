@@ -69,18 +69,20 @@ struct AuthoredHydrationTests {
     /// **B3 IS, AND 379 IS THE PATCH — §12.123.** Seven families read, six
     /// fed. The doc above was right about the shape and wrong about which
     /// patch, which is the more useful half to have been right about.
+    /// **REWRITTEN AT 382 TO ASSERT WHAT THIS FILE OWNS.** It pinned the whole
+    /// set, so B3's flip broke a suite about B2 — the drift 377d paid four
+    /// rounds for, one file over. The four families this patch built the
+    /// machinery for are what it asserts now; the set as a whole belongs to
+    /// `ActivitiesAreReadTests`, which is where the flip lives.
     @Test("This build hydrates every family B1 and B2 cover")
     func everyFamilyHydratesNow() {
-        #expect(PersistenceAuthority.hydratedFamilies
-                == [.plan, .extras, .athlete, .authored, .decisions, .moves])
-        #expect(PersistenceAuthority.hydrates(.plan))
-        #expect(PersistenceAuthority.hydrates(.authored))
-        #expect(PersistenceAuthority.hydrates(.decisions))
-        #expect(PersistenceAuthority.hydrates(.moves))
-        #expect(!PersistenceAuthority.hydrates(.activities),
-                "the seventh family is read at B3 and fed at 381")
+        for f: PersistenceAuthority.Family in [.plan, .extras, .athlete,
+                                               .authored, .decisions, .moves] {
+            #expect(PersistenceAuthority.hydrates(f),
+                    "a family B1 or B2 covers and this build does not feed")
+        }
         #expect(PersistenceAuthority.Family.allCases.count == 7,
-                "seven families read, six fed — the gap is the slice")
+                "and the seventh is B3's, fed at 382")
     }
 
     // MARK: The two verdicts — §12.92
