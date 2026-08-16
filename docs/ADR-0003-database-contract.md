@@ -8962,6 +8962,187 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.125 The activity parity keeps its own read — patch 381
+
+D7 slice B3. §12.101 one slice later, and it lands BEFORE the flip rather than
+after it.
+
+### 12.125.1 What the enumeration found, which is bigger than the flip
+
+380's ADR said 382 was two edits. It is, and they are not the risk. The risk is
+what else reads `ActivityStore.shared.activities`, which the flip turns into
+the database:
+
+| reader | what it feeds | what the flip does to it |
+|---|---|---|
+| `ShadowParity.run` | `ActivityParity` (slice 1), `VolumeParity` (slice 2) | **both sides become the same rows** |
+| `AppStores.gather` | `SemanticVerifier` | `activities`, `activity identities` and `volume by discipline` stop being evidence |
+| `AppStores.gather` | `Sub4Import.run` | the import carries the database's own rows back in — idempotent by lookup, and no longer the file correcting the database |
+| `storeIDs` inside the verifier | weather, traces, details, splits, samples, and the two domain checks | the values stay file-derived; the POPULATION FILTER does not |
+| `ReadBacks.knownActivityIDs` | the read-back's activity filter | same |
+| `DetailStore` | the backfill's work list | behaviour, not evidence |
+
+Slices 1 and 2 are the ones a patch can rescue, because their app side IS the
+list. This is that patch.
+
+### 12.125.2 The answer was already in the tree, twice
+
+343 gave `PlanRoundTrip` an independent side by decoding the bundle rather than
+asking `PlanStore`. 356 gave the authored read-back its own read of
+`notes.json`, `commutes.json` and `moves.json` — which is why the paste can say
+*"the app side came from: … read directly"* and *"read cleanly: yes"*.
+
+`activities.json` is still written, still complete, and still the legacy side's
+only copy while the slice is under test. So `ActivitySource.read()` reads it —
+**through `ActivityStore(directory:)`, the seam 378 added, and not through a
+second decoder.** 364's rule. One decoder, one `settle`, two roots.
+
+**THE ORDER IS THE POINT.** If the flip landed first there would be a build in
+which `Compare` prints *no differences* about the database and itself. Nothing
+in the suite could see it — both sides agreeing is what a pass looks like — and
+the number that would have caught it is the one this patch adds.
+
+### 12.125.3 Three states, and a fallback that shouts
+
+`Read` carries `directoryFound` and the `StoreLoad` separately, because an
+unreachable container and a device that has never synced both produce an empty
+array and are opposite facts (§12.15). When the file cannot be read the
+comparison falls back to the store and says so: `appSideWasReadCleanly` goes
+false, and `ActivityParity.Report.isHealthy` now requires it.
+
+That last clause is the one with teeth. Zero differences over an app side that
+could not be read is not a pass — after 382 the fallback IS the database, so a
+green row there would be the exact sentence this stage must never print.
+
+### 12.125.4 Four slices rescued, one not — and a count is what settled it
+
+The reasoning said slices 1 and 2. **The guard said four**, and it was right.
+
+`guard_the_parity_does_not_ask_the_store` counts the mentions of
+`ActivityStore.shared.activities` in `ShadowParity.swift` and requires exactly
+one — the declared fallback. It found four. The three extras were
+`matchReport` building its day buckets, and `summaryReport` doing the same and
+then reading the list again for `TabSummary.actualVolume`. Every one of them
+was the list being FETCHED where it could have been PASSED IN, which is
+§12.43's own sentence about `Sub4Import`: anything main-actor it needs is
+computed by the caller and handed over.
+
+So slices 1, 2, 5 and 8 all take the independent read now. **§12.72.7, one
+level up: a grep tells you where a symbol appears; a count tells you whether
+you have finished.**
+
+Slice 3 is the one that cannot be rescued. `LoadParity`'s app side is
+`LoadStore.shared.days` — the app's real series, rebuilt from whatever the
+store holds — and handing it a shadow list would mean comparing something the
+athlete's screens do not show, which is worse than losing the independence.
+After 382 that slice compares a database-derived app side. It is a loss, and
+it is recorded here rather than discovered in a paste.
+
+Two things stay shared on purpose and are not losses: the match DECISIONS come
+from `Matcher` on both sides (§12.61.1, and B2 already declared that check),
+and the heart-rate zones come from `AthleteStore` on both sides so that a
+difference in the zone rows means the trace rather than the boundaries
+(patch 316).
+
+382 declares the three verifier checks in `HydratedStores`; this section is
+where the rest of the accounting lives.
+
+### 12.125.5 A defect the enumeration found, unreachable and fixed anyway
+
+`ActivityStore.load()` calls `recordRejections`, which appends to `receipts`
+and writes `strava.rejections`. That key is shared, and a store rooted
+elsewhere starts with `receipts` EMPTY — `loadRejections` runs in
+`private init()` only. One self-contradictory row in the file such a store read
+would write a blob holding that row alone, replacing the three receipts this
+device has kept since 278. They describe recordings that are in no file and
+that the cursor moved past years ago: §12.8.1, and nothing could re-fetch them.
+
+It cannot fire today, because a refused activity is never written to
+`activities.json`. It is fixed anyway, and the reason is the shape rather than
+the odds: **a write nobody can trigger until the day somebody can.** 381 is the
+patch that gave that file a second reader, so 381 is the patch that removes it.
+`recordsRejections` is set at the initialiser, not read from a flag somewhere
+else — the instance that loaded the receipts is the instance that may add to
+them.
+
+### 12.125.6 What a device can confirm
+
+`Compare` on the Database screen, and two new lines at the top of the activity
+parity block: *the app side came from: activities.json, read directly* and
+*the app side was read cleanly: yes*. Every number under them must be identical
+to the 380 run — this patch changes where the app side is READ, not what it
+holds, and today the store and the file hold the same 694.
+
+**A number that moves here is a finding**, not a rounding: it would mean the
+store and its own file had drifted while nothing was hydrating anything.
+
+### 12.125.7 The pin this patch moved and did not chase — 381a
+
+381 added two lines to `ActivityParity.Report.diagnosticLines` and
+`ActivityParityTests` pins that block at 17. The suite said 19.
+
+**The question was asked, of the wrong block.** 380's apply script recorded
+that there is no line-count assertion over `ActivityStore.loadDiagnosticLines`
+— true, and why 380 was clean. 381 changed a different diagnostic block and
+nobody re-asked. §12.121.8's shape one file over: a number kept by hand away
+from the thing it counts, invisible to the compiler because `== 17` is a
+well-typed expression about a number that changed.
+
+**The rule, and it is cheap: when a patch adds a line to any
+`diagnosticLines`, grep `Sub4CoreTests/` for `.count ==` BEFORE the build.**
+Seven such pins exist; four are `DatabaseBootstrap.diagnosticLineCount`, which
+is derived and which RULE 5 already compares. The three literals are
+`ActivityRoster.Result` at 4, `ActivityParity.Report` at 17 — 20 after this
+patch — and `LoadParity.Report` at 23.
+
+**No new rule in `check-invariants.py`**, deliberately. §12.118.8's bar and
+375b's precedent: the suite caught it in thirteen seconds, so a permanent rule
+would pay rent for something already caught. What it earns is this sentence,
+where the next patch to touch a diagnostic block will read it — and a guard in
+this patch's own script that DERIVES the number from the array literal rather
+than trusting the figure I typed.
+
+The count is also no longer the whole assertion. A count that moved could be
+any three lines, so the test names them.
+
+### 12.125.8 The control 381 emptied, and neither the suite nor the guards saw it
+
+`ActivityParity.Report.storeIsSettled` is described by its own doc as *"a free
+continuous control … false the day something writes to `activities` without
+going through a door."* It is computed from the list handed to `compare`.
+
+**Until 381 that list was `ActivityStore.shared.activities`. Since 381 it is
+the file's, which `load` settles on the way in — so it is true by
+construction.** The row is green for ever, `unexplained` lost a contributor,
+and the screen prints a control that has stopped being one. §12.69, produced
+by a patch whose entire subject was keeping a comparison capable of failing.
+
+**Nothing in the tree could have caught it.** The suite passes either way: the
+field's tests hand `compare` their own unsettled lists and still do. The apply
+script's guards asked whether the app side came from the file, which it does.
+It took re-reading the patch against the report's own documentation — the same
+move that found §12.122's `?? []` and §12.115's.
+
+The fix is §12.43's, again: `ActivityParity.isSettled` is extracted, `compare`
+calls it, and `ShadowParity` calls it a second time with
+`ActivityStore.shared.activities`. **Three states, because nobody asked is not
+yes** — a report built by a test carries nil, contributes nothing to
+`unexplained`, and prints *not asked* rather than a cheerful *yes*. §12.15.
+
+**It does not get a screen row.** `ShadowParitySections` exists because
+`DatabaseHealthView` overflowed the stack twice (§12.76), and the fact reaches
+the paste unconditionally, which is where this stage's evidence is read. A row
+can follow the day the number moves.
+
+**And what it can still catch is narrower than it sounds**, which is worth
+saying rather than leaving as an implication: every writer of
+`ActivityStore.activities` settles — `load`, `ingest`, and `hydrate` since 380
+— so in production it is expected to be `yes` for ever. It is a tripwire for a
+future writer that forgets, which is exactly the sort of thing 380 added and
+the reason the tripwire is worth having at all.
+
+---
+
 ## 12.124 The machinery for the seventh family — patch 380
 
 D7 slice B3. 379 read the activities and fed nothing from them; this builds

@@ -83,6 +83,79 @@
 
 import Foundation
 
+// MARK: - The app's own side, read for itself — patch 381
+
+/// `activities.json`, read WITHOUT asking `ActivityStore.shared` — D7 slice
+/// B3, ADR-0003 §12.125.
+///
+/// **WHY.** 382 hydrates `ActivityStore` from the database. Every comparison
+/// that takes its app side from that store would then hold the same rows on
+/// both sides: agreeing perfectly, proving nothing, and saying so nowhere.
+/// §12.101 is this exact patch for the authored families one slice ago, and
+/// §12.91 is it for the plan two slices before that.
+///
+/// **IT IS NOT A SECOND DECODER**, which is 364's rule and the reason this is
+/// eleven lines rather than a parser. `ActivityStore(directory:)` is the seam
+/// patch 378 added: it reads `activities.json` with the bare `JSONDecoder`
+/// that file is written with (§12.122.4), settles the result through
+/// `ActivityRoster` exactly as the singleton does, and records nothing to the
+/// shared read journal. One decoder, one set of rules, two roots.
+///
+/// **IT ANSWERS IN THREE STATES, NOT TWO.** A container the app cannot reach
+/// and a device that has never synced both produce an empty array, and §12.15
+/// is that those are opposite facts. `directoryFound` and `load` keep them
+/// apart, and `line` says which out loud.
+///
+/// LIVES IN THIS FILE rather than its own, deliberately: a new Swift file is
+/// invisible to the app target until Xcode is quit and reopened (CLAUDE.md §3),
+/// and this is eleven lines that only `ShadowParity` calls.
+@MainActor
+enum ActivitySource {
+
+    struct Read {
+        /// Settled by the store's own `load`, so this is the list the app
+        /// would show — not the file's raw contents.
+        let activities: [Activity]
+        /// What that load kept and dropped. Nil when there was no file.
+        let roster: ActivityRoster.Result?
+        /// `.absent` is a clean read of nothing; `.unreadable` is not.
+        let load: StoreLoad
+        /// Nil container. Distinct from `.absent`: one says the file is not
+        /// there, the other says the app cannot look. §12.15.
+        let directoryFound: Bool
+
+        var isTrustworthy: Bool { directoryFound && load.isTrustworthy }
+
+        /// Printed unconditionally, and it is the sentence every count under
+        /// it means. A comparison that does not say where its own side came
+        /// from cannot be checked by anybody who was not holding the phone.
+        var line: String {
+            guard directoryFound else {
+                return "Application Support is unreachable, so the app side "
+                     + "was not read at all"
+            }
+            guard load.isTrustworthy else {
+                return "activities.json could not be read, so the app's own "
+                     + "store was compared instead"
+            }
+            return "activities.json, read directly"
+        }
+    }
+
+    /// `AppSupportItem.container` and not a tenth copy of the
+    /// `applicationSupportDirectory` incantation — 356a's correction, and its
+    /// own doc's reason: *nil is a real answer*.
+    static func read() -> Read {
+        guard let dir = AppSupportItem.container else {
+            return Read(activities: [], roster: nil, load: .absent,
+                        directoryFound: false)
+        }
+        let store = ActivityStore(directory: dir)
+        return Read(activities: store.activities, roster: store.loadRoster,
+                    load: store.lastLoad, directoryFound: true)
+    }
+}
+
 @MainActor
 enum ActivityParity {
 
@@ -150,6 +223,35 @@ enum ActivityParity {
         /// writes to `activities` without going through a door.
         let storeIsSettled: Bool
 
+        // MARK: Where the app side came from — patch 381, §12.125
+
+        /// **THE DEFAULT NAMES THE SINGLETON, DELIBERATELY.** 356's argument,
+        /// on the slice that needs it most: a caller nobody updated announces
+        /// itself in the paste rather than hiding, and after 382 this sentence
+        /// on this line IS the defect it exists to catch.
+        var appSideCameFrom = "ActivityStore.shared"
+
+        /// False when the file could not be read and the store was compared
+        /// instead. It is not a difference — it is the comparison losing its
+        /// independence, which `isHealthy` refuses to call a pass.
+        var appSideWasReadCleanly = true
+
+        /// **WHETHER THE LIVE STORE'S OWN LIST SURVIVES ITS OWN RULES — patch
+        /// 381a, and it exists because 381 emptied the field above it.**
+        ///
+        /// `storeIsSettled` describes the list handed to `compare`. Until 381
+        /// that was `ActivityStore.shared.activities`; since 381 it is the
+        /// file's, which `load` settled on the way in — so it is true by
+        /// construction and can no longer say anything about the store.
+        /// §12.69: a check that cannot fail has not been tested, and this one
+        /// was emptied by a patch about keeping evidence alive.
+        ///
+        /// **THREE STATES, BECAUSE NOBODY ASKED IS NOT YES.** Nil is what a
+        /// report built by a test or by a caller that has no store carries;
+        /// it contributes nothing to `unexplained`, and the paste says *not
+        /// asked* rather than printing a cheerful `yes`. §12.15.
+        var liveStoreIsSettled: Bool?
+
         /// Everything above that should be zero. There is no approved list for
         /// activities, so every difference counts — see the header.
         var unexplained: Int {
@@ -158,6 +260,10 @@ enum ActivityParity {
             + daysWithDifferentMembers.count
             + (zonesAgree ? 0 : 1)
             + (storeIsSettled ? 0 : 1)
+            // PATCH 381a. NIL CONTRIBUTES NOTHING — not asked is not a
+            // disagreement, and counting it as one would make every report a
+            // test builds report a difference it never had.
+            + (liveStoreIsSettled == false ? 1 : 0)
         }
 
         /// THE GUARD AGAINST AGREEING ABOUT NOTHING — groundwork §2.1 case 2.
@@ -168,7 +274,14 @@ enum ActivityParity {
         /// `ShadowParity`. A report that can say whether it passed lets a
         /// caller ask without owning the enum — and lets a test assert on the
         /// thing it built rather than on a wrapper.
-        var isHealthy: Bool { lookedAtSomething && unexplained == 0 }
+        /// **AND IT ASKS WHERE ITS OWN SIDE CAME FROM — patch 381.** Zero
+        /// differences over an app side that could not be read is not a pass:
+        /// the fallback compares the database against whatever was to hand,
+        /// and after 382 that is the database. §12.69 — a check that cannot
+        /// fail has not been tested.
+        var isHealthy: Bool {
+            lookedAtSomething && unexplained == 0 && appSideWasReadCleanly
+        }
 
         var summary: String {
             guard lookedAtSomething else {
@@ -189,6 +302,13 @@ enum ActivityParity {
         /// wrong cannot be distinguished from a line nobody wired in.*
         var diagnosticLines: [String] {
             ["Activity parity: \(common) compared of \(storeCount) in the app",
+             // PATCH 381 — §12.101's two lines, UNCONDITIONAL and FIRST,
+             // because they are what every count below them means. The second
+             // shouts when it is false: that is the state in which the numbers
+             // under it describe the database twice.
+             "  the app side came from: \(appSideCameFrom)",
+             "  the app side was read cleanly: "
+             + "\(appSideWasReadCleanly ? "yes" : "NO")",
              "  database rows offered: \(databaseOffered)",
              "  database rows the reader skipped: \(databaseSkipped)",
              "  database rows after the same rules: \(databaseKept)",
@@ -204,6 +324,12 @@ enum ActivityParity {
              "  time-zone changes compared: \(zoneChangesCompared)",
              "  time-zone changes agree: \(zonesAgree ? "yes" : "no")",
              "  the app's own list is settled: \(storeIsSettled ? "yes" : "no")",
+             // PATCH 381a — THE CONTROL 381 EMPTIED, PUT BACK BESIDE IT. The
+             // line above describes whichever list was compared, and since
+             // 381 that is the file's — settled by `load` on the way in, so
+             // true by construction. This one asks the live store.
+             "  the live store's list is settled: "
+             + (liveStoreIsSettled.map { $0 ? "yes" : "no" } ?? "not asked"),
              "  unexplained differences: \(unexplained)"]
         }
     }
@@ -221,15 +347,23 @@ enum ActivityParity {
     /// is the recorded changes. `DayZones.trailingOffsetSeconds` is the phone's
     /// current offset and identical by construction; letting each side read the
     /// clock separately would compare a value neither side derives from data.
+    /// Does a list survive its own rules — patch 381a.
+    ///
+    /// EXTRACTED SO THAT `ShadowParity` CAN ASK IT OF THE LIVE STORE without
+    /// writing the expression a second time. §12.43, and the eleventh-plus
+    /// application: *a derivation with one caller looks like part of that
+    /// caller, and stops being that the moment something else must agree with
+    /// it.*
+    static func isSettled(_ list: [Activity]) -> Bool {
+        ActivityRoster.settle(list).activities.map(\.id) == list.map(\.id)
+    }
+
     static func compare(store: [Activity],
                         databaseRows: [Activity],
                         databaseSkipped: Int,
                         deviceOffset: Int = TimeZone.current.secondsFromGMT()) -> Report {
 
         let twin = ActivityRoster.settle(databaseRows)
-
-        // The store's list against its own rules. See `storeIsSettled`.
-        let resettled = ActivityRoster.settle(store)
 
         let mine = store.map(\.id)
         let theirs = twin.activities.map(\.id)
@@ -289,6 +423,9 @@ enum ActivityParity {
             daysWithDifferentMembers: differingDays,
             zoneChangesCompared: max(myZones.changes.count, theirZones.changes.count),
             zonesAgree: myZones == theirZones,
-            storeIsSettled: resettled.activities.map(\.id) == mine)
+            // PATCH 381a — through `isSettled`, which ShadowParity also
+            // calls. The expression was identical and lived in one place;
+            // it now lives in one place and has two callers.
+            storeIsSettled: isSettled(store))
     }
 }

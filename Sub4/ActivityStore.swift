@@ -340,6 +340,24 @@ final class ActivityStore {
     }
 
     private let fileURL: URL
+
+    /// **WHETHER THIS INSTANCE MAY RECORD A REJECTION — patch 381, §12.125.5.**
+    ///
+    /// `load()` calls `recordRejections`, which appends to `receipts` and
+    /// writes `strava.rejections`. That key is SHARED, and a store rooted
+    /// somewhere else starts with `receipts` empty — `loadRejections` runs in
+    /// `private init()` only. So one self-contradictory row in the file such a
+    /// store read would write a blob holding that row alone, replacing the
+    /// three receipts this device has kept since 278: recordings that are in
+    /// no file and that the cursor moved past years ago. §12.8.1, and nothing
+    /// could re-fetch them.
+    ///
+    /// **UNREACHABLE TODAY**, because a refused activity is never written to
+    /// `activities.json` — which is exactly the shape this project keeps
+    /// paying for: a write nobody can trigger until the day somebody can. 381
+    /// gave the parity a second reader of that file and made the day arrive.
+    private let recordsRejections: Bool
+
     private let cursorKey = "strava.cursor"
     private let lastSyncKey = "strava.lastSync"
     private let cutoffKey = "strava.cutoffUsed"
@@ -380,6 +398,10 @@ final class ActivityStore {
     /// deleted.
     init(directory: URL) {
         fileURL = directory.appendingPathComponent("activities.json")
+        // PATCH 381 — see the declaration. THE RECEIPTS ARE THE SINGLETON'S.
+        // This instance has none loaded, so recording one would replace the
+        // device's own with whatever this file happens to hold.
+        recordsRejections = false
         load()
     }
 
@@ -389,6 +411,11 @@ final class ActivityStore {
                                                 appropriateFor: nil, create: true))
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         fileURL = dir.appendingPathComponent("activities.json")
+        // PATCH 381. THE ONE INSTANCE THAT OWNS THEM: `loadRejections()` at the
+        // end of this initialiser is what puts the existing receipts in hand,
+        // so this is the only store that can add to them rather than replace
+        // them.
+        recordsRejections = true
         cursor  = UserDefaults.standard.double(forKey: cursorKey)
         if cursor == 0 { cursor = Self.cutoffEpoch }
         lastSync = UserDefaults.standard.object(forKey: lastSyncKey) as? Date
@@ -736,7 +763,9 @@ final class ActivityStore {
         // `?? []`, and that is the whole of §12.115: it said "the athlete has
         // no activities" when it meant "I could not tell".
         guard let decoded = value else { return }
-        recordRejections(decoded)
+        // PATCH 381 — §12.125.5. A store that did not load the receipts may
+        // not write them.
+        if recordsRejections { recordRejections(decoded) }
 
         // ONE CALL, AND THE OTHER DOOR MAKES THE SAME ONE — patch 310.
         //

@@ -261,8 +261,22 @@ struct ActivityParityTests {
                                        deviceOffset: offset)
 
         let lines = r.diagnosticLines
-        #expect(lines.count == 17, "got \(lines.count)")
+        // 17 UNTIL 381, WHICH ADDED THE PROVENANCE PAIR, AND 19 UNTIL 381a,
+        // WHICH ADDED THE LIVE-STORE CONTROL. The pin is the point — a line
+        // added without a decision is what it exists to stop — and 381 is the
+        // patch that moved it without taking the decision. §12.125.7.
+        #expect(lines.count == 20, "got \(lines.count)")
         #expect(lines.first == "Activity parity: 3 compared of 3 in the app")
+        // PATCH 381a. NOT JUST THE COUNT. A count that moved could be any
+        // three lines; naming them is what says the block gained the ones it
+        // was meant to. This report was built without a caller telling it
+        // anything, so the default must announce itself and the live-store
+        // question must read as unasked rather than as a cheerful yes.
+        #expect(lines.contains("  the app side came from: ActivityStore.shared"),
+                "a report nobody told announces itself rather than hiding")
+        #expect(lines.contains("  the app side was read cleanly: yes"))
+        #expect(lines.contains("  the live store's list is settled: not asked"),
+                "nobody asked, and that is not the same as yes")
         #expect(lines.contains("  in the app only: 0"))
         #expect(lines.contains("  order disagreements: 0 of 3"))
         #expect(lines.contains("  unexplained differences: 0"))

@@ -239,7 +239,23 @@ final class ShadowParity {
             last = .readFailed(why)
         case .loaded(let rows, let skipped):
             let twin = ActivityRoster.settle(rows)
-            let mine = ActivityStore.shared.activities
+            // PATCH 381 — **THE APP SIDE IS READ FROM THE FILE, NOT FROM THE
+            // STORE**, and this line has to change BEFORE 382 rather than
+            // after it. §12.101, one slice later.
+            //
+            // 382 hydrates `ActivityStore` from the database. `mine` would
+            // then be the same rows as `twin`, slices 1 and 2 would agree
+            // perfectly, and the screen would print `no differences` about a
+            // comparison that had stopped being one. Nothing in the tree could
+            // notice: both sides agreeing is what a pass looks like.
+            //
+            // THE FALLBACK IS NOT A SILENT ONE. If `activities.json` cannot be
+            // read, the store is used and `appSideWasReadCleanly` goes false,
+            // which `isHealthy` refuses to call a pass — because the fallback
+            // is exactly the state this patch exists to remove.
+            let own = ActivitySource.read()
+            let mine = own.isTrustworthy ? own.activities
+                                         : ActivityStore.shared.activities
 
             // SLICE 3 — patch 315. The database's traces, read in the same
             // pass, and the app's own series brought up to date so the left
@@ -255,19 +271,42 @@ final class ShadowParity {
                 ActivityDetailRepository.all(db).details
             }.value
 
-            last = .ran(activities: ActivityParity.compare(store: mine,
-                                                           databaseRows: rows,
-                                                           databaseSkipped: skipped),
+            // PATCH 381. BUILT BEFORE THE `.ran`, because the provenance is
+            // set on the report and a caller cannot mutate what it is passing
+            // in. `VolumeParity` shares `mine` and is covered by the same two
+            // lines — one statement, on the block a reader meets first.
+            var activityReport = ActivityParity.compare(store: mine,
+                                                        databaseRows: rows,
+                                                        databaseSkipped: skipped)
+            activityReport.appSideCameFrom = own.line
+            activityReport.appSideWasReadCleanly = own.isTrustworthy
+            // PATCH 381a — **THE CONTROL 381 EMPTIED.** `storeIsSettled` now
+            // describes the file's list, which `load` settled on the way in.
+            // The question worth asking — does the LIVE store's list survive
+            // its own rules — has to be asked of the live store, and it is
+            // asked through `ActivityParity.isSettled` rather than by writing
+            // the expression again. §12.43.
+            //
+            // This is the second mention of `ActivityStore.shared.activities`
+            // in this file and it is deliberate: the first is the fallback,
+            // this one is the subject. `apply-381.py`'s guard is corrected in
+            // the same patch rather than left describing yesterday's tree.
+            activityReport.liveStoreIsSettled =
+                ActivityParity.isSettled(ActivityStore.shared.activities)
+
+            last = .ran(activities: activityReport,
                         volume: VolumeParity.compare(store: mine,
                                                      database: twin.activities),
                         load: loadReport(twin: twin.activities, traces: traces),
                         details: detailReport(storedDetails),
-                        matches: matchReport(twin: twin.activities),
+                        matches: matchReport(app: mine,
+                                             twin: twin.activities),
                         // SLICE 8 — patch 330. Reads the plan from the
                         // database, which no other slice does. Same pass as
                         // the rest for §12.57's reason: a second button is a
                         // way to see half an answer.
-                        summaries: await summaryReport(twin: twin.activities,
+                        summaries: await summaryReport(app: mine,
+                                                       twin: twin.activities,
                                                        db: db))
             runs += 1
         }
@@ -320,8 +359,16 @@ final class ShadowParity {
     /// the database with no reader, and reading it would make a difference here
     /// mean either the activities or the overrides — the same argument §12.61.1
     /// made for the athlete constants.
-    private func matchReport(twin: [Activity]) -> MatchParity.Report {
-        let mine = ActivityRoster.byDay(ActivityStore.shared.activities)
+    /// PATCH 381 — **THE ACTIVITIES ARE PASSED IN, NOT FETCHED.** This asked
+    /// the store directly, which 382 turns into the database; the caller has
+    /// the independent read and hands it over. §12.43's own sentence about
+    /// `Sub4Import`: anything the caller can compute, the caller computes.
+    ///
+    /// The DECISIONS still come from `Matcher` on both sides, deliberately and
+    /// unchanged — §12.61.1, and B2 already declared that one.
+    private func matchReport(app: [Activity],
+                             twin: [Activity]) -> MatchParity.Report {
+        let mine = ActivityRoster.byDay(app)
         let theirs = ActivityRoster.byDay(twin)
         let decisions = Matcher.shared.decisions
         let days = Set(mine.keys).union(theirs.keys)
@@ -358,7 +405,10 @@ final class ShadowParity {
     /// empty day for a key the database has nothing for is indistinguishable
     /// from a day that holds nothing, and every other figure here is per WEEK
     /// so a missing DAY would barely move one. Addendum §2.
-    private func summaryReport(twin: [Activity],
+    /// PATCH 381 — `app` for `matchReport`'s reason, and this slice reads the
+    /// activity list twice: once for the day buckets and once for the volume.
+    private func summaryReport(app: [Activity],
+                               twin: [Activity],
                                db: Sub4Database) async -> SummaryParity.Report? {
         let plan = await Task.detached(priority: .userInitiated) {
             PlanRepository.load(db)
@@ -369,7 +419,7 @@ final class ShadowParity {
 
         let todayKey = DayKey.key()
         let decisions = Matcher.shared.decisions
-        let mineByDay = ActivityRoster.byDay(ActivityStore.shared.activities)
+        let mineByDay = ActivityRoster.byDay(app)
         let theirsByDay = ActivityRoster.byDay(twin)
         let dbByDate = Dictionary(grouping: dbSessions.filter { $0.date != nil },
                                   by: { $0.date! })
@@ -412,7 +462,7 @@ final class ShadowParity {
         return SummaryParity.compare(
             app: appPoints,
             database: databasePoints,
-            appActual: TabSummary.actualVolume(ActivityStore.shared.activities),
+            appActual: TabSummary.actualVolume(app),
             databaseActual: TabSummary.actualVolume(twin),
             appPlanned: PlanStore.plannedVolume(
                 sessions: PlanStore.shared.plan.sessions,
