@@ -234,6 +234,13 @@ final class ActivityStore {
         // facts about the same activities, arrived at differently, and an
         // indent would claim they came from one place.
         lines.append(Self.lateArrivalLine(lateArrivals))
+        // PATCH 380. THE THIRD FACT ABOUT THE SAME ACTIVITIES, and the one
+        // §12.123.7 asked for: after a hydration the roster above describes a
+        // file the store is no longer serving. Unconditional, so "no" is a
+        // sentence somebody can read rather than a line that is missing —
+        // §12.54.2, which is the rule this store has now applied three times
+        // on this one block.
+        lines.append(Self.hydrationLine(hydrationRoster))
         return lines
     }
 
@@ -262,6 +269,74 @@ final class ActivityStore {
             return "Activities arriving late: no sync this launch"
         }
         return "Activities arriving late: \(late) in the most recent sync"
+    }
+
+    // MARK: Hydration — D7 slice B3, patch 380
+
+    /// Where the activities this store is serving came from — patch 380.
+    ///
+    /// `.files`, AND 381 IS WHAT MOVES IT. `PlanMoveStore.servedFrom` sat here
+    /// exactly this way at 368 and for the same reason: a store with no line
+    /// in the paste cannot be told from a store nobody wired in (§12.54.2),
+    /// and the line has to exist BEFORE the thing it reports on, or the paste
+    /// that would show B3 working is the one nobody added.
+    private(set) var servedFrom: StoreSource = .files
+
+    /// What the hydration kept, and what it cost. Nil until one has happened.
+    ///
+    /// **SEPARATE FROM `loadRoster`, WHICH GOES ON DESCRIBING THE FILE.**
+    /// §12.123.7 named this before it could happen: once a hydration replaces
+    /// the store's contents, `Activity roster: 694 kept of 694 offered`
+    /// describes `activities.json` while the store holds rows, and nothing on
+    /// the screen says so. Two rosters with two subjects, both printed — not
+    /// one number whose subject quietly moved. §12.15.
+    private(set) var hydrationRoster: ActivityRoster.Result?
+
+    /// Replaces the activities with the stored ones — D7 slice B3.
+    ///
+    /// **IT SETTLES, AND THAT IS NOT A NEW DECISION.** `load` settles and
+    /// `ingest` settles; `ActivityParity` has settled the database side since
+    /// 312. §12.43 says the third door calls the rule rather than trusting the
+    /// rows to arrive settled. Two consequences worth stating rather than
+    /// discovering: the list is re-ordered newest-first by LOCAL start, which
+    /// `ActivityRepository.all` does not produce — it orders by `startUTC`,
+    /// which §4.1 makes authoritative for ORDER while `startLocal` is
+    /// authoritative for BELONGING — and a row the app's own rules now reject
+    /// is dropped, because `DataCorrections.ignoredActivities` can gain an
+    /// entry after a row was written. That second one is patch 310's whole
+    /// argument, one door later.
+    ///
+    /// **IF SETTLING DROPS ANYTHING, THE VERIFIER'S `activities` COMPARISON
+    /// DISAGREES FROM 381 — AND THE DISAGREEMENT WOULD BE TRUE.** It would
+    /// mean the table holds rows the app's own rules reject, which is a
+    /// finding to read rather than a difference to patch away.
+    /// `hydrationRoster.dropped` is the number that says so, and the device
+    /// paste of 16 August says 694 offered and 694 kept, so today it is zero.
+    /// §12.123.7.
+    ///
+    /// **IT DOES NOT WRITE**, for `NotesStore.hydrate`'s reason and
+    /// `PersistenceMode`'s rule: `activities.json` stays complete while the
+    /// slice is under test, which is what makes taking `.activities` back out
+    /// of `hydratedFamilies` a rollback rather than a data loss. `save()` is
+    /// reached from `ingest` and from `resetCache`, and from nothing here.
+    func hydrate(from stored: [Activity]) {
+        let settled = ActivityRoster.settle(stored)
+        hydrationRoster = settled
+        activities = settled.activities
+        servedFrom = .database
+    }
+
+    /// One line, always sayable, in both states — `lateArrivalLine`'s shape
+    /// and its reason. Pure, so the two states can be driven from a test
+    /// rather than from a device that has to be in one of them.
+    nonisolated static func hydrationLine(_ r: ActivityRoster.Result?) -> String {
+        guard let r else {
+            return "Activities hydrated: no — the roster above is what the "
+                + "store is serving"
+        }
+        return "Activities hydrated: \(r.activities.count) kept of "
+            + "\(r.offered) offered from the database — the roster above "
+            + "describes activities.json"
     }
 
     private let fileURL: URL

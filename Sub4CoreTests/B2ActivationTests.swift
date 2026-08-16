@@ -199,7 +199,7 @@ struct B2ActivationTests {
     func thePayloadsTravel() {
         switch HydrationPlanner.decide(mode: .shadow("B2 — a test"),
                                        bootstrap: full()) {
-        case .hydrate(_, _, _, _, let authored, let decisions, _):
+        case .hydrate(_, _, _, _, let authored, let decisions, _, _):
             #expect(authored != nil)
             #expect(authored?.notes.count == 1)
             #expect(authored?.commutes.count == 1)

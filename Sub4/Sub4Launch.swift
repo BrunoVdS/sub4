@@ -319,7 +319,8 @@ final class Sub4Launch {
             PlanStore.shared.applyMoves(PlanMoveStore.shared.all)
             return outcome
         case .hydrate(let plan, let constants, let zones, let ftp,
-                      let authored, let decisions, let storedMoves):
+                      let authored, let decisions, let storedMoves,
+                      let storedActivities):
             PlanStore.shared.hydrate(from: plan)
             // BEFORE `applyMoves`, NOT AFTER. The plan is corrected FROM this
             // store, so a store hydrated afterwards would be right and the
@@ -355,6 +356,24 @@ final class Sub4Launch {
             // because the sentence lists what moved and the code has an
             // ordering constraint. Patch 377.
             if storedMoves != nil { what += ", the plan moves" }
+            // PATCH 380 — THE MACHINERY, AND IT IS UNREACHABLE UNTIL 381.
+            //
+            // `storedActivities` is nil in this build because
+            // `hydratedFamilies` does not name `.activities`. The planner asks
+            // that question; this file has no branch of its own and gains none
+            // here. Written now so that the flip is one line somewhere else,
+            // which is what made 346's four failures attributable. §12.103.
+            //
+            // **TOUCHING `ActivityStore.shared` IS WHAT CONSTRUCTS IT**, and
+            // from 381 that happens HERE, before `.ready`, rather than when
+            // the first view asks for it. The store reads `activities.json` in
+            // its own `init` and this replaces the result: file first, rows
+            // over it, inside the one main-actor step with no suspension in
+            // it, so nothing observes the intermediate state.
+            if let storedActivities {
+                ActivityStore.shared.hydrate(from: storedActivities)
+                what += ", the activities"
+            }
             return .hydrated(what)
         }
     }

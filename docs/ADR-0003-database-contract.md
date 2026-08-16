@@ -8962,6 +8962,119 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.124 The machinery for the seventh family — patch 380
+
+D7 slice B3. 379 read the activities and fed nothing from them; this builds
+everything that would feed them and switches none of it on. 381 is the flip.
+
+### 12.124.1 What is in it, and the gap it does not close
+
+`hydratableActivities`, a fourth optional payload on `Instruction.hydrate`,
+`ActivityStore.hydrate(from:)`, `ActivityStore.servedFrom`, and two paste
+lines. `Family.allCases.count` is still 7 and `hydratedFamilies.count` is still
+6, so `HydrationPlanner.decide` hands over nil however much the database holds
+— which `ActivityHydrationTests.thePlannerStillCarriesNoActivities` is the
+whole of this patch's evidence for.
+
+**381 IS TWO EDITS AND NOT ONE.** §12.123 called it "one line: add
+`.activities` to `hydratedFamilies`". It is that plus the `activities` entry in
+`HydratedStores.all`, because the moment the store is fed, the verifier's
+`activities` comparison stops being independent evidence and becomes the
+database agreeing with itself — §12.99. `ActivitiesAreReadTests` already pins
+the count at 5 and asserts the check is in `independentChecks`; both invert
+that day, in the same diff, which is what makes them a decision rather than a
+number that slid. 377 did both halves for the moves in one patch and §12.121
+records why that was right.
+
+### 12.124.2 The hydration settles, and that was decided by the code already
+
+§12.123.7 left this open. It is answered by §12.43 and by a line that has been
+there since 312: `ActivityParity` builds its database side with
+`ActivityRoster.settle(databaseRows)`. `load` settles, `ingest` settles, the
+parity twin settles — a hydration that took the rows as they came would be a
+fourth opinion about what the activity list is, and the only one that skipped
+the rules.
+
+Two consequences are stated at the call site rather than left to be found:
+
+- **The order changes.** `ActivityRepository.all` orders by `startUTC`, which
+  §4.1 makes authoritative for ORDER; the store's list is newest-first by
+  `startLocal`, which is authoritative for BELONGING. A run at 23:40 and one at
+  00:20 are forty minutes and one training day apart. Settling re-sorts, so the
+  hydrated list is the store's own convention rather than the query's.
+- **A row can be dropped.** `DataCorrections.ignoredActivities` can gain an
+  entry after a row is written, which is patch 310's argument at the third
+  door.
+
+**If that drop is ever non-zero, the verifier's `activities` comparison will
+disagree from 381, and the disagreement will be TRUE**: the table holds rows
+the app's own rules reject. It is a finding to read, not a difference to patch
+away, and `hydrationRoster.dropped` is the number that says so. The device
+paste of 16 August reads `Activity roster: 694 kept of 694 offered`, so today
+it drops none — which is also why this cannot be proved on the device by
+seeing a number move.
+
+### 12.124.3 An empty table hands over nil, for a reason that is not B2's
+
+The three authored families withhold an empty payload because the athlete's
+writing cannot be fetched again (§12.8.1). This one withholds for the opposite
+half of the same worry: a clean read of an empty `activity` table is a device
+between its first launch and its first sync, and hydrating from it would
+replace a store holding the whole history with nothing.
+
+**That the rows are re-fetchable is not an answer.** §12.122.1: nothing
+re-fetches on its own, `cursor` survives in `UserDefaults`, and what the
+athlete sees is his history shorten until he notices and presses Reset. The
+refusal costs nothing — a database with no activities has nothing to offer —
+and it is the cheapest possible place to make that state unreachable.
+
+It stays out of `emptyAuthoredFamilies` for §12.123.3's reason, unchanged: that
+list means *stores keeping a file nobody may blank*, and this file can be
+rebuilt from the source.
+
+### 12.124.4 The roster line's subject, named rather than moved
+
+§12.123.7's second open item. `loadRoster` describes `activities.json` — that
+is what it is for, and after a hydration it goes on describing it while the
+store serves rows. Two ways out were available: set the roster from the
+hydration, or name the source in the line.
+
+**The second, because the first destroys a fact.** `Activity roster: N kept of
+M offered` is evidence about the file, and the file is the legacy side's only
+copy while the slice is under test; overwriting it with the hydration's figures
+would leave nothing anywhere saying what the file held. So `hydrationRoster` is
+its own property with its own unconditional line, and that line says what the
+roster above it describes.
+
+`hydrationLine` is `nonisolated static` and pure, exactly like
+`lateArrivalLine` at 376 and for the same reason: the two states it tells apart
+are the ones a device cannot be put into on demand.
+
+### 12.124.5 What 381 will construct, and when
+
+`ActivityStore.shared` is not touched by `Sub4Launch.apply` in this build — the
+payload is nil, so the `if let` never binds. **From 381 it is**, and that moves
+the store's construction to before `.ready`: the store reads `activities.json`
+in its own `init`, records to `StoreReadJournal`, may call `resetCache()` if
+the cutoff moved, and only then is hydrated over. File first, rows over it, in
+the one main-actor step 365 established, with no suspension inside it.
+
+That ordering is deliberate and it is the same one B1 has: the legacy read
+still happens, so `lastLoad`, `loadRoster` and the unreadable-stores list go on
+describing the file whatever the database does.
+
+### 12.124.6 What this patch cannot prove
+
+Nothing on the device changes except two lines of the paste. `Activity store
+reads:` will say *the app's own files* and `Activities hydrated:` will say
+*no* — and both saying exactly that is the whole of what a device run can
+confirm at 380, because a build where they said anything else would be 381
+arriving early. The suite is where the machinery is exercised: the store takes
+rows, settles them, writes nothing over a file it could not read, and the
+planner still refuses to hand any of it over.
+
+---
+
 ## 12.123 The seventh family, read and not fed — patch 379
 
 D7 slice B3, groundwork. 357 was B2's; this is B3's.

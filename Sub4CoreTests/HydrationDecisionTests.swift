@@ -142,7 +142,7 @@ struct HydrationDecisionTests {
                                         bootstrap: whole())
         guard case .hydrate(let plan, let constants, let zones, let ftp,
                             let authored, let decisions,
-                            let storedMoves) = i else {
+                            let storedMoves, let storedActivities) = i else {
             Issue.record("every family loaded, so the stores must be fed")
             return
         }
@@ -162,6 +162,18 @@ struct HydrationDecisionTests {
         #expect(authored == nil,
                 "clean and empty is not something to hydrate a store from")
         #expect(decisions == nil, "the same, for the match decisions")
+        // PATCH 380. THE FOURTH PAYLOAD, NIL FOR THE FIRST OF THOSE TWO
+        // REASONS RATHER THAN THE SECOND: this build does not feed the
+        // activities at all, and 381 is the line that changes that.
+        //
+        // PATTERN-MATCHED RATHER THAN `== nil`. `[Activity]?` compared to nil
+        // is a call to `Optional.==` and needs `Activity: Equatable`, whose
+        // synthesised conformance is MainActor-isolated in this target —
+        // `ActivityLoad`'s header records that at 289a, and 322a is what
+        // ignoring it costs. This suite is not MainActor.
+        if case .some = storedActivities {
+            Issue.record("this build must not feed the activities yet")
+        }
         #expect(plan.meta.plan == "stored", "the STORED plan, not the bundled one")
         #expect(plan.sessions.count == 1)
         #expect(constants.hrMaxObserved == 181)

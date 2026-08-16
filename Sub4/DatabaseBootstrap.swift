@@ -313,6 +313,30 @@ nonisolated struct DatabaseBootstrap: Sendable {
         return m
     }
 
+    /// The stored activities, or nil — patch 380, D7 slice B3.
+    ///
+    /// **NIL WHEN EMPTY, AND IT IS THE SAME RULE FOR A DIFFERENT REASON.** The
+    /// three authored families withhold an empty payload because the athlete's
+    /// writing cannot be fetched again. This one withholds because a clean
+    /// read of an empty `activity` table is a device between its first launch
+    /// and its first sync — and hydrating there would replace a store holding
+    /// the whole history with nothing at all.
+    ///
+    /// That the rows are RE-FETCHABLE is not the answer to that. §12.122.1:
+    /// nothing re-fetches on its own, the cursor survives, and what the
+    /// athlete sees is his history disappear until he notices and presses
+    /// Reset. An empty history that looks like real data is `Sub4Launch`'s own
+    /// worst failure, and this is the cheapest place to refuse it.
+    ///
+    /// STILL DELIBERATELY NOT IN `emptyAuthoredFamilies` — that list means
+    /// "stores keeping a file nobody may blank", and this file can be rebuilt
+    /// from the source. §12.123.3.
+    var hydratableActivities: [Activity]? {
+        guard case .loaded(let a, _) = activities, activities.holdsContent
+        else { return nil }
+        return a
+    }
+
     // MARK: The paste
 
     /// UNCONDITIONAL, one line per family plus the two verdicts — §12.54.2.
@@ -473,7 +497,13 @@ nonisolated enum HydrationPlanner {
                      decisions: [MatchDecision]?,
                      // PATCH 377 — the third optional family, nil for the same
                      // two distinct reasons as the two above it.
-                     moves: [PlanMove]?)
+                     moves: [PlanMove]?,
+                     // PATCH 380 — the fourth, and the first that is not the
+                     // athlete's own writing. Nil for those same two distinct
+                     // reasons: this build does not feed the family (381 is
+                     // the line), or the table read cleanly and holds nothing.
+                     // The plan and the athlete are still all-or-nothing.
+                     activities: [Activity]?)
     }
 
     /// ORDER MATTERS AND IT IS THE POINT.
@@ -511,7 +541,16 @@ nonisolated enum HydrationPlanner {
                 decisions: PersistenceAuthority.hydrates(.decisions)
                     ? bootstrap.hydratableDecisions : nil,
                 moves: PersistenceAuthority.hydrates(.moves)
-                    ? bootstrap.hydratableMoves : nil)
+                    ? bootstrap.hydratableMoves : nil,
+                // PATCH 380. FALSE IN THIS BUILD, AND THAT IS THE PATCH —
+                // `hydratedFamilies` does not name `.activities` until 381, so
+                // the machinery below is complete and unreachable. The two
+                // conditions stay separate for 357's reason: "this build does
+                // not feed it" and "the table holds nothing" send a reader to
+                // opposite places, and one combined check would collapse them
+                // into one nil.
+                activities: PersistenceAuthority.hydrates(.activities)
+                    ? bootstrap.hydratableActivities : nil)
         }
         return .leaveOnFiles(
             .nothingStored(bootstrap.firstEmpty ?? "a family this build does not name"))

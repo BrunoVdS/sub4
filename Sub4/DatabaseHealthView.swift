@@ -3644,6 +3644,11 @@ struct DatabaseHealthView: View {
         // one with no line, and the bootstrap census counts five families
         // because moves are not hydrated. Both true, together unreadable.
         lines.append("Move store reads: \(PlanMoveStore.shared.servedFrom.line)")
+        // PATCH 380 — THE EIGHTH, AND THE FAMILY IS NOT FED YET. 368's
+        // argument one slice later: this store was the only one with no line,
+        // so "the app's own files" and "nobody wired it in" read the same. It
+        // says the files until 381 and then it moves on its own. §12.54.2.
+        lines.append("Activity store reads: \(ActivityStore.shared.servedFrom.line)")
         lines.append("Tables: \(counts.count), imported rows: \(importedRows), total: \(totalRows)")
         // PATCH 336. EVERY TABLE, INCLUDING THE EMPTY ONES.
         //
