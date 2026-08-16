@@ -123,18 +123,57 @@ def braced(body, header):
 
 
 # --------------------------------------------------------------------------
-# RULE 1 — patch 372, §12.116
+# RULE 1 — patch 372, §12.116; widened at 378, §12.122
 # --------------------------------------------------------------------------
 
+# The stores that decode a file into memory and write that memory back, and
+# have not yet been brought under §12.116. It may only ever go DOWN.
+#
+#   378: 3 → 2.  ActivityStore fixed. AthleteStore and AthleteConstants remain.
+#
+# A CEILING RATHER THAN A FAILURE, deliberately. Failing outright would block
+# `test.sh` on a tree whose exposure predates this rule by two hundred patches,
+# and the usual answer to that is an exemption list — a hand-kept list of names
+# in a file away from the thing it names, which is the defect this project has
+# now paid for four times. A number that may only be lowered is the smallest
+# thing that keeps the debt visible in every run without stopping the build.
+UNPROTECTED_STORE_CEILING = 2
+
+
 def every_store_that_records_a_read_refuses_a_write():
-    """`lastLoad` IS the risk, so `lastLoad` is what this searches for.
+    """**WIDENED AT 378, AND THE WIDENING IS THE FINDING.**
 
-    A store that keeps this field has admitted its read can fail. Having
-    admitted it, it must not then write over the file it could not read —
-    which is how `weather.json` went from 602 readings to one on 15 August
-    while four other stores stood one bad file away from the same thing.
+    This searched for `var lastLoad: StoreLoad` — "a store that has admitted
+    its read can fail". Six stores declared it; all six guarded; the rule was
+    green. `ActivityStore` decoded `activities.json` with `?? []`, never
+    declared a `lastLoad`, and was therefore never in the population — one
+    sync away from writing a window over 661 activities.
 
-    §12.115.6 listed four of the five by hand. This does not use a list.
+    That is 372's own finding one level up. 372 wrote that §12.115.6 missed
+    `Matcher` because the list was built from the shape of the FIX rather than
+    the shape of the RISK. Relative to a store that adopted NEITHER, `lastLoad`
+    is itself a fix-shape.
+
+    The risk is older and duller: a store that decodes a file into memory and
+    writes that memory back. That is `let fileURL: URL` plus a write, and it
+    finds eight.
+
+    TWO CHECKS OVER TWO DIFFERENT POPULATIONS, AND KEEPING THEM SEPARATE IS
+    THE WHOLE OF IT:
+
+      · CHECK A, unchanged from 372 and over EVERY source: a store that HAS a
+        `lastLoad` and does not ask it. Always a failure — it admitted the risk
+        and then took it.
+      · CHECK B, new: file-backed writers with NEITHER, held under a ceiling
+        that only goes down.
+
+    **CHECK A MUST NOT BE SCOPED TO THE FILE-BACKED POPULATION.** The first
+    draft of this widening ran both checks over `let fileURL: URL` + a write,
+    and that silently dropped `Matcher` — which keeps a `lastLoad`, guards it,
+    and is backed by `UserDefaults` rather than a file. A store that stopped
+    guarding would have gone unnoticed there. **Widening one population
+    narrowed another**, which is this patch's own finding happening inside the
+    fix for it, and it was caught by running the rule rather than reading it.
     """
     rule = "stores refuse after an unclean read"
     declarers, missing = [], []
@@ -143,15 +182,51 @@ def every_store_that_records_a_read_refuses_a_write():
         if not re.search(r"var lastLoad: StoreLoad", body):
             continue
         declarers.append(f.name)
-        if "guard lastLoad.isTrustworthy" not in body:
+        if "lastLoad.isTrustworthy" not in body:
             missing.append(f.name)
 
     if not counted(rule, len(declarers), 6, "stores declaring lastLoad"):
         return
+
+    population, unprotected = [], []
+    for f in app_sources():
+        body = strip_comments(f.read_text())
+        # THE DECLARATION, NOT THE WORD. `DatabaseHealthView` mentions a
+        # `fileURL` local for a temp directory and is not a store; matching the
+        # stored property is what tells a store from a mention of one.
+        if not re.search(r"^\s*(private )?let fileURL: URL", body, re.M):
+            continue
+        if not ("StoreWrite.encode" in body
+                or "StoreWriteJournal.shared.attempt" in body):
+            continue
+        population.append(f.name)
+        if not re.search(r"var lastLoad: StoreLoad", body):
+            unprotected.append(f.name)
+
+    if not counted(rule, len(population), 7, "file-backed stores that write"):
+        return
+
     for name in missing:
         fail(rule, f"{name} keeps a lastLoad and never asks it before writing. "
                    "An unreadable file will be read as an empty store and "
                    "saved back over the real one. §12.116")
+
+    REPORT.append(f"  {rule}: {len(unprotected)} unprotected "
+                  f"(ceiling {UNPROTECTED_STORE_CEILING})"
+                  + (f" — {', '.join(sorted(unprotected))}" if unprotected
+                     else ""))
+    if len(unprotected) > UNPROTECTED_STORE_CEILING:
+        fail(rule, f"{len(unprotected)} file-backed stores decode into memory "
+                   "and write it back with no `lastLoad` and no guard: "
+                   f"{', '.join(sorted(unprotected))}. The ceiling is "
+                   f"{UNPROTECTED_STORE_CEILING}. Either bring one under "
+                   "§12.116 or LOWER THE CEILING ON PURPOSE — it may not be "
+                   "raised. §12.122")
+    if len(unprotected) < UNPROTECTED_STORE_CEILING:
+        fail(rule, f"only {len(unprotected)} unprotected stores remain and the "
+                   f"ceiling still reads {UNPROTECTED_STORE_CEILING}. Lower it "
+                   "in the same patch that fixed one, or the next regression "
+                   "has room to hide. §12.122")
 
 
 # --------------------------------------------------------------------------

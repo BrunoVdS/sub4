@@ -172,13 +172,28 @@ final class ActivityStore {
                   lastResult: lastError)
     }
 
-    /// New activities in the last sync whose start time predates `cursor` —
-    /// uploaded late, and invisible to the app before patch 249.
+    /// **WHAT THE LAST READ OF `activities.json` FOUND — patch 378, §12.122.**
     ///
-    /// Per-sync rather than cumulative, and deliberately not persisted: after
-    /// this patch a late arrival is normal and handled, not a fault. The number
-    /// is worth seeing once, to confirm the recovery, and is then just evidence
-    /// that the sync works.
+    /// The seventh store to get this, and the one that needed it most. Until
+    /// this patch `load` read
+    ///
+    ///     let decoded = (try? JSONDecoder().decode(…)) ?? []
+    ///
+    /// so a file that existed and did not decode produced an athlete with no
+    /// activities — and `ingest` seeds `byID` from `activities`, so the next
+    /// sync wrote its window over the lot. §12.115 on the largest store here.
+    ///
+    /// `.absent` is the correct start: a fresh install has no file, and a
+    /// fresh install must be able to write one.
+    private(set) var lastLoad: StoreLoad = .absent
+
+    // A DOC FOR A DIFFERENT PROPERTY USED TO SIT HERE — patch 378.
+    //
+    // Seven lines describing `lateArrivals`, left above `loadRoster` by 376
+    // and never attached to a declaration. `lateArrivals` has its own full
+    // doc at its own declaration below, so this was a stale duplicate sitting
+    // on top of an unrelated property. Removed rather than moved.
+
     /// WHAT THE LOAD PATH DID, AND WHAT IT COST — patch 310, §12.54.
     ///
     /// Nil until `load` has read a file. Nil is not zero: a device with no
@@ -193,13 +208,27 @@ final class ActivityStore {
     /// only when non-zero, which made a working counter and an unwired one look
     /// identical — the exact thing 266c and 273 wrote down about the paste.
     var loadSummary: String {
-        loadRoster?.summary ?? "no cached file read"
+        // THREE ANSWERS, NOT TWO — patch 378. `loadRoster` is nil both when
+        // there is no file and when there is one this app could not read, and
+        // §12.15 is that those are opposite facts wearing one sentence. The
+        // reason is included HERE and not in the paste below: this is the
+        // athlete's own screen, and `StoreRead`'s doc reserves the reason for
+        // it because a file-system error can carry a path.
+        if case .unreadable(let why) = lastLoad {
+            return "the cached file could not be read — \(why)"
+        }
+        return loadRoster?.summary ?? "no cached file read"
     }
 
     /// For the redacted paste, unconditional.
     var loadDiagnosticLines: [String] {
+        // THE SAME THREE ANSWERS, WITHOUT THE REASON — patch 378. See
+        // `loadSummary`: the paste says THAT the file could not be read and
+        // not why, because this text is copied into a chat window.
         var lines = loadRoster?.diagnosticLines
-            ?? ["Activity roster: no cached file read"]
+            ?? [lastLoad.isTrustworthy
+                ? "Activity roster: no cached file read"
+                : "Activity roster: the cached file could not be read"]
         // PATCH 376. NOT indented under the roster: the roster describes what
         // the LOAD kept, and this describes what the last SYNC brought. Two
         // facts about the same activities, arrived at differently, and an
@@ -262,6 +291,23 @@ final class ActivityStore {
     /// moment a key changes rather than after a delete has missed one.
     nonisolated static let rejectionKeys = [rejectionsKey, rejectedKey]
 
+    /// **A STORE ROOTED SOMEWHERE ELSE — patch 378, and §12.69 is why.**
+    ///
+    /// The seam `CommuteStore`, `PlanMoveStore` and `Weather` already have.
+    /// Nothing can drive a corrupt `activities.json` through the singleton —
+    /// it reads Application Support on a device — so without this the guard
+    /// below could not be shown to fail, and a guard that cannot be shown to
+    /// fail has not been tested.
+    ///
+    /// IT DOES NOT RECORD TO THE READ JOURNAL, for `Weather`'s reason: a test
+    /// store writing into the shared journal leaks into whatever runs next,
+    /// and `canReconcile` reads that journal to decide whether rows may be
+    /// deleted.
+    init(directory: URL) {
+        fileURL = directory.appendingPathComponent("activities.json")
+        load()
+    }
+
     private init() {
         let dir = (try? FileManager.default.url(for: .applicationSupportDirectory,
                                                 in: .userDomainMask,
@@ -272,6 +318,11 @@ final class ActivityStore {
         if cursor == 0 { cursor = Self.cutoffEpoch }
         lastSync = UserDefaults.standard.object(forKey: lastSyncKey) as? Date
         load()
+        // PATCH 378. A store the "Unreadable stores" list cannot name is a
+        // store the list cannot warn about — 371's sentence, and until now
+        // `activities.json` was exactly that. Recorded here rather than in
+        // `load` so the seam above stays out of the shared journal.
+        StoreReadJournal.shared.record("activities.json", lastLoad)
 
         // If the cutoff has been moved (e.g. back to cover the post-Ironman
         // block), the persisted cursor is now too late to ever fetch the
@@ -592,8 +643,24 @@ final class ActivityStore {
     // MARK: Persistence
 
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        let decoded = (try? JSONDecoder().decode([Activity].self, from: data)) ?? []
+        // **BARE `JSONDecoder()`, AND IT IS NOT A STYLE CHOICE — §12.122.**
+        //
+        // `save()` below writes with a bare `JSONEncoder()`, so the dates in
+        // `activities.json` are in the default numeric encoding.
+        // `StoreRead.decode` DEFAULTS to `JSONDecoder.sub4`, which is
+        // ISO-8601. Taking that default would make every existing file
+        // undecodable — turning a patch about not destroying data into the
+        // thing that destroys it, on every device at once. `Weather.load`
+        // carries the same sentence, put there by 371 for the same reason.
+        let (value, outcome) = StoreRead.decode([Activity].self, at: fileURL,
+                                                decoder: JSONDecoder())
+        lastLoad = outcome
+
+        // THE ASSIGNMENT IS CONDITIONAL. A failed read leaves memory as it
+        // was, which is what every other store here does. The old line was
+        // `?? []`, and that is the whole of §12.115: it said "the athlete has
+        // no activities" when it meant "I could not tell".
+        guard let decoded = value else { return }
         recordRejections(decoded)
 
         // ONE CALL, AND THE OTHER DOOR MAKES THE SAME ONE — patch 310.
@@ -604,10 +671,15 @@ final class ActivityStore {
         // same rules, and two implementations of one rule is the mistake §12.43
         // cost three patches to learn.
         //
-        // `loadRoster` stays nil if the file is not there — the guard above
-        // returns first. That is the difference between "no cached file" and
-        // "a cached file holding nothing", and it is the sixth instance of
-        // §12.15's shape on this screen.
+        // `loadRoster` stays nil unless a file was actually decoded — the
+        // guard above returns first. That is the difference between "no cached
+        // file" and "a cached file holding nothing", and it is the sixth
+        // instance of §12.15's shape on this screen.
+        //
+        // AND SINCE 378 THE GUARD RETURNS FOR TWO DIFFERENT REASONS: no file,
+        // and a file this app could not read. `loadRoster` is nil for both and
+        // cannot tell them apart. `lastLoad` is what does, which is why
+        // `loadSummary` asks it rather than reading nil as an answer.
         let settled = ActivityRoster.settle(decoded)
         loadRoster = settled
         activities = settled.activities
@@ -645,10 +717,38 @@ final class ActivityStore {
     /// athlete less than the app actually has, to buy a consistency nobody
     /// asked for. The disagreement is recorded instead: Settings says so, the
     /// tab badge lights, and the next successful sync clears it.
-    private func save() {
+    ///
+    /// **THE GUARD, SEVEN PATCHES LATE — 378, §12.122.**
+    ///
+    /// §12.20 on a file rather than a row: nothing is overwritten on the
+    /// strength of a read nobody could make. `ingest` seeds `byID` from
+    /// `activities`, so after a failed load that dictionary is empty and this
+    /// write puts one sync window where the whole history was.
+    ///
+    /// **`rebuildingFromScratch` IS NOT `force`, AND THE NAME IS THE POINT.**
+    /// `resetCache()` must be able to write — it is how an athlete with a
+    /// corrupt file recovers, and a guard that blocked it would be this patch
+    /// causing the harm it exists to prevent. What makes that write safe is
+    /// not that somebody asked for it: it is that `resetCache` puts `cursor`
+    /// back to the cutoff FIRST, so the file being written is a complete
+    /// replacement and the next sync re-pulls everything. A caller that has
+    /// not done that has no business passing `true`.
+    ///
+    /// THE COST IS DISCLOSED, NOT HIDDEN. While the file is unreadable a sync
+    /// still runs and its activities still appear on screen; they are not
+    /// persisted, and come back next launch. That is the cheap failure. The
+    /// expensive one is the file. "Unreadable stores" names `activities.json`
+    /// as of this patch, which is how anybody finds out.
+    ///
+    /// RETURNS WHETHER IT WROTE — 374's change to `Weather.save`, for the same
+    /// reason: a refusal that cannot be observed cannot be tested. §12.69.
+    @discardableResult
+    func save(rebuildingFromScratch: Bool = false) -> Bool {
+        guard rebuildingFromScratch || lastLoad.isTrustworthy else { return false }
+
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        StoreWriteJournal.shared.attempt("activities.json") {
+        return StoreWriteJournal.shared.attempt("activities.json") {
             try StoreWrite.encode(activities, to: fileURL,
                                   store: "activities.json", encoder: enc)
         }
@@ -661,7 +761,11 @@ final class ActivityStore {
         lastSync = nil
         UserDefaults.standard.removeObject(forKey: cursorKey)
         UserDefaults.standard.removeObject(forKey: lastSyncKey)
-        save()
+        // `rebuildingFromScratch` — `cursor` went back to the cutoff four
+        // lines up, so this write is a complete replacement and the next sync
+        // re-pulls everything. That is what authorises it over an unreadable
+        // file, and it is the athlete's recovery path. §12.122.
+        save(rebuildingFromScratch: true)
         // Details are keyed by activity id, so a stale details.json would
         // otherwise survive a rebuild and quietly reference activities that no
         // longer exist.

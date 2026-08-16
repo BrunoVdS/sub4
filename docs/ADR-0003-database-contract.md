@@ -8962,6 +8962,119 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.122 The seventh store, and the rule that could not see it — patch 378
+
+### 12.122.1 What was there
+
+`ActivityStore.load()`, unchanged since the store was written:
+
+    guard let data = try? Data(contentsOf: fileURL) else { return }
+    let decoded = (try? JSONDecoder().decode([Activity].self, from: data)) ?? []
+
+`?? []` is §12.115 exactly. What makes it worse here than in `weather.json` is
+the line `ingest` starts from:
+
+    var byID = Dictionary(uniqueKeysWithValues: activities.map { ($0.id, $0) })
+
+seeded from memory, which after a failed load is empty. `cursor` lives in
+`UserDefaults` and survives the bad read, so the next sync fetches only the
+window since the cursor and `save()` writes that window over `activities.json`.
+**661 activities become whatever Strava returned since the cursor.**
+
+Not identical to weather in consequence: activities are re-fetchable, where the
+601 readings were not. But nothing re-fetches on its own — the cursor survives,
+so the athlete sees his history shorten and has to notice and press Reset. And
+`details/` and `streams/` are keyed by activity id, so they are orphaned rather
+than deleted.
+
+### 12.122.2 Why RULE 1 was green while this was true
+
+`check-invariants.py` RULE 1 searched for `var lastLoad: StoreLoad` — *a store
+that has admitted its read can fail*. Six declared it, six guarded, green.
+`ActivityStore` never declared one, so it was never in the population.
+
+**This is 372's own finding, recurring one level up.** 372 wrote that §12.115.6
+missed `Matcher` because the list was built by searching for the shape of the
+FIX — `StoreRead.decode` — rather than the shape of the RISK, which is
+`lastLoad`. Relative to a store that adopted *neither*, `lastLoad` is itself a
+fix-shape. Searching for it finds only the stores that already know.
+
+The risk is older and duller: **a store that decodes a file into memory and
+writes that memory back.** In this codebase that is a `let fileURL: URL`
+declaration plus a write, and it finds eight stores — five protected before this
+patch, three not.
+
+The rule now makes two separate checks. A store that HAS a `lastLoad` and does
+not ask it is a failure outright: it admitted the risk and then took it. A store
+with neither counts against a **ceiling that may only go down** — 3 before this
+patch, 2 after. A ceiling rather than a failure because failing outright would
+block `test.sh` over an exposure two hundred patches old, and the usual answer
+to that is an exemption list: a hand-kept list of names in a file away from the
+thing it names, which is the defect this project has now paid for four times
+(369a, 372, 377, 377d). A number that may only be lowered keeps the debt in
+every run's output without stopping the build. The rule fails if it is too high
+**and if it is too low** — a ceiling left above the truth is room for the next
+regression to hide in.
+
+What remains: `AthleteStore` and `AthleteConstants`. Both are the milder
+`guard … else { return }` shape rather than `?? []` — a bad read leaves memory
+at its initial value rather than explicitly emptying it — both are re-fetchable
+from Strava, and both are hydrated from the database at B1, so rows already
+exist to recover from. `DetailStore` is deliberately out of the population: it
+is a directory of per-activity files, one bad file skips one recording, and the
+shape this rule checks does not describe it. That is a judgement, written down
+here so the next reader can disagree with it.
+
+### 12.122.3 The escape hatch is the part to get right
+
+`save()` has two callers. The sync path must refuse while the file is
+unreadable. `resetCache()` must not — it is how an athlete with a corrupt file
+recovers, and a guard that blocked it would be this patch causing the harm it
+was written to prevent.
+
+**The justification is not "the athlete asked".** It is that `resetCache` puts
+`cursor` back to the cutoff *first*, so what it writes is a complete replacement
+and the next sync re-pulls everything. That is why the parameter reads
+
+    save(rebuildingFromScratch: true)
+
+and not `force`. A caller that has not reset the cursor has no business passing
+it, and the name says so at the call site rather than in a comment somebody has
+to go and find.
+
+`private init()` reaches the same path: it calls `load()`, then `resetCache()`
+if `MatchRules.cutoffDayKey` has moved. On a launch with a corrupt file that
+rebuilds from Strava — recovery, not loss — and the flag makes it legible.
+
+### 12.122.4 The decoder, and the trap in taking a default
+
+`save()` writes with a bare `JSONEncoder()`, so the dates in `activities.json`
+are the default numeric encoding. `StoreRead.decode` **defaults** to
+`JSONDecoder.sub4`, which is ISO-8601. Taking that default would have made every
+existing `activities.json` undecodable — a patch about not destroying data
+becoming the thing that destroys it, on every device at once.
+
+`Weather.load` carries this sentence already, written at 371. Reading it before
+writing this is the only reason it is not a defect in 378. **A default argument
+is a decision somebody else made for you**, and a store's on-disk encoding is
+not something to inherit from a helper's convenience.
+
+### 12.122.5 Two smaller things
+
+`activities.json` could not appear under "Unreadable stores" because it never
+reported — 371's sentence about `weather.json`, still true of the larger store
+four patches later. `StoreReadJournal.shared.record` is called from
+`private init()` only, so the test seam stays out of the shared journal for the
+reason `Weather`'s seam does: `canReconcile` reads that journal to decide
+whether rows may be deleted.
+
+And seven lines of documentation for `lateArrivals`, left above `loadRoster` by
+376 and never attached to a declaration, were removed. `lateArrivals` has its
+own full doc at its own declaration; this was a first draft sitting on top of an
+unrelated property, which is worse than no doc because a reader believes it.
+
+---
+
 ## 12.121 The sixth family — patch 377
 
 `Move store reads: the app's own files`, on a build where notes, commute
