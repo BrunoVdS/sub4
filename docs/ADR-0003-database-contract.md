@@ -8962,6 +8962,82 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.117 The rules that caught something, kept running — patch 373
+
+Not a defect in the app. A defect in how this project verifies itself.
+
+### 12.117.1 The same mistake, twice, in four patches
+
+| | what the list said | what was true | how it was found |
+|---|---|---|---|
+| 369a | `removedTotal` sums the removal counters | it summed three of six | read the declarations, not the list |
+| 372 | four stores carry the unclean-read exposure (§12.115.6) | five did | searched for `lastLoad`, not for the fix |
+
+369a is the sharper of the two: the check found a family **I did not know was
+missing**. I knew about two. The count of what was missing was itself wrong,
+which is the entire case for reading declarations rather than typing a list.
+
+372 is the same error from the other side. §12.115.6 was assembled by
+searching for stores that read through `StoreRead.decode` — the shape of the
+FIX. `Matcher` sets `lastLoad` by hand, so it did not answer that search,
+while holding the authored match decisions and taking a write on every match
+the athlete makes.
+
+### 12.117.2 Both checks existed, and neither could fire twice
+
+`apply-369a.py` and `apply-372.py` each contain the check that would have
+caught the other's miss. Both ran once, at apply time, and then sat in
+`scripts/` as history.
+
+**A guard that runs once catches the defect it was written for and nothing
+else.** The class of mistake stays open the moment attention moves on — and
+four patches is how long that took.
+
+`scripts/check-invariants.py` is where a rule goes when it has earned the
+right to keep running. `test.sh` runs it before `xcodebuild`, so it costs a
+second and `preflight.sh` inherits it.
+
+### 12.117.3 Three rules, and the bar for a fourth
+
+1. Every store declaring `lastLoad` refuses a write after an unclean read —
+   372. Six declarers; before 372 exactly one had the guard.
+2. Every declared removal counter appears in `removedTotal` — 369a. Six
+   counters; three were missing.
+3. No `#expect`/`#require` message is a concatenation — 366b, §12.110.8, and
+   pasted by hand into every apply script since, which is six copies of a rule
+   that ran only when I remembered it.
+
+The bar is **a defect that actually happened**. An invariant nobody has
+violated is a guess about the future, and this file costs exactly as much as
+the noise in it. Rules that sound prudent and have caught nothing stay out.
+
+Equally: nothing here duplicates the suite. These are facts no single
+expression in the app ever states, which is why neither the compiler nor 1543
+tests can see them.
+
+### 12.117.4 A rule that cannot say what it checked has not checked anything
+
+Every rule reports how many things it examined and fails below a floor.
+
+§12.69, and `test.sh` is the reason it is not optional: between 318 and 325
+that script reported a clean run while checking nothing, because `-quiet` had
+removed the summary line it grepped for. A regex that silently matches zero
+declarations does the identical thing more quietly — and it would do it
+inside the one file whose whole purpose is to be trusted without being read.
+
+Floors sit well under the true figures (6, 6, 115 files, 1069 messages), so
+churn does not reach them. One that fires means the source moved or the parser
+broke — or something really was retired, in which case lowering the floor is
+meant to take a decision.
+
+### 12.117.5 Not a test, and why
+
+The suite runs in a simulator bundle with no access to the source text these
+rules read. A swift-testing version would need the sources shipped as bundle
+resources, which is a larger change to make a check less visible.
+
+---
+
 ## 12.116 Nothing overwrites a store it could not read — patch 372
 
 §12.115.6 wrote the finding down; this is the fix. Five stores, one rule: a

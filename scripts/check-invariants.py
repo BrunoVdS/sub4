@@ -1,0 +1,293 @@
+#!/usr/bin/env python3
+r"""
+check-invariants.py — the rules that already caught something, kept running.
+
+Run from the repository root, or let `scripts/test.sh` run it:
+
+    python3 scripts/check-invariants.py
+
+WHY THIS FILE EXISTS
+--------------------
+Twice in four patches, a hand-written list was missing an entry, and both
+times a mechanical check found it:
+
+  · 369a  `removedTotal` summed three of six counters. The check read the
+          declarations instead of the list and found the third — the one I
+          did not know about.
+  · 372   §12.115.6 named four stores carrying an exposure. There were five.
+          `Matcher` was missed because the list was built by searching for
+          the shape of the FIX — `StoreRead.decode` — rather than the shape
+          of the RISK, which is `lastLoad`.
+
+Both checks existed. Both ran once, inside an apply script, and died with the
+patch. Nothing re-ran them, so the same class of miss was free to recur — and
+did, four patches later, in the other direction.
+
+**A guard that runs once is a guard that catches the defect it was written
+for and nothing else.** This file is where a rule goes when it has earned the
+right to keep running.
+
+WHAT BELONGS IN HERE
+--------------------
+A rule earns its place by having caught a REAL defect, and by being decidable
+from the source text alone. Rules that merely sound prudent do not go in: an
+invariant nobody has violated is a guess about the future, and this file is
+expensive exactly in proportion to how much of it is noise.
+
+Nothing here duplicates the test suite. These are the facts the compiler and
+the tests cannot see — a sum that must name every declared counter, a store
+that must refuse before it writes — because no single expression in the app
+ever states them.
+
+EVERY RULE MUST FAIL WHEN IT FINDS NOTHING
+------------------------------------------
+§12.69, and it is the whole reason this file can be trusted. A regex that
+silently matches zero declarations reports a clean run while checking nothing,
+which is precisely what `test.sh` did between patches 318 and 325 and what its
+header now exists to describe. So every rule below states how many things it
+examined, prints that number, and FAILS if it drops below a floor.
+
+A rule that cannot say what it checked has not checked anything.
+"""
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path.cwd()
+APP = ROOT / "Sub4"
+TESTS = ROOT / "Sub4CoreTests"
+
+VIOLATIONS = []
+REPORT = []
+
+
+def fail(rule, message):
+    VIOLATIONS.append((rule, message))
+
+
+def counted(rule, n, floor, unit):
+    """The §12.69 half. A rule reports its own coverage, and a rule that found
+    less than it should have is a broken rule, not a clean tree.
+
+    Floors sit well under the real figures, so ordinary churn does not reach
+    them. One that fires means either the source moved or this rule stopped
+    parsing it — and if something really was retired, LOWER THE FLOOR ON
+    PURPOSE. Editing it is meant to take a decision."""
+    REPORT.append(f"  {rule}: {n} {unit}")
+    if n < floor:
+        fail(rule, f"only {n} {unit} found, expected at least {floor}. Either "
+                   "the declarations moved and this rule is now reading the "
+                   "wrong thing — in which case it has been checking nothing — "
+                   "or something was retired and the floor should be lowered "
+                   "deliberately.")
+        return False
+    return True
+
+
+def strip_comments(text):
+    return "\n".join(l for l in text.split("\n")
+                     if not l.strip().startswith("//"))
+
+
+def app_sources():
+    if not APP.is_dir():
+        fail("setup", f"{APP} is not a directory — run from the repo root")
+        return []
+    return sorted(APP.rglob("*.swift"))
+
+
+def braced(body, header):
+    """Brace-matched, never a character window — a fixed-size slice reads
+    whatever follows it and calls that the body."""
+    i = body.find(header)
+    if i < 0:
+        return None
+    j = body.find("{", i)
+    if j < 0:
+        return None
+    depth, k = 0, j
+    while k < len(body):
+        if body[k] == "{":
+            depth += 1
+        elif body[k] == "}":
+            depth -= 1
+            if depth == 0:
+                return body[j:k]
+        k += 1
+    return None
+
+
+# --------------------------------------------------------------------------
+# RULE 1 — patch 372, §12.116
+# --------------------------------------------------------------------------
+
+def every_store_that_records_a_read_refuses_a_write():
+    """`lastLoad` IS the risk, so `lastLoad` is what this searches for.
+
+    A store that keeps this field has admitted its read can fail. Having
+    admitted it, it must not then write over the file it could not read —
+    which is how `weather.json` went from 602 readings to one on 15 August
+    while four other stores stood one bad file away from the same thing.
+
+    §12.115.6 listed four of the five by hand. This does not use a list.
+    """
+    rule = "stores refuse after an unclean read"
+    declarers, missing = [], []
+    for f in app_sources():
+        body = strip_comments(f.read_text())
+        if not re.search(r"var lastLoad: StoreLoad", body):
+            continue
+        declarers.append(f.name)
+        if "guard lastLoad.isTrustworthy" not in body:
+            missing.append(f.name)
+
+    if not counted(rule, len(declarers), 6, "stores declaring lastLoad"):
+        return
+    for name in missing:
+        fail(rule, f"{name} keeps a lastLoad and never asks it before writing. "
+                   "An unreadable file will be read as an empty store and "
+                   "saved back over the real one. §12.116")
+
+
+# --------------------------------------------------------------------------
+# RULE 2 — patch 369a, §12.113.5
+# --------------------------------------------------------------------------
+
+def every_removal_counter_is_in_the_total():
+    """Six counters and one sum, written by different patches at different
+    times with nothing connecting them — so two were missing for as long as
+    there were five, and 369 had already begun writing that figure into the
+    ledger as durable evidence of what a run deleted.
+
+    Reads the declarations, not the sum.
+    """
+    rule = "removal counters are all in the total"
+    p = APP / "Sub4Import.swift"
+    if not p.exists():
+        fail(rule, "Sub4/Sub4Import.swift is missing")
+        return
+    body = strip_comments(p.read_text())
+    total = braced(body, "        var removedTotal: Int {")
+    if total is None:
+        fail(rule, "removedTotal could not be located — it has moved, and this "
+                   "rule cannot see what it is meant to be checking")
+        return
+    counters = sorted(set(re.findall(r"var (\w+Removed)\s*=\s*0", body)))
+    if not counted(rule, len(counters), 6, "counters declared"):
+        return
+    for c in counters:
+        if c not in total:
+            fail(rule, f"{c} is declared and is not in removedTotal. The number "
+                       "the import calls 'rows removed in total' would not be "
+                       "the total, and 369 writes it into migration_run as the "
+                       "record of what a run deleted. §12.113.5")
+
+
+# --------------------------------------------------------------------------
+# RULE 3 — patch 366b, §12.110.8
+# --------------------------------------------------------------------------
+
+def top_level_args(call):
+    blanked = re.sub(r'"(?:[^"\\]|\\.)*"',
+                     lambda m: '"' + "_" * (len(m.group(0)) - 2) + '"', call)
+    args, depth, start = [], 0, 0
+    for i, ch in enumerate(blanked):
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            args.append(call[start:i])
+            start = i + 1
+    args.append(call[start:])
+    return args
+
+
+def calls_in(text, macro):
+    out = []
+    for m in re.finditer(re.escape(macro) + r"\(", text):
+        i = m.end()
+        depth, j, in_str, esc = 1, i, False, False
+        while j < len(text) and depth:
+            c = text[j]
+            if in_str:
+                if esc:
+                    esc = False
+                elif c == "\\":
+                    esc = True
+                elif c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+            j += 1
+        if depth == 0:
+            out.append((text[:m.start()].count("\n") + 1, text[i:j - 1]))
+    return out
+
+
+def no_expect_message_is_a_concatenation():
+    """A `+` in a swift-testing failure message makes the whole expression the
+    message, and what prints on failure is not what was written.
+
+    Found at 366b and carried by hand into every apply script since, which is
+    six copies of a rule nobody was running between patches. This is the copy
+    that runs.
+    """
+    rule = "expect messages are single literals"
+    if not TESTS.is_dir():
+        fail(rule, f"{TESTS} is not a directory")
+        return
+    checked, files = 0, 0
+    for f in sorted(TESTS.rglob("*.swift")):
+        files += 1
+        text = strip_comments(f.read_text())
+        for macro in ("#expect", "#require"):
+            for line, call in calls_in(text, macro):
+                args = top_level_args(call)
+                if len(args) < 2:
+                    continue
+                last = args[-1].strip()
+                if not last.startswith('"'):
+                    continue
+                checked += 1
+                if "+" in re.sub(r'"(?:[^"\\]|\\.)*"', "", last):
+                    fail(rule, f"{f.name} line ~{line}: the {macro} message is "
+                               "a concatenation, so the text that prints on "
+                               "failure is not the text written. §12.110.8")
+    # 115 files and 1069 messages as of 373. Half of each: a rule that
+    # parsed nothing, or a directory that moved, lands far below.
+    counted(rule, files, 60, "test files read")
+    counted(rule, checked, 500, "messages examined")
+
+
+# --------------------------------------------------------------------------
+
+RULES = [
+    every_store_that_records_a_read_refuses_a_write,
+    every_removal_counter_is_in_the_total,
+    no_expect_message_is_a_concatenation,
+]
+
+for r in RULES:
+    r()
+
+print(f"checked {len(RULES)} invariants:")
+for line in REPORT:
+    print(line)
+
+if VIOLATIONS:
+    print()
+    for rule, message in VIOLATIONS:
+        print(f"FAIL [{rule}] {message}")
+    print()
+    print("These are rules that each caught a real defect once. A failure here "
+          "is not style.")
+    sys.exit(1)
+
+print()
+print("all invariants hold")

@@ -48,6 +48,26 @@ else
   DEST="platform=iOS Simulator,id=$UDID"
 fi
 
+# --- source invariants, before anything slow — patch 373, §12.117 ---
+#
+# These are rules that each caught a real defect once and then died with the
+# patch that wrote them. A sum that must name every declared counter (369a) and
+# a store that must refuse before it writes (372) are facts no expression in
+# the app states, so neither the compiler nor the suite can see them.
+#
+# FIRST, and fatal. It costs a second, and a violation means the build is wrong
+# whatever the simulator goes on to say — running the tests first would only
+# delay the same answer by two minutes. `preflight.sh` gets it for nothing.
+if [[ -f scripts/check-invariants.py ]]; then
+  python3 scripts/check-invariants.py
+  echo
+else
+  echo "error: scripts/check-invariants.py is missing." >&2
+  echo "       It is not optional: it is the only thing re-running the checks" >&2
+  echo "       that caught 369a and 372. See ADR-0003 §12.117." >&2
+  exit 1
+fi
+
 echo "scheme:      $SCHEME"
 echo "destination: $DEST"
 echo "log:         $LOG"
