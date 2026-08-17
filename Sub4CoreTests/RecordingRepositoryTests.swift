@@ -197,6 +197,103 @@ struct RecordingRepositoryTests {
         #expect(other.isTrustworthy)
         #expect(other.recordings?.isEmpty == true)
     }
+
+    // MARK: The bulk read reads them apart — patch 397, §12.141
+
+    private func second() -> Activity {
+        Activity(id: "19580875999", name: "Morning Run", sportType: "Run",
+                 startLocal: "2026-07-29T07:00:00", distance: 10_000,
+                 movingTime: 3_000, elapsedTime: 3_050,
+                 elevationGain: 40, averageHeartrate: 148, isTrainer: false,
+                 maxHeartrate: 172, gearId: nil, maxSpeed: 4.2,
+                 deviceWatts: false, averageWatts: nil,
+                 startUTC: "2026-07-29T05:00:00Z", startLat: 51.21, startLon: 4.41,
+                 timeZoneIdentifier: "Europe/Brussels", startOffsetSeconds: 7200)
+    }
+
+    /// **THE ONE 397 ADDED THE RISK FOR.**
+    ///
+    /// The bulk read was 668 separate queries and is now one, grouped by a
+    /// change of `recordingID` as the cursor walks. Every existing test in this
+    /// file imports ONE recording, so the entire grouping step — the only new
+    /// logic in the patch — was invisible to all of them.
+    ///
+    /// The failure it guards is not a crash: samples bleeding across the
+    /// boundary give both traces plausible lengths and plausible values, and
+    /// the charts would draw. Deliberately different lengths and disjoint
+    /// values, so a bleed cannot look like a pass.
+    @Test("Two recordings do not bleed into one another")
+    func twoRecordingsDoNotBleed() throws {
+        let db = try Sub4Database.inMemory()
+        let a = streams()                                    // 3 samples
+        let b = ActivityStreams(activityId: "19580875999",
+                                distanceM: [0, 100, 200, 300, 400],
+                                heartRate: [150, 151, 152, 153, 154],
+                                speed: nil, altitude: nil, grade: nil,
+                                power: nil, latitude: nil, longitude: nil,
+                                fetched: Date(timeIntervalSince1970: 1_785_000_001))
+        _ = try Sub4Import.run(into: db, activities: [activity(), second()],
+                               shoes: [], streams: [a, b])
+
+        let load = RecordingRepository.all(db)
+        let list = try #require(load.recordings)
+        #expect(load.skipped == 0)
+        #expect(list.count == 2)
+
+        let readA = try #require(list.first { $0.activityId == storeID })
+        let readB = try #require(list.first { $0.activityId == "19580875999" })
+        #expect(readA.distanceM == [0, 500, 1000], "the first trace kept its own samples")
+        #expect(readB.distanceM == [0, 100, 200, 300, 400], "and so did the second")
+        #expect(readA.heartRate == [120, 131, 145])
+        #expect(readB.heartRate == [150, 151, 152, 153, 154])
+        // AND THE ABSENCES ARE PER RECORDING TOO. `b` carries no speed; `a`
+        // does. A grouping bug that shared the `carried` flags would give `b` a
+        // speed array of zeros, which reads as a stopped athlete rather than as
+        // a trace that never had the series. §12.38.4.
+        #expect(readA.speed == [3.1, 3.4, 3.3])
+        #expect(readB.speed == nil, "b never carried speed, and zeros are not absence")
+    }
+
+    /// A `recording` row whose samples are gone comes back as a trace of length
+    /// zero — NOT missing from the list. `RecordingRoundTrip` compares the
+    /// store's array length, `recording.sampleCount` and the rows actually
+    /// present precisely to catch that, and a reader that dropped the row would
+    /// hide it from the check written to find it.
+    @Test("A recording with no samples is a length, not an absence")
+    func aRecordingWithNoSamplesIsALength() throws {
+        let (db, _) = try imported(streams())
+        try db.queue.write { d in
+            try d.execute(sql: "DELETE FROM recording_sample")
+        }
+
+        let load = RecordingRepository.all(db)
+        let list = try #require(load.recordings)
+        #expect(load.skipped == 0, "the head row read fine; it is the samples that are gone")
+        #expect(list.count == 1, "the recording is still there to be asked about")
+        #expect(list.first?.distanceM.isEmpty == true)
+        #expect(list.first?.heartRate == nil, "no row carried it, so it is absent")
+    }
+
+    /// `all` and `streams(_:storeID:)` are two entry points over one decoder
+    /// since 397 — §12.43. If they disagree, one of them is reading a column
+    /// the other is not, and the bulk path is the one nothing else checks.
+    @Test("The bulk read and the single read agree exactly")
+    func theBulkAndSingleReadsAgree() throws {
+        let (db, fromAll) = try imported(streams(power: [210, 215, 208],
+                                                 latitude: [51.2, 51.21, 51.22]))
+        let single = try #require(RecordingRepository
+            .streams(db, storeID: storeID).recordings?.first)
+
+        #expect(single.distanceM == fromAll.distanceM)
+        #expect(single.heartRate == fromAll.heartRate)
+        #expect(single.speed == fromAll.speed)
+        #expect(single.altitude == fromAll.altitude)
+        #expect(single.grade == fromAll.grade)
+        #expect(single.power == fromAll.power)
+        #expect(single.latitude == fromAll.latitude)
+        #expect(single.longitude == fromAll.longitude)
+        #expect(single.fetched == fromAll.fetched)
+    }
 }
 
 // MARK: -

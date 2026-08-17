@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 396 (2026-08-17).** §5.3 is the 390 device run, Compare and
+**Current at patch 397 (2026-08-17).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself.
@@ -366,9 +366,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 396, 2026-08-17
+## 5. State — patch 397, 2026-08-17
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 396; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 397; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -383,7 +383,7 @@ code wins and this section is the defect.
 | **D7 B1** — the plan, the athlete, the constants | done, 344–346 |
 | **D7 B2** — notes, commutes, match decisions, plan moves | done, 355–358 and 377 |
 | **D7 B3** — the activities | **done, 379–383** |
-| **D7 B4** — details, traces | **388–390, 394, 395 done; the flip is next** — `D7-B4-GROUNDWORK.md` |
+| **D7 B4** — details, traces | **388–390, 394, 395, 397 done; the flip is next** — `D7-B4-GROUNDWORK.md` |
 | D7 B5 — weather, gear | not started |
 | D7 B6 — derived metrics | not started |
 | D7 B7 — reviews | not started, and blocked until a real review exists |
@@ -403,10 +403,9 @@ Ten lines in the paste say it — the first fact to check when a screen is wrong
   `UserDefaults`). `AthleteStore` is half-and-half and says so.
 
 **THE LAUNCH READS SEVEN AND 394 IS WHY IT IS NOT NINE.** 394 put both in the
-bootstrap and measured **3.963 s in front of first paint, 3.730 s of it the
-traces**; 395 took them back out, so the launch is 0.034 s and `DetailStore`
-reads for itself when built. `hydratedFamilies` is still the switch and the
-store now consults it. §12.139.
+bootstrap and measured **3.963 s in front of first paint**; 395 took them back
+out, so the launch is 0.021 s and `DetailStore` reads for itself when built.
+`hydratedFamilies` is still the switch, consulted by the store. §12.139.
 
 **Every JSON store is still written and still complete.** That is what makes a
 slice reversible by deleting one family from `hydratedFamilies`, and why
@@ -540,26 +539,27 @@ read the files itself or took the stores; only the second consults the sources.
    with `if isExpanded(key)`, so a closed section's rows are NOT EVALUATED and
    §12.76's worst case shrank. **RULE 7 joins every header key to every content
    key**, both invisible to the suite (§12.137).
-3. **B4 — 388–390, 394, 395 done; THE FLIP IS NEXT AND THE DESIGN CHANGED.**
-   **`docs/D7-B4-GROUNDWORK.md`** is the plan and §12.139 is the correction to
-   it. Compare's slice 4 and three read-backs read the files for themselves
-   through a `DetailStore(directory:)` seam that refuses every write (§5.4,
-   §5.4a, §12.134). **394 measured the launch and the answer killed its own
-   design**: 3.963 s before first paint, 94% of it 668 recordings over 199,848
-   sample rows. **395 moved both families out of the bootstrap and into
-   `DetailStore`'s own construction** — the one store in this ladder that is
-   NOT built with `ContentView`, so feeding it from the launch would have
-   decoded 19.1 MB of files and thrown them away for rows read second.
-   **THE OPEN QUESTION IS NOW THE OTHER SIDE OF THE SAME SEAM.** Nobody has ever
-   measured what the 1,362 files cost, so 3.730 s is only a regression if the
-   files are faster. 395 prints `Detail store built:` — Debug said **0.443 s**,
-   against 3.925 s of rows. **The flip waits on a RELEASE reading of both**, and
-   the seam must stay on the files whatever the singleton does.
-   **AND THE READ ITSELF IS A DEFECT EITHER WAY.** `RecordingRepository.all`
-   runs one query per recording — 668 of them — then walks every row NINE times
-   by column name: 1.8 million name lookups over 199,848 rows. One ordered
-   query and one pass is the fix, and `ActivityDetailRepository` has the same
-   shape. That is the patch after the measurement, not before it.
+3. **B4 — 388–390, 394, 395, 397 done; THE FLIP IS NEXT.**
+   **`docs/D7-B4-GROUNDWORK.md`** is the plan; §12.139 and §12.141 are the
+   corrections to it. Compare's slice 4 and three read-backs read the files for
+   themselves through a `DetailStore(directory:)` seam that refuses every write
+   (§5.4a, §12.134), **and that seam must stay on the files whatever the
+   singleton does** or three comparisons become the database against itself.
+   **394 MEASURED THE LAUNCH AND THE ANSWER KILLED ITS OWN DESIGN**: 3.963 s
+   before first paint, 94% of it 668 recordings over 199,848 sample rows. **395
+   moved both families out of the bootstrap into `DetailStore`'s own
+   construction** — the one store here NOT built with `ContentView`, so feeding
+   it from the launch would have decoded 19.1 MB of files and thrown them away
+   for rows read second.
+   **397 FIXED THE READ.** `RecordingRepository.all` ran one query per recording
+   — 668 — then walked every row EIGHT times by column name: 1.6 million lookups
+   over 199,848 rows, 3.730 s against the benchmark's **0.096 ms per recording**
+   for the same table. One ordered cursor, one pass, positional. Projected
+   **≈0.5 s** against a **0.399 s** Release file baseline.
+   `ActivityDetailRepository` has the same shape and reads in 0.195 s, so it was
+   left alone. **398 is the flip and it is what measures 397**, as
+   `Detail store built: … from the database` beside today's `… from the app's
+   own files` — same line, same units.
 4. **396 — THE GATE ASKED THE WRONG QUESTION, and it blocked the measurement.**
    `ReleaseGates.isInternalBuild` was `#if DEBUG`, so **every diagnostic screen
    vanished in Release** and no device number this project has taken was a

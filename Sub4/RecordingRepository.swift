@@ -199,9 +199,23 @@ nonisolated enum RecordingRepository {
 
     /// EVERY recording at once. ~12 MB of `Double` on this device.
     ///
-    /// Here for the tests and for a caller that genuinely wants the lot. The
-    /// comparison should use `ids` and `streams` instead — building one,
-    /// checking it and discarding it — which is the whole reason those exist.
+    /// **ONE QUERY FOR THE SAMPLES, NOT ONE PER RECORDING — patch 397,
+    /// §12.141.** This ran 668 `WHERE recordingID = ?` queries and then walked
+    /// each result EIGHT times, once per column, looking every column up by
+    /// NAME: 1.6 million string-keyed lookups over 199,848 rows. It cost
+    /// **3.730 s** on the device, against **0.096 ms per recording** for the
+    /// same table in `DatabaseBenchmark` — a 58× gap that was neither SQLite's
+    /// nor the schema's.
+    ///
+    /// The primary key is `(recordingID, ordinal)`, so `ORDER BY` those two is
+    /// an index scan in storage order with no sort step. Samples therefore
+    /// arrive already grouped, and the pass below flushes one series per
+    /// recording rather than keying a dictionary 199,848 times.
+    ///
+    /// OUTPUT ORDER IS THE HEAD QUERY'S, unchanged. The samples are collected
+    /// into a map and read back in head order, because changing what this
+    /// returns while changing how it is read would put two things in one patch
+    /// and `RecordingRoundTrip` compares by position.
     static func all(_ db: Sub4Database,
                     accountID: String = Sub4Import.accountID,
                     sourceID: String = Sub4Import.sourceID) -> RecordingLoad {
@@ -209,13 +223,51 @@ nonisolated enum RecordingRepository {
             return try db.queue.read { d -> RecordingLoad in
                 let heads = try Row.fetchAll(d, sql: headSQL,
                                              arguments: [sourceID, sourceID, accountID])
+
+                // THE SAME THREE JOINS AS `headSQL`, and they are not
+                // decoration: without them this reads samples belonging to
+                // another account or another source. A bulk query is exactly
+                // where that kind of widening goes unnoticed, because the
+                // extra rows land in recordings the head query never asks for
+                // and are silently dropped by the lookup below — until the day
+                // two sources describe one activity, which §12.4 says is 4A.
+                let cursor = try Row.fetchCursor(d, sql: """
+                    SELECT s.recordingID, \(sampleSQL)
+                    FROM recording_sample s
+                    JOIN recording rec ON rec.id = s.recordingID
+                    JOIN activity a ON a.id = rec.activityID
+                    WHERE rec.sourceID = ? AND a.accountID = ?
+                    ORDER BY s.recordingID, s.ordinal
+                    """, arguments: [sourceID, accountID])
+
+                var byRecording: [String: SampleSeries] = [:]
+                byRecording.reserveCapacity(heads.count)
+                var openID: String?
+                var open = SampleSeries()
+                while let row = try cursor.next() {
+                    let id: String = row[0]
+                    if id != openID {
+                        if let openID { byRecording[openID] = open }
+                        openID = id
+                        open = SampleSeries()
+                    }
+                    open.append(row, distanceAt: 1)
+                }
+                if let openID { byRecording[openID] = open }
+
                 var out: [ActivityStreams] = []
                 var skipped = 0
                 for head in heads {
                     guard let recordingID: String = head["recordingID"],
                           let storeID: String = head["storeID"] else { skipped += 1; continue }
-                    out.append(try build(d, recordingID: recordingID,
-                                         storeID: storeID, head: head))
+                    // `?? SampleSeries()` IS A REAL STATE, not a fallback. A
+                    // `recording` row whose samples are all gone reads as a
+                    // trace of length zero — which is precisely what
+                    // `RecordingRoundTrip`'s three-number comparison exists to
+                    // catch (see below). Skipping it here would hide the row
+                    // from the check written to find it.
+                    out.append((byRecording[recordingID] ?? SampleSeries())
+                        .streams(activityId: storeID, head: head))
                 }
                 return .loaded(recordings: out, skipped: skipped)
             }
@@ -228,42 +280,87 @@ nonisolated enum RecordingRepository {
 
     private static func build(_ d: Database, recordingID: String,
                               storeID: String, head: Row) throws -> ActivityStreams {
-        let rows = try Row.fetchAll(d, sql: """
-            SELECT distanceM, heartRate, speedMS, altitudeM, gradePercent,
-                   watts, latitude, longitude
-            FROM recording_sample WHERE recordingID = ? ORDER BY ordinal
+        // ONE ROW PER SAMPLE OF ONE RECORDING — this path was never the
+        // problem, and it shares `SampleSeries` so there is one decoder and
+        // one statement of §12.38.4's nil rule rather than two. §12.43.
+        var series = SampleSeries()
+        let cursor = try Row.fetchCursor(d, sql: """
+            SELECT \(sampleSQL)
+            FROM recording_sample s
+            WHERE s.recordingID = ? ORDER BY s.ordinal
             """, arguments: [recordingID])
-
-        return ActivityStreams(
-            activityId: storeID,
-            distanceM: rows.map { $0["distanceM"] },
-            heartRate: series(rows, "heartRate"),
-            speed: series(rows, "speedMS"),
-            altitude: series(rows, "altitudeM"),
-            grade: series(rows, "gradePercent"),
-            power: series(rows, "watts"),
-            latitude: series(rows, "latitude"),
-            longitude: series(rows, "longitude"),
-            // NAMED, not `.distantPast` — 298. The same value either
-            // way; only one of them tells `RecordingRoundTrip` what it is
-            // looking at. See `unreadableDate`.
-            fetched: ActivityDetailRepository.parseUTC(head["fetchedUTC"])
-                     ?? unreadableDate)
+        while let row = try cursor.next() { series.append(row, distanceAt: 0) }
+        return series.streams(activityId: storeID, head: head)
     }
 
-    /// ALL NULL MEANS THE ARRAY WAS ABSENT. Anything else is an array of the
-    /// full length with its NULLs read as zero — see the header. There is no
-    /// third answer available: `[Double]?` cannot hold a per-element nil, and
-    /// the original length of a short stream is not recoverable.
-    private static func series(_ rows: [Row], _ column: String) -> [Double]? {
-        var out: [Double] = []
-        var any = false
-        out.reserveCapacity(rows.count)
-        for row in rows {
-            if let v: Double = row[column] { any = true; out.append(v) }
-            else { out.append(0) }
+    // MARK: The columns, and the one place their order is stated
+
+    /// **THE ORDER HERE IS THE ORDER `SampleSeries` READS**, and nothing else
+    /// enforces it. A query listing these differently would read longitude into
+    /// grade — silently, with values that look plausible on a chart. Both
+    /// queries interpolate this constant rather than spelling the list out,
+    /// which is the only reason they cannot drift apart.
+    /// **EVERY NAME IS QUALIFIED `s.` AND THE TESTS ARE WHY.** The bulk query
+    /// joins `activity`, which has a `distanceM` of its own — a whole
+    /// activity's distance rather than one sample's — and SQLite refused the
+    /// statement as ambiguous. It refused because the names collide exactly;
+    /// a column that collided LOOSELY would have been read without complaint.
+    /// So both queries alias `recording_sample` as `s` and this constant names
+    /// it, rather than the qualification living in one query and not the other.
+    private static let sampleSQL =
+        "s.distanceM, s.heartRate, s.speedMS, s.altitudeM, s.gradePercent, "
+        + "s.watts, s.latitude, s.longitude"
+
+    /// The eight series of one recording, filled a row at a time.
+    ///
+    /// POSITIONAL, NOT BY NAME. `row["heartRate"]` hashes a string and walks
+    /// the statement's columns for every value; at 199,848 rows × 8 columns
+    /// that was the other half of §12.141's cost.
+    private struct SampleSeries {
+        /// Cumulative metres. `NOT NULL` in the schema, so never optional and
+        /// never absent — the x axis of every chart drawn from this.
+        var distance: [Double] = []
+        /// The seven nullable series, in `sampleSQL`'s order after `distanceM`.
+        var optional = [[Double]](repeating: [], count: 7)
+        /// Did ANY row carry this series — §12.38.4's rule, held once rather
+        /// than recomputed per column.
+        var carried = [Bool](repeating: false, count: 7)
+
+        mutating func append(_ row: Row, distanceAt: Int) {
+            distance.append(row[distanceAt])
+            for i in 0..<7 {
+                if let v: Double = row[distanceAt + 1 + i] {
+                    carried[i] = true
+                    optional[i].append(v)
+                } else {
+                    optional[i].append(0)
+                }
+            }
         }
-        return any ? out : nil
+
+        /// ALL NULL MEANS THE ARRAY WAS ABSENT. Anything else is an array of
+        /// the full length with its NULLs read as zero — see the header. There
+        /// is no third answer available: `[Double]?` cannot hold a per-element
+        /// nil, and the original length of a short stream is not recoverable.
+        private func series(_ i: Int) -> [Double]? { carried[i] ? optional[i] : nil }
+
+        func streams(activityId: String, head: Row) -> ActivityStreams {
+            ActivityStreams(
+                activityId: activityId,
+                distanceM: distance,
+                heartRate: series(0),
+                speed: series(1),
+                altitude: series(2),
+                grade: series(3),
+                power: series(4),
+                latitude: series(5),
+                longitude: series(6),
+                // NAMED, not `.distantPast` — 298. The same value either
+                // way; only one of them tells `RecordingRoundTrip` what it is
+                // looking at. See `unreadableDate`.
+                fetched: ActivityDetailRepository.parseUTC(head["fetchedUTC"])
+                         ?? unreadableDate)
+        }
     }
 
     // MARK: The head query

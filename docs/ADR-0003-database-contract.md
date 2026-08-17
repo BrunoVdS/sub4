@@ -8962,6 +8962,104 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.141 One query, one pass — patch 397
+
+**The benchmark and the real read disagreed by 58×, on the same table and the
+same phone.** `DatabaseBenchmark` reads a normalised recording in **0.096 ms**;
+`RecordingRepository.all` was taking **5.58 ms per recording** — 3.730 s for
+668. Neither SQLite nor the schema was responsible.
+
+### 12.141.1 What it was doing
+
+**668 queries.** `all` fetched the heads and then called `build` per recording,
+each running its own `WHERE recordingID = ? ORDER BY ordinal`. A textbook N+1,
+hidden because the call site reads like a loop over results rather than a loop
+over queries.
+
+**Eight passes over every row, by column NAME.** `rows.map { $0["distanceM"] }`
+and then seven `series(rows, …)` calls, each walking the whole array again and
+looking its column up by string. **1.6 million name lookups over 199,848 rows.**
+
+Scale the benchmark's single-column read by eight columns and the honest
+expectation is ~0.77 ms per recording — **≈0.5 s for all 668**, against 3.730 s
+measured.
+
+### 12.141.2 What it does now
+
+One head query, unchanged. Then **one ordered cursor over every sample**, and
+one pass. The primary key is `(recordingID, ordinal)`, so `ORDER BY` those two
+is an index scan in storage order with no sort step — and because the samples
+therefore arrive already grouped, the pass flushes one series at each change of
+`recordingID` instead of keying a dictionary 199,848 times. Columns are read
+**positionally**.
+
+Output order is still the head query's, and a recording whose samples are all
+gone still appears, as a trace of length zero. That last one is deliberate:
+`RecordingRoundTrip` compares the store's array length, `recording.sampleCount`
+and the rows actually present precisely to catch that state (§12.39.1), and a
+reader that dropped the row would hide it from the check written to find it.
+
+`build` survives for `streams(_:storeID:)` — one recording was never the
+problem — and shares `SampleSeries`, so there is one decoder and one statement
+of §12.38.4's nil rule rather than two. §12.43.
+
+### 12.141.3 `activity` has a `distanceM` too
+
+The bulk query joins `activity`, which carries a whole activity's distance under
+the same name as a sample's. SQLite refused the statement as ambiguous and the
+suite reported it immediately — **because the names collide exactly.** A column
+that collided LOOSELY would have been read without complaint, into the wrong
+series, with values that draw a plausible chart.
+
+So both queries alias `recording_sample` as `s` and the shared `sampleSQL`
+constant carries the qualification, rather than it living in one query and not
+the other. The constant is also what makes the column ORDER a single statement:
+`SampleSeries` reads by position, and a query listing the columns differently
+would put longitude into grade, silently.
+
+### 12.141.4 The grouping was invisible to every existing test
+
+Every test in `RecordingRepositoryTests` imported ONE recording, so the only new
+logic in this patch — the flush at a change of `recordingID` — was covered by
+nothing. `twoRecordingsDoNotBleed` uses two traces of different lengths with
+disjoint values and a series present on one side only, because a bleed produces
+plausible lengths and plausible values rather than a crash.
+
+Two negative controls, and the second is the instructive one:
+
+| sabotage | result |
+|---|---|
+| never flush on id change | one trace empty, the other holding both |
+| drop `ORDER BY s.recordingID` | **each trace gets a plausible fragment** — `[1000.0]` and `[200, 300, 400]` |
+
+The second is what this defect would have looked like in production: no error,
+no crash, two charts that draw.
+
+### 12.141.5 What was deliberately not touched
+
+`ActivityDetailRepository.all` has the same N+1 shape — 694 parents, each with
+its own splits, laps and best-efforts queries. **It reads in 0.195 s**, which
+already beats the 0.4 s the FILES take for both families together. Rewriting it
+would be optimising something measured fine, which is precisely the mistake
+394 cost a patch to learn. It stays until a number says otherwise.
+
+`SampleSeries` holds its seven nullable series as an array of arrays, so each
+append pays a COW uniqueness check — 1.4 M of them. Named fields would avoid it.
+Not done, for the same reason: measure first.
+
+### 12.141.6 There is nothing to look at on the device
+
+397 changes no figure and adds no line. Its correctness is the suite's, and its
+effect becomes visible at **398**, when `DetailStore` reads rows and
+`Detail store built: N s from the database` can be set beside today's
+**0.399 s from the app's own files** on the same line, in the same units.
+
+The device check for this patch is therefore a REGRESSION check: press Compare
+and confirm slice 4's twenty-four figures are identical to the baseline in
+§5.3. `RecordingRepository.all` has exactly one caller and that is it.
+
+---
+
 ## 12.140 The gate asked the wrong question — patch 396
 
 **Every performance number this project has ever taken off the device was a
