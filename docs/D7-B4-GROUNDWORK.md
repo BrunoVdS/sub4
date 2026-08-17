@@ -6,7 +6,7 @@
 | **Amended** | patch 389, against the device paste of 388 |
 | **Authority for this stage** | `docs/ADR-0003-database-contract.md` §12 |
 | **Current state** | `CLAUDE.md` §5 — this document is a plan, not state |
-| **Status** | 388, 389 and 390 committed; 391 and 392 described here. |
+| **Status** | 388, 389, 390 committed. **391–393 are Database-screen work interleaved at Bruno's request (§12.135); the machinery is 394 and the flip 395.** |
 
 **THE LADDER GREW BY ONE AT 389 AND THE NUMBERS MOVED.** 389 was going to be
 the seams; the 388 device run showed two roll-up rows that were already the
@@ -18,7 +18,7 @@ from a device paste rather than from code it says so.
 
 ---
 
-## 0. Why this slice needs four patches
+## 0. Why this slice needs five patches
 
 §12.125's rule: **the patch before a flip is the one that asks what the flip is
 about to make vacuous.** B3 needed four patches for that reason and both extra
@@ -210,7 +210,7 @@ pairs with dropping that ceiling to zero.
 
 ---
 
-## 4. Patch 391 — the machinery, switched off
+## 4. Patch 394 — the machinery, switched off
 
 380's pattern: build everything that would feed the family and switch none of it
 on, so that the flip is one line somewhere else and any failure it produces is
@@ -278,13 +278,13 @@ nobody re-proposes it: `LoadStore.currentSignature` includes
 load engine needs the whole set. A partially-populated dictionary would change
 the PMC curve rather than defer work.
 
-391 prints the measurement. If it is large, the options are to accept and print
+394 prints the measurement. If it is large, the options are to accept and print
 it, to split the flip so details go first and traces wait for a shape change, or
 to revisit the chunked-blob shape §12 rejected at 212 on 2026-06 hardware.
 
 ---
 
-## 5. Patch 392 — the flip
+## 5. Patch 395 — the flip
 
 Two `false`s become questions:
 

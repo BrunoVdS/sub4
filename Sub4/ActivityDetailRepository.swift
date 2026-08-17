@@ -288,6 +288,36 @@ nonisolated enum DetailRoundTrip {
                 }
         }
 
+        /// **THE PASTE HAS NEVER CARRIED THIS — patch 391, §12.135.** See
+        /// `ActivityRoundTrip.Report.diagnosticLines` for the argument; this is
+        /// the same gap over 694 details and every split, lap and best effort
+        /// inside them.
+        ///
+        /// **BOTH TALLY NUMBERS, because patch 295 bought the distinction.**
+        /// Thirteen details each with one bad lap and thirteen details with
+        /// forty bad laps between them share the first number and are nothing
+        /// alike in the second.
+        ///
+        /// `excluded` is printed and is NOT a difference — §12.42.2, two
+        /// sessions `DataCorrections` refuses. A permanently correct red row is
+        /// a row that stops being read, so it is counted apart rather than
+        /// folded into `missing`.
+        ///
+        /// Counts and field names only; the ids stay on the screen. §12.7.
+        var diagnosticLines: [String] {
+            var out = ["Detail read-back: \(compared) compared",
+                       "  agreed: \(agreed)",
+                       "  in the app and not in the database: \(missing.count)",
+                       "  excluded on purpose: \(excluded.count)",
+                       "  details with a differing field: \(differences.count)"]
+            out.append("  fields that differ: "
+                       + (fieldTally.isEmpty ? "none"
+                          : fieldTally
+                              .map { "\($0.field) \($0.details) details / "
+                                   + "\($0.elements) elements" }
+                              .joined(separator: ", ")))
+            return out
+        }
     }
 
     /// THE TALLY KEY — patch 295, ADR-0003 §12.40.

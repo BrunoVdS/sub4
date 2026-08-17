@@ -358,8 +358,15 @@ final class DatabaseWriteThrough {
 
     // MARK: Reading
 
-    var line: String {
-        switch last {
+    var line: String { Self.line(last) }
+
+    /// **PURE SINCE 391, AND THE BODY IS UNCHANGED.** Two of these four states
+    /// — `.noDatabase` and `.failed` — cannot be produced on a device on
+    /// demand, so as an instance property this sentence had two arms nothing
+    /// could exercise. `PersistenceMode.derive` and `ActivityStore
+    /// .lateArrivalLine` are the same move for the same reason.
+    nonisolated static func line(_ outcome: Outcome) -> String {
+        switch outcome {
         case .never:
             "Not run since this launch."
         case .wrote(let r, let at):
@@ -389,5 +396,54 @@ final class DatabaseWriteThrough {
         case .never, .wrote: true
         case .noDatabase, .failed: false
         }
+    }
+
+    /// **THE ONLY SECTION ON THE DATABASE SCREEN THAT HAS NEVER REACHED THE
+    /// PASTE — patch 391, §12.135.**
+    ///
+    /// The other twenty-two all end up in `diagnosticsText`, most of them
+    /// through a `diagnosticLines` of their own. This one had none, so the
+    /// mechanism that carries every change made outside an import into the
+    /// database could only be read by somebody holding the phone with the
+    /// sheet open — which is §12.57's evaporation on the one row that says
+    /// whether the database is keeping up at all.
+    ///
+    /// UNCONDITIONAL, all four lines. "Not run since this launch" and "runs: 0"
+    /// are the answer this section exists to give on a launch where nothing has
+    /// changed; a block that appeared only after a write could not be told from
+    /// a block nobody wired in. §12.54.2.
+    ///
+    /// `line` carries a LOCAL time for `.wrote`, which is an app event rather
+    /// than anything from the training history — the same class of fact as the
+    /// import ledger's ISO stamps, which this paste has carried since 255.
+    /// §12.7 is untouched.
+    var diagnosticLines: [String] {
+        Self.diagnosticLines(last, runs: runs, isRunning: isRunning)
+    }
+
+    /// **PURE, FOR `ActivityStore.lateArrivalLine`'s AND
+    /// `PersistenceMode.derive`'s REASON.** This type is a singleton with a
+    /// `private init`, and two of its four states — `.noDatabase` and
+    /// `.failed` — are exactly the ones a device cannot be made to produce on
+    /// demand. A sentence only a broken phone can exercise is a sentence
+    /// nobody checks.
+    ///
+    /// The instance property above is one line that calls this, so there is one
+    /// wording and a test can drive all four states. §12.43.
+    nonisolated static func diagnosticLines(_ outcome: Outcome,
+                                            runs: Int,
+                                            isRunning: Bool) -> [String] {
+        let healthy: Bool
+        var why: String?
+        switch outcome {
+        case .never, .wrote:      healthy = true
+        case .noDatabase:         healthy = false
+        case .failed(let text, _): healthy = false; why = text
+        }
+        return ["Write-through: \(line(outcome))",
+                "  runs this launch: \(runs)",
+                "  running right now: \(isRunning ? "yes" : "no")",
+                "  healthy: \(healthy ? "yes" : "no")"
+                + (why.map { " — \($0)" } ?? "")]
     }
 }

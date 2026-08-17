@@ -3824,6 +3824,45 @@ struct DatabaseHealthView: View {
         // being absent.
         lines.append("")
         lines.append(contentsOf: rollUp.last.diagnosticLines)
+        // PATCH 391 — THE THREE THE ROLL-UP SUMMARISED AND NOBODY COULD READ.
+        //
+        // §12.135. Every other read-back on this screen puts its breakdown in
+        // this paste; these three put one line each into the roll-up above and
+        // kept the rest inside a `@State` that died with the sheet. They are
+        // the three most expensive comparisons the app makes — 694 activities ×
+        // nineteen fields, 694 details with every split, lap and effort, and
+        // 668 recordings over 199,848 samples — and the only way to read which
+        // field differed was a screenshot. §12.57, one level down from the
+        // defect the roll-up itself was written to close.
+        //
+        // UNCONDITIONAL, and the `else` is the point: "not read" is what a
+        // launch where nobody pressed the button should say, and it cannot be
+        // told from a block nobody wired in if the block is simply absent.
+        // §12.54.2.
+        lines.append("")
+        if let r = roundTrip {
+            lines.append(contentsOf: r.diagnosticLines)
+        } else {
+            lines.append("Activity read-back: \(roundTripLoad?.line ?? "not read")")
+        }
+        lines.append("")
+        if let r = detailTrip {
+            lines.append(contentsOf: r.diagnosticLines)
+        } else {
+            lines.append("Detail read-back: \(detailLoad?.line ?? "not read")")
+        }
+        lines.append("")
+        if let r = recordingTrip {
+            lines.append(contentsOf: r.diagnosticLines)
+        } else {
+            lines.append("Recording read-back: not read")
+        }
+        // PATCH 391 — AND THE ONE SECTION THAT HAD NEVER REACHED THIS PASTE AT
+        // ALL. Twenty-two of the twenty-three sections on this screen were
+        // here; the write-through was not, so the mechanism that carries every
+        // change made outside an import could only be read with the sheet open.
+        lines.append("")
+        lines.append(contentsOf: writeThrough.diagnosticLines)
         // PATCH 312, BOTH SLICES AT 313. Only after a run — this one costs a
         // database read and two full derivations, so there is nothing to print
         // until somebody presses the button. `Outcome.diagnosticLines` says

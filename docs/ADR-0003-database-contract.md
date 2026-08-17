@@ -8962,6 +8962,131 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.135 Four sections the paste never carried — patch 391
+
+Not a D7 slice. It came out of a request to add a per-section export to the
+Database screen, and the enumeration found the reason the export was wanted.
+
+### 12.135.1 The question was why the screenshots exist
+
+Bruno has been sending device screenshots alongside the diagnostics paste for
+four patches. The obvious reading is that the paste is inconvenient. Grepping
+`diagnosticsText` for each section's report gives a different answer:
+
+| section | in the paste |
+|---|---|
+| `roundTrip` — Activity read-back | **no** |
+| `detailTrip` — Detail read-back | **no** |
+| `recordingTrip` — Recording read-back | **no** |
+| `writeThrough` | **no** |
+| the other nineteen | yes |
+
+**The three that were missing are the three most expensive comparisons the app
+makes** — 694 activities × nineteen named fields, 694 details with every split,
+lap and best effort inside them, and 668 recordings over 199,848 samples. The
+screenshots were not a preference. They were the only way to read numbers the
+paste did not contain.
+
+### 12.135.2 The roll-up fixed the verdict and left the breakdown
+
+This is §12.57's evaporation **one level down from the defect the roll-up was
+built to close.** Patch 333's own header says it: *"Every read-back's report
+lived in a `@State` property on `DatabaseHealthView`. Pressing Done discarded all
+nine."* 333 fixed that for the VERDICT — `Activities: 694 compared, no
+differences` now survives the sheet and reaches the paste — and the BREAKDOWN
+went on dying with it.
+
+So the roll-up could say a comparison agreed and nothing durable could say
+*which nineteen fields it compared, how many were missing, or which stream band
+the 199,848 samples differed in.* For six of the nine read-backs that breakdown
+was in the paste all along; for three it was not, and nobody had asked why the
+list was six rather than nine.
+
+**The write-through is the fourth and it is worse:** twenty-two of the
+twenty-three sections on that screen reached the paste in some form and it
+reached it in none. The mechanism that carries every change made outside an
+import into the database could only be read by somebody holding the phone.
+
+### 12.135.3 What goes in, and the promise it is measured against
+
+The diagnostics section's own footer is the contract: *"No session names, no
+places, no dates from your history, and no identifiers from the survey — it is
+safe to paste into a message."*
+
+All three reports carry activity ids — in `missing`, `excluded`, `unreadable`
+and every `Difference` — because the SCREEN prints a handful of them. **The new
+blocks print counts, field names and stream names, and no ids at all.** That
+follows what `ActivityParity.diagnosticLines` does rather than what its own
+comment says: its doc mentions capped ids and its implementation prints only
+`.count`. The stricter reading is the right one, and
+`DiagnosticCoverageTests` asserts it three times with an id no honest line could
+contain.
+
+**The tallies are what make the blocks worth having** — §12.39, named rather
+than counted. `3 differ` sends somebody through nineteen fields; `distance 3` is
+a diagnosis. The detail block carries BOTH of patch 295's numbers, because
+thirteen details with one bad lap each and thirteen details with forty bad laps
+between them are the same first number and nothing alike in the second. The
+recording block carries the sample band — `heartRate 91 of 186204` — which a
+per-recording count cannot give.
+
+### 12.135.4 `databaseCount` is optional and nil is not zero
+
+`RecordingRoundTrip.Report.databaseCount` is `Int?` and its own doc says why:
+*"Nil when the id read failed — which is not zero, and must not be reachable as
+zero."* The block prints `unknown`, and on a read failure it prints three lines
+and **stops** rather than nine zeros describing a walk that never happened.
+§12.15, and `unknownIsNotZero` and `aFailedReadPrintsNoCounts` are the two tests
+that hold it.
+
+### 12.135.5 The write-through's sentence became pure, and that is a defect fix
+
+`DatabaseWriteThrough` is a singleton with a `private init`, so a test cannot
+construct one — which is how a four-armed sentence ended up with **two arms
+nothing could exercise**. `.noDatabase` and `.failed` cannot be produced on a
+device on demand.
+
+`line(_:)` and `diagnosticLines(_:runs:isRunning:)` are now `nonisolated static`
+and the instance members are one line each that call them.
+`PersistenceMode.derive` and `ActivityStore.lateArrivalLine` are the same move
+for the same reason, both stated in their own docs: *pure so that every
+combination can be driven from a test without a device — which matters, because
+two of the four states have never occurred.*
+
+`everyStateReadsDifferently` is the third instance of the shape
+`SkipStandingTests`, `MoveStandingTests` and `VerifiedRunVisibilityTests` already
+assert: two states that paste identically are two states nobody can tell apart
+afterwards.
+
+### 12.135.6 The negative control
+
+§12.69, and the guard chosen for it is the one with the most at stake — the
+privacy promise the athlete reads in the footer. `ActivityRoundTrip
+.diagnosticLines` was changed to print `missing.joined(...)` instead of
+`missing.count`, and **three assertions across two tests failed**, naming the
+leaked id. Restored, green.
+
+### 12.135.7 What this does NOT do, and it is the thing that was asked for
+
+**There is still no per-section export button.** That is 392, and it is now a
+small patch precisely because this one exists: every section on that screen owns
+a `diagnosticLines`, so an export is a slice of something already written rather
+than a new decision about what is safe to send. 393 makes the sections
+collapsible, which is the other half of the request and the one that has to be
+proven on the device, because `DatabaseHealthView` is where §12.76 has been paid
+three times.
+
+Splitting it this way also means the value arrives first: **the paste now
+carries what the screenshots were for.**
+
+### 12.135.8 The suite
+
+1,647 before, **1,658 after**, 151 suites. `DiagnosticCoverageTests` is new.
+Eleven arrived; none went. No device number changes — four blocks appear in the
+paste that were never in it, and nothing that was already there moves.
+
+---
+
 ## 12.134 The detail comparisons keep their own read — patch 390
 
 D7 slice B4. §12.125 one slice later, and it lands BEFORE the flip for §12.125's

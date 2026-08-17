@@ -397,6 +397,51 @@ nonisolated enum RecordingRoundTrip {
         }
 
         var samplesWalked: Int { walked.values.reduce(0, +) }
+
+        /// **THE PASTE HAS NEVER CARRIED THIS — patch 391, §12.135, and this
+        /// is the most expensive comparison the app makes.** 668 recordings,
+        /// 199,848 stored samples, ~1.6 million comparisons — and until now the
+        /// only durable record of it was the roll-up's one line, `Recordings:
+        /// 668 compared, no differences`. Everything that made the walk worth
+        /// running lived in a `@State` that died with the sheet.
+        ///
+        /// **THREE NUMBERS, NOT TWO — §12.39.** `databaseCount` is what the
+        /// database holds, `compared` is what was walked, and `readFailure`
+        /// says the id read never happened. A nil `databaseCount` is NOT zero,
+        /// and this prints it as `unknown` rather than letting it read as an
+        /// empty database.
+        ///
+        /// **AND THE SAMPLE BAND, which a per-recording count cannot give.**
+        /// "91 of 186,204" is the finding; "one recording differs" is not.
+        ///
+        /// Counts, stream names and field names only. §12.7.
+        var diagnosticLines: [String] {
+            guard readFailure == nil else {
+                return ["Recording read-back: the database could not be read",
+                        "  why: \(readFailure ?? "—")",
+                        "  nothing below this line was compared"]
+            }
+            var out = [
+                "Recording read-back: \(compared) compared",
+                "  recordings in the database: "
+                + (databaseCount.map(String.init) ?? "unknown"),
+                "  agreed: \(agreed)",
+                "  in the app and not in the database: \(missing.count)",
+                "  excluded on purpose: \(excluded.count)",
+                "  recordings the reader could not read: \(unreadable.count)",
+                "  recordings with a differing field: \(differences.count)",
+                "  samples walked: \(samplesWalked)"]
+            out.append("  fields that differ: "
+                       + (fieldTally.isEmpty ? "none"
+                          : fieldTally.map { "\($0.field) \($0.count)" }
+                              .joined(separator: ", ")))
+            out.append("  samples that differ: "
+                       + (sampleTally.isEmpty ? "none"
+                          : sampleTally
+                              .map { "\($0.stream) \($0.differing) of \($0.walked)" }
+                              .joined(separator: ", ")))
+            return out
+        }
     }
 
     // MARK: The run

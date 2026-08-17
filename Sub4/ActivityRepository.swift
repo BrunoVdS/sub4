@@ -178,6 +178,37 @@ nonisolated enum ActivityRoundTrip {
             return counts.sorted { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) }
                 .map { (field: $0.key, count: $0.value) }
         }
+
+        /// **THE PASTE HAS NEVER CARRIED THIS — patch 391, §12.135.**
+        ///
+        /// This report is 694 activities × nineteen named fields, and until now
+        /// it existed only inside the sheet that produced it. The roll-up
+        /// (patch 333) fixed the VERDICT — `Activities: 694 compared, no
+        /// differences` survives and reaches the paste — and left the
+        /// BREAKDOWN unreachable, so the only way to read which field differed
+        /// was a screenshot. §12.57's evaporation, one level down from the
+        /// defect 333 was written to close.
+        ///
+        /// UNCONDITIONAL, every line including the zeros — 266c's rule.
+        ///
+        /// **COUNTS AND FIELD NAMES ONLY. NO IDS**, following what
+        /// `ActivityParity.diagnosticLines` does rather than what its comment
+        /// says: the ids are in the report for the screen, and the screen is
+        /// where they stay. §12.7.
+        var diagnosticLines: [String] {
+            var out = ["Activity read-back: \(compared) compared",
+                       "  agreed: \(agreed)",
+                       "  in the app and not in the database: \(missing.count)",
+                       "  activities with a differing field: \(differences.count)"]
+            // THE TALLY IS THE LINE WORTH READING FIRST and it is named rather
+            // than counted — §12.39. "3 differ" sends somebody through nineteen
+            // fields; "distance 3" is a diagnosis.
+            out.append("  fields that differ: "
+                       + (fieldTally.isEmpty ? "none"
+                          : fieldTally.map { "\($0.field) \($0.count)" }
+                              .joined(separator: ", ")))
+            return out
+        }
     }
 
     static func compare(store: [Activity], database: [Activity]) -> Report {
