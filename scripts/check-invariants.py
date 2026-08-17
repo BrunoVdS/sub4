@@ -55,6 +55,7 @@ A rule that cannot say what it checked has not checked anything.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -808,6 +809,62 @@ def the_gate_does_not_branch_on_the_build():
                    "about. That has already happened three times in this "
                    "file. §12.140")
 
+# --------------------------------------------------------------------------
+# RULE 10 — patch 401, §12.145
+# --------------------------------------------------------------------------
+
+# The two folders the Xcode project synchronizes. Everything the app or its
+# tests compile lives under one of them; a tracked `.swift` anywhere else is
+# compiled by nothing and edited by somebody.
+SOURCE_ROOTS = ("Sub4/", "Sub4CoreTests/")
+
+
+def every_tracked_source_is_compiled():
+    """**A SECOND COPY OF A FILE IS A COIN-FLIP ABOUT WHICH ONE YOU EDIT.**
+
+    `DetailStore.swift` existed at the repository root AND at
+    `Sub4/DetailStore.swift` — both tracked, byte-identical, 962 lines each,
+    and the root one carrying every change up to patch 398 because `git add -A`
+    swept it up all session. It was compiled by nothing: `project.pbxproj`
+    synchronizes exactly two folders, and a target building both would fail on
+    `invalid redeclaration of DetailStore` — the failure CLAUDE.md already
+    records from Xcode's "Add Files" producing `Models 2.swift`.
+
+    So the danger was never a broken build. It was an edit landing in the copy
+    nothing reads, passing every test, and being discovered later as work that
+    silently did not happen.
+
+    **THE RULE IS GENERAL, NOT A NAME.** It does not know about
+    `DetailStore.swift`; it says every tracked Swift file lives where the
+    project compiles from. That holds for all 280-odd sources today with
+    exactly one exception, which is the file this rule was written to remove.
+    A rule spelling out the one filename would have prevented this duplicate
+    and no other.
+
+    Cheap, too: one `git ls-files`, no parsing, and it cannot go stale the way
+    a hand-kept exemption list does — §12.117's whole argument.
+    """
+    rule = "every tracked source is compiled"
+
+    try:
+        listed = subprocess.run(["git", "ls-files", "*.swift"],
+                                capture_output=True, text=True, check=True,
+                                cwd=ROOT).stdout.split()
+    except (OSError, subprocess.CalledProcessError) as e:
+        # NOT SILENT. A rule that cannot run is a rule that is not checking,
+        # and the one thing it must never do is look like a pass. §12.15.
+        fail(rule, f"`git ls-files` did not run ({e}), so nothing was checked")
+        return
+
+    if not counted(rule, len(listed), 200, "tracked Swift files"):
+        return
+    for path in sorted(listed):
+        if not path.startswith(SOURCE_ROOTS):
+            fail(rule, f"{path} is tracked and lives outside "
+                       f"{' and '.join(SOURCE_ROOTS)}, so the project compiles "
+                       "no copy of it. An edit landing there passes every test "
+                       "and silently did not happen. §12.145")
+
 
 RULES = [
     every_store_that_records_a_read_refuses_a_write,
@@ -819,6 +876,7 @@ RULES = [
     every_collapsible_section_matches_its_header,
     no_hydration_writes,
     the_gate_does_not_branch_on_the_build,
+    every_tracked_source_is_compiled,
 ]
 
 for r in RULES:

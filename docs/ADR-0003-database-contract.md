@@ -8962,6 +8962,75 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.145 A file compiled by nothing — patch 401
+
+`DetailStore.swift` existed twice: at the repository root and at
+`Sub4/DetailStore.swift`. Both tracked. Byte-identical, 962 lines each, and the
+root copy carried every change up to patch 398 — `git add -A` had been sweeping
+it into commits all session.
+
+### 12.145.1 The danger was never a broken build
+
+`project.pbxproj` declares exactly two `PBXFileSystemSynchronizedRootGroup`
+entries, `path = Sub4` and `path = Sub4CoreTests`. The root copy sits beside
+`Sub4.xcodeproj`, in neither, so nothing compiled it. **And it could not have
+been compiled without the build failing**: both files declare `final class
+DetailStore`, and a target building both would stop at `invalid redeclaration` —
+the exact failure CLAUDE.md records from Xcode's "Add Files" producing
+`Models 2.swift` twice.
+
+So the risk was the opposite of a crash: **an edit landing in the copy nothing
+reads, passing every test, and being found later as work that silently did not
+happen.** Every rule in `check-invariants.py` globs `ROOT / "Sub4"`, so the root
+file was invisible to all nine of them as well.
+
+Nothing read it. Every `DetailStore` hit under `scripts/` is prose about the
+TYPE in an apply script's commentary, not a path.
+
+### 12.145.2 RULE 10 is general, and that is the whole point
+
+The rule the plan asked for had to prevent a second tracked duplicate **without
+hard-coding this filename** — a rule naming `DetailStore.swift` would have
+prevented this one and no other.
+
+So: **every tracked `.swift` lives under a folder the project synchronizes.**
+That held for 317 tracked sources with exactly one exception, which is the file
+this patch removes. One `git ls-files`, no parsing, and no hand-kept exemption
+list to go stale — §12.117's argument for why these rules are code and not
+convention.
+
+Its negative control staged a stray `StrayFile.swift` at the root and the rule
+named it. **It caught a file it was not written for**, which is the difference
+between a rule and a note.
+
+The rule fails loudly if `git ls-files` cannot run, rather than passing on an
+empty list. A rule that cannot run must never look like a rule that checked —
+§12.15, and the same reason `test.sh` fails when it sees no summary line.
+
+### 12.145.3 Where the duplicate came from, and why it does not matter
+
+Unknown, and deliberately not investigated: a copy made at the wrong path,
+months or hours ago. What matters is that it was tracked, invisible to every
+automated reader, and indistinguishable from the real file to anyone opening it.
+The rule closes the class; the archaeology would close one instance.
+
+### 12.145.4 No device campaign, and why
+
+Stated rather than assumed, under the campaign contract's own instruction to
+decide explicitly. The question — *which file does the app compile* — is
+answered by three pieces of automated evidence and none of them needs a phone:
+
+1. the synchronized-folder declarations in `project.pbxproj`;
+2. the redeclaration argument above, which makes a two-copy build impossible
+   rather than merely unobserved;
+3. a green suite and a Release build after the removal.
+
+A device campaign here would be theatre: nothing about real activity data,
+rendering, protection attributes or counts is touched. §12.144's campaign is the
+one that matters for the restore work, and it is a different task.
+
+---
+
 ## 12.144 The athlete's own writing gets a way back — patch 400
 
 §5.5 has said it in the project's own words for many patches: **five stores of
@@ -9047,7 +9116,35 @@ empty AND untrustworthy**, so the restores all "passed" while testing the
 unreadable-file path instead of the ordinary one. §12.122.4 is the rule and the
 fixture's comment now carries the instance.
 
-### 12.144.6 Two negative controls, and one crossed a suite
+### 12.144.6 A warning neither gate reads — patch 400a
+
+`CommuteStore.restore` bound both halves of `AuthoredLoad` and used one:
+*immutable value 'notes' was never used*. A templating artefact —
+`NotesStore.restore` was rewritten by hand after `git checkout` destroyed it and
+binds only what it needs, while the commute one still carried the shape both
+were generated from.
+
+**THE GAP IS WORTH MORE THAN THE WARNING.** Neither `test.sh` nor
+`preflight.sh` reads warnings, so a green suite AND a successful Release build
+both passed over it. Bruno found it in Xcode's issue navigator. A full app-target
+build now emits zero project warnings, so the tree is clean and a gate would go
+in green and stay green — and §6 already says a warning-shaped defect needs a
+test.
+
+**AND THIS SECTION DID NOT EXIST UNTIL 401.** 400a's commit message cites it.
+The call that would have written it also ran `preflight` and `git commit`, and
+it failed before executing anything; the preflight and the commit were re-run
+separately and the documentation edit was not. So a commit claimed an ADR
+section that was not in the tree, and `CLAUDE.md`'s banner stayed at 400.
+
+Two lessons, both cheap. **A tool call that bundles a documentation edit with a
+gate and a commit loses the edit when the call fails** — the commit is the one
+step that must run last and alone. And **`git add -A` stages what it finds**: the
+same commit swept in `docs/PLAN-database-cutover-findings-and-ai-prompts.md`,
+Bruno's own planning document, without a word in the message. Stage the paths
+the patch touched.
+
+### 12.144.7 Two negative controls, and one crossed a suite
 
 | sabotage | caught by |
 |---|---|
