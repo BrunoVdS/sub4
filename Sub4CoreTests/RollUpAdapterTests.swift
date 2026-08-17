@@ -43,7 +43,8 @@ struct RollUpAdapterTests {
     @Test("A trustworthy read with no differences agrees")
     func trustworthyAndAgreeing() {
         let l = ReadBackRollUp.line("Activities", 680, 0,
-                                    trustworthy: true, "unused")
+                                    trustworthy: true,
+                                    reads: .ownRead("a fixture"), "unused")
         #expect(l.verdict == .agreed)
         #expect(l.couldNotLook == nil)
         #expect(l.value == "680 compared, no differences")
@@ -52,7 +53,8 @@ struct RollUpAdapterTests {
     @Test("A trustworthy read with differences differs")
     func trustworthyAndDiffering() {
         let l = ReadBackRollUp.line("Weather and gear", 597, 1,
-                                    trustworthy: true, "unused")
+                                    trustworthy: true,
+                                    reads: .ownRead("a fixture"), "unused")
         #expect(l.verdict == .differed)
         #expect(l.isFault)
         #expect(l.value == "597 compared, 1 differ")
@@ -66,6 +68,7 @@ struct RollUpAdapterTests {
     func aTrustworthyReadOfAnEmptyDatabaseIsNotBlind() {
         let l = ReadBackRollUp.line("Notes and commutes", 0, 0,
                                     trustworthy: true,
+                                    reads: .ownRead("a fixture"),
                                     "0 notes, 0 commute decisions.")
         #expect(l.verdict == .nothingToCompare,
                 "an empty comparison is not a failed read")
@@ -80,6 +83,7 @@ struct RollUpAdapterTests {
     func anUntrustworthyReadCannotAgree() {
         let l = ReadBackRollUp.line("Review trail", 60, 0,
                                     trustworthy: false,
+                                    reads: .ownRead("a fixture"),
                                     "The database could not be read — locked")
         #expect(l.verdict == .couldNotLook)
         #expect(l.isFault)
@@ -94,6 +98,7 @@ struct RollUpAdapterTests {
     func aMissingReportIsNotAgreement() {
         let l = ReadBackRollUp.line("Recordings", nil, nil,
                                     trustworthy: true,
+                                    reads: .ownRead("a fixture"),
                                     "the trace read failed")
         #expect(l.verdict == .couldNotLook)
         #expect(l.value == "the trace read failed")
@@ -104,11 +109,13 @@ struct RollUpAdapterTests {
     @Test("One bad line fails the roll-up, and the summary names which kind")
     func oneBadLineFailsTheWhole() {
         let good = (1 ... 8).map {
-            ReadBackRollUp.line("ok \($0)", 10, 0, trustworthy: true, "unused")
+            ReadBackRollUp.line("ok \($0)", 10, 0, trustworthy: true,
+                                reads: .ownRead("a fixture"), "unused")
         }
         let bad = ReadBackRollUp.line("Details", 680, 3,
-                                      trustworthy: true, "unused")
-        let outcome = ReadBackRollUp.Outcome.ran(good + [bad])
+                                      trustworthy: true,
+                                      reads: .ownRead("a fixture"), "unused")
+        let outcome = ReadBackRollUp.Outcome.ran(good + [bad], .allFromFiles)
         #expect(!outcome.isHealthy)
         #expect(!outcome.provesSomething)
         #expect(outcome.differingCount == 1)
@@ -122,11 +129,13 @@ struct RollUpAdapterTests {
     @Test("An empty comparison is healthy and does not prove anything")
     func anEmptyComparisonSplitsTheTwoVerdicts() {
         let good = (1 ... 8).map {
-            ReadBackRollUp.line("ok \($0)", 10, 0, trustworthy: true, "unused")
+            ReadBackRollUp.line("ok \($0)", 10, 0, trustworthy: true,
+                                reads: .ownRead("a fixture"), "unused")
         }
         let empty = ReadBackRollUp.line("Notes and commutes", 0, 0,
-                                        trustworthy: true, "unused")
-        let outcome = ReadBackRollUp.Outcome.ran(good + [empty])
+                                        trustworthy: true,
+                                        reads: .ownRead("a fixture"), "unused")
+        let outcome = ReadBackRollUp.Outcome.ran(good + [empty], .allFromFiles)
         #expect(outcome.isHealthy, "nothing is broken")
         #expect(!outcome.provesSomething, "and nothing is proved either")
         #expect(outcome.emptyCount == 1)

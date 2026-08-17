@@ -141,15 +141,40 @@ enum ReadBacks {
     // MARK: The six that cost one read
 
     /// Patch 317 — D6c slice 6a. `athlete_profile`, `resting_month`, `hr_zone`.
+    ///
+    /// **ITS APP SIDE IS THREE HYDRATED STORES AND HAS BEEN SINCE 346 — patch
+    /// 389, §12.133.** `ConstantsStore.shared.c`, `AthleteStore.shared.ftp` and
+    /// `.hrZones` are all handed over by `HydrationPlanner.Instruction.hydrate`,
+    /// so this row has compared the database against itself for forty-two
+    /// patches while drawing the same as a row that could disagree. 343 wrote
+    /// the rule for the plan in this very file; B1 applied it to the plan and
+    /// not to the athlete beside it.
+    ///
+    /// **`.zones` IS THE WHOLE ANSWER AND THAT IS CHECKED, NOT ASSUMED** —
+    /// §12.60.1. `AthleteStore.zonesServedFrom` is the half `StoreSource
+    /// .partial(fromDatabase: "zones and FTP", …)` names, so it covers the FTP
+    /// by construction. The constants have no `ExpectationField` because no
+    /// verifier comparison reads them — and they cannot be fed while the zones
+    /// are not, because both are NON-OPTIONAL associated values of the single
+    /// `.hydrate` case and are applied by two unconditional statements in
+    /// `Sub4Launch.apply`. One determines the other; there is no build that
+    /// separates them.
+    ///
+    /// That the constants and `resting_month` are compared by NOTHING ELSE is a
+    /// real gap and it is recorded in CLAUDE.md §5.5 rather than papered over
+    /// here. This row is their only check, and it is this row.
     static func athlete(_ db: Sub4Database)
-    async -> (load: AthleteLoad, report: AthleteRoundTrip.Report) {
+    async -> (load: AthleteLoad, report: AthleteRoundTrip.Report,
+              source: ReadBackSource) {
         let load = await Task.detached(priority: .utility) {
             AthleteRepository.load(db)
         }.value
         return (load, AthleteRoundTrip.compare(store: ConstantsStore.shared.c,
                                                storeFTP: AthleteStore.shared.ftp,
                                                storeZones: AthleteStore.shared.hrZones,
-                                               database: load))
+                                               database: load),
+                .liveStores([.from(.zones,
+                                   "the zones, the FTP and the constants beside them")]))
     }
 
     /// Patch 322 — D6c slice 5b. `user_note` and `correction`.
@@ -160,9 +185,16 @@ enum ReadBacks {
     /// several places; a tenth would change what that sentence means in all of
     /// them. Match decisions are authored data, on the same screen, refreshed
     /// by the same write-through — one family, one row.
+    ///
+    /// **THE ROW A FIELD-ONLY DERIVATION WOULD GET WRONG — patch 389.** It
+    /// reads `.notes`, `.commutes`, `.matchDecisions` and `.moves`, every one
+    /// of which the database feeds, and it is real evidence anyway because 356
+    /// gave it `authoredSources()`. `ReadBackSource.ownRead` is what says so,
+    /// and `sources.line` is the same sentence the section already prints.
     static func authored(_ db: Sub4Database)
     async -> (load: AuthoredLoad, report: AuthoredRoundTrip.Report,
-              decisions: MatchDecisionLoad, moves: PlanMoveLoad) {
+              decisions: MatchDecisionLoad, moves: PlanMoveLoad,
+              source: ReadBackSource) {
         let load = await Task.detached(priority: .utility) {
             AuthoredRepository.load(db)
         }.value
@@ -206,7 +238,10 @@ enum ReadBacks {
             into: &report)
         report.appSideCameFrom = sources.line
         report.appSideWasReadCleanly = sources.isTrustworthy
-        return (load, report, decisionLoad, moveLoad)
+        // THE PROVENANCE IS THE REPORT'S OWN SENTENCE, not a second one written
+        // beside it. Two strings describing one read is how they come to say
+        // different things — §12.127.5.
+        return (load, report, decisionLoad, moveLoad, .ownRead(sources.line))
     }
 
     /// Patch 323 and 326 — D6c slices 6b and 6c, read together because the
@@ -215,9 +250,14 @@ enum ReadBacks {
     /// TWO READS RATHER THAN ONE THAT RETURNS EVERYTHING: the trimmings are a
     /// separate claim and a separate report, so a red row says which half
     /// broke.
+    ///
+    /// **THE ROW THAT GOT THIS RIGHT FIRST — 343, and patch 389 is where its
+    /// answer becomes machine-readable.** Both halves take the bundle, so both
+    /// are `.ownRead` however much of the plan the database feeds.
     static func plan(_ db: Sub4Database)
     async -> (load: PlanLoad, report: PlanRoundTrip.Report,
-              extrasLoad: PlanExtrasLoad, extrasReport: PlanExtrasRoundTrip.Report) {
+              extrasLoad: PlanExtrasLoad, extrasReport: PlanExtrasRoundTrip.Report,
+              source: ReadBackSource) {
         let load = await Task.detached(priority: .utility) {
             PlanRepository.load(db)
         }.value
@@ -252,7 +292,8 @@ enum ReadBacks {
             storeWarmup: bundled.warmup,
             storeExercises: bundled.exercises,
             database: extras)
-        return (load, report, extras, extrasReport)
+        return (load, report, extras, extrasReport,
+                .ownRead("the bundled plan.json, decoded fresh"))
     }
 
     /// PATCH 352 — the version census, ADR-0003 §12.97.
@@ -284,8 +325,17 @@ enum ReadBacks {
     /// `allGear`, NOT `shoes` — patch 325a. `AthleteStore` holds `shoes`,
     /// `bikes` and `retired` separately; 324 passed `shoes` and the comparison
     /// reported five bikes as "kept after the source dropped it". §12.68.6.
+    ///
+    /// **STILL EVIDENCE, AND `knownActivityIDs` IS THE PART THAT IS NOT** —
+    /// §12.126.3. The weather readings come from `WeatherStore` and the gear
+    /// from the half of `AthleteStore` B1 did not take, so both VALUES are
+    /// file-backed until B5; only the id FILTER is database-derived, and a
+    /// filter that shrinks makes a check fail rather than pass. The declaration
+    /// names the two fields whose values it reads, which is what decides the
+    /// classification.
     static func weatherGear(_ db: Sub4Database)
-    async -> (load: WeatherGearLoad, report: WeatherGearRoundTrip.Report) {
+    async -> (load: WeatherGearLoad, report: WeatherGearRoundTrip.Report,
+              source: ReadBackSource) {
         let load = await Task.detached(priority: .utility) {
             WeatherGearRepository.load(db)
         }.value
@@ -293,52 +343,92 @@ enum ReadBacks {
             storeWeather: Array(WeatherStore.shared.byActivity.values),
             storeGear: AthleteStore.shared.allGear,
             knownActivityIDs: Set(ActivityStore.shared.activities.map(\.id)),
-            database: load))
+            database: load),
+                .liveStores([.from(.weather, "the readings the store holds"),
+                             .from(.gear, "AthleteStore's file half")]))
     }
 
     /// Patch 327 — D6c slice 7. Six review tables.
+    ///
+    /// **INDEPENDENT BECAUSE NOTHING FEEDS IT YET, WHICH IS NOT THE SAME AS
+    /// INDEPENDENT BY ITS OWN READ** — patch 389, and the distinction is the
+    /// point of `ReadBackSource`'s third mark. `ProposalStore` is a live store;
+    /// the day B7 hydrates it, this row becomes self-referential and the paste
+    /// will say so on that run rather than six patches later.
     static func review(_ db: Sub4Database)
-    async -> (load: ReviewTrailLoad, report: ReviewRoundTrip.Report) {
+    async -> (load: ReviewTrailLoad, report: ReviewRoundTrip.Report,
+              source: ReadBackSource) {
         let load = await Task.detached(priority: .utility) {
             ReviewRepository.load(db)
         }.value
         return (load, ReviewRoundTrip.compare(
             storeRecords: ProposalStore.shared.records,
-            database: load))
+            database: load),
+                .liveStores([.from(.reviews)]))
     }
 
     // MARK: The three that cost a great deal more
 
     /// Patch 289. 674 activities, nineteen named fields each.
+    ///
+    /// **SELF-REFERENTIAL SINCE 382, AND NOTHING SAID SO UNTIL 389.** 381 gave
+    /// `ShadowParity` its own read of `activities.json` through
+    /// `ActivitySource.read()` and this function was not touched, so the row has
+    /// compared the hydrated store against the rows it was hydrated from for six
+    /// patches — 694 fields, drawn exactly like a row that could disagree.
+    /// §12.129's shape in the roll-up rather than the verifier.
+    ///
+    /// **The fix is one line and it is 390's, not this patch's.**
+    /// `ActivitySource.read()` already exists; swapping it in here changes a
+    /// number on the device, and 389 exists to make that number visible BEFORE
+    /// anything moves it. 381-before-382, one screen over.
     static func activities(_ db: Sub4Database)
-    async -> (load: ActivityLoad, report: ActivityRoundTrip.Report?) {
+    async -> (load: ActivityLoad, report: ActivityRoundTrip.Report?,
+              source: ReadBackSource) {
         let store = ActivityStore.shared.activities
         let load = ActivityRepository.all(db)
         return (load, load.activities.map {
             ActivityRoundTrip.compare(store: store, database: $0)
-        })
+        }, .liveStores([.from(.activities, "nineteen fields each")]))
     }
 
     /// Patch 291. 674 details, and every split, lap and best effort inside
     /// them.
+    ///
+    /// **REAL EVIDENCE TODAY AND NOT AFTER B4 FLIPS** — patch 389. `DetailStore`
+    /// serves its files, so this row can still disagree; the day `.details`
+    /// joins `hydratedFamilies` it cannot, and the declaration below is what
+    /// makes the count move on that day without anybody remembering to.
     static func details(_ db: Sub4Database)
-    async -> (load: DetailLoad, report: DetailRoundTrip.Report?) {
+    async -> (load: DetailLoad, report: DetailRoundTrip.Report?,
+              source: ReadBackSource) {
         let store = Array(DetailStore.shared.details.values)
         let load = ActivityDetailRepository.all(db)
         return (load, load.details.map {
             DetailRoundTrip.compare(store: store, database: $0)
-        })
+        }, .liveStores([.from(.details, "every split, lap and best effort")]))
     }
 
     /// Patch 294. THE ONLY ONE THAT WALKS SAMPLES — roughly 1.5 million
-    /// comparisons across 649 recordings, which is why it is the one read-back
+    /// comparisons across 668 recordings, which is why it is the one read-back
     /// whose comparison runs off the main actor as well as its read.
+    ///
+    /// **THE 1.5 MILLION IS COMPARISONS, NOT ROWS, AND THE TWO HAVE BEEN READ
+    /// AS ONE** — patch 389. `recording_sample` held **199,848 rows** on the
+    /// device at 388; eight series over them is what makes ~1.6 million
+    /// comparisons. §5.6 and B4's groundwork both carried the row count as
+    /// 1.5 M, which is an order of magnitude wrong in the direction that makes
+    /// B4's launch-cost question look worse than it is.
+    ///
+    /// Same standing as `details` above: evidence until `.traces` flips.
     ///
     /// No separate load type: the report carries the read's own outcome,
     /// because the id read failing means everything under it is unknown rather
     /// than zero. §12.15.
-    static func recordings(_ db: Sub4Database) async -> RecordingRoundTrip.Report {
+    static func recordings(_ db: Sub4Database)
+    async -> (report: RecordingRoundTrip.Report, source: ReadBackSource) {
         let store = Array(DetailStore.shared.streams.values)
-        return await RecordingRoundTrip.compareOffMain(db, store: store)
+        return (await RecordingRoundTrip.compareOffMain(db, store: store),
+                .liveStores([.from(.traces, "every sample in every series")]))
     }
 }

@@ -8962,6 +8962,197 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.133 The roll-up says how much of its agreement is evidence — patch 389
+
+D7 slice B4, before its seams. §12.99's accounting existed on the verifier and
+not on the read-back roll-up, and the roll-up is the screen whose one sentence
+gets quoted as the reason it was safe to move on.
+
+### 12.133.1 Two rows, six patches and forty-two patches
+
+The device at 388 printed `8 of 9 agree · 0 differ · 0 could not look · 1
+nothing to compare`, with `Activities 694`, `Details 694`, `Recordings 668`,
+`Athlete 27`, `Notes and commutes 15`, `Plan 297`, `Plan trimmings 71`, `Weather
+and gear 614`.
+
+**Two of those eight could not have disagreed.**
+
+| row | app side | since |
+|---|---|---|
+| `Activities` | `ActivityStore.shared.activities` | **382** |
+| `Athlete` | `ConstantsStore.shared.c`, `AthleteStore.shared.ftp`, `.hrZones` | **346** |
+
+343 wrote the rule in this very file and applied it to the plan: *"comparing the
+database against it would be the database against itself: 298 comparisons,
+guaranteed zero differences, proving nothing. A check that cannot fail has not
+been tested — §12.69 — and this one is in the roll-up that passed D7's entry
+gate."* B1 applied it to the plan and **not to the athlete beside it**; 381
+applied it to `ShadowParity`'s activity parity and **not to the read-back**.
+
+**721 of 3,080 field comparisons, drawn exactly like the ones that could
+disagree.** The screen has four states — agree, disagree, could not look,
+nothing on either side — and no state for *this row compared the database with
+itself*, so there was nowhere for the fact to appear even if somebody had known
+it. §12.129 in the roll-up rather than the verifier.
+
+And it was about to get much worse: `Details` and `Recordings` are the two
+largest real rows on that screen and B4 converts both. **2,083 of 3,080 — 68% —
+while the summary went on reading `8 of 9 agree · 0 differ`.**
+
+### 12.133.2 Derived, because §12.129 is what a declared list costs
+
+A list of *which read-backs are self-referential* kept beside `ReadBackRollUp`
+would have been correct on the day it was written and would have had **no way to
+notice a row nobody added to it** — which is exactly the failure that put
+`activity fields` in the evidence column from 382 to 385.
+
+So each row carries its own provenance, the way `VerificationCheck.reads` does:
+`ReadBackRollUp.Line.reads`, no default, so a row added without answering does
+not compile. `ExpectationSources.live` — already the verifier's answer to *is
+this field database-fed* — resolves it.
+
+### 12.133.3 THE UNIT IS NOT THE FIELD, AND THAT IS THE FINDING
+
+The obvious design is to reuse `ExpectationField` alone and mark a row
+self-referential when it reads a fed field. **It gets `Notes and commutes`
+wrong, and that is the one row this project has already fixed.**
+
+That row reads `.notes`, `.commutes`, `.matchDecisions` and `.moves` — *every
+one of which the database feeds* — and it is real evidence, because 356 gave it
+`authoredSources()`: its own `NotesStore(directory:)`, `CommuteStore(directory:)`,
+`Matcher(defaults:)` and `PlanMoveStore(directory:)`.
+
+The verifier can classify by field because `AppStores.current()` always reads the
+live store, so field ⇒ store ⇒ fed. **A read-back has a second degree of freedom:
+it may go and read the files itself.** So `ReadBackSource` has two cases, and
+only one of them consults `ExpectationSources`:
+
+```swift
+case ownRead(String)                    // 343, 356, 381 — independent by construction
+case liveStores([ExpectationOrigin])    // ask the sources
+```
+
+`ExpectationOrigin` is reused rather than re-invented, so a row says *which store
+field* and *what it did with it* in the same vocabulary the verifier prints.
+
+### 12.133.4 Three marks, and the third is the tripwire
+
+§12.15, and it is why the mark is not a boolean. A row can be independent
+because it read the files, or independent because **nothing feeds its store
+yet**. Those are identical in a count and opposite in what happens next: the
+first survives its slice, the second becomes self-referential the day that slice
+flips and says nothing when it does.
+
+```
+  Notes and commutes: 15 compared, no differences · own read: notes.json, …, read directly
+  Activities: 694 compared, no differences · self-referential: ActivityStore.activities, …, hydrated at B3
+  Review trail: nothing on either side · from the stores: ProposalStore.records — not fed yet
+```
+
+`Review trail` is the third kind and **B7 is the day**. The paste will say so on
+that run rather than six patches later, which is the whole of what this section
+is about.
+
+### 12.133.5 The fifth count is not a fifth verdict
+
+`Verdict` stays at four. A self-referential row still agreed, or differed, or
+could not look — the classification **cuts across** the four rather than joining
+them, exactly as the verifier's split cuts across `passed`. The summary line
+gains a term instead:
+
+```
+8 of 9 agree · 0 differ · 0 could not look · 1 nothing to compare · 2 read a store the database feeds
+```
+
+**It prints at zero** — §12.54.2, and this patch is itself the argument for that
+rule, since the fact it makes visible had no row to be absent from.
+
+**`provesSomething` deliberately does not ask it.** The verifier withholds
+`verified` when nothing could have disagreed because that gate feeds
+`activateVerified`; this one is read by a person, and the count beside it is how
+they judge what the agreement is worth. That is §12.99's own split between
+*healthy* and *proved*, which 333a bought and 385 refused to weaken. Tightening
+it is a decision for the slice that makes the number alarming.
+
+### 12.133.6 What the classification is resolved against, and when
+
+`Outcome.ran` carries the `ExpectationSources` the run happened under, resolved
+at record time rather than read live. **This result outlives the sheet that
+produced it** — that is what the type exists for (§12.57) — so a roll-up
+recorded before a slice flipped and re-read afterwards would otherwise rewrite
+its own history. `Sub4Launch.bootstrap`'s decision and 358's explanation of it,
+one screen over.
+
+`.live` is asked for in `runRollUp` and nowhere else on the path. §12.130.7 is
+why: it reaches six main-actor singletons, and a bookkeeping type that reached
+for them itself would move that cost into every test that builds an outcome. The
+caller has just read all of them.
+
+### 12.133.7 The negative control, run twice
+
+§12.69, and Bruno asked for it explicitly. `selfReferentialCount` was replaced
+with a literal `0` and the suite run: **four tests failed with seven issues**,
+including the two that matter — the count over a build feeding `.activities`,
+and the row that is self-referential *and* could not look. The body was restored
+and the suite is green.
+
+**The mark is carried on the failed-read path too**, and
+`evenABlindRowSaysWhereItWouldHaveLooked` is why: a read that failed still came
+from somewhere, and a row that dropped its provenance on failure would have a
+classification that depended on whether the read worked — §12.15 inside the
+mechanism written to answer §12.15.
+
+### 12.133.8 A fixture default that IS safe, and the reason it differs from 388's
+
+`ReadBackRollUpTests.line(...)` defaults `reads:` to `.ownRead("a fixture")`.
+388 removed a default of `.databaseAlone` from the verifier's fixture for
+looking exactly like this, so the difference has to be stated rather than
+assumed.
+
+`.databaseAlone` was independent **by complement** — it happened not to be
+self-referential, and the day that stopped implying evidence every test leaning
+on it was quietly testing something else. `.ownRead` is independent **by
+construction**: no `ExpectationSources` can classify it otherwise, and
+`aRowThatReadTheFilesIsNeverSelfReferential` asserts precisely that against a
+build feeding every field. The tests it serves are about verdicts, and a verdict
+does not depend on provenance.
+
+### 12.133.9 What is compiler-forced and what is not, said out loud
+
+**Forced:** a row cannot reach the roll-up without a `reads:`, and a field cannot
+be added to `ExpectationField` without `ExpectationSources.live` answering for
+it.
+
+**Not forced:** that the declaration is *right*. Nothing can prove
+`ReadBacks.activities` reads the store rather than the file — only that it said
+which. The mitigation is placement: the declaration is the return value of the
+function that makes the choice, on the lines below the read, not in another file
+joined by name. That is strictly better than `HydratedStores` and it is not the
+same as proof, and §12.129.3's rule applies — **when you build a tripwire over a
+join, write down which way it points and say what watches the other way.** This
+one points from the row to the fields; what watches the other way is a person
+reading two adjacent lines.
+
+No new rule in `check-invariants.py`, on §12.118.8's bar: the compiler already
+refuses the omission, and no rule can judge a value's correctness.
+
+### 12.133.10 The number this patch predicts
+
+`2 read a store the database feeds` — `Activities` and `Athlete`, on a run whose
+other four terms must be **byte-identical to 388's**: `8 of 9 agree · 0 differ ·
+0 could not look · 1 nothing to compare`, with all nine per-row counts unchanged.
+This patch changes what the roll-up SAYS about its rows, not what any of them
+compared.
+
+### 12.133.11 After 389
+
+390 gives `ReadBacks.activities`, `.details` and `.recordings` their own reads —
+at which point that 2 becomes 1, and the 1 is the athlete, which needs
+`AthleteStore(directory:)` and `ConstantsStore(directory:)` and is its own patch.
+B4's flip is then 392. `docs/D7-B4-GROUNDWORK.md` carries the ladder.
+
+---
+
 ## 12.132 The one condition that could not fail — patch 388
 
 D7 slice B4, and the patch before its machinery. §12.125's rule is that the

@@ -6,9 +6,9 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 388 (2026-08-17).** §5.4 is the verifier's accounting, derived
-end to end and now in three buckets; §5.5's first bullet is a defect found
-enumerating B4 and §5.6 step 2 is B4's four-patch ladder.
+**Current at patch 389 (2026-08-17).** §5.3 is the 388 device run; §5.4 and §5.4a
+are the verifier's and the roll-up's accountings, both derived and both in three
+buckets; §5.5's first two bullets are defects found enumerating B4.
 
 **§5 IS THIS PROJECT'S ONLY STATEMENT OF CURRENT STATE.** Every other document
 either points at it or is dated history. That rule exists because the opposite
@@ -365,11 +365,11 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 388, 2026-08-17
+## 5. State — patch 389, 2026-08-17
 
 **THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Everything below is
-current at 388; §5.3 is what the device said on 16 and 17 August, and §5.4 is
-the accounting that has now been wrong twice and corrected twice. Anything older
+current at 389; §5.3 is what the device said at 388, and §5.4 is the accounting
+that has now been wrong twice and corrected twice. Anything older
 than this section is history and lives in ADR §12; if a number here disagrees
 with the code, the code wins and this section is the defect.
 
@@ -383,7 +383,7 @@ with the code, the code wins and this section is the defect.
 | **D7 B1** — the plan, the athlete, the constants | done, 344–346 |
 | **D7 B2** — notes, commutes, match decisions, plan moves | done, 355–358 and 377 |
 | **D7 B3** — the activities | **done, 379–383** |
-| **D7 B4** — details, traces | **388 done; 389–391 to go** — `D7-B4-GROUNDWORK.md` |
+| **D7 B4** — details, traces | **388, 389 done; 390–392 to go** — `D7-B4-GROUNDWORK.md` |
 | D7 B5 — weather, gear | not started |
 | D7 B6 — derived metrics | not started |
 | D7 B7 — reviews | not started, and blocked until a real review exists |
@@ -408,36 +408,37 @@ first when a screen looks wrong:
 slice reversible by deleting one family from `PersistenceAuthority.hydratedFamilies`,
 and it is why hydration must never write.
 
-### 5.3 The evidence, from the device on 16–17 August
+### 5.3 The evidence, from the device at 388 on 17 August 09:45
 
-**The last full pass, 386a on 17 August 08:14, on a run marked verified:**
-
-- **snapshot `2026-08-16-211009`** — 1,371 of 1,371 copied, 19.6 MB, 2
-  declared-not-present (retired formats that cannot exist here), **0 stores not
-  written**, `preferences.plist` included
-- **Import: 694 seen, 0 new, 694 refreshed**, 0 rows removed, reconciled, 0.311 s
-- **`runs ever verified: 14`**, newest at 385 · `22 comparisons, all agreed · 13
-  independent` · `Recovered at launch: 1`, `Recovery error: none`
+- **`runs ever verified: 17`**, newest `verified · patch 388 · 22 comparisons,
+  all agreed · 12 independent` · `Recovered at launch: 0`, `Recovery error: none`
+- **Import: 694 seen, 0 new, 694 refreshed**, 0 rows removed, reconciled, 0.330 s.
+  `traces 668 unchanged`, `details 694 unchanged`, `weather 603`, `moves 2`
+- **Tables**: `activity 694`, `activity_detail 694`, `activity_split 8206`,
+  `recording 668`, **`recording_sample 199848`**, `weather 603`, `hr_zone 5`
+- **`Traces still to fetch: 0`** · `activities with no trace: 26 of 694` — 24
+  under 500 m, 2 answered empty, **0 unexplained**. The backfill is complete.
 - **Read-back roll-up: 8 of 9 agree · 0 differ · 0 could not look · 1 nothing to
-  compare** — the one is `Review trail`, empty on both sides until 24 August.
-  §5.6 step 1, and **read §5.5 before trusting the other eight.**
+  compare.** `Activities 694 · Details 694 · Recordings 668 · Athlete 27 · Notes
+  and commutes 15 · Plan 297 · Plan trimmings 71 · Weather and gear 614 · Review
+  trail nothing`. **Read §5.4a and §5.5 before trusting the eight.**
+- snapshot `2026-08-16-211009` (384) — 1,371 of 1,371, 19.6 MB, 2 not present,
+  0 stores not written; `details` 694 files / 1.9 MB, `streams` 668 / 17.2 MB.
 
-**That `13 independent` is the device's, and 388 makes it 12** (§5.4). The 384
-run read 14, which was one too generous — §12.129, found twenty minutes after
-384 shipped; 385 corrected it, 386a printed the derivation agreeing with the
-list, 387 deleted the list. §12.128–§12.132 carry the sequence.
+**The independent count reached 12 by two corrections.** 384 printed 14, one too
+generous (§12.129); 385 made it 13; 388 made it 12 by taking the residual out of
+the evidence column. §12.128–§12.133 carry the sequence.
 
 **At 383 — Compare, six parity slices at zero differences** over 694 activities
 · 332 days, including load (fitness 35 vs 35, fatigue 47 vs 47) and summaries
 (15 of 18 both sides). Activity parity's app side is `activities.json` read
-directly — patch 381, so it survived B3's flip. `Activities hydrated: 694 kept
-of 694 offered`.
+directly — 381, so it survived B3's flip. **Not re-pressed since 386a.**
 
 **What that does and does not prove.** It proves the app derives the same
 answers from either side for everything the slices cover. It does not prove a
 lossless round trip: gear classification and status, rejection and match-date
 metadata, plan source and top-level order, and fractional fetch-time precision
-are still outside the mapped set — §12.86 draws that line and it has not moved.
+are outside the mapped set — §12.86 draws that line and it has not moved.
 
 ### 5.4 The verifier's accounting, derived end to end, and in THREE buckets
 
@@ -449,33 +450,43 @@ identities`, `volume by discipline` and `activity fields` (B3). The one is
 
 **THE THIRD BUCKET IS 388 AND IT FIXED A GATE THAT COULD NOT FAIL.** `unclaimed
 corrections` reads `.databaseAlone`, which can never be self-referential by
-construction — so it sat in `independentChecks` for ever,
-`independentChecks.isEmpty` was unreachable, and `isTrustworthyEvidence` returned
-`true` whatever the report held. §12.131.3 said that condition "is the one that
-fires at B9"; at B9 it would have marked twenty-one self-referential comparisons
-and one residual as `verified`. **The count on the device moves 13 → 12 and the
-move is the fix.** It can still fail — a stray correction family makes it fail —
-and that is not the question: **evidence means *could this have disagreed about
-whether the migration carried the app's data*,** which a comparison that never
-consults a store cannot answer however loudly it fails. §12.132.
+construction — so it sat in `independentChecks` for ever and
+`isTrustworthyEvidence` returned `true` whatever the report held. §12.131.3 said
+that condition "is the one that fires at B9"; at B9 it would have marked
+twenty-one self-referential comparisons and one residual as `verified`. It can
+still fail, and that is not the question: **evidence means *could this have
+disagreed about whether the migration carried the app's data*,** which a
+comparison that never consults a store cannot answer. §12.132.
 
 **THE DERIVATION IS THE ANSWER SINCE 387 AND `HydratedStores` IS GONE.** Every
 comparison names the store FIELD its expectation came from —
 `VerificationCheck.reads`, no default, so one added without answering does not
-compile — and `ExpectationSources.live` resolves *is that field database-fed* in
-one exhaustive switch asking each store's `servedFrom`. **The unit is the field
-because two stores are split**: `ActivityStore` serves activities from rows and
-the receipts and cursor from `UserDefaults` until B8, and `AthleteStore` is
-`.partial(fromDatabase: "zones and FTP", fromFiles: "gear")`. §12.130, §12.131.
+compile — and `ExpectationSources.live` resolves *is that field database-fed* by
+asking each store's `servedFrom`. **The unit is the field because two stores are
+split**: `ActivityStore` serves activities from rows and the receipts and cursor
+from `UserDefaults` until B8, and `AthleteStore` is `.partial(fromDatabase:
+"zones and FTP", fromFiles: "gear")`. `isTrustworthyEvidence` is `passed &&
+!independentChecks.isEmpty` and 388 did not touch that line — it corrected the
+collection. `theWholeMapIsPinned` holds every comparison's field, COMPLETE
+rather than a subset. §12.130–§12.132.
 
-**`isTrustworthyEvidence` is `passed && !independentChecks.isEmpty`**, and 388
-did not touch that line — it corrected the collection. `theWholeMapIsPinned`
-holds every comparison's field, COMPLETE rather than a subset, so a comparison
-added at B4 fails until somebody answers for it.
-
-**`runs ever verified: 14`, the newest at patch 385**, over data the database
+**`runs ever verified: 17`, the newest at patch 388**, over data the database
 feeds, with 12 comparisons that could still have disagreed. D7's exit criterion
 is met and the recount does not threaten it.
+
+### 5.4a The roll-up's own accounting — patch 389
+
+**The nine read-backs carry the same split, derived the same way**: each row
+declares where its APP SIDE came from and `ExpectationSources.live` resolves it.
+`8 of 9 agree · 0 differ · 0 could not look · 1 nothing to compare · **2 read a
+store the database feeds**`.
+
+**THE UNIT IS NOT THE FIELD HERE.** `Notes and commutes` reads four fed fields
+and is real evidence anyway, because 356 gave it its own read of the files. So a
+row says whether it read the files itself or took the stores, and only the second
+consults the sources. The paste marks all three states — *own read*,
+*self-referential*, and **_from the stores, not fed yet_**, the tripwire for
+`Review trail` at B7. §12.133.
 
 ### 5.5 Open, and the first one is Bruno's call
 
@@ -494,90 +505,79 @@ is met and the recount does not threaten it.
 - **Five authored stores have no restore path.** `notes.json`, the match
   decisions, `moves.json`, `commutes.json` and `proposals.json` cannot be put
   back if something destroys them. 372 stopped the mechanism that was destroying
-  them; weather got a restore at 374 because its repository was finished and
-  unused. **Largest open risk in the project.**
-- **`newest removal` names the trigger and the count, not the family.** A
-  breakdown needs a migration — a column or a `migration_run_removal` table.
-  369's argument one level down.
-- **`canReconcile` tests readable, not correct** (§12.120.3). A clean read of a
-  wrong file goes through that gate; the 601 weather readings survived only
-  because weather is not in `reconcileRequires`, for an unrelated reason.
-- **The import no longer carries the file into the database for activities**
-  (§12.126.5). `AppStores.gather` feeds `Sub4Import` from the hydrated store, so
-  Import writes the database's own rows back — idempotent, harmless, not a
-  repair path. `resetCache` and a re-sync are.
+  them; weather got a restore at 374. **Largest open risk in the project.**
+- **`newest removal` names the trigger and the count, not the family** — a
+  breakdown needs a migration (369's argument one level down). And
+  **`canReconcile` tests readable, not correct** (§12.120.3): a clean read of a
+  wrong file goes through that gate.
+- **Import is not a repair path for the activities** (§12.126.5) — it feeds
+  `Sub4Import` from the hydrated store, so it writes the database's own rows
+  back. Idempotent and harmless; `resetCache` and a re-sync are the repair.
 - **`LoadParity`'s app side is `LoadStore`**, which derives from the hydrated
-  store, so slice 3 compares a database-derived app side and cannot be rescued
-  without comparing something no screen shows (§12.125.4). **B4 deepens it** —
-  `LoadStore` keys on `streamCount` and walks every trace.
-- **TWO OF THE NINE READ-BACKS ARE ALREADY THE DATABASE AGAINST ITSELF, AND
-  NOTHING SAYS SO. Found enumerating B4, 17 August.** `ReadBacks.athlete` reads
-  `ConstantsStore.shared.c`, `AthleteStore.shared.ftp` and `.hrZones` — **all
-  hydrated since 346** — and `ReadBacks.activities` reads
-  `ActivityStore.shared.activities`, **hydrated since 382**. 343 wrote this rule
-  for the plan; B1 applied it to the plan and not to the athlete beside it, and
-  381 rescued `ShadowParity`'s activity parity and not this. §12.129's shape in
-  the roll-up rather than the verifier, so the ledger is unaffected — but
-  **"8 of 9 agree" counts two rows that could not have disagreed**, four after
-  B4. The activities fix rides in 389; the athlete is its own patch and pairs
-  with dropping `UNPROTECTED_STORE_CEILING`. `D7-B4-GROUNDWORK.md` §3.4.
-- **`ReadBacks.knownActivityIDs` is B5's**, under the rule 381 made general: a
-  read-back gets its own read in the slice that hydrates its own store. And
+  store, so slice 3 cannot be rescued without comparing something no screen
+  shows (§12.125.4). **B4 deepens it** — `LoadStore` keys on `streamCount`.
+- **TWO OF THE NINE READ-BACKS ARE THE DATABASE AGAINST ITSELF — AND SINCE 389
+  THE SCREEN SAYS SO.** `ReadBacks.athlete` reads `ConstantsStore.shared.c`,
+  `AthleteStore.shared.ftp` and `.hrZones` (**hydrated since 346**);
+  `ReadBacks.activities` reads `ActivityStore.shared.activities` (**since
+  382**). 721 of 3,080 field comparisons, 2,083 the moment B4 flips. 343 wrote
+  this rule for the plan and B1 applied it to the plan and not to the athlete
+  beside it; 381 rescued `ShadowParity` and not this. The ledger is unaffected —
+  that is the verifier's. **The count is printed (§5.4a); the fix is not in.**
+  Activities rides in 390; the athlete needs `AthleteStore(directory:)` and
+  `ConstantsStore(directory:)`, its own patch, pairing with the ceiling drop.
+- **AND THREE TABLES ARE CHECKED ONLY BY THOSE TWO ROWS.** `athlete_profile` (1)
+  and `resting_month` (15) have no verifier comparison at all —
+  `SemanticVerifier.attempt` says so deliberately — and `activity_gear_reference`
+  (500) is reached only through `ActivityRoundTrip`'s `gearId` `LEFT JOIN`. 516
+  rows, one check each, and it could not have failed. The athlete patch closes it.
+- **`ReadBacks.knownActivityIDs` is B5's**, under the rule 381 made general. And
   **`DetailStore` is invisible to RULE 1** — that rule's population is
   `let fileURL: URL` and this store keys on two directories (groundwork §7).
-- **The protected snapshot is `2026-08-10-084723`**, taken by patch 340, before
-  the flip — so it protects files the app no longer reads for activities. 384
-  captured `2026-08-16-211009` (§5.3); the pre-activation one to keep is still
-  340's until B9 moves it.
-- **`Sub4/manual.html` is a hundred patches stale** — last touched at 284. It is
-  a *user* document and §11 "Where the data lives" is the wrong part; deferred
-  until D7 settles that answer rather than writing it twice.
+- **The pre-activation protected snapshot is still `2026-08-10-084723`** (patch
+  340, before the flip); 384 captured `2026-08-16-211009`. B9 moves it.
+- **`Sub4/manual.html` is a hundred patches stale** — last touched at 284, and
+  §11 "Where the data lives" is the wrong part. Deferred until D7 settles it.
 - **Two stores remain unprotected** by §12.116's guard: `AthleteStore` and
-  `AthleteConstants`, both the milder `guard … else { return }` shape, both
-  re-fetchable, both hydrated at B1. `UNPROTECTED_STORE_CEILING` is 2 and may
-  only go down.
-- **`content_revision` is reserved and unoccupied**, decided at 334: its subject
-  is per-activity hashes so a re-sync can skip unchanged rows, and the last full
-  import of 694 took 1.1 s. Revisit when that is slow enough to matter.
+  `AthleteConstants`, both re-fetchable, both hydrated at B1.
+  `UNPROTECTED_STORE_CEILING` is 2 and may only go down.
+- **`content_revision` is reserved and unoccupied** (334): per-activity hashes so
+  a re-sync can skip unchanged rows. The last full import of 694 took 0.33 s.
 - **Dates:** first real monthly review **24 August 2026**; GitHub Actions resets
   **1 September 2026**; Japan **7–12 September**, the first time
   `DayKey.key(_:in:)` runs outside Europe/Brussels — exercise it before flying.
 
 ### 5.6 Next, in order
 
-**The snapshot, the import, the verify and the roll-up were all done at 384 and
-are struck from this list rather than left to rot** — §5.3 says what each said.
-
 1. **THE ROLL-UP GATE IS 8 OF 9 UNTIL 24 AUGUST, AND THAT IS THE DECISION.**
    `provesSomething` requires all nine read-backs to have compared something,
-   and `Review trail` reads *nothing on either side* because the first monthly
-   review does not exist until **24 August 2026**. The gate is therefore **eight
-   of nine agree, zero differ, zero could not look, and the one abstention is
-   the review trail** — named, not waved through. `provesSomething` itself is
-   the right property and is not being weakened; what was wrong was this list
-   asking for something the calendar forbids. B7 is blocked on the same fact.
-   Re-press the roll-up after the first review and the ninth becomes real.
-   **AND TWO OF THE EIGHT ARE NOT EVIDENCE — see §5.5.** The gate's arithmetic
-   is right and two of its terms are the database agreeing with itself.
-2. **B4 — details and traces, IN FOUR PATCHES: 388 → 391.** Enumerated 17
-   August into **`docs/D7-B4-GROUNDWORK.md`**, which is the plan; this is the
-   one-line state. **388 is done** — the residual stopped counting as evidence
-   (§5.4). **389** gives Compare's slice 4 and the two read-backs their own
-   reads, through a `DetailStore(directory:)` seam that must not run the
-   schema-version purge, because that purge deletes `streams/`. **390** builds
-   the machinery switched off and measures the launch cost. **391** is the flip.
+   and `Review trail` reads *nothing on either side* until **24 August 2026**.
+   The gate is therefore **eight of nine agree, zero differ, zero could not
+   look, and the one abstention is the review trail** — named, not waved
+   through. `provesSomething` is the right property and is not being weakened;
+   what was wrong was this list asking for something the calendar forbids. B7 is
+   blocked on the same fact. **AND TWO OF THE EIGHT ARE NOT EVIDENCE** — §5.4a
+   prints the count, §5.5 says which, and 390 fixes one of the two.
+2. **B4 — details and traces, IN FIVE PATCHES: 388 → 392.**
+   **`docs/D7-B4-GROUNDWORK.md`** is the plan; this is the one-line state.
+   **388 and 389 are done** — the residual stopped counting as evidence, and the
+   roll-up now counts its own (§5.4, §5.4a). **390** gives Compare's slice 4 and
+   three read-backs their own reads, through a `DetailStore(directory:)` seam
+   that must not run the schema-version purge, because that purge deletes
+   `streams/`. **391** builds the machinery switched off and measures the launch
+   cost. **392** is the flip.
    **The one open question is that launch cost**: the bootstrap is awaited
-   before `.ready`, ~668 traces at a 5 ms budget, and lazy per-activity reads
-   are ruled out because `LoadStore` keys on `streamCount` and walks every trace.
-   390 prints the number and the call is yours.
+   before `.ready`, and lazy per-activity reads are ruled out because
+   `LoadStore` keys on `streamCount` and walks every trace. The read is
+   **199,848 sample rows**, not the 1.5 M this file used to say — that figure was
+   `ReadBacks.recordings`' COMPARISON count read as a row count. 391 measures it.
 3. **B5 — weather and gear**, including `ReadBacks.knownActivityIDs` and the
    `WeatherGearRoundTrip` read-back's own read. **Gear is the half of
-   `AthleteStore` that B1 did not take** — `StoreSource.partial(fromDatabase:
-   "zones and FTP", fromFiles: "gear")` — so the verifier's `gear` comparison is
+   `AthleteStore` B1 did not take**, so the verifier's `gear` comparison is
    still real evidence and must not be reclassified before this slice.
 4. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed
-   recovery screen `RootView` does not yet have.
+   recovery screen `RootView` lacks.
 5. **D8** — stabilise one release window, then remove the JSON writers.
 
 Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see

@@ -7,7 +7,7 @@ to state a number it cannot support.
 Built for Operation Sub-4: a 34-week block starting 27 July 2026, targeting a
 sub-4:00 marathon in March 2027.
 
-*Current at patch 388, 17 August 2026. **`CLAUDE.md` §5 is this project's only statement
+*Current at patch 389, 17 August 2026. **`CLAUDE.md` §5 is this project's only statement
 of current state**; this README says what the repository IS and points there for where the
 work has got to. Exact live counts belong on the Database screen, and every patch decision
 is in `docs/ADR-0003-database-contract.md` §12.*
@@ -117,11 +117,12 @@ remaining slices.
 reversible, and it is why the shadow-parity comparison reads `activities.json` directly
 rather than asking the store it is checking.
 
-**The verifier says how much of its own agreement is evidence.** Every
-comparison names the store field its expectation came from, and the count of
-those a build feeds from the database is derived from the stores rather than
-declared — so a comparison that agrees because it is asking the database about
-itself cannot be counted as proof. The Database screen prints both numbers.
+**The verifier says how much of its own agreement is evidence, and since patch
+389 so does the read-back roll-up.** Every comparison and every read-back row
+names where its expectation came from, and whether that source is one the build
+feeds from the database is derived by asking the stores rather than declared —
+so a check that agrees because it is asking the database about itself cannot be
+counted as proof. The Database screen prints the split for both.
 
 **One document says what is true now: `CLAUDE.md` §5.** It carries the ladder, what reads
 from where, the device evidence, the open items and the next steps, and

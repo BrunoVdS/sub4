@@ -3,9 +3,15 @@
 | | |
 |---|---|
 | **Written against** | patch 387, commit `273f048`, 17 August 2026 |
+| **Amended** | patch 389, against the device paste of 388 |
 | **Authority for this stage** | `docs/ADR-0003-database-contract.md` §12 |
 | **Current state** | `CLAUDE.md` §5 — this document is a plan, not state |
-| **Status** | Enumeration complete. 388 is committed; 389–391 are described here. |
+| **Status** | 388 and 389 committed; 390–392 described here. |
+
+**THE LADDER GREW BY ONE AT 389 AND THE NUMBERS MOVED.** 389 was going to be
+the seams; the 388 device run showed two roll-up rows that were already the
+database against itself and no way for the screen to say so, so counting that
+came first. The seams are 390, the machinery 391, the flip 392.
 
 Every fact below was read out of the source at that commit. Where a number came
 from a device paste rather than from code it says so.
@@ -24,8 +30,8 @@ The enumeration below found more to empty than B3 had:
 |---|---|---|
 | 5 verifier comparisons | no — they are what B4 is | §1 |
 | Compare's slice 4, `DetailParity` | **yes**, 381's way | §3 |
-| the `Details` read-back | **yes**, 381's way | §4 |
-| the `Recordings` read-back | **yes**, 381's way | §4 |
+| the `Details` read-back | **yes**, 381's way | §3.4 |
+| the `Recordings` read-back | **yes**, 381's way | §3.4 |
 | slice 3, `LoadParity` | no — §12.125.4 already said so for activities | §3 |
 
 And one thing that was already vacuous before the flip and only becomes
@@ -77,7 +83,25 @@ residual. §12.69, sixth payment.
 
 ---
 
-## 3. Patch 389 — Compare and the read-backs get their own reads
+## 2a. Patch 389 — the roll-up says how much of its agreement is evidence
+
+**Committed.** Full argument in ADR §12.133. The 388 device paste showed
+`8 of 9 agree` over eight rows of which **two could not have disagreed** —
+`Activities` since 382, `Athlete` since 346, 721 of 3,080 field comparisons —
+and the screen had four verdicts with no way to express it.
+
+Each row now carries its own provenance (`ReadBackRollUp.Line.reads`, no
+default) and `ExpectationSources.live` resolves it, so the count is derived
+rather than declared. **The unit is not the field**: `Notes and commutes` reads
+four fed fields and is real evidence because 356 gave it its own read, so
+`ReadBackSource` distinguishes *read the files myself* from *took it from the
+stores*. The third mark — *from the stores, not fed yet* — is the tripwire for
+`Review trail` at B7.
+
+It lands before the seams because 390 moves that number, and a number that moves
+before anybody has seen it hold still is a number nobody can check.
+
+## 3. Patch 390 — Compare and the read-backs get their own reads
 
 ### 3.1 `DetailParity` is 381's situation exactly
 
@@ -101,7 +125,7 @@ root:
    `removeItem(at: streamsDir)` — **it deletes the athlete's traces.** A seam
    that inherited this would be §12.125.5's shape with a directory removal
    instead of a blob write: a destructive path nobody can trigger until the day
-   somebody adds a second reader, and 389 is that day.
+   somebody adds a second reader, and 390 is that day.
 2. reads `failed` and `noStreams` from shared `UserDefaults`.
 3. `FileProtection.protect(directory:)` on both, and creates them if absent.
 4. writes, through `save(retiring:)`, if the retired monoliths are present.
@@ -142,7 +166,7 @@ pairs with dropping that ceiling to zero.
 
 ---
 
-## 4. Patch 390 — the machinery, switched off
+## 4. Patch 391 — the machinery, switched off
 
 380's pattern: build everything that would feed the family and switch none of it
 on, so that the flip is one line somewhere else and any failure it produces is
@@ -177,17 +201,32 @@ attributable (§12.103).
   side's only copy — safe through a hydration. This is B4's form of *hydration
   must never write*, and it wants its own test.
 
-### 4.1 The launch cost, which this patch exists to measure
+### 4.1 The launch cost, which this patch exists to measure — CORRECTED AT 389
+
+**THE FIRST DRAFT OF THIS SECTION WAS AN ORDER OF MAGNITUDE WRONG, AND THE
+DEVICE IS WHAT SAID SO.** It carried "the 1.5-million-sample read", which is
+CLAUDE.md §5.6's phrase and the original brief's. `ReadBacks.recordings`' own
+doc says *"roughly 1.5 million **comparisons** across 649 recordings"* — eight
+series over each sample — and the 388 paste puts the real figure at
+**`recording_sample: 199,848` rows**. 199,848 × 8 ≈ 1.6 M. A comparison count
+had been read as a row count for as long as the phrase has existed, in the
+direction that makes this slice's one open question look worse than it is.
+§12.72.7's family: the number was in the tree and nobody opened the line.
 
 `DatabaseBootstrapReader.read` is awaited **before `.ready`** (§12.92.6, and the
 ordering is a defect fix that must not be undone). Two costs land there:
 
-- **the trace read.** `DatabaseBenchmark.Budget.readMillisecondsPerRecording` is
-  5.0 and the device holds ~668 recordings, so `RecordingRepository.all` can be
-  seconds. Its own header says it materialises ~12 MB and that callers "should
-  use `ids` and `streams` instead".
-- **`DetailStore.shared`'s own `init`**, which decodes ~1,362 JSON files on the
-  main actor and is then hydrated over. B3 accepted the same waste for one file.
+- **the trace read** — 668 recordings over **199,848 sample rows**, ~299 samples
+  each. `DatabaseBenchmark.Budget.readMillisecondsPerRecording` is 5.0, so
+  668 × 5 ms = 3.3 s is the worst case **at budget**, and the budget is a
+  ceiling asserted at the 10,000-activity design target rather than a prediction
+  for this database. `RecordingRepository.all`'s own header says it materialises
+  ~12 MB and that callers "should use `ids` and `streams` instead". **Measure
+  it; do not carry my estimate.**
+- **`DetailStore.shared`'s own `init`**, which decodes **1,362 files and 19.1 MB**
+  of JSON on the main actor — `details` 694 files / 1.9 MB and `streams` 668
+  files / 17.2 MB, from the 388 snapshot manifest — and is then hydrated over.
+  B3 accepted the same waste for one 393 KB file.
 
 **Per-activity lazy reads are ruled out**, and it is worth writing down why so
 nobody re-proposes it: `LoadStore.currentSignature` includes
@@ -195,13 +234,13 @@ nobody re-proposes it: `LoadStore.currentSignature` includes
 load engine needs the whole set. A partially-populated dictionary would change
 the PMC curve rather than defer work.
 
-390 prints the measurement. If it is large, the options are to accept and print
+391 prints the measurement. If it is large, the options are to accept and print
 it, to split the flip so details go first and traces wait for a shape change, or
 to revisit the chunked-blob shape §12 rejected at 212 on 2026-06 hardware.
 
 ---
 
-## 5. Patch 391 — the flip
+## 5. Patch 392 — the flip
 
 Two `false`s become questions:
 

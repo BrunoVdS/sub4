@@ -1085,7 +1085,12 @@ struct DatabaseHealthView: View {
             // broken, and a permanently red row is a row that stops being
             // read. §12.54.2 cuts both ways.
             ForEach(rollUp.last.lines) { l in
-                LabeledContent(l.name, value: l.value)
+                // THE SHORT MARK — patch 389. A value-string swap, not a row:
+                // this screen's budget is DEPTH and §12.76 has cost three
+                // fix-ups. The paste carries which store and which slice.
+                LabeledContent(l.name,
+                               value: l.value
+                                    + l.reads.screenMark(given: rollUp.last.sources))
                     .font(.caption2)
                     .foregroundStyle(l.isFault ? .red : Color.dim)
             }
@@ -1112,32 +1117,36 @@ struct DatabaseHealthView: View {
             lines.append(ReadBackRollUp.line("Activities", a.report?.totalCompared,
                                    a.report?.unexplained,
                                    trustworthy: a.load.isTrustworthy && a.report != nil,
-                                   a.load.line))
+                                   reads: a.source, a.load.line))
 
             let d = await ReadBacks.details(db)
             detailLoad = d.load; detailTrip = d.report
             lines.append(ReadBackRollUp.line("Details", d.report?.totalCompared,
                                    d.report?.unexplained,
                                    trustworthy: d.load.isTrustworthy && d.report != nil,
-                                   d.load.line))
+                                   reads: d.source, d.load.line))
 
             let rec = await ReadBacks.recordings(db)
-            recordingTrip = rec
-            lines.append(ReadBackRollUp.line("Recordings", rec.totalCompared, rec.unexplained,
-                                   trustworthy: rec.isTrustworthy, rec.line))
+            recordingTrip = rec.report
+            lines.append(ReadBackRollUp.line("Recordings", rec.report.totalCompared,
+                                   rec.report.unexplained,
+                                   trustworthy: rec.report.isTrustworthy,
+                                   reads: rec.source, rec.report.line))
 
             let at = await ReadBacks.athlete(db)
             athleteLoad = at.load; athleteTrip = at.report
             lines.append(ReadBackRollUp.line("Athlete", at.report.totalCompared,
                                    at.report.unexplained,
-                                   trustworthy: at.load.isTrustworthy, at.load.line))
+                                   trustworthy: at.load.isTrustworthy,
+                                   reads: at.source, at.load.line))
 
             let au = await ReadBacks.authored(db)
             authoredLoad = au.load; authoredTrip = au.report
             decisionLoad = au.decisions; moveLoad = au.moves
             lines.append(ReadBackRollUp.line("Notes and commutes", au.report.totalCompared,
                                    au.report.unexplained,
-                                   trustworthy: au.load.isTrustworthy, au.load.line))
+                                   trustworthy: au.load.isTrustworthy,
+                                   reads: au.source, au.load.line))
 
             let pl = await ReadBacks.plan(db)
             planLoad = pl.load; planTrip = pl.report
@@ -1146,25 +1155,33 @@ struct DatabaseHealthView: View {
                 db, readerSessionCount: pl.report.sessionsInDatabase)
             lines.append(ReadBackRollUp.line("Plan", pl.report.totalCompared,
                                    pl.report.unexplained,
-                                   trustworthy: pl.load.isTrustworthy, pl.load.line))
+                                   trustworthy: pl.load.isTrustworthy,
+                                   reads: pl.source, pl.load.line))
             lines.append(ReadBackRollUp.line("Plan trimmings", pl.extrasReport.totalCompared,
                                    pl.extrasReport.unexplained,
                                    trustworthy: pl.extrasLoad.isTrustworthy,
-                                   pl.extrasLoad.line))
+                                   reads: pl.source, pl.extrasLoad.line))
 
             let wg = await ReadBacks.weatherGear(db)
             weatherGearLoad = wg.load; weatherGearTrip = wg.report
             lines.append(ReadBackRollUp.line("Weather and gear", wg.report.totalCompared,
                                    wg.report.unexplained,
-                                   trustworthy: wg.load.isTrustworthy, wg.load.line))
+                                   trustworthy: wg.load.isTrustworthy,
+                                   reads: wg.source, wg.load.line))
 
             let rv = await ReadBacks.review(db)
             reviewLoad = rv.load; reviewTrip = rv.report
             lines.append(ReadBackRollUp.line("Review trail", rv.report.totalCompared,
                                    rv.report.unexplained,
-                                   trustworthy: rv.load.isTrustworthy, rv.load.line))
+                                   trustworthy: rv.load.isTrustworthy,
+                                   reads: rv.source, rv.load.line))
 
-            rollUp.record(lines)
+            // **`.live` IS ASKED FOR HERE AND NOWHERE ELSE ON THIS PATH** —
+            // patch 389, §12.130.7's rule. Every store it consults has just
+            // been read by the nine calls above, so this instantiates nothing
+            // new; a `ReadBackRollUp` that reached for `.live` itself would
+            // move that cost into every test that builds an outcome.
+            rollUp.record(lines, sources: .live)
             rollingUp = false
         }
     }
@@ -1860,7 +1877,7 @@ struct DatabaseHealthView: View {
         Task {
             // OFF the main actor, unlike the two above — 645 read transactions
             // and ~1.5 million comparisons. See `compareOffMain`.
-            recordingTrip = await ReadBacks.recordings(db)
+            recordingTrip = await ReadBacks.recordings(db).report
             readingBackRecording = false
         }
     }

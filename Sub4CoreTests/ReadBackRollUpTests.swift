@@ -30,12 +30,35 @@ import Testing
 @Suite("Read-back roll-up")
 struct ReadBackRollUpTests {
 
+    /// **`reads:` DEFAULTS TO `.ownRead` HERE, AND THAT IS SAFE FOR THE ONE
+    /// REASON `.databaseAlone`'S DEFAULT WAS NOT** — patch 389, against
+    /// §12.132.7.
+    ///
+    /// 388 removed a fixture default of `.databaseAlone` because it was
+    /// "independent under every `fed:` set" **by complement** — it happened not
+    /// to be self-referential, and the day that stopped implying evidence, every
+    /// test leaning on it was quietly testing something else.
+    ///
+    /// `.ownRead` is independent **by construction**: it means this read-back
+    /// went and read the files itself, so no `ExpectationSources` can classify
+    /// it otherwise, and `aRowThatReadTheFilesIsNeverSelfReferential` asserts
+    /// exactly that against a build feeding everything. The tests below are
+    /// about verdicts, and a verdict does not depend on provenance.
+    ///
+    /// Anything about the fifth count says `reads:` out loud.
     private func line(_ name: String = "A",
                       compared: Int = 10,
                       unexplained: Int = 0,
-                      couldNotLook: String? = nil) -> ReadBackRollUp.Line {
+                      couldNotLook: String? = nil,
+                      reads: ReadBackSource = .ownRead("a fixture")) -> ReadBackRollUp.Line {
         .init(name: name, compared: compared, unexplained: unexplained,
-              couldNotLook: couldNotLook)
+              couldNotLook: couldNotLook, reads: reads)
+    }
+
+    /// `.allFromFiles` is what a test process really is — nothing is hydrated.
+    private func ran(_ lines: [ReadBackRollUp.Line],
+                     fed: Set<ExpectationField> = []) -> ReadBackRollUp.Outcome {
+        .ran(lines, ExpectationSources(fedByTheDatabase: fed))
     }
 
     // MARK: The four verdicts
@@ -95,7 +118,7 @@ struct ReadBackRollUpTests {
     }
 
     @Test func anEmptyRunIsNotHealthy() {
-        let o = ReadBackRollUp.Outcome.ran([])
+        let o = ran([])
         #expect(!o.isHealthy)
         #expect(o.line == "Nothing ran.")
     }
@@ -107,19 +130,21 @@ struct ReadBackRollUpTests {
                 == "The roll-up could not run — locked")
     }
 
-    /// ALL FOUR TERMS, ALWAYS. A term that disappears at zero cannot be told
+    /// ALL FIVE TERMS, ALWAYS. A term that disappears at zero cannot be told
     /// from a term nobody wired in — and the sentence exists at all because
-    /// "8 of 9 agree" hid two different facts on the first device run.
+    /// "8 of 9 agree" hid two different facts on the first device run. The
+    /// fifth is 389's and it hid two more.
     @Test func allNineAgreeingStillPrintsEveryTerm() {
-        let o = ReadBackRollUp.Outcome.ran((1...9).map { line("R\($0)") })
+        let o = ran((1...9).map { line("R\($0)") })
         #expect(o.isHealthy)
         #expect(o.provesSomething)
-        #expect(o.line == "9 of 9 agree · 0 differ · 0 could not look · 0 nothing to compare")
+        #expect(o.line == "9 of 9 agree · 0 differ · 0 could not look · "
+                        + "0 nothing to compare · 0 read a store the database feeds")
     }
 
     /// The real 9 August reading, and what it should have said.
     @Test func theFourCountsAreNamedApart() {
-        let o = ReadBackRollUp.Outcome.ran([
+        let o = ran([
             line("A"),
             line("B", unexplained: 2),
             line("C", compared: 0, couldNotLook: "the plan could not be read"),
@@ -129,13 +154,13 @@ struct ReadBackRollUpTests {
         #expect(o.differingCount == 1)
         #expect(o.blindCount == 1)
         #expect(o.emptyCount == 1)
-        #expect(o.line == "1 of 4 agree · 1 differ · 1 could not look · 1 nothing to compare")
+        #expect(o.line == "1 of 4 agree · 1 differ · 1 could not look · "
+                        + "1 nothing to compare · 0 read a store the database feeds")
     }
 
     @Test func oneBlindLineIsEnoughToFailTheWhole() {
-        let o = ReadBackRollUp.Outcome.ran(
-            (1...8).map { line("R\($0)") }
-            + [line("R9", compared: 0, couldNotLook: "could not be read")])
+        let o = ran((1...8).map { line("R\($0)") }
+                    + [line("R9", compared: 0, couldNotLook: "could not be read")])
         #expect(!o.isHealthy)
         #expect(o.healthyCount == 8)
     }
@@ -144,21 +169,108 @@ struct ReadBackRollUpTests {
     /// evidence, not evidence of a fault — but it also does not let the
     /// roll-up claim it proved anything. Two properties, deliberately.
     @Test func anEmptyComparisonIsNotAFaultAndIsNotProof() {
-        let o = ReadBackRollUp.Outcome.ran([line("A"), line("B", compared: 0)])
+        let o = ran([line("A"), line("B", compared: 0)])
         #expect(o.isHealthy)
         #expect(!o.provesSomething)
         #expect(o.emptyCount == 1)
     }
 
+    // MARK: The fifth count — patch 389, §12.133
+
+    /// **THE COUNT IS DERIVED FROM EACH ROW'S OWN `reads`, NOT LOOKED UP.**
+    /// §12.129 is what the alternative costs: a list beside this type could not
+    /// notice a row nobody added to it, which is how `Activities` and `Athlete`
+    /// sat in the agreeing column for six and forty-two patches.
+    @Test func theFifthCountFollowsTheFieldsTheBuildFeeds() {
+        let rows = [
+            line("Activities", reads: .liveStores([.from(.activities)])),
+            line("Details", reads: .liveStores([.from(.details)])),
+            line("Plan", reads: .ownRead("the bundle"))
+        ]
+        let atB3 = ran(rows, fed: [.activities])
+        #expect(atB3.selfReferentialCount == 1)
+        #expect(atB3.independentCount == 2)
+
+        // THE SAME ROWS, ONE SLICE LATER. Nothing about the rows changed; the
+        // build did, and the count moved on its own. That is the whole design.
+        let afterB4 = ran(rows, fed: [.activities, .details, .traces])
+        #expect(afterB4.selfReferentialCount == 2)
+        #expect(afterB4.independentCount == 1)
+    }
+
+    /// **THE ROW A FIELD-ONLY DERIVATION WOULD GET WRONG.** `Notes and
+    /// commutes` reads four fields the database feeds and is real evidence
+    /// anyway, because 356 gave it its own read of the files. A build feeding
+    /// EVERYTHING must not move it.
+    @Test func aRowThatReadTheFilesIsNeverSelfReferential() {
+        let o = ran([line("Notes and commutes",
+                          reads: .ownRead("notes.json, commutes.json, read directly"))],
+                    fed: Set(ExpectationField.allCases))
+        #expect(o.selfReferentialCount == 0)
+        #expect(o.independentCount == 1)
+    }
+
+    /// **THREE MARKS, AND THE THIRD IS THE TRIPWIRE** — §12.15. A row that is
+    /// independent because it read the files survives its slice; one that is
+    /// independent because nothing feeds its store yet becomes self-referential
+    /// the day that slice flips. `Review trail` is the second kind.
+    @Test func theMarkSaysWhichOfTheThreeStatesARowIsIn() {
+        let fed = ExpectationSources(fedByTheDatabase: [.activities])
+
+        #expect(ReadBackSource.ownRead("activities.json, read directly")
+                    .mark(given: fed)
+                == " · own read: activities.json, read directly")
+
+        #expect(ReadBackSource.liveStores([.from(.activities, "nineteen fields each")])
+                    .mark(given: fed)
+                == " · self-referential: ActivityStore.activities, "
+                 + "nineteen fields each, hydrated at B3")
+
+        #expect(ReadBackSource.liveStores([.from(.reviews)]).mark(given: fed)
+                == " · from the stores: ProposalStore.records — not fed yet")
+    }
+
+    /// The screen gets the short form, because its budget is width and the
+    /// paste is where the store and the slice belong.
+    @Test func theScreenMarkIsShortAndOnlyMarksTheSelfReferential() {
+        let fed = ExpectationSources(fedByTheDatabase: [.activities])
+        #expect(ReadBackSource.liveStores([.from(.activities)]).screenMark(given: fed)
+                == " · self-referential")
+        #expect(ReadBackSource.liveStores([.from(.reviews)]).screenMark(given: fed) == "")
+        #expect(ReadBackSource.ownRead("x").screenMark(given: fed) == "")
+    }
+
+    /// One fed field out of several is enough. A row is the database agreeing
+    /// with itself if ANY side of its app-side comes from rows.
+    @Test func oneFedFieldIsEnoughToMarkTheRow() {
+        let o = ran([line("Weather and gear",
+                          reads: .liveStores([.from(.weather), .from(.gear)]))],
+                    fed: [.gear])
+        #expect(o.selfReferentialCount == 1)
+    }
+
     // MARK: The paste
 
     @Test func everyLineReachesThePaste() {
-        let o = ReadBackRollUp.Outcome.ran([line("A"), line("B", unexplained: 1)])
+        let o = ran([line("A"), line("B", unexplained: 1)])
         let l = o.diagnosticLines
         #expect(l.count == 3)
         #expect(l[0].hasPrefix("Read-back roll-up: "))
-        #expect(l[1] == "  A: 10 compared, no differences")
-        #expect(l[2] == "  B: 10 compared, 1 differ")
+        #expect(l[1] == "  A: 10 compared, no differences · own read: a fixture")
+        #expect(l[2] == "  B: 10 compared, 1 differ · own read: a fixture")
+    }
+
+    /// **THE PASTE CARRIES THE PROVENANCE OF THE ROW THAT COULD NOT LOOK TOO.**
+    /// A read that failed still came from somewhere, and dropping the mark on
+    /// failure would make the classification depend on whether the read worked.
+    @Test func evenABlindRowSaysWhereItWouldHaveLooked() {
+        let o = ran([line("Activities", compared: 0, couldNotLook: "closed",
+                          reads: .liveStores([.from(.activities)]))],
+                    fed: [.activities])
+        #expect(o.diagnosticLines[1]
+                == "  Activities: closed · self-referential: "
+                 + "ActivityStore.activities, hydrated at B3")
+        #expect(o.selfReferentialCount == 1, "and it is still counted")
     }
 
     @Test func thePasteSpeaksBeforeAnythingHasRun() {
@@ -172,13 +284,30 @@ struct ReadBackRollUpTests {
         let r = ReadBackRollUp()
         #expect(r.runs == 0)
         #expect(r.last == .never)
-        r.record([line("A")])
+        r.record([line("A")], sources: .allFromFiles)
         #expect(r.runs == 1)
-        #expect(r.last == .ran([line("A")]))
+        #expect(r.last == .ran([line("A")], .allFromFiles))
         r.recordFailure("closed")
         #expect(r.last == .readFailed("closed"))
         // A FAILURE IS NOT A RUN. `runs` answers "did a roll-up complete",
         // and a read that could not happen did not complete one.
         #expect(r.runs == 1)
+    }
+
+    /// The sources travel with the result, so a roll-up recorded before a slice
+    /// flipped keeps describing the run that happened. `Sub4Launch.bootstrap`'s
+    /// decision, one screen over — §12.128's "read at launch" note.
+    @Test func theRecordedResultKeepsTheSourcesItRanUnder() {
+        let r = ReadBackRollUp()
+        let atB3 = ExpectationSources(fedByTheDatabase: [.activities])
+        r.record([line("Activities", reads: .liveStores([.from(.activities)]))],
+                 sources: atB3)
+        #expect(r.last.sources == atB3)
+        #expect(r.last.selfReferentialCount == 1)
+        // AND EVERY OTHER CASE ANSWERS `.allFromFiles`, which is the honest
+        // answer for a run that did not happen: nothing was compared, so
+        // nothing was self-referential.
+        #expect(ReadBackRollUp.Outcome.never.sources == .allFromFiles)
+        #expect(ReadBackRollUp.Outcome.noDatabase.selfReferentialCount == 0)
     }
 }
