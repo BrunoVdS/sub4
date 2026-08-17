@@ -910,6 +910,91 @@ def every_restore_receipt_reaches_a_paste():
                    "by whoever is holding the phone and by nobody else — two "
                    "exports either side of it are identical. §12.146")
 
+# --------------------------------------------------------------------------
+# RULE 12 — patch 405, §12.149
+# --------------------------------------------------------------------------
+
+# What a restore may not do. `save()` announces; `noteAuthoredChange` IS the
+# announcement. A restore writes through `write()` and stays silent.
+RESTORE_MUST_NOT = ["noteAuthoredChange", "try save()"]
+
+# Four restores at 405: weather, notes, commutes, moves. The match decisions
+# make five and must arrive under this rule, not beside it.
+RESTORING_STORES = 4
+
+
+def no_restore_announces() -> None:
+    """**A REPAIR MUST NOT ARRIVE CARRYING PERMISSION TO DELETE.**
+
+    `DatabaseWriteThrough.noteAuthoredChange` fires a whole-world import with
+    `trigger == .authored`, and `.authored` sets `reconcile` — so an authored
+    run may DELETE. Patches 400 and 404 built restores that called `save()`,
+    which announces, so **pressing Restore fired a reconciling import once per
+    store.** §12.144's own text claimed the opposite in the same tree.
+
+    Nothing was harmed on 17 August because the restore added zero and the
+    stores were unchanged, so the import found the same data and pruned
+    nothing. The general case is the one this rule exists for: you press
+    Restore BECAUSE a file is damaged, the import reconciles ALL authored
+    families against ALL current stores, and a different family that happens to
+    be truncated gets pruned to match. **The recovery operation destroys
+    something it was never pointed at.**
+
+    A rule and not a test, for RULE 8's reason: the call is one line inside a
+    method whose only caller is a SwiftUI button, and a test that drove it
+    would fire a real import. Reading the source is what is available.
+    """
+    rule = "no restore announces"
+
+    seen = 0
+    for f in app_sources():
+        body = strip_comments(f.read_text())
+        for m in re.finditer(r"\n\s*(?:@discardableResult\s*)?func restore\b", body):
+            fn = braced(body, body[m.start():m.end()])
+            if fn is None:
+                continue
+            seen += 1
+            for verb in RESTORE_MUST_NOT:
+                if verb in fn:
+                    fail(rule, f"{f.name}'s restore contains `{verb}`. That "
+                               "announces an authored change, which fires a "
+                               "reconciling import — so a repair arrives "
+                               "carrying permission to delete a family it was "
+                               "never pointed at. Write through `write()`. "
+                               "§12.149")
+
+    counted(rule, seen, RESTORING_STORES, "restores read for an announcement")
+
+    # **AND THE OTHER DIRECTION, WHICH IS HOW THIS PATCH NEARLY SHIPPED
+    # BACKWARDS.** 405's first attempt replaced the wrong `try save()` in each
+    # store: the ordinary MUTATORS went silent and the restores kept
+    # announcing. The whole suite passed — nothing asserts that saving a note
+    # catches the database up.
+    #
+    # `write()` has exactly two callers per store: `save()`, which announces
+    # after it, and `restore()`, which does not. A third is a mutation that
+    # stopped telling the database anything, which is the 348 defect returning
+    # by the back door.
+    silent = 0
+    for f in app_sources():
+        body = strip_comments(f.read_text())
+        if "private func write() throws" not in body:
+            continue
+        silent += 1
+        calls = body.count("try write()")
+        if calls != 2:
+            fail(rule, f"{f.name} calls `write()` {calls} times and should call "
+                       "it twice — once from `save()`, once from `restore()`. A "
+                       "third caller is a mutation that no longer announces, so "
+                       "the database stops being caught up and nothing says so. "
+                       "§12.149")
+    counted(rule, silent, 3, "stores with a silent write path")
+    if seen > RESTORING_STORES:
+        fail(rule, f"{seen} restores exist and this rule expects "
+                   f"{RESTORING_STORES}. Raise RESTORING_STORES — the number is "
+                   "here so a fifth store arrives UNDER this rule rather than "
+                   "beside it.")
+
 
 RULES = [
     every_store_that_records_a_read_refuses_a_write,
@@ -923,6 +1008,7 @@ RULES = [
     the_gate_does_not_branch_on_the_build,
     every_tracked_source_is_compiled,
     every_restore_receipt_reaches_a_paste,
+    no_restore_announces,
 ]
 
 for r in RULES:

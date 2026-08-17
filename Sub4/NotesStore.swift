@@ -371,7 +371,10 @@ final class NotesStore {
         let m = StoreRestore.merge(stored, into: notes)
         notes = m.merged
         do {
-            try save()
+            // `write()`, NOT `save()` — §12.149. These records came out of the
+            // database; announcing them back is a loop, and `.authored` would
+            // arrive carrying permission to reconcile, so a repair could prune.
+            try write()
         } catch {
             // §12.17. The screens read this store, so putting memory back is
             // what stops them showing notes that are not on the disk. The file
@@ -395,15 +398,27 @@ final class NotesStore {
         // roll memory back and the alert already says what happened, and a
         // silent refusal here would be a quieter version of the defect
         // this file was written to end.
+        try write()
+        // ANNOUNCED HERE AND NOT IN `write()` — patch 405, §12.149. A restore
+        // puts back rows that CAME FROM the database, so announcing them is a
+        // loop; and `.authored` sets `reconcile`, so a repair would arrive
+        // carrying permission to delete. Every ordinary mutation still goes
+        // through `save()` and still announces; the restore calls `write()`.
+        DatabaseWriteThrough.shared.noteAuthoredChange("a session note was saved")
+    }
+
+    /// The bytes on disk, and nothing else — patch 405.
+    ///
+    /// **THE GUARD IS HERE, NOT IN `save()`.** §12.116's protection is about
+    /// not overwriting a file nobody could read, which is as true of a restore
+    /// as of a mutation. What the restore must skip is the ANNOUNCEMENT, so
+    /// the split is announcement-shaped rather than guard-shaped.
+    private func write() throws {
         guard lastLoad.isTrustworthy else {
             throw StoreWriteError(store: "notes.json", stage: .refused,
                                   reason: "the store was not read cleanly at launch")
         }
-
         try StoreWrite.encode(notes, to: fileURL, store: "notes.json")
-        // AFTER the write, so a throw above means no trigger — there is
-        // nothing to catch the database up to. Patch 348, §12.94.
-        DatabaseWriteThrough.shared.noteAuthoredChange("a session note was saved")
     }
 
     /// Migrates forward. Never clears — see the header. A future version 2 adds

@@ -8962,6 +8962,87 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.149 A repair that arrived carrying permission to delete — patch 405
+
+**Patches 400 and 404 built restores that called `save()`, and `save()`
+announces.** `DatabaseWriteThrough.noteAuthoredChange` fires a whole-world
+import with `trigger == .authored`, and `DatabaseWriteThrough.swift` sets
+`s.reconcile = trigger == .authored` — so **an authored run may DELETE.**
+
+Pressing Restore therefore fired a reconciling import once per store.
+
+**And §12.144 claimed the opposite in the same tree**: *"there is NO
+write-through, because these records came out of the database and announcing
+them back is a loop."* The ADR said one thing and the code did another, which is
+the class §12.128.1 records for documents and this is the first instance inside
+a patch's own section.
+
+Task 1A's prompt required it in as many words — *"Restore must not trigger
+DatabaseWriteThrough"* — so this is a failed acceptance criterion rather than
+new scope.
+
+### 12.149.1 Nothing was harmed, and that is not the argument
+
+On 17 August the restore added zero, the stores were unchanged, the import found
+the same data and pruned nothing. The read-back afterwards showed 5 / 1 / 2 / 8
+intact.
+
+**The general case is the one the feature exists for.** You press Restore
+BECAUSE a file is damaged. The import reconciles ALL authored families against
+ALL current stores. A different family that happens to be truncated at that
+moment gets pruned to match it — and the plan's own topic-1 finding names the
+path: *"a valid but truncated `proposals.json` can therefore authorize review
+deletion."* **The recovery operation destroys something it was never pointed
+at.** A restore is the one action that must never delete, and it was wired to
+the one trigger that permits deletion.
+
+### 12.149.2 The split is announcement-shaped, not guard-shaped
+
+`save()` becomes `write()` plus the announcement. `write()` keeps §12.116's
+guard, because not overwriting a file nobody could read is as true of a restore
+as of a mutation; what the restore must skip is the ANNOUNCEMENT. Ordinary
+mutations still go through `save()` and still announce.
+
+No default argument. `save(announcing: false)` would have been a call site
+carrying a value the caller never writes — §12.95.4 — and the one place it
+mattered would have been the one place nobody read.
+
+### 12.149.3 The fix shipped backwards first, and the rule caught it
+
+The first attempt replaced the wrong `try save()` in each of the three files: it
+hit the first occurrence, which is an ordinary MUTATOR. **So note saves stopped
+announcing and the restores kept announcing — the exact inverse of the patch.**
+
+**The whole suite passed.** Nothing asserts that saving a note catches the
+database up, so 1,706 tests had no opinion about a store that had gone silent.
+
+RULE 12 caught it in both directions within a minute of being written, which is
+the strongest argument for these rules this project has produced: it failed the
+patch that created it, before that patch could be committed.
+
+### 12.149.4 RULE 12, and it points both ways
+
+- **No `restore` may contain `noteAuthoredChange` or `try save()`** — a repair
+  must not arrive carrying permission to delete.
+- **`write()` has exactly two callers per store**: `save()`, which announces
+  after it, and `restore()`, which does not. A third is a mutation that stopped
+  telling the database anything — the 348 defect returning by the back door.
+
+Four restores are counted, so the match decisions arrive UNDER this rule rather
+than beside it. A rule and not a test, for RULE 8's reason: the call is one line
+in a method whose only caller is a SwiftUI button, and a test that drove it
+would fire a real import.
+
+### 12.149.5 What this does not fix
+
+**The blast radius itself is topic 1C's**, not this patch's. An `.authored`
+trigger still permits reconciliation across every family, and `canReconcile`
+still proves files were readable rather than complete. 405 stops restores from
+pulling that trigger; it does not make the trigger safer. That is deliberate —
+the plan says not to combine reconciliation changes with this increment.
+
+---
+
 ## 12.148 The third file, and failures stop being one error — patch 404
 
 `moves.json` joins `notes.json` and `commutes.json` on `StoreRestore`'s

@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 404 (2026-08-17).** §5.3 is the 390 device run, Compare and
+**Current at patch 405 (2026-08-17).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself.
@@ -372,9 +372,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 404, 2026-08-17
+## 5. State — patch 405, 2026-08-17
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 404; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 405; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -511,8 +511,10 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
 > defect as a test, so the day it is fixed the test inverts.
 
 - **ONE authored store still has no restore path.** 400 and 404 gave the three
-  FILES one, **confirmed on the device at 404: added 0 · already held 5/1/2**,
-  which is the first run of the singleton path any test can reach (§12.148.4).
+  FILES one, **confirmed on the device at 404: added 0 · already held 5/1/2** —
+  the first run of the singleton path any test can reach (§12.148.4). **405
+  stopped them announcing**: `save()` fired a reconciling import, so a repair
+  arrived carrying permission to delete (§12.149).
   **The match decisions are next and are not a file** — a `Data` value in
   `UserDefaults` needing its own lossless set-aside. **`proposals.json` is
   B7's**; zero-versus-zero proves nothing. §12.144, §12.148.
@@ -524,25 +526,23 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   §12.125.4's "no screen shows it" expired when 378 and 390 built them. §12.143.
 - **`newest removal` names the trigger, not the family**; **`canReconcile` tests
   readable, not correct**; **Import is not a repair path** (§12.126.5).
-- **RULE 8 no longer covers `DetailStore`** (§12.142.3); **no gate reads compiler
-  warnings** — one slipped past a green suite and a Release build at 400a, and
-  the tree is at zero so a gate goes in green (§12.144.6); **391 swept the
-  read-backs and not the restore receipts** — RULE 11 (§12.146).
+- **RULE 8 no longer covers `DetailStore`** (§12.142.3); **391 swept the
+  read-backs and not the restore receipts** — RULE 11 (§12.146). **AN
+  `.authored` TRIGGER STILL PERMITS RECONCILIATION ACROSS EVERY FAMILY** — 405
+  stopped restores pulling it, not the trigger being dangerous. Topic 1C.
 - **`ReadBacks.athlete` IS THE LAST READ-BACK COMPARING THE DATABASE WITH
   ITSELF.** It reads `ConstantsStore.shared.c`, `AthleteStore.shared.ftp` and
   `.hrZones`, all **hydrated since 346** — 27 comparisons that could not have
-  disagreed, printed as agreement for forty-four patches. 343 wrote the rule in
-  that very file and B1 applied it to the plan and not to the athlete beside it.
-  **ITS OWN PATCH.** It needs `AthleteStore(directory:)` and
-  `ConstantsStore(directory:)` — the two `UNPROTECTED_STORE_CEILING` counts —
-  and closes **516 rows** nothing else checks: `athlete_profile` (1),
-  `resting_month` (15), `activity_gear_reference` (500). **`knownActivityIDs` is
-  B5's**; **`DetailStore` is invisible to RULE 1**, `mayWrite` covers it.
+  disagreed, printed as agreement for forty-four patches. **ITS OWN PATCH**: it
+  needs `AthleteStore(directory:)` and `ConstantsStore(directory:)` — the two
+  `UNPROTECTED_STORE_CEILING` counts — and closes **516 rows** nothing else
+  checks: `athlete_profile` (1), `resting_month` (15),
+  `activity_gear_reference` (500). **`knownActivityIDs` is B5's**;
+  **`DetailStore` is invisible to RULE 1**, `mayWrite` covers it.
 - **The pre-activation snapshot is still `2026-08-10-084723`** (340); B9 moves
-  it. **`Sub4/manual.html` is a hundred patches stale** (284). **Two stores
-  remain unprotected** by §12.116's guard — `AthleteStore`,
-  `AthleteConstants`, ceiling 2, may only go down. **`content_revision` is
-  reserved and unoccupied** (334).
+  it. **`manual.html` is a hundred patches stale** (284). **Two stores remain
+  unprotected** by §12.116's guard — `AthleteStore`, `AthleteConstants`,
+  ceiling 2. **`content_revision` is reserved and unoccupied** (334).
 - **Dates:** first review **24 Aug**; Actions resets **1 Sep**; Japan **7–12
   Sep** — `DayKey.key(_:in:)`'s first run outside Europe/Brussels.
 
