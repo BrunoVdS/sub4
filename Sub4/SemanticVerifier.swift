@@ -54,6 +54,188 @@
 import Foundation
 import GRDB
 
+// MARK: - Where an expectation came from — patch 386, §12.130
+
+/// ONE CASE PER FIELD `AppStores.current()` READS, NOT ONE PER STORE.
+///
+/// **TWO STORES ARE THE REASON, AND BOTH WERE FOUND BY READING THEM.**
+/// `ActivityStore.servedFrom` reads `.database`, and that sentence is about the
+/// activities — 381 wrote the property for them. The same store also hands out
+/// the rejection receipts and the sync cursor, and both live in `UserDefaults`
+/// until B8. `AthleteStore` is split the other way and says so itself:
+/// `.partial(fromDatabase: "zones and FTP", fromFiles: "gear")`.
+///
+/// A store-level answer would be wrong for three of the twenty-two comparisons
+/// — `gear`, `refused recordings` and `sync position` all discounted while they
+/// can still disagree. Three wrongly discounted is not an improvement on the one
+/// wrongly counted that §12.129 was about.
+nonisolated enum ExpectationField: String, CaseIterable, Sendable {
+    case activities
+    case gear
+    case notes
+    case reviews
+    case matchDecisions
+    case workItems
+    case rejections
+    case commutes
+    case moves
+    case weather
+    case traces
+    case details
+    case zones
+    case syncPosition
+    /// No store at all — a residual, or a constant, computed from the database
+    /// on its own. It can never be self-referential, and `ExpectationSources`
+    /// refuses to hold it for that reason.
+    case databaseAlone
+
+    /// What to call it in the paste. Counts and table names only, like every
+    /// other line `diagnosticLines` produces — §12.7.
+    var storeDescription: String {
+        switch self {
+        case .activities:     "ActivityStore.activities"
+        case .gear:           "AthleteStore.allGear"
+        case .notes:          "NotesStore.notes"
+        case .reviews:        "ProposalStore.records"
+        case .matchDecisions: "Matcher.decisions"
+        case .workItems:      "DetailStore.workItems"
+        case .rejections:     "ActivityStore.receipts"
+        case .commutes:       "CommuteStore.decisions"
+        case .moves:          "PlanMoveStore.moves"
+        case .weather:        "WeatherStore.byActivity"
+        case .traces:         "the trace store"
+        case .details:        "the detail store"
+        case .zones:          "AthleteStore.hrZones"
+        case .syncPosition:   "ActivityStore.syncState"
+        case .databaseAlone:  "the database alone"
+        }
+    }
+
+    /// The D7 slice that owns this field — the one that moved it, or the one
+    /// that will. Printed beside a self-referential mark, and the string B4,
+    /// B5, B7 and B8 each turn from a promise into a store's own answer.
+    var slice: String? {
+        switch self {
+        case .zones:            return "B1"
+        case .notes, .commutes, .matchDecisions, .moves: return "B2"
+        case .activities:       return "B3"
+        case .traces, .details: return "B4"
+        case .weather, .gear:   return "B5"
+        case .reviews:          return "B7"
+        case .workItems, .rejections, .syncPosition: return "B8"
+        // The one branch that is not a `String`, which is why this switch is
+        // written with explicit returns and `storeDescription` above is not.
+        case .databaseAlone:    return nil
+        }
+    }
+}
+
+/// One comparison's expectation, and where it came from.
+///
+/// **NOT CALLED `Expectation` — PATCH 386a, §12.130.6.** `Testing.Expectation`
+/// exists, and every test file in this project does `import Testing` alongside
+/// `@testable import Sub4`. The bare noun is ambiguous in all 124 of them. 386
+/// grepped this tree for the name, as §2 requires, and this tree does not
+/// contain it: the name was taken by a module the target imports.
+nonisolated struct ExpectationOrigin: Equatable, Sendable {
+
+    let field: ExpectationField
+
+    /// How THIS comparison used that field — "as an id set", "summed", "seven
+    /// fields each". The field says which store; this says what was done with
+    /// it. Dropping it would make the paste worse than 385's, which named all
+    /// three.
+    let note: String?
+
+    static func from(_ field: ExpectationField,
+                     _ note: String? = nil) -> ExpectationOrigin {
+        .init(field: field, note: note)
+    }
+
+    /// A residual, or a constant. Never self-referential.
+    static let databaseAlone = ExpectationOrigin(field: .databaseAlone,
+                                                note: nil)
+
+    var storeDescription: String {
+        guard let note else { return field.storeDescription }
+        return "\(field.storeDescription), \(note)"
+    }
+}
+
+/// Which fields THIS BUILD feeds from the database.
+///
+/// **DERIVED BY ASKING EACH STORE, NEVER DECLARED.** `live` is an exhaustive
+/// switch, so a new `ExpectationField` case does not compile until somebody
+/// answers for it, and a flip cannot leave an answer stale because the answer
+/// IS the store's `servedFrom`. That is the property `HydratedStores` could not
+/// be given: a list in another file has no way to notice a comparison that was
+/// never added to it. §12.130.
+nonisolated struct ExpectationSources: Equatable, Sendable {
+
+    private let fed: Set<ExpectationField>
+
+    init(fedByTheDatabase: Set<ExpectationField>) {
+        // `.databaseAlone` is not a store. A residual calling itself
+        // self-referential would be the same class of wrong answer this type
+        // exists to stop, so it is refused here rather than trusted to callers.
+        fed = fedByTheDatabase.subtracting([.databaseAlone])
+    }
+
+    func isFedByTheDatabase(_ field: ExpectationField) -> Bool {
+        fed.contains(field)
+    }
+
+    var fields: Set<ExpectationField> { fed }
+
+    /// Everything from files — the honest answer in a test process, where no
+    /// store has been hydrated.
+    ///
+    /// **NOT CALLED `none`.** `verify` takes `ExpectationSources?`, and `.none`
+    /// against an optional parameter resolves to `Optional.none` — nil — not to
+    /// this. A caller writing `sources: .none` to mean "nothing is hydrated"
+    /// would get "ask the stores", which is the opposite, and the compiler
+    /// would not object.
+    static let allFromFiles = ExpectationSources(fedByTheDatabase: [])
+}
+
+@MainActor
+extension ExpectationSources {
+
+    /// THE DERIVATION. Every arm asks the store that owns the field.
+    static var live: ExpectationSources {
+        var fed: Set<ExpectationField> = []
+        for field in ExpectationField.allCases where servesFromDatabase(field) {
+            fed.insert(field)
+        }
+        return .init(fedByTheDatabase: fed)
+    }
+
+    /// EXHAUSTIVE, AND THAT IS THE WHOLE MECHANISM. Adding a case above
+    /// without adding an arm here is a compile error.
+    private static func servesFromDatabase(_ field: ExpectationField) -> Bool {
+        switch field {
+        case .activities:     ActivityStore.shared.servedFrom == .database
+        case .rejections:     ActivityStore.shared.receiptsServedFrom == .database
+        case .syncPosition:   ActivityStore.shared.syncCursorServedFrom == .database
+        case .zones:          AthleteStore.shared.zonesServedFrom == .database
+        case .gear:           AthleteStore.shared.gearServedFrom == .database
+        case .notes:          NotesStore.shared.servedFrom == .database
+        case .commutes:       CommuteStore.shared.servedFrom == .database
+        case .matchDecisions: Matcher.shared.servedFrom == .database
+        case .moves:          PlanMoveStore.shared.servedFrom == .database
+        // NO STORE DECLARES THESE YET, and `ExpectationField.slice` names the
+        // one that will. `false` is a statement about this build rather than a
+        // placeholder: B4, B5, B7 and B8 each turn one of these lines into a
+        // question for a store.
+        case .traces, .details: false
+        case .weather:          false
+        case .reviews:          false
+        case .workItems:        false
+        case .databaseAlone:    false
+        }
+    }
+}
+
 // MARK: - One comparison
 
 nonisolated struct VerificationCheck: Equatable, Identifiable {
@@ -70,14 +252,28 @@ nonisolated struct VerificationCheck: Equatable, Identifiable {
     /// own identifiers, so it goes on the screen and never in the paste.
     let detail: String?
 
+    /// **WHERE THE EXPECTATION CAME FROM — PATCH 386, AND IT HAS NO DEFAULT
+    /// ON PURPOSE.** A comparison added without answering this does not
+    /// compile. That is the whole of §12.130: `activity fields` spent three
+    /// patches in the evidence column because nothing made anybody answer, and
+    /// a list in another file had no way to notice.
+    let reads: ExpectationOrigin
+
     var id: String { name }
+
+    /// True when the expectation came from a field this build feeds from the
+    /// database — so the comparison is the database agreeing with itself.
+    func isSelfReferential(given sources: ExpectationSources) -> Bool {
+        sources.isFedByTheDatabase(reads.field)
+    }
 
     static func compare(_ name: String, table: String,
                         expected: Int, found: Int,
+                        reads: ExpectationOrigin,
                         detail: String? = nil) -> VerificationCheck {
         .init(name: name, table: table,
               expected: "\(expected)", found: "\(found)",
-              passed: expected == found, detail: detail)
+              passed: expected == found, detail: detail, reads: reads)
     }
 }
 
@@ -86,6 +282,12 @@ nonisolated struct VerificationCheck: Equatable, Identifiable {
 nonisolated struct VerificationReport: Equatable {
     let checks: [VerificationCheck]
     let seconds: Double
+
+    /// What this build was serving when the expectations were taken — patch
+    /// 386. A `var` with a default so a test may build a report without one;
+    /// `verify` always passes the live answer, and `.allFromFiles` is the
+    /// honest default for a report assembled out of nothing.
+    var sources: ExpectationSources = .allFromFiles
 
     /// Passing means every comparison passed. There is no partial credit and
     /// no "mostly" — `verified` is a state D7 acts on.
@@ -139,6 +341,35 @@ nonisolated struct VerificationReport: Equatable {
         return HydratedStores.all.filter { !names.contains($0.check) }
     }
 
+    // MARK: The derivation, and the direction nothing watched — patch 386
+
+    /// Comparisons the DERIVATION says read a field the database feeds.
+    ///
+    /// Not yet the operative answer: `selfReferentialChecks` above still reads
+    /// `HydratedStores`, so nothing about this build's numbers moves. This runs
+    /// beside it as a negative control, and 387 makes it operative once the
+    /// device has shown the two agree. §12.130.
+    var derivedSelfReferential: [VerificationCheck] {
+        checks.filter { $0.isSelfReferential(given: sources) }
+    }
+
+    /// **THE DIRECTION THAT COST 382 TO 385.**
+    ///
+    /// A comparison whose expectation comes from a field this build feeds from
+    /// the database, and which `HydratedStores` does not name — so it is
+    /// counted as evidence while being incapable of disagreeing. Nothing in
+    /// this repository could see that before 386.
+    ///
+    /// ONE-DIRECTIONAL, DELIBERATELY. The opposite — declared and not derived —
+    /// is what reverting a slice looks like: take a family out of
+    /// `hydratedFamilies` and the entry stays while the store returns to its
+    /// file. Reversibility by deleting one family is a property this whole
+    /// ladder rests on, and a build that failed verification for using the
+    /// escape hatch would have no escape hatch.
+    var undeclaredSelfReferential: [VerificationCheck] {
+        derivedSelfReferential.filter { HydratedStores.entry(for: $0.name) == nil }
+    }
+
     /// WHAT `verified` MAY BE GRANTED ON — and it is no longer `passed`.
     ///
     /// Three conditions, each with a distinct failure: every comparison agreed,
@@ -149,8 +380,14 @@ nonisolated struct VerificationReport: Equatable {
     /// database, `independentChecks` is empty, and twenty green rows mean
     /// nothing at all. This is the line that refuses to write `verified` on
     /// that — which forces the question then, rather than after activation.
+    /// PATCH 386 ADDS THE FOURTH, AND IT IS THE ONE THE OTHER THREE COULD NOT
+    /// MAKE: a comparison that could not have disagreed and that nobody said so
+    /// about. Every one of these has a distinct failure and its own sentence in
+    /// `withheldReason`.
     var isTrustworthyEvidence: Bool {
-        passed && !independentChecks.isEmpty && unmatchedHydratedEntries.isEmpty
+        passed && !independentChecks.isEmpty
+            && unmatchedHydratedEntries.isEmpty
+            && undeclaredSelfReferential.isEmpty
     }
 
     /// Non-nil when the report PASSED and still may not be believed. Nil when
@@ -165,6 +402,14 @@ nonisolated struct VerificationReport: Equatable {
         if independentChecks.isEmpty {
             return "every comparison reads a store the database feeds, so none "
                  + "of them could have disagreed"
+        }
+        if !undeclaredSelfReferential.isEmpty {
+            let n = undeclaredSelfReferential.count
+            return "\(n) comparison" + (n == 1 ? "" : "s")
+                 + " read a store the database feeds and "
+                 + (n == 1 ? "is" : "are") + " not declared, so "
+                 + (n == 1 ? "it counted" : "they counted") + " as evidence "
+                 + "while being unable to disagree"
         }
         return nil
     }
@@ -199,6 +444,19 @@ nonisolated struct VerificationReport: Equatable {
                  + "database feeds")
         out.append("  may be believed: \(isTrustworthyEvidence ? "yes" : "no")"
                  + (withheldReason.map { " — \($0)" } ?? ""))
+        // PATCH 386, UNCONDITIONAL AND DIRECTLY UNDER THE COUNTS IT CHECKS.
+        // A cross-check that only printed when it disagreed would be a row
+        // that vanishes at zero — §12.54.2 — and a reader could not tell it
+        // from a build where nobody wired it in.
+        out.append("  derived from the stores: \(derivedSelfReferential.count) "
+                 + "of \(checks.count) read a field this build feeds — "
+                 + (undeclaredSelfReferential.isEmpty
+                    ? "agrees with the declared list"
+                    : "DISAGREES on \(undeclaredSelfReferential.count)"))
+        for c in undeclaredSelfReferential {
+            out.append("  COUNTED AS EVIDENCE AND COULD NOT DISAGREE: \(c.name) "
+                     + "reads \(c.reads.storeDescription)")
+        }
         for e in unmatchedHydratedEntries {
             out.append("  DECLARED HYDRATED AND NOT COMPARED: \(e.check) "
                      + "(\(e.note))")
@@ -302,8 +560,23 @@ enum SemanticVerifier {
                        weather: [ActivityWeather] = [],
                        zones: [AthleteStore.HRZone] = [],
                        streams: [ActivityStreams] = [],
-                       details: [ActivityDetail] = []) throws -> VerificationReport {
+                       details: [ActivityDetail] = [],
+                       sources: ExpectationSources = .allFromFiles) throws -> VerificationReport {
 
+        // **`.allFromFiles`, NOT `.live` — PATCH 386a, §12.130.7.**
+        //
+        // 386 defaulted this to nil and resolved nil to `.live`, which asks six
+        // main-actor singletons what they are serving. Thirty-four test call
+        // sites pass no sources, so all thirty-four would have instantiated
+        // stores they never touched before — and `AppStores.current()`'s own
+        // comment says `PlanMoveStore.shared`'s init is what registers
+        // `moves.json` with `StoreReadJournal`, which `canReconcile` reads.
+        //
+        // A patch about bookkeeping does not get to move the reconciliation
+        // gate, and the failure that would produce is order-dependent. The
+        // honest default in a process where nothing has been hydrated is that
+        // nothing is hydrated; the ONE production door passes `.live`, in
+        // `AppStores.swift`, where it can be seen next to the stores.
         let clock = ContinuousClock()
         var checks: [VerificationCheck] = []
 
@@ -335,7 +608,8 @@ enum SemanticVerifier {
             }
         }
 
-        return VerificationReport(checks: checks, seconds: seconds(elapsed))
+        return VerificationReport(checks: checks, seconds: seconds(elapsed),
+                                  sources: sources)
     }
 
     /// `verify`, for a caller that has nowhere to put a thrown error.
@@ -358,7 +632,8 @@ enum SemanticVerifier {
                         weather: [ActivityWeather] = [],
                         zones: [AthleteStore.HRZone] = [],
                         streams: [ActivityStreams] = [],
-                        details: [ActivityDetail] = []) -> VerificationReport {
+                        details: [ActivityDetail] = [],
+                        sources: ExpectationSources = .allFromFiles) -> VerificationReport {
         do {
             return try verify(db, activities: activities, shoes: shoes,
                               notes: notes, proposals: proposals,
@@ -366,12 +641,17 @@ enum SemanticVerifier {
                               rejections: rejections, commutes: commutes,
                               moves: moves, matchDecisions: matchDecisions,
                               weather: weather, zones: zones,
-                              streams: streams, details: details)
+                              streams: streams, details: details,
+                              sources: sources)
         } catch {
             return VerificationReport(checks: [
+                // `.databaseAlone`: there is no store behind "the database
+                // could not be read", and a failure that claimed a provenance
+                // would be inventing one.
                 .init(name: "reading the database", table: "—",
                       expected: "readable", found: "failed",
-                      passed: false, detail: String(describing: error))
+                      passed: false, detail: String(describing: error),
+                      reads: .databaseAlone)
             ], seconds: 0)
         }
     }
@@ -404,7 +684,8 @@ enum SemanticVerifier {
                      passed: agrees,
                      detail: agrees ? nil
                            : "store \(expected.cursor ?? "—") · "
-                             + "database \(found ?? "none")")
+                             + "database \(found ?? "none")",
+                     reads: .from(.syncPosition))
     }
 
     // MARK: 1 — Counts
@@ -463,14 +744,18 @@ enum SemanticVerifier {
 
         return [
             .compare("activities", table: "activity",
-                     expected: activities.count, found: try count(d, "activity")),
+                     expected: activities.count, found: try count(d, "activity"),
+                     reads: .from(.activities, "counted")),
             .compare("gear", table: "gear",
-                     expected: shoes.count, found: try count(d, "gear")),
+                     expected: shoes.count, found: try count(d, "gear"),
+                     reads: .from(.gear)),
             .compare("notes", table: "user_note",
-                     expected: notes.count, found: try count(d, "user_note")),
+                     expected: notes.count, found: try count(d, "user_note"),
+                     reads: .from(.notes)),
             .compare("match decisions", table: "match_decision",
                      expected: expectedDecisions,
-                     found: try count(d, "match_decision")),
+                     found: try count(d, "match_decision"),
+                     reads: .from(.matchDecisions)),
             // PATCH 274, AND IT SHOULD HAVE BEEN HERE SINCE 263.
             //
             // The verifier has compared notes since the day it was written and
@@ -485,19 +770,22 @@ enum SemanticVerifier {
             // asserting the shape of somebody's review rather than that the
             // review is there.
             .compare("reviews", table: "review",
-                     expected: proposals.count, found: try count(d, "review")),
+                     expected: proposals.count, found: try count(d, "review"),
+                     reads: .from(.reviews)),
             // A COUNT IS ENOUGH HERE, unlike the sync position. Every row is
             // one id the app will never ask about again, so the number of them
             // IS the fact — and the importer prunes, so a stale row shows up
             // as a disagreement rather than being quietly tolerated.
             .compare("stopped asking", table: "work_queue",
-                     expected: workItems.count, found: try count(d, "work_queue")),
+                     expected: workItems.count, found: try count(d, "work_queue"),
+                     reads: .from(.workItems)),
             // NOT filtered by `storeIDs`, unlike weather and the traces. A
             // rejection is ABOUT a recording the database deliberately does
             // not hold — expecting only the ones with an activity would expect
             // none of them.
             .compare("refused recordings", table: "rejection",
-                     expected: rejections.count, found: try count(d, "rejection")),
+                     expected: rejections.count, found: try count(d, "rejection"),
+                     reads: .from(.rejections)),
             // FILTERED BY `storeIDs`, unlike the rejections directly above.
             // A correction is ABOUT an activity the database holds; a rejection
             // is about one it refuses. The two lines look alike and mean
@@ -510,7 +798,8 @@ enum SemanticVerifier {
             // `WHERE` clause.
             .compare(ComparedCorrections.commute.check, table: "correction",
                      expected: commutes.filter { storeIDs.contains($0.activityId) }.count,
-                     found: try count(d, ComparedCorrections.commute)),
+                     found: try count(d, ComparedCorrections.commute),
+                     reads: .from(.commutes)),
             // NOT FILTERED, unlike the commute comparison directly above, and
             // the two lines look alike for the third time on this table.
             //
@@ -526,7 +815,8 @@ enum SemanticVerifier {
             // could actually disagree. §12.99.
             .compare(ComparedCorrections.planMove.check, table: "correction",
                      expected: moves.count,
-                     found: try count(d, ComparedCorrections.planMove)),
+                     found: try count(d, ComparedCorrections.planMove),
+                     reads: .from(.moves)),
             // AND EVERY ROW NOBODY ABOVE COUNTED. Zero is the assertion, not a
             // placeholder: a row belonging to a family no comparison names is a
             // claimant that arrived without a verifier, and the report says so
@@ -534,17 +824,23 @@ enum SemanticVerifier {
             // `CorrectionFamilyTests` makes it.
             try unclaimedCorrections(d),
             .compare("weather readings", table: "weather",
-                     expected: expectedWeather, found: try count(d, "weather")),
+                     expected: expectedWeather, found: try count(d, "weather"),
+                     reads: .from(.weather, "the ones the store holds")),
             .compare("traces", table: "recording",
-                     expected: expectedStreams, found: try count(d, "recording")),
+                     expected: expectedStreams, found: try count(d, "recording"),
+                     reads: .from(.traces, "the ones the store holds")),
             .compare("details", table: "activity_detail",
-                     expected: expectedDetails, found: try count(d, "activity_detail")),
+                     expected: expectedDetails, found: try count(d, "activity_detail"),
+                     reads: .from(.details, "the ones the store holds")),
             .compare("splits", table: "activity_split",
-                     expected: expectedSplits, found: try count(d, "activity_split")),
+                     expected: expectedSplits, found: try count(d, "activity_split"),
+                     reads: .from(.details, "summed over the details")),
             .compare("trace samples", table: "recording_sample",
-                     expected: expectedSamples, found: try count(d, "recording_sample")),
+                     expected: expectedSamples, found: try count(d, "recording_sample"),
+                     reads: .from(.traces, "summed over the traces")),
             .compare("heart-rate zones", table: "hr_zone",
-                     expected: zones.count, found: try count(d, "hr_zone")),
+                     expected: zones.count, found: try count(d, "hr_zone"),
+                     reads: .from(.zones)),
         ]
     }
 
@@ -578,7 +874,8 @@ enum SemanticVerifier {
         return .init(name: "activity identities", table: "activity_alias",
                      expected: "\(storeIDs.count) ids",
                      found: "\(dbIDs.count) ids, \(missing.count) missing, \(extra.count) unexpected",
-                     passed: ok, detail: detail)
+                     passed: ok, detail: detail,
+                     reads: .from(.activities, "as an id set"))
     }
 
     // MARK: 3 — Content
@@ -637,7 +934,11 @@ enum SemanticVerifier {
                      found: "\(activities.count - differing.count) matching, \(differing.count) different",
                      passed: differing.isEmpty,
                      detail: differing.isEmpty ? nil
-                             : differing.prefix(5).joined(separator: ", "))
+                             : differing.prefix(5).joined(separator: ", "),
+                     // THE ONE §12.129 WAS ABOUT. It was in neither of 382's
+                     // lists; here it cannot be in neither, because the
+                     // argument has no default.
+                     reads: .from(.activities, "seven fields each"))
     }
 
     private static func fingerprint(startLocal: String, dayKey: String,
@@ -684,7 +985,8 @@ enum SemanticVerifier {
         let dbLine = volumeLine(dbVolume)
         out.append(.init(name: "volume by discipline", table: "activity",
                          expected: storeLine, found: dbLine,
-                         passed: storeLine == dbLine, detail: nil))
+                         passed: storeLine == dbLine, detail: nil,
+                         reads: .from(.activities, "summed")))
 
         // 4b. One activity's splits. The richest one, so the check has
         // something to fail on — a detail with no splits proves nothing.
@@ -707,7 +1009,8 @@ enum SemanticVerifier {
             out.append(.init(name: "splits of one activity", table: "activity_split",
                              expected: mine, found: theirs,
                              passed: mine == theirs,
-                             detail: mine == theirs ? nil : deepest.activityId))
+                             detail: mine == theirs ? nil : deepest.activityId,
+                             reads: .from(.details, "the richest one")))
         }
 
         // 4c. One weather reading. Chosen by sorted id rather than at random,
@@ -737,7 +1040,8 @@ enum SemanticVerifier {
             out.append(.init(name: "one weather reading", table: "weather",
                              expected: mine, found: theirs,
                              passed: mine == theirs,
-                             detail: mine == theirs ? nil : first.activityId))
+                             detail: mine == theirs ? nil : first.activityId,
+                             reads: .from(.weather, "the first by id")))
         }
 
         return out
@@ -838,7 +1142,11 @@ enum SemanticVerifier {
                      passed: rows.isEmpty,
                      detail: rows.isEmpty ? nil
                            : "no comparison claims: "
-                             + pairs.joined(separator: ", "))
+                             + pairs.joined(separator: ", "),
+                     // A RESIDUAL. Its expectation is the constant zero and its
+                     // found value is the database's own leftovers — no store
+                     // is read, so it can never be self-referential.
+                     reads: .databaseAlone)
     }
 
     private static func seconds(_ d: Duration) -> Double {

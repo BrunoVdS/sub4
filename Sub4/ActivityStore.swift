@@ -282,6 +282,21 @@ final class ActivityStore {
     /// that would show B3 working is the one nobody added.
     private(set) var servedFrom: StoreSource = .files
 
+    /// **THE OTHER TWO THINGS THIS STORE SERVES, AND NEITHER IS B3'S** —
+    /// patch 386, §12.130.
+    ///
+    /// `servedFrom` above is about the activities; 381 wrote it for them, and
+    /// it reads `.database` from 382. The rejection receipts and the sync
+    /// cursor live in `UserDefaults` and B8 moves them, so a caller asking
+    /// this store "are you fed by the database" gets an answer that is right
+    /// for one field of three.
+    ///
+    /// CONSTANTS RATHER THAN DERIVED FROM `servedFrom`, and that is the point:
+    /// deriving them is exactly the mistake. B8 changes these two lines, here,
+    /// beside the store that owns them.
+    var receiptsServedFrom: StoreSource { .files }
+    var syncCursorServedFrom: StoreSource { .files }
+
     /// What the hydration kept, and what it cost. Nil until one has happened.
     ///
     /// **SEPARATE FROM `loadRoster`, WHICH GOES ON DESCRIBING THE FILE.**

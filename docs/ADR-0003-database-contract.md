@@ -8962,6 +8962,158 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.130 An expectation says where it came from — patch 386
+
+385 made the number honest. This makes it derived, and it is the first half of
+that: the derivation runs beside the list and disagreeing with it is a failure.
+387 makes it operative and deletes the list.
+
+### 12.130.1 The unit is the field, and two stores decided that
+
+The obvious design is one answer per store — ask each store its `servedFrom` and
+classify every comparison that reads it. Reading the stores killed it.
+
+| store | what it serves | from |
+|---|---|---|
+| `ActivityStore` | `activities` | the database, since B3 |
+| | `receipts` → `refused recordings` | `UserDefaults`, until B8 |
+| | `syncState` → `sync position` | `UserDefaults`, until B8 |
+| `AthleteStore` | `hrZones` → `heart-rate zones` | the database, since B1 |
+| | `allGear` → `gear` | a file, until B5 |
+
+`ActivityStore.servedFrom` reads `.database` and that sentence is about the
+activities — 381 wrote the property for them. `AthleteStore` says its own split
+out loud: `.partial(fromDatabase: "zones and FTP", fromFiles: "gear")`.
+
+A store-level derivation would discount `gear`, `refused recordings` and `sync
+position`, all three of which can still disagree. **Three comparisons wrongly
+discounted is not an improvement on the one wrongly counted.** So the unit is
+the field: one case of `ExpectationField` per field `AppStores.current()` reads,
+and the two split stores grow per-half properties.
+
+The two halves are written differently on purpose. `AthleteStore`'s are DERIVED
+from its own `servedFrom`, because B5 makes that store whole and both halves
+should move on one edit. `ActivityStore`'s are CONSTANTS, because B8 moves the
+receipts and the cursor while the activities stay where they are — deriving
+those from `servedFrom` is precisely the mistake this section is about.
+
+### 12.130.2 The compiler asks the question
+
+`VerificationCheck.reads` has no default. A comparison added without answering
+does not compile.
+
+That is the property `HydratedStores` could not be given at any price. A list in
+another file has no way to notice a comparison that was never added to it, which
+is why `activity fields` sat in the evidence column from 382 to 385 with three
+suites passing over it. The question is now asked at the only place that can
+answer it — the twenty-two lines where a comparison is built.
+
+`ExpectationSources.live` is an exhaustive switch over the enum, so a new field
+does not compile until somebody answers for it either, and each arm asks the
+store rather than restating what the store says. A flip cannot leave it stale,
+because the answer IS `servedFrom`.
+
+### 12.130.3 The list stays this patch, as the thing being checked
+
+`selfReferentialChecks` and `independentChecks` still read `HydratedStores`.
+Nothing about this build's numbers moves; every assertion written against them
+still means what it meant.
+
+What is new is `undeclaredSelfReferential` — comparisons the derivation finds
+self-referential and the list does not name — printed unconditionally and
+failing `isTrustworthyEvidence`. **Run against the 382 tree it would have
+reported `activity fields` and refused to mark that run verified.**
+
+This is 381 and 382's order, for 381 and 382's reason: the new comparison proves
+it can fail before anything is trusted to it. A patch that deleted the list and
+installed the derivation in one move would have had nothing to check the
+derivation against, and "every comparison agreed" is what both a right answer
+and a wrong one look like.
+
+### 12.130.4 One direction, and the other one is the escape hatch
+
+The cross-check reports derived-and-not-declared. It does not report
+declared-and-not-derived, and that asymmetry is deliberate.
+
+Declared-but-not-derived is what **reverting a slice** looks like: take
+`.activities` out of `hydratedFamilies` and `HydratedStores` still names four
+comparisons while `ActivityStore` returns to `activities.json`. Reversibility by
+deleting one family is a property this whole ladder rests on and is stated in
+`PersistenceAuthority`'s own header. A build that failed verification for using
+the escape hatch would have no escape hatch.
+`ExpectationProvenanceTests.theOppositeIsNotAFault` is where that is asserted,
+so a future patch tightening the check has to argue with a test rather than a
+comment.
+
+### 12.130.6 `Expectation` is Swift Testing's — patch 386a
+
+386 named the provenance type `Expectation`. `Testing.Expectation` exists, and
+every test file here imports `Testing` beside `@testable import Sub4`, so the
+bare noun was ambiguous in all 124 of them. The app target built; the test
+target did not.
+
+**§2's rule is one word short, and this is the word.** *"Grep the name you are
+about to declare"* was bought at 335, when a test suite was declared over a name
+another suite already used — a collision inside this tree, which a grep of this
+tree finds. 386 followed it and grepped `Sub4/` and `Sub4CoreTests/` for every
+new name: `ExpectationField`, `Expectation`, `ExpectationSources`,
+`receiptsServedFrom`, `zonesServedFrom`, `ExpectationProvenanceTests`. All six
+came back clean, and one of them was already taken.
+
+**A name can be occupied by a module the target imports, and no grep of this
+repository can see that.** The rule is now: grep the tree, and check the names
+the imported modules export — `Testing`, `Foundation`, `SwiftUI`, `GRDB`. The
+cheap form is a project-specific prefix on any type a test file will mention by
+name, which is what `ExpectationOrigin` is.
+
+`ExpectationField` and `ExpectationSources` did not collide and are unchanged;
+only the bare noun was at risk, which is itself the lesson. **The more ordinary
+the word, the more likely a framework owns it.**
+
+### 12.130.7 And the re-read found two the compiler had not reached
+
+The build stopped at the first error, so the ambiguity was hiding the rest.
+Asked to re-analyse the patch, two more came out — one of them worse than the
+name.
+
+**`.live` as `verify`'s default reads six singletons.** 386 wrote
+`sources: ExpectationSources? = nil` and resolved nil to `.live`, which asks
+`ActivityStore.shared`, `AthleteStore.shared`, `NotesStore.shared`,
+`CommuteStore.shared`, `Matcher.shared` and `PlanMoveStore.shared` what they are
+serving. **Thirty-four test call sites pass no sources**, so every one of them
+would have instantiated six lazy main-actor singletons it had never touched.
+
+That is not cosmetic. `AppStores.current()`'s own comment says
+`PlanMoveStore.shared`'s init is what registers `moves.json` with
+`StoreReadJournal`, and `canReconcile` fails closed on a store that has never
+reported — so the reconciliation gate `ReconcileTests` asserts sits downstream of
+whether that singleton has been touched. A patch about bookkeeping does not get
+to move that, and the failure would have been order-dependent, which is the worst
+kind to find later. The default is now `.allFromFiles`; `attempt(_:stores:)` —
+the one door every production import comes through — passes `.live`, in
+`AppStores.swift`, next to the stores.
+
+**Three tests in the new suite turned on a condition they had already tripped.**
+`isTrustworthyEvidence` has four conditions. A report built from two synthetic
+checks leaves all nine `HydratedStores` entries unmatched, so 358a's condition
+withholds it before 386's is consulted: `theUndeclaredOneIsCaught` would have
+passed whether 386 existed or not, and `theDeclaredOneIsFine` and
+`theOppositeIsNotAFault` would have FAILED for a reason that had nothing to do
+with them. They now build over one check per declared entry and assert the other
+three conditions are satisfied first. **§12.69 in the suite written to hold
+§12.69** — a test that cannot fail for the right reason has not tested anything,
+and this one could not have passed for the right reason either.
+
+### 12.130.5 What 387 does
+
+Make `selfReferentialChecks` read the derivation, delete `HydratedStores`,
+`unmatchedHydratedEntries` and the total pinned in three test suites, and rewrite
+`VerificationIndependenceTests` around the derivation. Not before the device has
+printed `agrees with the declared list` — that line is the evidence this patch
+exists to produce.
+
+---
+
 ## 12.129 The fourth comparison B3 made self-referential — patch 385
 
 Found in a diagnostics paste from the device at 384, twenty minutes after 384

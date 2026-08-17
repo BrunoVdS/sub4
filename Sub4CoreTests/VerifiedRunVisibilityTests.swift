@@ -223,17 +223,25 @@ struct VerifiedRunVisibilityTests {
 
     // MARK: The last press — the current half
 
+    // PATCH 386. `.databaseAlone` on all four: this suite is about what the
+    // LEDGER shows for a run, and giving these fixtures a real provenance
+    // would make them depend on which slice has flipped — a test about the
+    // ledger failing at B5 for a reason that is not about the ledger.
     private func passing() -> VerificationReport {
         VerificationReport(checks: [
-            .compare("activities", table: "activity", expected: 680, found: 680),
-            .compare("notes", table: "user_note", expected: 1, found: 1)
+            .compare("activities", table: "activity", expected: 680, found: 680,
+                     reads: .databaseAlone),
+            .compare("notes", table: "user_note", expected: 1, found: 1,
+                     reads: .databaseAlone)
         ], seconds: 0.05)
     }
 
     private func failing() -> VerificationReport {
         VerificationReport(checks: [
-            .compare("activities", table: "activity", expected: 680, found: 680),
-            .compare("notes", table: "user_note", expected: 1, found: 0)
+            .compare("activities", table: "activity", expected: 680, found: 680,
+                     reads: .databaseAlone),
+            .compare("notes", table: "user_note", expected: 1, found: 0,
+                     reads: .databaseAlone)
         ], seconds: 0.05)
     }
 

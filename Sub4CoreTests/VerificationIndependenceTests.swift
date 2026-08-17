@@ -36,11 +36,19 @@ struct VerificationIndependenceTests {
 
     // MARK: Fixtures
 
+    /// PATCH 386 — `reads:` HAS NO DEFAULT ON THE REAL TYPE, and this fixture
+    /// gives it one so the suite keeps testing what it was written to test:
+    /// the DECLARED classification, which is unchanged. `.databaseAlone` means
+    /// these synthetic checks read no store, so the derivation says nothing
+    /// about them and the cross-check stays silent here. The derivation has its
+    /// own suite — `ExpectationProvenanceTests`.
     private func check(_ name: String,
                        table: String = "t",
                        expected: Int = 1,
-                       found: Int = 1) -> VerificationCheck {
-        .compare(name, table: table, expected: expected, found: found)
+                       found: Int = 1,
+                       reads: ExpectationOrigin = .databaseAlone) -> VerificationCheck {
+        .compare(name, table: table, expected: expected, found: found,
+                 reads: reads)
     }
 
     private func report(_ checks: [VerificationCheck]) -> VerificationReport {

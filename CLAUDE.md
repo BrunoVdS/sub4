@@ -6,8 +6,8 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 385 (2026-08-16).** §5.3 carries the device evidence from the
-384 run — snapshot, import, verify and roll-up, all on 16 August.
+**Current at patch 386 (2026-08-17).** §5.3 carries the device evidence from the
+384 and 385 runs; §5.4 is the verifier's accounting and how it is now derived.
 
 **§5 IS THIS PROJECT'S ONLY STATEMENT OF CURRENT STATE.** Every other document
 either points at it or is dated history. That rule exists because the opposite
@@ -204,6 +204,13 @@ stopped being true at 342. Rename it `docs/REVIEW-2026-08-10-…` when convenien
   `ReviewLineageTests`, which `DomainSchemaTests` had used since the schema was written:
   `invalid redeclaration`, and a fix-up. Grep the name you are about to declare, not only
   the names you are about to change.
+  **AND THAT RULE IS ONE WORD SHORT — 386a.** A name can be taken by **a module the
+  target imports**, and no grep of this tree can see it. 386 declared
+  `Expectation`; `Testing.Expectation` exists, and every one of the 124 test files
+  does `import Testing` beside `@testable import Sub4`, so the bare noun was
+  ambiguous in all of them. The app target built and the test target did not.
+  **The more ordinary the word, the more likely a framework owns it** — prefer a
+  project-specific prefix for any type a test file will name. §12.130.6.
   **A sixth shape, from 350a: a DEFAULT ARGUMENT.**
   `WorkoutParser.coverage(_ store: PlanStore = .shared)`. Patch 346a converted
   `PlanCoverageTests` off the singleton by sweeping for the literal
@@ -264,8 +271,8 @@ stopped being true at 342. Rename it `docs/REVIEW-2026-08-10-…` when convenien
 
 ## 3. Build, test, run
 
-**The suite is the gate, and it is fast.** 1,614 tests in 148 suites, well under a second
-at patch 383. The run prints the current total; this figure is here for the order of
+**The suite is the gate, and it is fast.** 1,623 tests in 149 suites, well under a second
+at patch 386. The run prints the current total; this figure is here for the order of
 magnitude, and `test.sh` fails below 500 for the same reason.
 
 ```sh
@@ -342,11 +349,11 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 385, 2026-08-16
+## 5. State — patch 386, 2026-08-17
 
 **THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Everything below is
-current at 385; §5.3 is what the device said on 16 August, and §5.4 is the one
-number in this project that was wrong when it was read. Anything older than
+current at 386; §5.3 is what the device said on 16 and 17 August, and §5.4 is
+the one number in this project that was wrong when it was read. Anything older than
 this section is history and lives in ADR §12; if a number here disagrees with
 the code, the code wins and this section is the defect.
 
@@ -402,19 +409,21 @@ and it is why hydration must never write.
   to compare.** The one is `Review trail`, and it holds nothing on either side
   because no review exists until 24 August. See §5.6 step 1.
 
-**At 383 — Compare and the nine read-backs:**
+**At 385, 17 August 07:44 — the correction, confirmed:**
 
-- **six parity slices, zero differences**: 694 activities · 332 days; volume
-  0 of 332 days and 0 of 284 week figures; load 412 days with fitness 35 vs 35
-  and fatigue 47 vs 47; details 694 with 8,328 pace figures and 8,129 splits;
-  matching 518 days, adherence 15 of 207 both sides; summaries 3 weeks and
-  4 volume rows, block sessions 15 of 18 both sides
-- **activity parity's app side is `activities.json`, read directly** — patch 381,
-  so the comparison survived B3's flip instead of becoming the database agreeing
-  with itself
-- `Activities hydrated: 694 kept of 694 offered from the database` — settling the
-  stored rows drops nothing
-- nine read-backs, zero unexplained differences, all approved differences named
+- `comparisons: 22 — 13 independent, 9 reading a store the database feeds`, and
+  `activity fields` now carries its self-referential mark
+- ledger: `verified · patch 385 · 22 comparisons, all agreed · 13 independent`,
+  and `runs ever verified` moved 13 → 14
+- `Recovered at launch: 1` — a run interrupted by an Xcode rebuild and recovered
+  at the next launch, `Recovery error: none`. The mechanism working, not news.
+
+**At 383 — Compare, six parity slices at zero differences** over 694 activities
+· 332 days, including load (fitness 35 vs 35, fatigue 47 vs 47) and summaries
+(15 of 18 both sides). Activity parity's app side is `activities.json` read
+directly — patch 381, so it survived B3's flip instead of becoming the database
+agreeing with itself. `Activities hydrated: 694 kept of 694 offered`. Nine
+read-backs, zero unexplained differences. §12.125–§12.127.
 
 **What that does and does not prove.** It proves the app derives the same
 answers from either side for everything the slices cover. It does not prove a
@@ -422,44 +431,46 @@ lossless round trip: gear classification and status, rejection and match-date
 metadata, plan source and top-level order, and fractional fetch-time precision
 are still outside the mapped set — §12.86 draws that line and it has not moved.
 
-### 5.4 The verifier's accounting — and B3's enumeration missed one
+### 5.4 The verifier's accounting, and how it is decided
 
-`HydratedStores.all` holds **nine** entries: `heart-rate zones` (B1); `notes`,
-`commute corrections`, `match decisions`, `session moves` (B2); and `activities`,
-`activity identities`, `volume by discipline`, **`activity fields`** (B3). Each
-names a comparison whose expectation comes from a store the database feeds, so
-each is the database agreeing with itself.
+**22 comparisons — 13 independent, 9 reading a store the database feeds.**
+`HydratedStores.all` holds those nine: `heart-rate zones` (B1); `notes`,
+`commute corrections`, `match decisions`, `session moves` (B2); `activities`,
+`activity identities`, `volume by discipline` and `activity fields` (B3).
 
-**The ninth is patch 385's, and it was missing from 382.** `SemanticVerifier`'s
-`fingerprintCheck` builds a seven-field fingerprint per activity from
-`ActivityStore.activities` and compares it against the `activity` table. Since
-B3 that store *is* the database. It is the same shape as `volume by discipline`,
-which 382 did declare — the same rows, read twice — and it was in neither 382's
-list of three nor its list of deliberate exclusions. It spent 382, 383 and 384
-in the evidence column. §12.129.
+**The ninth is 385's, and 382 missed it** — `fingerprintCheck` builds a
+seven-field fingerprint from `ActivityStore.activities` and compares it against
+the `activity` table, so it is the same shape as `volume by discipline`, which
+382 did declare. It spent three patches in the evidence column. Nothing on the
+device was ever wrong; one row was counted as proof that could not disagree.
+§12.129.
 
-**So the device's own `14 independent` at 384 was one too generous.** The honest
-split is **22 comparisons — 13 independent, 9 self-referential**, and the next
-Verify will print it.
+**Since 386 the same answer is also DERIVED, beside the list.** Every comparison
+names the store FIELD its expectation came from — `VerificationCheck.reads`, no
+default, so one added without answering does not compile — and
+`ExpectationSources.live` resolves *is that field database-fed* in one exhaustive
+switch asking each store's own `servedFrom`.
 
-**Nothing was ever wrong on the device**, and the residual value of that check
-after the flip is close to zero anyway: since 370 the control is *Import and
-verify* in one press, so the import writes the hydrated store into `activity`
-and the verify then compares the hydrated store against what it just wrote.
+**The unit is the field, not the store, and two stores decided that.**
+`ActivityStore.servedFrom` reads `.database` — 381 wrote it for the activities —
+while the same store serves the rejection receipts and the sync cursor from
+`UserDefaults` until B8. `AthleteStore` is split the other way:
+`.partial(fromDatabase: "zones and FTP", fromFiles: "gear")`. A store-level
+derivation would discount `gear`, `refused recordings` and `sync position`, all
+three of which can still disagree.
 
-> **THE STRUCTURAL DEFECT IS WORSE THAN THE INSTANCE, AND IT IS STILL OPEN.**
-> `unmatchedHydratedEntries` joins one way only — entry → check. A comparison
-> whose expectation comes from a hydrated store and which nobody added to the
-> list is invisible and counts as evidence in silence. **386 is the patch that
-> derives the classification instead of declaring it**, and the enumeration is
-> already done: `PersistenceAuthority.Family` is too coarse to derive from,
-> because `.athlete` hydrates the zones and the FTP while gear stays on files
-> until B5 — so the provenance has to be per store-field, named at each check's
-> own construction site where the compiler can demand it. §12.129.4.
+**The list is still the operative answer at 386, on purpose.** The derivation
+runs beside it as a negative control: `undeclaredSelfReferential` names any
+comparison the derivation calls self-referential and the list does not, prints
+every run, and fails `isTrustworthyEvidence`. **Against the 382 tree it would
+have caught `activity fields` and refused that run `verified`.** It is
+one-directional — declared-and-not-derived is what reverting a slice looks like,
+and failing on it would remove the escape hatch this ladder rests on. 387 makes
+the derivation operative and deletes the list. §12.130.
 
-**`runs ever verified: 13`, the newest at patch 384**, over data the database
+**`runs ever verified: 14`, the newest at patch 385**, over data the database
 feeds, with 13 comparisons that could still have disagreed. D7's exit criterion
-is met for the first time.
+is met.
 
 ### 5.5 Open, and the first one is Bruno's call
 
@@ -530,10 +541,16 @@ first three steps and they are struck from this list rather than left to rot.
    the right property and is not being weakened; what was wrong was this list
    asking for something the calendar forbids. B7 is blocked on the same fact.
    Re-press the roll-up after the first review and the ninth becomes real.
-2. **386 — derive the self-referential classification** rather than declaring
-   it in a list. §5.4's blockquote has the enumeration and the reason `Family`
-   cannot carry it. Do this before B4, because B4 and B5 each add checks that
-   would otherwise get the same chance to be missed.
+2. **387 — make the derivation operative and delete the list.**
+   `selfReferentialChecks` and `independentChecks` read the derivation,
+   `HydratedStores` and `unmatchedHydratedEntries` go, and the total pinned in
+   three suites goes with them; `VerificationIndependenceTests` is rewritten
+   around the derivation rather than edited. **The device printed it at 386a, 17 August 08:14** —
+   `derived from the stores: 9 of 22 read a field this build feeds — agrees
+   with the declared list`, on a run marked verified with 13 independent
+   comparisons. Two mechanisms reached the same nine, so 387 is unblocked. Do it before B4, because B4 and
+   B5 each add comparisons that would otherwise get the same chance to be
+   missed.
 3. **B4 — details and traces.** The 1.5-million-sample read stays off the main
    actor; the read-back keeps its own read, per 381's rule.
 4. **B5 — weather and gear**, including `ReadBacks.knownActivityIDs` and the
@@ -579,6 +596,14 @@ Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
   showed, because its only remaining job was the ADR.
 - **A count derived from the thing it counts never needs chasing.** Paid for at 369a, 372,
   377, 377d, 381a and 383; RULE 5 and RULE 6 are what that lesson looks like as code.
+- **ASK THE THING THAT OWNS THE ANSWER, AT THE GRANULARITY IT OWNS IT.** Three
+  stores in this app serve more than one kind of thing and serve them from
+  different places — `ActivityStore` gives the activities from the database and
+  the sync cursor from `UserDefaults`; `AthleteStore` gives the zones from the
+  database and gear from a file. A per-STORE answer to "are you fed by the
+  database" is wrong for five of the verifier's twenty-two comparisons, in both
+  directions. **Before deriving anything from an object, check whether the object
+  has one answer to give.** §12.130.1.
 - **A JOIN THAT IS CHECKED IN ONE DIRECTION IS UNCHECKED IN THE OTHER.**
   `unmatchedHydratedEntries` catches a declared entry naming no comparison, and it
   is a good tripwire — it is also the only one, so a COMPARISON that nobody

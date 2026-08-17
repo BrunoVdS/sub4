@@ -10,7 +10,7 @@
 | **Persistence authority** | `docs/ADR-0003-database-contract.md` |
 | **Source-transition authority** | `docs/ADR-0002-strava-retirement.md` and `docs/PLAN-cutover-v2.md` |
 
-> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 384.**
+> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 386.**
 >
 > It was written against patch 334 and its opening stages describe work that has
 > since shipped: D6c closed at 330, and D7's B0, B1, B2 and B3 landed at 342,
@@ -21,6 +21,14 @@
 > plan remains the authority for what comes NEXT — B4 onward, then Health, D8,
 > the restructure and feature delivery. Where the two disagree about the present,
 > §5 wins; where they disagree about the sequence, this document does.
+>
+> **Progress against this plan, at 386.** Stage A's database-shadow work is
+> closed. D7 has run B0 through B3 and the app reads the plan, the athlete, the
+> authored data and all 694 activities from SQLite on every launch, with a
+> verified migration run over that data. 385 and 386 are not slices: they
+> correct and then mechanise the verifier's own accounting of how much of its
+> agreement is evidence, which is the number B9's gate reads. **B4 — details and
+> traces — is the next slice**, and §5.6 of `CLAUDE.md` carries the order.
 
 ## 1. Outcome
 

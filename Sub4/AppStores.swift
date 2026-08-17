@@ -250,6 +250,12 @@ extension SemanticVerifier {
                 weather: s.weather,
                 zones: s.zones,
                 streams: s.streams,
-                details: s.details)
+                details: s.details,
+                // **THE ONE PLACE `.live` IS ASKED FOR — patch 386a.** This is
+                // the door every production import comes through, which is
+                // what makes it the right place: `verify`'s own default is
+                // `.allFromFiles`, so nothing that is not a real run reads a
+                // store to find out what it is serving.
+                sources: .live)
     }
 }

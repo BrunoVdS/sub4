@@ -64,6 +64,33 @@ final class AthleteStore {
     /// Where this store's data came from — patch 344. See `PlanStore`'s.
     private(set) var servedFrom: StoreSource = .files
 
+    /// **THE TWO HALVES OF `servedFrom`, AS VALUES** — patch 386, §12.130.
+    ///
+    /// `.partial(fromDatabase: "zones and FTP", fromFiles: "gear")` is a
+    /// sentence for a person to read. A caller deciding whether a comparison
+    /// can still disagree needs the halves separately, and taking them from
+    /// the sentence would be parsing prose.
+    ///
+    /// DERIVED FROM `servedFrom` rather than written as constants — the
+    /// opposite of `ActivityStore`'s two, and for the opposite reason: B5 makes
+    /// this store whole, so both halves move together and one edit should carry
+    /// them.
+    var zonesServedFrom: StoreSource {
+        switch servedFrom {
+        case .database: .database
+        case .partial:  .database
+        case .files:    .files
+        }
+    }
+
+    var gearServedFrom: StoreSource {
+        switch servedFrom {
+        case .database: .database
+        case .partial:  .files
+        case .files:    .files
+        }
+    }
+
     /// When the button was last PRESSED, as opposed to when data last arrived
     /// — patch 233.
     ///
