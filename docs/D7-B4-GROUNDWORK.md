@@ -133,6 +133,10 @@ moves is a finding.
 | Held from the app | the plan — laps are read with no cut pace |
 | Tolerance | paces exact · 0.01 m |
 
+**CONFIRMED AT 390, 17 August 11:07: every one of the twenty-four came back
+identical.** `unexplained differences: 0`, `the app side was read cleanly: yes`.
+§12.125.6's check passes and §12.134.9 records it.
+
 **`Splits compared: 8129` against `activity_split: 8206` is not a gap.**
 `DetailParity` walks `displaySplits`, which is `splits.filter { !$0.isFragment }`
 — fragments under 100 m are not drawn, so they are not compared. The 77

@@ -9106,13 +9106,39 @@ went. The device's numbers must not move: this patch changes where three
 comparisons READ, not what they hold, and today the store and the files hold the
 same 694 details and 668 traces.
 
-### 12.134.9 What a device can confirm
+### 12.134.9 What the device confirmed — 17 August, 11:07
 
-The roll-up's fifth count falls **2 → 1**, the survivor being `Athlete`;
-`Activities`, `Details` and `Recordings` change their marks to `own read`; slice
-4 gains two lines at the top of its block; and **every other figure on both
-screens is identical to 389a** — the twenty-four in B4's groundwork §3.1 most of
-all.
+**All of it, on one launch, with Compare and the roll-up pressed together.**
+
+- the roll-up's fifth count fell **2 → 1**, the survivor being `Athlete`
+- `Activities`, `Details` and `Recordings` read `own read: …`, and the detail
+  mark carries the tally: *694 detail files and 668 trace files, all readable*
+- slice 4's two new lines are at the top of its block, `read cleanly: yes`
+- **THE TWENTY-FOUR FIGURES ARE IDENTICAL TO 389a.** 694 · 8328/6738/0 · **8129**
+  · 4748 · 90 vs 90 · 1144 · 638 vs 638 · 629 vs 629, `unexplained differences:
+  0`. §12.125.6's check passes exactly: the app side moved from the store to the
+  files and **not one number moved**. That is also the strongest available
+  evidence that the seam reads what the store held.
+- the new paste line reads `Detail and trace files: 694 detail files and 668
+  trace files, all readable`
+
+**AND THE SEAM READ 19.1 MB TWICE WITH EVERY FILE STILL THERE.** `runRollUp` runs
+Details before Recordings and each calls `DetailSource.read()`, so the roll-up
+constructed `DetailStore(directory:)` against the real container twice in
+sequence. The second reports 694 and 668 readable. Had the first written anything
+destructive the second would have found nothing — which is `mayWrite` confirmed on
+the athlete's own data rather than in a temporary directory.
+
+**One number moved and it is not this patch's.** Load parity read `fitness 33 vs
+33` against `34 vs 34` forty minutes earlier. **Both sides moved together**,
+which is what that comparison is for; the LEVEL depends on what the slice lists
+as `held from the app: constants, zones, FTP, sRPE and Apple Health`, and Health
+is memory-only and loads on demand, so it moves both sides identically. Recorded
+rather than explained away: which input moved is not proven here.
+
+**Verify was not pressed** and is settled by diff — `SemanticVerifier.swift` is
+untouched by 389, 389a and 390, and the 388 device paste read that line off
+byte-identical code.
 
 ---
 
