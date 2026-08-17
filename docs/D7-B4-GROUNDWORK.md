@@ -114,6 +114,38 @@ The fix is 381's: an independent read of the files, provenance printed
 unconditionally, and `isHealthy` requiring `appSideWasReadCleanly` so that zero
 differences over an app side that could not be read is not a pass.
 
+**THE BASELINE 390 MUST REPRODUCE, from the device at 389a on 17 August 10:28.**
+§12.125.6's check: this patch changes where slice 4's app side is READ, not what
+it holds, so **every one of these must come back identical.** A number that
+moves is a finding.
+
+| figure | 389a |
+|---|---|
+| Details in each side · compared | 694 vs 694 · 694 |
+| In the app only · Excluded on purpose · In the database only | 0 · 0 · 0 |
+| Pace figures compared · both sides answered · differ | 8328 · 6738 · 0 |
+| Splits compared · different pace · different HR · zero HR normalised | 8129 · 0 · 0 · 0 |
+| Details with a different split set · flags · elevation · track | 0 · 0 · 0 · 0 |
+| Laps offered to the detector | 4748 |
+| Details read as intervals · different lap reading | 90 vs 90 · 0 |
+| Reps compared · differ · zero HR normalised | 1144 · 0 · 0 |
+| Details with heart-rate splits · with a route | 638 vs 638 · 629 vs 629 |
+| Held from the app | the plan — laps are read with no cut pace |
+| Tolerance | paces exact · 0.01 m |
+
+**`Splits compared: 8129` against `activity_split: 8206` is not a gap.**
+`DetailParity` walks `displaySplits`, which is `splits.filter { !$0.isFragment }`
+— fragments under 100 m are not drawn, so they are not compared. The 77
+difference is exactly those. The two numbers answer different questions and
+together they cover the table: the verifier counts every stored split, the parity
+compares every split the screen draws. **390 must not "fix" either.**
+
+The rest of Compare was green on the same run and is not slice 4's: parity 694
+activities · 332 days · no differences, order 0 of 694, time-zone changes 7
+agreed, day distances 0 of 332, week figures 0 of 284, history bands 0 of 12,
+curve points 0 of 413, fitness 34 vs 34, fatigue 40 vs 40, plan matching 518
+days · 252 sessions · adherence 15 of 207 both sides · 7 overrides applied.
+
 ### 3.2 The seam is NOT `ActivityStore`'s eleven lines
 
 `ActivityStore.init(directory:)` is 378's seam and it is small because the store
