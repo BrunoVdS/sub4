@@ -8962,6 +8962,74 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.147 A gate that did not read its own output — patch 403
+
+`CommuteStore.restore` bound a value it never used at 400. **The suite was
+green, the Release build succeeded, and both gates passed over it.** Bruno found
+it in Xcode's issue navigator, which means this project's stated verification
+had a hole only a human looking at the right pane could close.
+
+§6 has said "a warning-shaped defect needs a test" since long before. Nothing
+read them.
+
+### 12.147.1 The path anchor, not a keyword blacklist
+
+A build log is full of warnings that are not ours — GRDB's, the SDK's, and
+Apple's `appintentsmetadataprocessor` announcing it found no AppIntents
+framework. Filtering those by MESSAGE would be a blacklist that rots: the next
+tool with new wording reopens the hole silently, and nobody would notice because
+silence is what passing looks like.
+
+So a warning counts only if its path is under the two folders `project.pbxproj`
+synchronizes. Those are RULE 10's `SOURCE_ROOTS`, and they are what "our source"
+means — a definition the Xcode project already maintains for its own reasons.
+
+### 12.147.2 `-quiet` hid it in Release, exactly as it hid the summary
+
+`preflight.sh` passed `-quiet` to the Release build. **That is the same flag
+whose removal is recorded in `test.sh`'s own header**: from 318 to 325 it
+suppressed swift-testing's summary, so the script printed advice about a count
+it had never seen — "a pass, in every respect except having checked anything"
+(§12.69).
+
+It hides warnings just as completely, and Release is the configuration that
+ships and the one a Debug-only gate cannot see. So the Release build writes to a
+log now, its failures are surfaced from that log rather than from a discarded
+stream, and the same gate reads it.
+
+### 12.147.3 Hard fail, one script, two callers
+
+**Hard fail, not a ceiling.** `UNPROTECTED_STORE_CEILING` is a ceiling because
+that debt predated its rule by two hundred patches. The tree was at ZERO when
+this landed — a full build of the app target emits no project warnings — so
+there is nothing to grandfather, and a ceiling would only invite the first one.
+
+**One script.** `scripts/no-warnings.sh` takes a log and a label; `test.sh`
+passes the Debug log and `preflight.sh` the Release one. Two copies could
+disagree about what counts as ours, which is the defect one level up from the
+warning itself. §12.43.
+
+It fails loudly when the log is missing rather than passing on an absent file —
+§12.15, and the same reason `test.sh` fails when it sees no summary line.
+
+### 12.147.4 The control, in both configurations
+
+An unused `let` in `StoreRestore.merge`. **The suite still reported 1,701 tests
+passed and the Release build still reported OK** — and both gates then failed,
+naming the file, line and message. That is the whole finding in one run: the two
+things this project trusted were both saying yes.
+
+### 12.147.5 No device campaign, and why
+
+Stated rather than assumed. The question is *does the build emit warnings from
+our own files*, which is answered by reading the build's own output in both
+configurations. Nothing about real data, rendering, protection attributes or
+counts is touched, and the negative control demonstrates the gate failing on
+demand. A device campaign would be theatre — §12.145.4 makes the same call for
+the same reason.
+
+---
+
 ## 12.146 Two identical exports — patch 402
 
 On 17 August Bruno exported the authored read-back twice, once after pressing

@@ -110,6 +110,13 @@ fi
 
 echo "$SUMMARY"
 grep -E "\*\* TEST (SUCCEEDED|FAILED) \*\*" "$LOG" | tail -1 || true
+
+# PATCH 403 — WARNINGS ARE READ NOW. §12.147: one slipped past this script and
+# past the Release build, and was found by eye in Xcode. Same shape as the
+# summary guard above — a gate that does not read its own output is a gate that
+# looks like a pass.
+echo
+./scripts/no-warnings.sh "$LOG" "test build"
 echo
 echo "full log: $LOG"
 

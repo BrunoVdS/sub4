@@ -27,13 +27,28 @@ echo
 echo "=== 3/3  Release build ==="
 # A Release-only problem is plausible and has happened; this stood in for CI
 # on 2026-08-04 and passed.
+# NO `-quiet`, AND THAT IS PATCH 403. The flag hid swift-testing's summary
+# from 318 to 325 and this script's own header records what that cost; it hides
+# WARNINGS just as completely, so the Release configuration — the one that
+# ships, and the one a Debug-only gate cannot see — was unreadable here too.
+# Output goes to a log; only the lines worth reading reach the terminal.
+RELEASE_LOG="${SUB4_RELEASE_LOG:-/tmp/sub4-release.log}"
+set +e
 xcodebuild build \
   -project "$PROJECT" \
   -scheme "$SCHEME" \
   -configuration Release \
   -destination 'generic/platform=iOS' \
-  -quiet
+  > "$RELEASE_LOG" 2>&1
+STATUS=$?
+set -e
+if (( STATUS != 0 )); then
+  grep -E "error:|\*\* BUILD FAILED \*\*" "$RELEASE_LOG" | head -20 >&2 || true
+  echo "error: the Release build failed. Read $RELEASE_LOG." >&2
+  exit "$STATUS"
+fi
 echo "Release build OK"
+./scripts/no-warnings.sh "$RELEASE_LOG" "Release build"
 echo
 
 cat <<'EOF'
