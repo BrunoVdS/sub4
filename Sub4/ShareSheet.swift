@@ -163,22 +163,41 @@ struct DiagnosticSectionHeader: View {
     var body: some View {
         HStack {
             // THE TITLE IS THE CONTROL. A chevron alone is a small target and
-            // this screen has twenty-two of them; the whole label toggles, and
-            // the share button beside it is `.borderless` so the two do not
-            // merge into one tap target inside a `List` header.
+            // this screen has twenty-two of them, so the whole label toggles.
+            //
+            // **`.plain`, NOT `.borderless` — patch 393a, and it is not a
+            // preference.** `.borderless` tints its label with the accent
+            // colour and gives it body size, so 393 turned twenty-two section
+            // headers into large orange text. **On THIS screen orange means
+            // "this does something"**: `Import and verify`, `Verify against the
+            // app's stores` and `Compare the derived lists` are all orange, and
+            // twenty-two titles in the same colour compete with the three
+            // controls that actually run something.
+            //
+            // `.plain` restyles nothing, so the label inherits the section
+            // header's own font and foreground and the screen reads as a list
+            // of SECTIONS again. The chevron carries the affordance, which is
+            // what a chevron is for. The export button keeps `.borderless` and
+            // stays accent-coloured, because it IS an action.
             Button {
                 if isOpen { expanded.remove(key) } else { expanded.insert(key) }
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.right")
                         .font(.caption2)
+                        .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(isOpen ? 90 : 0))
                     Text(title)
                 }
+                // THE WHOLE WIDTH IS THE TARGET, and the `Spacer` below is
+                // inside it rather than beside it: a header row is tall and
+                // narrow, and a title-sized tap target on a twenty-two-item
+                // index is a fiddly one.
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .accessibilityLabel(isOpen ? "Collapse \(title)" : "Expand \(title)")
-            Spacer()
             Button {
                 let export = SectionExport(title: title, lines: lines())
                 if let url = export.write() {

@@ -9036,16 +9036,64 @@ the compiler and to the suite. It pays.
 rule failed with the sentence naming the consequence — *that section can never
 be opened*. 22 keys and 44 blocks matched on the restored tree.
 
-### 12.137.6 What the device has to answer, and it is one question
+### 12.137.6 THE DEVICE ANSWERED IT — 17 August, 12:25
 
-**Does the tab still open.** Everything else about this patch is visible in the
-first second: twenty-two collapsed headers, a chevron on each, the verdict row
-still expanded above them because it is the one section with no header and
-never had one.
+**The tab opens.** Twenty-two collapsed headers, a chevron on each, the Status
+row still expanded above them because it is the one section with no header.
+Tapping `Verification` opened it, the chevron turned, and the footer came with
+it — which is the half that makes the screen actually shorter (§12.137.2).
 
-If the tab does not open, the answer is not to make the sections smaller —
-§12.76's whole lesson — it is that the `if` did not do what this section claims
-and `Section(isExpanded:)` gets tried instead.
+**And collapsing showed the screen's own shape for the first time.** The order
+has not changed; it has never been visible before, because reading it meant
+scrolling four hundred lines. The Database screen is: the file and its contents,
+the snapshot, the import, the traces, the write-through, the ledger, the
+verification, the roll-up, then the nine read-backs, then the parity, then the
+tools.
+
+### 12.137.7 Twenty-two orange titles — patch 393a
+
+The same screenshot showed the defect. `.buttonStyle(.borderless)` tints its
+label with the accent colour and gives it body size, so **393 turned twenty-two
+section headers into large orange text.**
+
+**On this screen orange means "this does something."** `Import and verify`,
+`Verify against the app's stores`, `Compare the derived lists`, `Snapshot now`,
+`Write through now` — every control that runs something is accent-coloured, and
+several of them are slow, destructive-adjacent, or both. Twenty-two titles in
+the same colour compete with the five that matter, and at body size the screen
+reads as a list of buttons rather than a list of sections.
+
+`.buttonStyle(.plain)` restyles nothing, so the label inherits the section
+header's own font and foreground. The chevron carries the affordance, which is
+what a chevron is for, and is `.secondary` so it does not shout either. **The
+export button keeps `.borderless` and stays accent-coloured, because it IS an
+action** — and it is now the only accent on a collapsed header, which is the
+right signal.
+
+The `Spacer` moved inside the title button as
+`.frame(maxWidth: .infinity, alignment: .leading)` plus `.contentShape(.rect)`:
+a header row is tall and narrow, and a title-sized tap target on a twenty-two
+item index is a fiddly one. The two buttons stay separate, so the ⬆︎ still takes
+its own tap.
+
+**This is a styling fix and it is recorded because the cause is not cosmetic.**
+A button style was chosen for its tap behaviour and silently changed what the
+text MEANT on a screen with an established colour vocabulary. That is the same
+class as §12.15 — a signal that reads as something it is not.
+
+### 12.137.8 What the device still has to answer
+
+**One look at 393a, and it is about styling rather than crashing.** The headers
+should read as ordinary grey section titles again, with the ⬆︎ the only accent
+on a collapsed row. `.plain` is also a different tap-target shape from
+`.borderless` inside a `List` header, so the second thing to check is that
+tapping a title still toggles and tapping the ⬆︎ still exports rather than one
+swallowing the other.
+
+The crash question is settled: the tab opens (§12.137.6). If it ever stops
+opening, the answer is not to make the sections smaller — §12.76's whole lesson,
+330b's mistake — it is that the `if` did not do what §12.137.1 claims and
+`Section(isExpanded:)` gets tried instead.
 
 ---
 
