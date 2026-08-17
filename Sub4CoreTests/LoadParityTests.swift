@@ -420,11 +420,19 @@ struct LoadParityTests {
         let store = history()
         let r = compared(series(store), series(try imported(store)))
         let lines = r.diagnosticLines
-        // 23 AT 317, 22 AT 316. This count is the whole point of the test —
-        // a line added to the paste and not to this number is a line nobody
-        // decided to add — and it is also why this test failed the moment
-        // §12.61 gave the load slice a second limit row. See §12.61.9.
-        #expect(lines.count == 23, "got \(lines.count)")
+        // 24 AT 399, 23 AT 317, 22 AT 316. This count is the whole point of
+        // the test — a line added to the paste and not to this number is a line
+        // nobody decided to add — and it is also why this test failed the
+        // moment §12.61 gave the load slice a second limit row. See §12.61.9.
+        //
+        // **399 IS THE THIRD TIME IT HAS FIRED AND THE SECOND TIME IT CAUGHT
+        // ITS OWN AUTHOR.** §12.125.7's rule is to grep `Sub4CoreTests/` for
+        // `.count ==` BEFORE the build when a patch adds a line to any
+        // `diagnosticLines`. It was not followed, and this is what stood in for
+        // following it.
+        #expect(lines.count == 24, "got \(lines.count)")
+        #expect(lines.contains("  what is varied: \(LoadInputs().line)"),
+                "the varied inputs are stated beside what is held constant — §12.143")
         #expect(lines.first == "Load parity: 11 days, 3 sessions")
         #expect(lines.contains("  days with a different state: 0"))
         #expect(lines.contains("  sessions scored from a different rung: 0"))
@@ -477,5 +485,98 @@ struct LoadParityTests {
         #expect(!withoutDetails.isHealthy)
         #expect(withoutDetails.diagnosticLines
                     .contains("Detail parity: the details could not be read"))
+    }
+
+    // MARK: What slice 3 varies — patch 399, §12.143
+
+    /// **THE SLICE THAT STOPPED BEING ABLE TO DISAGREE, ONE INPUT AT A TIME.**
+    ///
+    /// `LoadParity`'s header says it isolates one variable: what the database's
+    /// activities and traces produce. The activities became database-fed at
+    /// 381 and the traces at 398, so by 398 both sides were reading the same
+    /// rows through the same functions and the row printed `0 differences`
+    /// exactly as it had when it meant something. §12.125's rule, arriving
+    /// after the flip instead of before it — which is the finding.
+    ///
+    /// THREE STATES, and the middle one is why this is not a Bool. Between 381
+    /// and 398 the traces could still have disagreed while the activities could
+    /// not, and a binary would have called that either evidence or nothing.
+    @Test("All three states of the varied inputs say something different")
+    func theVariedInputsSayWhichStateThisIs() {
+        let independent = LoadInputs(activitiesAreFed: false, tracesAreFed: false)
+        #expect(independent.isSelfReferential == false)
+        #expect(independent.line.contains("vary independently"))
+
+        let b3 = LoadInputs(activitiesAreFed: true, tracesAreFed: false)
+        #expect(b3.isSelfReferential == false,
+                "one fed input is not two — the traces could still disagree")
+        #expect(b3.line.hasPrefix("HALF"))
+        #expect(b3.line.contains("traces still vary"))
+
+        let b4 = LoadInputs(activitiesAreFed: false, tracesAreFed: true)
+        #expect(b4.isSelfReferential == false)
+        #expect(b4.line.contains("activities still vary"))
+
+        let now = LoadInputs(activitiesAreFed: true, tracesAreFed: true)
+        #expect(now.isSelfReferential,
+                "398 fed the second of two, and that is what this row must say")
+        #expect(now.line.hasPrefix("SELF-REFERENTIAL"))
+        #expect(now.line.contains("deterministic"),
+                "and what it still proves, because that is not nothing")
+    }
+
+    /// **THE DERIVATION, AND ITS OWN NEGATIVE CONTROL FOUND IT UNGUARDED.**
+    /// 399's first draft resolved these two fields inside
+    /// `ShadowParity.slice3`; replacing that with a hard-coded `false` passed
+    /// the entire suite. `from(_:)` is what makes the answer assertable.
+    ///
+    /// The third case is the discriminating one: a `from` that read the wrong
+    /// fields would be invisible to the first two, because in a test process
+    /// every store reads files and every mapping gives the same all-false
+    /// answer. Feeding it a source where OTHER fields are fed is what tells
+    /// `.activities` and `.traces` apart from `.notes`.
+    @Test("The varied inputs are derived from the sources, not declared")
+    func theVariedInputsAreDerived() {
+        #expect(LoadInputs.from(.allFromFiles) == LoadInputs(),
+                "nothing fed, nothing varied away")
+        #expect(LoadInputs.from(ExpectationSources(fedByTheDatabase: [.activities, .traces]))
+                    .isSelfReferential,
+                "both of slice 3's varied inputs fed is the state 398 created")
+        #expect(LoadInputs.from(ExpectationSources(fedByTheDatabase: [.activities]))
+                == LoadInputs(activitiesAreFed: true, tracesAreFed: false),
+                "B3 without B4 is half, and half is its own answer")
+        #expect(LoadInputs.from(ExpectationSources(
+                    fedByTheDatabase: [.notes, .moves, .zones, .gear])) == LoadInputs(),
+                "it reads the two fields slice 3 varies and no others")
+    }
+
+    /// **THE RESIDUAL, STATED RATHER THAN GLOSSED.** `ShadowParity.slice3`
+    /// assigns `report.inputs = .live`, and that ONE assignment is still not
+    /// covered: it is a line in a `@MainActor` function over live singletons.
+    /// What is covered is everything it can say. Naming the gap is what this
+    /// project does instead of implying the test reaches further than it does —
+    /// `PrivacyManifestTests` did the same until 396 closed it.
+    @Test("A report built without its provenance claims the strongest thing")
+    func theDefaultAnnouncesAnUnsetCaller() {
+        #expect(LoadInputs().isSelfReferential == false)
+        #expect(LoadInputs().line.contains("vary independently"))
+    }
+
+    /// UNCONDITIONAL — §12.54.2. A mark that appeared only when the news was
+    /// bad could not be told from a build where nobody wired it in, which is
+    /// the failure this whole class of line exists to prevent.
+    @Test("The varied line is printed in every state")
+    func theVariedLineIsUnconditional() {
+        for i in [LoadInputs(activitiesAreFed: false, tracesAreFed: false),
+                  LoadInputs(activitiesAreFed: true, tracesAreFed: false),
+                  LoadInputs(activitiesAreFed: true, tracesAreFed: true)] {
+            #expect(!i.line.isEmpty)
+        }
+        // AND THE DEFAULT IS THE INDEPENDENT ONE, which is the answer that
+        // announces a caller nobody updated: a report built without its
+        // provenance claims the strongest thing, so the omission is visible on
+        // the screen rather than silently flattering. `ActivityParity`'s
+        // `appSideCameFrom` makes the same choice.
+        #expect(LoadInputs().isSelfReferential == false)
     }
 }

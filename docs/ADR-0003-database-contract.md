@@ -8962,6 +8962,100 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.143 Slice 3 stopped being able to disagree — patch 399
+
+`LoadParity`'s header says, in as many words, that it *"isolates exactly one
+variable: what the database's activities and traces produce."* **That was true
+when it was written at 315 and stopped being true in two steps.**
+
+- The app side is `LoadStore.shared.days`, built from
+  `ActivityStore.shared.activities` — database-fed since **381** — and
+  `DetailStore.shared.streams` — database-fed since **398**.
+- The database side is built from the same rows, through the same functions.
+  The trace input is literally `RecordingRepository.all` on both sides.
+
+So on 17 August the device printed `Load parity: 413 days, 283 sessions · 224
+traces both sides · 7211 heart-rate buckets · 0 differences` — and every one of
+those zeros was guaranteed. **The slice proves `LoadSeries` is deterministic. It
+cannot prove the migration carried the data, and it printed identically to the
+five slices that can.**
+
+### 12.143.1 Held constant and varied are two different questions
+
+`heldFromTheApp` — "constants, zones, FTP, sRPE and Apple Health" — is still
+accurate and was never the problem. It names what is held CONSTANT, which is the
+half that says *what a difference here would mean*. Nothing named what is
+VARIED, which is the half that says *whether a difference is possible at all*.
+
+A comparison that states one and not the other is half a sentence, and the half
+it was missing is the one §12.125 is about. `what is varied:` now sits directly
+beneath `held from the app:`, so the two are read together.
+
+**IT WAS PREDICTED AND THAT DID NOT HELP.** §5.5 has carried "`LoadParity`'s app
+side is `LoadStore`, so slice 3 cannot be rescued without comparing something no
+screen shows — B4 deepens it" for several patches. A note in a state document is
+not a mark on the screen: the screen is what gets read on the day, and it said
+nothing.
+
+### 12.143.2 Three states, because the middle one existed for seventeen patches
+
+Between 381 and 398 exactly one of the two inputs was fed. A Bool would have
+called that period either evidence or nothing, and it was neither: the traces
+could still have disagreed while the activities could not. `LoadInputs` names
+all three, and the self-referential arm says what the slice DOES still prove
+rather than only what it does not — a row marked as worthless gets ignored, and
+determinism is not worthless.
+
+### 12.143.3 The patch about not declaring things had its own answer declared
+
+The first draft resolved the two fields inside `ShadowParity.slice3`. **Replacing
+that expression with a hard-coded `false` passed the entire suite** — the
+derivation was one line in a `@MainActor` function over live singletons, which
+no test reaches. A patch whose whole subject is §12.127.5 shipped its own answer
+as an unguarded assignment, and its own negative control is what found it.
+
+`LoadInputs.from(_ sources:)` takes `ExpectationSources` as a parameter, so the
+answer is ordinary code an ordinary test can drive. `DetailFill.decide` (§12.142)
+and `ReleaseGate.permitted(in:)` (§12.140) are the same move, three patches
+running: **when a decision cannot be reached from a test, the fix is to pass its
+inputs in, not to trust the call site.**
+
+The discriminating test feeds it a source where OTHER fields are fed. In a test
+process every store reads files, so a `from` that read the wrong fields is
+invisible to any all-false fixture — `[.notes, .moves, .zones, .gear]` is what
+tells `.activities` and `.traces` apart from anything else, and swapping the
+fields fails it.
+
+**The residual is named rather than glossed:** `report.inputs = .live` in
+`ShadowParity.slice3` is still one uncovered assignment. It is one symbol now
+instead of an expression, and the derivation behind it is tested.
+`PrivacyManifestTests` carried the same kind of admission until 396 closed it.
+
+### 12.143.4 The line-count pin fired, for the third time
+
+`LoadParityTests` pins `diagnosticLines.count`, and 23 → 24 failed the build.
+§12.125.7's rule is to grep `Sub4CoreTests/` for `.count ==` BEFORE the build
+whenever a patch adds a line to any `diagnosticLines`. It was not followed. The
+pin is what stood in for following it, which is what it is for — and this is the
+second time it has caught the person who wrote the rule.
+
+### 12.143.5 Marked, not rescued
+
+The rescue is to build slice 3's app side from `details/` and `streams/` through
+the seams, as slice 4 does. It is not done here, deliberately: it changes what
+the comparison MEANS — from *what the live screens show* to *what the files would
+produce* — and that is a decision with an argument, not a line to add to a
+marking patch.
+
+**And one obstacle has expired.** §12.125.4 said slice 3 "cannot be rescued
+without comparing something no screen shows", written before the seams existed.
+`ActivityStore(directory:)` arrived at 378 and `DetailStore(directory:)` at 390,
+so the machinery is now there and only the meaning question remains. Recorded
+because that note would otherwise keep deterring the work for a reason that has
+stopped being true.
+
+---
+
 ## 12.142 The flip — patch 398, D7 slice B4 closed
 
 **Two enum cases on one line**, and `DetailStore.init` reading rows instead of

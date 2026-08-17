@@ -10,7 +10,7 @@
 | **Persistence authority** | `docs/ADR-0003-database-contract.md` |
 | **Source-transition authority** | `docs/ADR-0002-strava-retirement.md` and `docs/PLAN-cutover-v2.md` |
 
-> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 398.**
+> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 399.**
 >
 > It was written against patch 334 and its opening stages describe work that has
 > since shipped: D6c closed at 330, and D7's B0, B1, B2 and B3 landed at 342,
@@ -22,7 +22,7 @@
 > the restructure and feature delivery. Where the two disagree about the present,
 > §5 wins; where they disagree about the sequence, this document does.
 >
-> **Progress against this plan, at 398.** Stage A's database-shadow work is
+> **Progress against this plan, at 399.** Stage A's database-shadow work is
 > closed. D7 has run B0 through B3 and the app reads the plan, the athlete, the
 > authored data and all 694 activities from SQLite on every launch, with a
 > verified migration run over that data. 385 through 388 are not slices: they
@@ -66,6 +66,18 @@
 > and the roll-up is unaffected because 388–390 gave Compare's slice 4 and the
 > two read-backs their own reads. §12.141, §12.142. **B5 — weather and gear —
 > is next.**
+>
+> **399 MARKS SLICE 3.** Load parity's two varied inputs — the activities (381)
+> and the traces (398) — are now the database's on both sides, so it proves the
+> load engine is deterministic and not that the migration carried the data. It
+> printed identically to the five slices that can still disagree; it now says
+> which it is. Marked rather than rescued: the rescue changes what the slice
+> means. §12.143.
+>
+> **THE NEXT TWO ARE NOT SLICES EITHER.** The five authored stores still have no
+> restore path — §5.5 has called that the largest open risk while eleven patches
+> went to B4 — and file protection is a security property applied with a
+> silenced error and reported by a string literal. Both come before B5.
 >
 > **396 IS NOT A SLICE — it is the instrument.** Asking for that Release
 > measurement found that `ReleaseGates.isInternalBuild` was `#if DEBUG`, so

@@ -115,6 +115,88 @@
 
 import Foundation
 
+/// **WHAT SLICE 3 VARIES, AND WHETHER THOSE INPUTS ARE STILL INDEPENDENT —
+/// patch 399, ADR-0003 §12.143.**
+///
+/// This file's header says it "isolates exactly one variable: what the
+/// database's activities and traces produce". **That was true when it was
+/// written at 315 and is not true now.** The app side is
+/// `LoadStore.shared.days`, built from `ActivityStore.shared.activities` —
+/// database-fed since 381 — and `DetailStore.shared.streams` — database-fed
+/// since **398**. The database side is built from the same rows through the
+/// same functions.
+///
+/// So the varied inputs became the same data on both sides, one slice at a
+/// time, and nothing on screen said so. `heldFromTheApp` is still accurate and
+/// answers a different question: it names what is held CONSTANT. Nothing named
+/// what is VARIED, which is the half that decides whether a pass means
+/// anything. §12.125, §12.131.3.
+///
+/// **DERIVED, NEVER DECLARED.** §12.127.5 — a sentence about what the data
+/// currently IS cannot be a constant, and this one describes which stores are
+/// fed today. It comes from `ExpectationSources`, the resolver the verifier
+/// already uses, rather than a second opinion about the same question (§12.43).
+///
+/// **THREE STATES, NOT TWO.** Between 381 and 398 exactly one of the two was
+/// fed, and a binary would have called that either evidence or nothing. Half
+/// is its own answer: the traces could still have disagreed while the
+/// activities could not.
+nonisolated struct LoadInputs: Equatable, Sendable {
+    var activitiesAreFed = false
+    var tracesAreFed = false
+
+    /// Both varied inputs come from the database, so this comparison cannot
+    /// disagree about whether the migration carried the data. It can still
+    /// find a determinism defect in `LoadSeries`, which is worth something and
+    /// is not what the row claims.
+    var isSelfReferential: Bool { activitiesAreFed && tracesAreFed }
+
+    /// **THE DERIVATION, IN THE TYPE RATHER THAN AT THE CALL SITE — and the
+    /// negative control is why.** 399's first draft resolved the two fields
+    /// inside `ShadowParity.slice3`. Replacing that expression with a
+    /// hard-coded `false` PASSED THE WHOLE SUITE: the derivation was one line
+    /// in a `@MainActor` function over live singletons, which no test reaches.
+    /// A patch whose subject is *a sentence about the data must not be a
+    /// constant* had its own answer sitting there as an unguarded assignment.
+    ///
+    /// Taking `ExpectationSources` as a parameter makes it ordinary code an
+    /// ordinary test can drive — `DetailFill.decide` and
+    /// `ReleaseGate.permitted(in:)` are the same move, for the same reason.
+    /// NO DEFAULT ARGUMENT: §12.95.4.
+    static func from(_ sources: ExpectationSources) -> LoadInputs {
+        LoadInputs(activitiesAreFed: sources.isFedByTheDatabase(.activities),
+                   tracesAreFed: sources.isFedByTheDatabase(.traces))
+    }
+
+    /// UNCONDITIONAL, and all three states say something — §12.54.2. A line
+    /// that appeared only when the news was bad would be indistinguishable
+    /// from a build where nobody wired it in.
+    var line: String {
+        switch (activitiesAreFed, tracesAreFed) {
+        case (false, false):
+            "both sides vary independently — the app's activities and traces "
+            + "come from its own files"
+        case (true, true):
+            "SELF-REFERENTIAL — the activities and the traces are the "
+            + "database's on both sides, so this slice proves the load engine "
+            + "is deterministic and not that the migration carried the data"
+        case (true, false):
+            "HALF — the activities are the database's on both sides; the "
+            + "traces still vary"
+        case (false, true):
+            "HALF — the traces are the database's on both sides; the "
+            + "activities still vary"
+        }
+    }
+}
+
+@MainActor
+extension LoadInputs {
+    /// The live answer, asked of the stores that own it. One symbol, so the
+    /// call site cannot state an opinion of its own.
+    static var live: LoadInputs { from(.live) }
+}
+
 @MainActor
 enum LoadParity {
 
@@ -185,6 +267,14 @@ enum LoadParity {
         /// describing nothing.
         let appTraces: Int
         let databaseTraces: Int
+
+        /// **WHETHER THIS COMPARISON CAN STILL DISAGREE — patch 399.** Set by
+        /// the caller from `ExpectationSources.live`, because only the caller
+        /// is on the main actor and only the stores know. `var` with a default
+        /// for `ActivityParity.appSideCameFrom`'s reason: a report is built
+        /// before its provenance is known, and the default is the answer that
+        /// announces a caller nobody updated.
+        var inputs = LoadInputs()
 
         // Differences
 
@@ -282,6 +372,10 @@ enum LoadParity {
                 "Load parity: \(daysCompared) days, \(workoutsCompared) sessions",
                 "  held from the app: \(heldFromTheApp)",
                 "  of those, verified: \(verifiedByReadBack)",
+                // PATCH 399 — WHAT IS VARIED, beside what is held. The two
+                // together are what makes a zero readable; either alone is
+                // half a sentence. §12.143.
+                "  what is varied: \(inputs.line)",
                 "  tolerance: \(toleranceLabel)",
                 "  days in the app's series: \(appDays)",
                 "  days in the database's series: \(databaseDays)",

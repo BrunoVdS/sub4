@@ -340,8 +340,17 @@ final class ShadowParity {
         // `hr_zone` is in the database and has no reader yet, and bucketing
         // both sides with the same boundaries is what makes a difference in
         // the zone rows mean the trace rather than the boundaries.
-        return LoadParity.compare(app: LoadStore.shared.days, database: theirs,
-                                  zones: AthleteStore.shared.hrZones)
+        var report = LoadParity.compare(app: LoadStore.shared.days,
+                                        database: theirs,
+                                        zones: AthleteStore.shared.hrZones)
+        // PATCH 399 — SET HERE, DERIVED THERE. `ExpectationSources.live` asks
+        // each store's own `servedFrom`, which is the same resolver the
+        // verifier uses — a second opinion about which stores are fed would be
+        // a second thing to keep agreeing with the truth (§12.43). Built after
+        // the compare for `ActivityParity.appSideCameFrom`'s reason: a caller
+        // cannot mutate what it is passing in. §12.143.
+        report.inputs = .live
+        return report
     }
 
     /// Slice 5 — patch 321.
