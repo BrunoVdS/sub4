@@ -758,6 +758,56 @@ def no_hydration_writes():
                    "here so a store added without a slice's argument is a "
                    "failure rather than a silent extra.")
 
+# --------------------------------------------------------------------------
+# RULE 9 — patch 396, §12.140
+# --------------------------------------------------------------------------
+
+# The file that owns "may this data leave the device". It may not branch on the
+# build configuration, because the build configuration is not that question.
+GATE_FILE = "ReleaseGates.swift"
+
+
+def the_gate_does_not_branch_on_the_build():
+    """**THE PREDICATE HAS ONE DEFINITION AND IT IS NOT `#if DEBUG`.**
+
+    Patch 203 named this predicate `isInternalBuild` precisely so a bare
+    `#if DEBUG` would not be repeated at each call site — and then `permitted`
+    and `distributionLabel` kept their own copies anyway, in the same file, a
+    few lines from the comment warning against exactly that. Three copies of
+    one decision, one of them inside the sentence forbidding copies. §12.43.
+
+    **AND THE PROXY WAS WRONG.** `#if DEBUG` asks *is this optimised*; the gate
+    means *did this build reach a stranger*. The cost of the confusion was that
+    every diagnostic screen disappeared in the only configuration that measures
+    real performance, so no number this project has ever taken off the device
+    was a Release number. B4 found it the hard way — patch 395's launch cost
+    could not be read, because the button that reads it was gated on the
+    optimiser.
+
+    A rule rather than a test, for RULE 7's and RULE 8's reason: what must be
+    prevented is a FOURTH copy appearing, and no assertion can see the absence
+    of a preprocessor branch in a build where that branch is the one compiled.
+    """
+    rule = "the gate does not branch on the build"
+
+    hits = [f for f in app_sources() if f.name == GATE_FILE]
+    if len(hits) != 1:
+        fail(rule, f"expected exactly one {GATE_FILE}, found {len(hits)}. "
+                   "This rule is reading the wrong thing, which means it has "
+                   "been checking nothing.")
+        return
+
+    body = strip_comments(hits[0].read_text())
+    branches = body.count("#if ")
+    counted(rule, 1, 1, f"{GATE_FILE} read for build-configuration branches")
+    if branches:
+        fail(rule, f"{GATE_FILE} contains {branches} `#if` branch(es). The "
+                   "predicate has one definition — `BuildProvenance` — and a "
+                   "compile-time copy beside it is how one call site ends up "
+                   "on the wrong side of a configuration nobody was thinking "
+                   "about. That has already happened three times in this "
+                   "file. §12.140")
+
 
 RULES = [
     every_store_that_records_a_read_refuses_a_write,
@@ -768,6 +818,7 @@ RULES = [
     the_state_documents_name_the_current_patch,
     every_collapsible_section_matches_its_header,
     no_hydration_writes,
+    the_gate_does_not_branch_on_the_build,
 ]
 
 for r in RULES:

@@ -8962,6 +8962,106 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.140 The gate asked the wrong question — patch 396
+
+**Every performance number this project has ever taken off the device was a
+Debug number, and it could not have been otherwise.** 395 asked for a Release
+measurement and the button that produces it was not there: `SettingsView` hides
+the Database health row behind `ReleaseGates.isInternalBuild`, and that was
+`#if DEBUG`.
+
+So the instrument this project uses for evidence was unavailable in the only
+configuration that measures real performance. 394's 3.963 s, 395's 0.443 s and
+every benchmark budget check are Debug figures — not wrong, but not the numbers
+anybody ships against, and nobody could have known which.
+
+### 12.140.1 Three copies of one predicate, one of them inside the warning
+
+Patch 203 named this predicate precisely so a bare `#if DEBUG` would not be
+repeated at each call site. Its doc said so:
+
+> Diagnostic screens are gated on it, and a bare `#if DEBUG` repeated at each
+> call site is how one of them ends up on the wrong side of a build
+> configuration nobody was thinking about.
+
+`ReleaseGate.permitted` and `ReleaseGates.distributionLabel` kept their own
+copies anyway — in the same file, a few lines from that sentence. **§12.43's
+eleventh application and the most pointed one yet: three copies of a decision,
+one of them written inside the comment forbidding copies.**
+
+`distributionLabel` was the copy with a visible consequence. A Release build on
+the athlete's own phone would have read *"External build — every external data
+transfer is off and cannot be switched on"* while the switches were in fact
+available, because the label branched on the configuration and the behaviour
+branched on the same thing one indirection away. §12.15, in the one sentence
+the app says about its own permissions.
+
+### 12.140.2 `#if DEBUG` is not the question the gate is asking
+
+The gate means *did this build reach a stranger*. The fact that settles that is
+how it was **signed**, not how it was optimised. `BuildProvenance` asks the real
+question: development, ad-hoc and enterprise builds carry
+`embedded.mobileprovision` in the bundle; App Store and TestFlight builds have
+it stripped.
+
+**That is stricter than what it replaces, not looser.** The old rule opened
+every switch in a Debug build in anybody's hands. The new one keys on a
+signature the athlete controls. A simulator is not signed at all, so it is
+named explicitly rather than falling through to `.distributed` — a simulator
+build is by definition one of his own, and the suite runs there.
+`SIMULATOR_DEVICE_NAME` rather than `#if targetEnvironment(simulator)`, because
+a compile-time branch here would put the fourth copy back.
+
+**WHAT IT COSTS, STATED PLAINLY.** The distributed branch is now compiled into
+the binary instead of being absent from it, so the guarantee is enforced by a
+runtime value rather than by the code not existing. For an app with one user
+and no distribution that is the right side of the trade, and it was taken
+deliberately rather than as a side effect. ADR-0002's substance is unchanged.
+
+### 12.140.3 The test two comments promised and nobody wrote
+
+`ReleaseGateTests` said *"`permittedIsFalseInRelease` below covers that side"*.
+**That test has never existed.** The claim stood for 193 patches.
+
+`PrivacyManifestTests` was more honest and described the same hole twice — in
+its header and again on its drift check, ending *"guarded by the comment in
+`ReleaseGates` and by review, which is weaker, and saying so is better than
+implying this test covers both"*. It was right, and it was right because
+`#if DEBUG` made the other branch unreachable from a test build: the code under
+test did not exist in the binary running the test.
+
+**A predicate that takes its provenance as a value is ordinary code, and
+ordinary code can be tested.** 396 writes both halves:
+
+- `noGateIsPermittedInADistributedBuild` — all five gates, both provenances.
+- `aDistributedBuildIgnoresAStoredOpenGate` — **the one ADR-0002 actually rests
+  on.** These keys live in `UserDefaults` and travel in backups; a key written
+  `true` on the athlete's phone and restored onto a distributed build must not
+  open anything. `set` refusing to write is a different guarantee, because
+  `set` is not what put it there. It carries its own control: the same key
+  read under `.own` must open the gate, or the assertions above are zero
+  compared to zero.
+
+`ReviewRehearsal`'s second check stopped being belt-and-braces here. Its comment
+said the rehearsal "is not in a release binary at all"; it is now, and the
+`throw` is the only thing standing between a distributed build and running it.
+The comment says that instead of the thing that stopped being true.
+
+### 12.140.4 RULE 9
+
+`ReleaseGates.swift` contains no `#if` branch. A rule and not a test, for RULE
+7's and RULE 8's reason: what has to be prevented is a FOURTH copy appearing,
+and no assertion can see the absence of a preprocessor branch in the build where
+that branch is the one compiled. Its negative control fires.
+
+### 12.140.5 What this unblocks
+
+395's Release measurement, which is what asked the question. And every
+measurement after it — the benchmark's budget checks, the bootstrap timing, the
+store construction timing — can now be taken in the configuration that ships.
+
+---
+
 ## 12.139 The measurement changed the design — patch 395, D7 slice B4
 
 **394 asked what the launch cost and the device answered 3.963 s.** The flip it

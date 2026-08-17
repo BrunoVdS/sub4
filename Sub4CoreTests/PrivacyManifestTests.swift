@@ -16,11 +16,18 @@
 //  held to the things it claims about.
 //
 //  THE ONE THAT MATTERS is `aShippedOpenGateRequiresDeclaredCollection`. The
-//  manifest declares no collected data because in a Release build no gate can
-//  open and nothing is transmitted. That is true today and is a property of
-//  `ReleaseGate.permitted` being `#if DEBUG`. The day someone ships a gate open,
-//  the manifest becomes a false statement to Apple and to the user — and this
-//  test is what says so, in the same commit rather than at review time.
+//  manifest declares no collected data because in a distributed build no gate
+//  can open and nothing is transmitted. The day someone ships a gate open, the
+//  manifest becomes a false statement to Apple and to the user — and this test
+//  is what says so, in the same commit rather than at review time.
+//
+//  PATCH 396 CHANGED WHAT HOLDS THAT UP. It used to be `ReleaseGate.permitted`
+//  being `#if DEBUG` — a compile-time fact this suite could not see, because
+//  the branch it needed did not exist in a test build. It is now
+//  `BuildProvenance`, a value, and `ReleaseGateTests` drives BOTH sides of it:
+//  `noGateIsPermittedInADistributedBuild` and
+//  `aDistributedBuildIgnoresAStoredOpenGate`. See the note on the drift check
+//  below, which no longer has to end in "and by review".
 //
 
 import Testing
@@ -76,14 +83,19 @@ struct PrivacyManifestTests {
     /// If this fails, the fix is NOT to change the assertion. It is to add the
     /// data types listed in the comment at the foot of the manifest.
     ///
-    /// WHAT IT CANNOT SEE, stated rather than glossed: the other way a transfer
-    /// could ship is `permitted` ceasing to be `#if DEBUG`, which would let the
-    /// athlete open a gate themselves. Tests run in a debug build, where
-    /// `permitted` is true for everything, so that change is invisible from
-    /// here. `defaultOpen` is the half that IS visible — a gate open on first
-    /// launch, with no one having chosen it. The other half is guarded by the
-    /// comment in `ReleaseGates` and by review, which is weaker, and saying so
-    /// is better than implying this test covers both.
+    /// WHAT THIS TEST SEES AND WHAT NOW SEES THE REST — patch 396. This half
+    /// is `defaultOpen`: a gate open on first launch with no one having chosen
+    /// it. The other half — a build permitting a gate it should not — used to
+    /// be unreachable from any test, because `permitted` was `#if DEBUG` and
+    /// the suite runs where that branch is true. This comment said so and
+    /// added that the rest was "guarded by the comment in `ReleaseGates` and
+    /// by review, which is weaker".
+    ///
+    /// **THAT WAS AN HONEST DESCRIPTION OF A HOLE, AND IT IS CLOSED.**
+    /// `ReleaseGateTests.noGateIsPermittedInADistributedBuild` drives the
+    /// branch directly, and `aDistributedBuildIgnoresAStoredOpenGate` covers
+    /// the case that actually worries ADR-0002: a `gate.` key restored from a
+    /// backup taken on the athlete's own phone. §12.140.
     @Test("A gate that ships open requires a declared collected data type")
     func aShippedOpenGateRequiresDeclaredCollection() throws {
         let m = try manifest()

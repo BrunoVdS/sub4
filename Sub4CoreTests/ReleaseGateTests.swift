@@ -86,9 +86,14 @@ struct ReleaseGateTests {
     @Test("A gate opened in an internal build reads back open")
     func openThenRead() throws {
         try withCleanDefaults {
-            // Tests run against a Debug build, so `permitted` is true and this
-            // is a meaningful assertion. In a Release build `set` is a no-op by
-            // design and `permittedIsFalseInRelease` below covers that side.
+            // The suite runs in a simulator, which `BuildProvenance` calls
+            // `.own`, so `permitted` is true and this is a meaningful
+            // assertion. **THE COMMENT HERE USED TO CITE
+            // `permittedIsFalseInRelease` "below" AND THAT TEST HAS NEVER
+            // EXISTED** — a claim of coverage is not coverage, and this one
+            // stood for 193 patches because `#if DEBUG` made the other side
+            // unreachable from a test build. 396 made it reachable; the
+            // distributed side is now covered for real, further down.
             try #require(ReleaseGate.stravaSync.permitted)
 
             ReleaseGates.set(.stravaSync, open: true)
@@ -223,6 +228,92 @@ struct ReleaseGateTests {
         #expect(gate.reasonClosed.isEmpty == false)
         #expect(gate.id == gate.rawValue)
     }
+
+    // MARK: The side that could not be tested until 396 — §12.140
+
+    /// **THE TEST TWO COMMENTS PROMISED AND NOBODY WROTE.**
+    ///
+    /// `ReleaseGateTests` cited `permittedIsFalseInRelease` as covering this
+    /// and it did not exist. `PrivacyManifestTests` said in its header and
+    /// again at its drift check that `permitted` ceasing to be `#if DEBUG` was
+    /// the one way a transfer could ship, invisible from a test, "guarded by
+    /// the comment in `ReleaseGates` and by review, which is weaker".
+    ///
+    /// Both were honest and both described a hole. It is closed: the predicate
+    /// takes its provenance as a value, so the distributed branch is ordinary
+    /// code an ordinary test can drive.
+    @Test("No gate is permitted in a distributed build")
+    func noGateIsPermittedInADistributedBuild() {
+        for gate in ReleaseGate.allCases {
+            #expect(gate.permitted(in: .distributed) == false,
+                    "\(gate.rawValue) is openable in a build that reached a stranger")
+            #expect(gate.permitted(in: .own),
+                    "\(gate.rawValue) is shut in the athlete's own build, which is not the point of the gate")
+        }
+    }
+
+    /// **THE PROPERTY ADR-0002 ACTUALLY RESTS ON, AND IT IS NOT THE ONE ABOVE.**
+    ///
+    /// These keys live in `UserDefaults` and travel in backups. A key written
+    /// `true` on the athlete's own phone and restored onto a distributed build
+    /// must not open anything — and `set` refusing to write is not the same
+    /// guarantee, because `set` is not what put it there.
+    @Test("A distributed build ignores a stored open gate")
+    func aDistributedBuildIgnoresAStoredOpenGate() {
+        withCleanDefaults {
+            for gate in ReleaseGate.allCases {
+                UserDefaults.standard.set(true, forKey: ReleaseGates.key(gate))
+            }
+            ReleaseGates.recordLocationConsent()
+
+            for gate in ReleaseGate.allCases {
+                #expect(ReleaseGates.isOpen(gate, in: .distributed) == false,
+                        "\(gate.rawValue) opened from a restored key in a distributed build")
+            }
+            // AND THE CONTROL. If `.own` also read closed, the assertions above
+            // would be passing on a stuck `false` and proving nothing — zero
+            // compared to zero, which is what every parity report in this
+            // project carries a denominator to avoid.
+            #expect(ReleaseGates.isOpen(.stravaSync, in: .own),
+                    "the stored key does not open the gate even in the athlete's own build, so the test above is vacuous")
+        }
+    }
+
+    /// Which build this is, from the two facts that decide it. A simulator is
+    /// not signed at all, so it is named rather than left to fall through —
+    /// and the suite itself runs there.
+    @Test("Provenance is decided by signing, not by optimisation")
+    func provenanceIsDecidedBySigning() {
+        #expect(BuildProvenance.of(hasEmbeddedProfile: true, isSimulator: false) == .own,
+                "a development or ad-hoc signed build is the athlete's own")
+        #expect(BuildProvenance.of(hasEmbeddedProfile: false, isSimulator: true) == .own,
+                "a simulator is not signed and is nobody else's")
+        #expect(BuildProvenance.of(hasEmbeddedProfile: true, isSimulator: true) == .own)
+        #expect(BuildProvenance.of(hasEmbeddedProfile: false, isSimulator: false) == .distributed,
+                "no embedded profile means App Store or TestFlight")
+
+        // THE SUITE'S OWN ENVIRONMENT, asserted rather than assumed. Every
+        // test above that relies on `permitted` being true relies on this.
+        #expect(BuildProvenance.current() == .own,
+                "the suite runs somewhere this app calls a distributed build")
+    }
+
+    /// **A LABEL THAT CAN DISAGREE WITH THE BEHAVIOUR IT DESCRIBES IS WORSE
+    /// THAN NO LABEL.** Before 396 this string had its own `#if DEBUG`, so a
+    /// Release build on the athlete's own phone read "every external data
+    /// transfer is off and cannot be switched on" while the switches were in
+    /// fact available. §12.15, in the one sentence the app says about its own
+    /// permissions.
+    @Test("The distribution label is derived, not declared")
+    func theLabelIsDerived() {
+        let internalBuild = ReleaseGates.isInternalBuild
+        #expect(ReleaseGates.distributionLabel.hasPrefix(
+                    internalBuild ? "Internal build" : "External build"),
+                "the label and the gate disagree about what this build is")
+        #expect(internalBuild == ReleaseGate.stravaSync.permitted,
+                "the named predicate and the gates' own answer have drifted apart")
+    }
+
 }
 
 // MARK: - Consent before a location leaves

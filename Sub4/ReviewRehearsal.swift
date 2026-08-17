@@ -84,11 +84,15 @@ enum ReviewRehearsal {
 
     /// Internal builds only, and checked twice on purpose.
     ///
-    /// `ReleaseGates.isInternalBuild` is `#if DEBUG`, so this code is not in a
-    /// release binary at all — the button that calls it is gated on the same
-    /// value. The throw below is the belt to that braces: a gate that is only
-    /// enforced by the caller is a gate that moves the first time somebody adds
-    /// a second caller.
+    /// **AND THE SECOND CHECK STOPPED BEING BELT-AND-BRACES AT 396.** This
+    /// comment used to say `ReleaseGates.isInternalBuild` is `#if DEBUG`, so
+    /// this code is not in a release binary at all. It is now — the predicate
+    /// asks how the build was SIGNED rather than how it was optimised
+    /// (§12.140), so the rehearsal compiles into every configuration and the
+    /// throw below is the only thing standing between a distributed build and
+    /// running it. A gate enforced solely by its caller moves the first time
+    /// somebody adds a second caller, and this one no longer has a compiler
+    /// standing behind it.
     /// THE MARKER, DECLARED ONCE — patch 353, ADR-0003 §12.98.
     ///
     /// `model` has carried the literal `"rehearsal"` since 269 and NOTHING

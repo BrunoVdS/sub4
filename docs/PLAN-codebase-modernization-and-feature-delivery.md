@@ -10,7 +10,7 @@
 | **Persistence authority** | `docs/ADR-0003-database-contract.md` |
 | **Source-transition authority** | `docs/ADR-0002-strava-retirement.md` and `docs/PLAN-cutover-v2.md` |
 
-> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 395.**
+> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 396.**
 >
 > It was written against patch 334 and its opening stages describe work that has
 > since shipped: D6c closed at 330, and D7's B0, B1, B2 and B3 landed at 342,
@@ -22,7 +22,7 @@
 > the restructure and feature delivery. Where the two disagree about the present,
 > §5 wins; where they disagree about the sequence, this document does.
 >
-> **Progress against this plan, at 395.** Stage A's database-shadow work is
+> **Progress against this plan, at 396.** Stage A's database-shadow work is
 > closed. D7 has run B0 through B3 and the app reads the plan, the athlete, the
 > authored data and all 694 activities from SQLite on every launch, with a
 > verified migration run over that data. 385 through 388 are not slices: they
@@ -57,6 +57,14 @@
 > and waits on the other half of the comparison: nobody has ever measured what
 > the 1,362 files cost, so 3.730 s is only a regression if the files are
 > faster. §5.6 of `CLAUDE.md` carries the order.
+>
+> **396 IS NOT A SLICE — it is the instrument.** Asking for that Release
+> measurement found that `ReleaseGates.isInternalBuild` was `#if DEBUG`, so
+> every diagnostic screen vanished in Release and **no device number this
+> project has ever taken was a Release number**. The predicate now asks how the
+> build was signed rather than how it was optimised, which is stricter; three
+> copies of it existed, one inside the comment forbidding copies; and the
+> distributed branch is testable and tested for the first time. §12.140.
 
 ## 1. Outcome
 

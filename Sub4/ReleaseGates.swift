@@ -152,13 +152,23 @@ enum ReleaseGate: String, CaseIterable, Identifiable {
     /// resolve together: `coordinateWeather` clears the moment Phase 2 ships its
     /// consent screen and the coordinate stops being Strava-sourced, while the
     /// Strava gates never clear — they are removed with the code at M8.
-    var permitted: Bool {
-        #if DEBUG
-        return true
-        #else
-        return false
-        #endif
-    }
+    var permitted: Bool { permitted(in: .current()) }
+
+    /// The same question with the provenance handed in — patch 396, §12.140.
+    ///
+    /// **THIS PARAMETER IS THE WHOLE POINT OF 396.** While `permitted` was
+    /// `#if DEBUG`, the Release branch did not exist in a test build, so
+    /// nothing could assert what a distributed build does. `ReleaseGateTests`
+    /// said `permittedIsFalseInRelease` covered it and **that test has never
+    /// existed**; `PrivacyManifestTests` stated in two places that this exact
+    /// property was invisible from a test and guarded only "by the comment in
+    /// `ReleaseGates` and by review". Both are true statements about a gate
+    /// nobody could check. Now they can.
+    ///
+    /// NO DEFAULT ARGUMENT. §12.95.4 — a default is a call site carrying a
+    /// value the caller never writes, and this is the last value in the app
+    /// that should be supplied by something nobody typed.
+    func permitted(in provenance: BuildProvenance) -> Bool { provenance.isOwn }
 
     /// The shipped default, applied when nothing has been stored.
     ///
@@ -186,6 +196,59 @@ enum ReleaseGate: String, CaseIterable, Identifiable {
     }
 }
 
+
+// MARK: - Which build this is
+
+/// **WHOSE BUILD IS THIS — patch 396, ADR-0003 §12.140 and ADR-0002.**
+///
+/// Until 396 the app answered this with `#if DEBUG`, which asks a different
+/// question and gets the right answer only by coincidence. What the gates mean
+/// is *did this build reach a stranger*, and the fact that settles that is how
+/// it was SIGNED, not how it was optimised.
+///
+/// **THE TEST IS `embedded.mobileprovision`.** Development, ad-hoc and
+/// enterprise builds carry one inside the bundle; App Store and TestFlight
+/// builds have it stripped. So this is true for anything the athlete signed
+/// himself in either configuration and false for anything distributed —
+/// which is what the gate has always been for, and is if anything STRICTER
+/// than the old rule, since a Debug build in somebody else's hands used to
+/// open every switch.
+///
+/// A simulator is not signed at all, so it is named separately rather than
+/// falling through to `.distributed`. A simulator build is by definition one
+/// of the athlete's own, and the test suite runs there.
+///
+/// **PURE, AND THAT IS THE PATCH.** `of(hasEmbeddedProfile:isSimulator:)` takes
+/// the two facts; `current()` is the one place that reads the real world. The
+/// Release branch of this decision is now reachable from a test for the first
+/// time — see `permitted(in:)`.
+nonisolated enum BuildProvenance: Equatable, Sendable {
+    /// Signed by the athlete, or a simulator. Diagnostics available, gates
+    /// openable.
+    case own
+    /// No embedded profile: this build came through Apple. Every gate is shut
+    /// and cannot be opened, whatever `UserDefaults` holds.
+    case distributed
+
+    var isOwn: Bool { self == .own }
+
+    static func of(hasEmbeddedProfile: Bool, isSimulator: Bool) -> BuildProvenance {
+        isSimulator || hasEmbeddedProfile ? .own : .distributed
+    }
+
+    /// The real world, read in exactly one place.
+    ///
+    /// `SIMULATOR_DEVICE_NAME` rather than `#if targetEnvironment(simulator)`:
+    /// a compile-time branch here would put a second build-configuration
+    /// decision back into this file, which is the defect 396 exists to remove.
+    static func current() -> BuildProvenance {
+        of(hasEmbeddedProfile: Bundle.main.url(forResource: "embedded",
+                                               withExtension: "mobileprovision") != nil,
+           isSimulator: ProcessInfo.processInfo
+               .environment["SIMULATOR_DEVICE_NAME"] != nil)
+    }
+}
+
 // MARK: - The check
 
 enum ReleaseGates {
@@ -193,7 +256,19 @@ enum ReleaseGates {
     /// Closed unless this build permits the gate and it has been explicitly
     /// opened. Both halves are required; neither is inferable from the other.
     static func isOpen(_ gate: ReleaseGate) -> Bool {
-        guard gate.permitted else { return false }
+        isOpen(gate, in: .current())
+    }
+
+    /// The same answer with the provenance handed in — patch 396, §12.140.
+    ///
+    /// **THIS IS THE ONE ADR-0002 ACTUALLY RESTS ON**, and until 396 nothing
+    /// asserted it: a distributed build must read every gate CLOSED even when
+    /// `UserDefaults` holds `true` for it — a key restored from a backup taken
+    /// on the athlete's own phone, which is not a hypothetical, because that is
+    /// how these keys travel. `aDistributedBuildIgnoresAStoredOpenGate` is the
+    /// test, and it could not have been written while this was `#if DEBUG`.
+    static func isOpen(_ gate: ReleaseGate, in provenance: BuildProvenance) -> Bool {
+        guard gate.permitted(in: provenance) else { return false }
         // Consent outranks the stored switch — patch 193. A `gate.` key
         // restored from a backup, or written before this check existed, cannot
         // open a transfer nobody agreed to. The consent key is in the same
@@ -258,25 +333,35 @@ enum ReleaseGates {
 
     /// Whether this build is one of the athlete's own.
     ///
-    /// The same `#if DEBUG` that `permitted` uses, given a name — patch 203.
-    /// Diagnostic screens are gated on it, and a bare `#if DEBUG` repeated at
-    /// each call site is how one of them ends up on the wrong side of a build
-    /// configuration nobody was thinking about.
-    static var isInternalBuild: Bool {
-        #if DEBUG
-        true
-        #else
-        false
-        #endif
-    }
+    /// **PATCH 203 NAMED THIS PREDICATE AND TWO OF ITS THREE COPIES KEPT
+    /// THEIR OWN `#if DEBUG` ANYWAY.** The doc that used to sit here said a
+    /// bare `#if DEBUG` repeated at each call site is how one of them ends up
+    /// on the wrong side of a build configuration nobody was thinking about —
+    /// and `permitted` and `distributionLabel` were exactly that, in the file
+    /// that said it. §12.43, three copies, one of them in the sentence warning
+    /// against copies.
+    ///
+    /// **AND THE PREDICATE WAS WRONG, not just duplicated — §12.140.** It
+    /// answered *is this the Debug configuration*, which is not the question.
+    /// The question is *is this one of the athlete's own builds*, and the
+    /// consequence of the proxy was that every diagnostic screen in this app
+    /// vanished in the only configuration that measures real performance. B4
+    /// found it: 395's launch cost could not be read in Release because the
+    /// button that reads it was gated on the optimiser.
+    static var isInternalBuild: Bool { BuildProvenance.current().isOwn }
 
-    #if DEBUG
-    static let distributionLabel = "Internal build — switches are available."
-    #else
-    static let distributionLabel =
-        "External build — every external data transfer is off and cannot be "
-        + "switched on. See ADR-0002."
-    #endif
+    /// DERIVED, NEVER ITS OWN BRANCH — patch 396. The third copy of the
+    /// predicate lived here, and a label that can disagree with the behaviour
+    /// it describes is worse than no label: a Release build on the athlete's
+    /// own phone would have read "every external data transfer is off and
+    /// cannot be switched on" while the switches were in fact available.
+    /// §12.15, in the one sentence the app says about its own permissions.
+    static var distributionLabel: String {
+        isInternalBuild
+            ? "Internal build — switches are available."
+            : "External build — every external data transfer is off and cannot "
+            + "be switched on. See ADR-0002."
+    }
 }
 
 // MARK: - The refusal
