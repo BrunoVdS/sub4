@@ -1236,9 +1236,25 @@ struct DatabaseHealthView: View {
       // holds 694 of each. The sample figure is COMPARISONS and this sentence
       // has always said so correctly; §5.6 and B4's groundwork read it as a row
       // count, which it is not — `recording_sample` holds 199,848.
+      //
+      // PATCH 392a — AND THE MAGNITUDE IS GONE, WHICH IS §12.127.5.
+      //
+      // 389a replaced "roughly 1.5 million" with "roughly 1.6 million", worked
+      // out as eight series over 199,848 rows. The device says **1,453,877**:
+      // not every recording carries all eight, so the multiplication was an
+      // upper bound rather than a count, and the sentence it replaced had been
+      // right for ninety-eight patches.
+      //
+      // *A sentence about what the data currently IS cannot be a constant.*
+      // That is the rule this project bought at 383 and it applies here, in a
+      // footer somebody reads as fact. The shape stays — every sample in every
+      // series is what makes this the slow one — and the magnitude goes,
+      // because since 391 the app PRINTS it two rows down and in the exported
+      // file. A number the app computes has no business being typed out beside
+      // it.
       + "The three activity read-backs are the slow part: 694 activities, "
-      + "694 details, and roughly 1.6 million sample comparisons — eight "
-      + "series over 199,848 stored samples. During a backfill they will "
+      + "694 details, and every sample of every series inside 668 recordings — "
+      + "the recording section counts them. During a backfill they will "
       + "legitimately report less than the store holds — check Traces still to "
       + "fetch first."
 

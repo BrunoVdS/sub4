@@ -400,7 +400,8 @@ nonisolated enum RecordingRoundTrip {
 
         /// **THE PASTE HAS NEVER CARRIED THIS — patch 391, §12.135, and this
         /// is the most expensive comparison the app makes.** 668 recordings,
-        /// 199,848 stored samples, ~1.6 million comparisons — and until now the
+        /// 199,848 stored samples, **1,453,877 comparisons measured on the
+        /// device at 392** — and until now the
         /// only durable record of it was the roll-up's one line, `Recordings:
         /// 668 compared, no differences`. Everything that made the walk worth
         /// running lived in a `@State` that died with the sheet.

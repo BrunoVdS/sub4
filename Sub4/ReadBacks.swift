@@ -430,8 +430,9 @@ enum ReadBacks {
     ///
     /// **THE 1.5 MILLION IS COMPARISONS, NOT ROWS, AND THE TWO HAVE BEEN READ
     /// AS ONE** — patch 389. `recording_sample` held **199,848 rows** on the
-    /// device at 388; eight series over them is what makes ~1.6 million
-    /// comparisons. §5.6 and B4's groundwork both carried the row count as
+    /// device at 388, and 392's export put the comparison count at
+    /// **1,453,877** — the streams every recording actually carries, not eight
+    /// times the rows. §5.6 and B4's groundwork both carried the row count as
     /// 1.5 M, which is an order of magnitude wrong in the direction that makes
     /// B4's launch-cost question look worse than it is.
     ///

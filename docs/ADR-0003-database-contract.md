@@ -8964,6 +8964,43 @@ is a diagnostic, whether or not it was built as one.
 
 ## 12.136 Every section hands over its own numbers — patch 392
 
+### 12.136.8 The first export contradicted a figure I had typed — patch 392a
+
+The very first file Bruno exported was
+`sub4-read-back-recordings-2026-08-17-p392.txt`, and it validated the patch
+exactly: stamp, blank line, title, then the section's own lines. It also said
+
+```
+  samples walked: 1453877
+```
+
+**389a's footer says "roughly 1.6 million".** That figure was not measured; it
+was `8 × 199,848`, worked out from the row count and the number of streams. Not
+every recording carries all eight — `walkSamples` records `walked[name]` only
+where both sides have the stream — so the multiplication was an upper bound, and
+the sentence 389a REPLACED, "roughly 1.5 million", had been right for ninety-eight
+patches.
+
+**§12.127.5, in a footer somebody reads as fact:** *a sentence about what the
+data currently IS cannot be a constant.* Bought at 383 over `"none —
+match_decision holds no rows"`, and earned again here — by me, in the patch whose
+entire subject was a number being misread.
+
+The fix is not a better constant. **The magnitude is removed**: the footer keeps
+the shape — every sample of every series is what makes this the slow read-back —
+and points at the section, because since 391 the app PRINTS the number two rows
+down and in the exported file. A number the app computes has no business being
+typed beside it.
+
+The two doc comments I wrote at 389 and 391 carry the measured figure instead of
+the arithmetic. The five pre-existing "1.5 million" mentions were right and are
+untouched.
+
+**And the finding underneath it is 391's argument proving itself.** 1,453,877 is
+a number this app has computed on every roll-up since patch 294 and never once
+been able to show anybody. It took an export button for it to be read — and the
+first thing it did was correct the documentation.
+
 The half of the request 391 did not do. Twenty-two section headers on the
 Database screen gained a share control that writes that section's lines to a
 dated file.

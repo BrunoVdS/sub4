@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 392 (2026-08-17).** §5.3 is the 390 device run, Compare and
+**Current at patch 392a (2026-08-17).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and
 §5.4a are the verifier's and the roll-up's accountings, both derived; §5.5's
 first bullet is the last read-back still comparing the database with itself.
