@@ -230,11 +230,20 @@ extension ExpectationSources {
         case .commutes:       CommuteStore.shared.servedFrom == .database
         case .matchDecisions: Matcher.shared.servedFrom == .database
         case .moves:          PlanMoveStore.shared.servedFrom == .database
+        // **PATCH 394 — B4's TWO STOPPED BEING CONSTANTS AND THE ANSWER DID
+        // NOT CHANGE.** They read `false`; they now ask `DetailStore`, which
+        // serves its files because nothing hydrates it — `hydratedFamilies`
+        // does not name `.details` or `.traces` until 395. So the paste still
+        // says `fields fed by the database: 6 of 14` and the split is still
+        // 12/9/1, and the flip is one line in `PersistenceMode` rather than
+        // two more here. §12.130.2: a flip cannot leave an answer stale,
+        // because the answer IS `servedFrom`.
+        case .details:          DetailStore.shared.detailsServedFrom == .database
+        case .traces:           DetailStore.shared.tracesServedFrom == .database
         // NO STORE DECLARES THESE YET, and `ExpectationField.slice` names the
         // one that will. `false` is a statement about this build rather than a
-        // placeholder: B4, B5, B7 and B8 each turn one of these lines into a
+        // placeholder: B5, B7 and B8 each turn one of these lines into a
         // question for a store.
-        case .traces, .details: false
         case .weather:          false
         case .reviews:          false
         case .workItems:        false

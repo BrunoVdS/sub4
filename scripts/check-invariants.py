@@ -688,6 +688,66 @@ def every_collapsible_section_matches_its_header():
                        "header, so that section can never be opened — it draws "
                        "a title that ignores taps. §12.137")
 
+# --------------------------------------------------------------------------
+# RULE 8 — patch 394, §12.138
+# --------------------------------------------------------------------------
+
+# The verbs that put memory back on disk. A `hydrate` is the one function in
+# this codebase that must not use any of them.
+PERSISTENCE_VERBS = ["dirty", "save(", "write(to:", "removeItem", "set("]
+
+# THE COUNT MAY GO UP AND MUST NOT GO DOWN SILENTLY. Nine stores hydrate at
+# 394. A tenth arriving without this rule seeing it is exactly the gap.
+HYDRATING_STORES = 9
+
+
+def no_hydration_writes():
+    """**HYDRATION MUST NEVER WRITE, AND NOTHING IN THE SUITE CAN SEE IT.**
+
+    Every slice of D7 is reversible for one reason: the JSON file is still
+    written and still complete, so deleting a family from `hydratedFamilies`
+    puts the app back. That holds only while hydration is read-only. The day a
+    `hydrate` marks its ids dirty, the next drain writes the DATABASE's
+    reconstruction over the file it was reconstructed from, and the rollback
+    becomes a data loss with no symptom until somebody rolls back.
+
+    **AND THAT IS SHARPEST AT B4, WHICH IS WHY THIS RULE ARRIVES HERE.**
+    `RecordingRepository.series` reads a NULL as zero and rebuilds every
+    optional stream at `distanceM.count` (§12.38.4). A `DetailStore.hydrate`
+    that dirtied its ids would write those lossy traces over 668 real ones —
+    17.2 MB with no restore path, the largest single thing this app holds.
+
+    **WHY A SOURCE RULE AND NOT A TEST.** `dirtyDetails` is private, `save()`
+    is private, and the only caller of `save()` is behind a network drain. The
+    seam `DetailStore(directory:)` cannot write at all, so a test driving it
+    proves `mayWrite`, not this. The property is real, load-bearing, and
+    unreachable from an assertion — which is RULE 7's situation exactly.
+    """
+    rule = "hydration never writes"
+
+    seen = 0
+    for f in app_sources():
+        body = strip_comments(f.read_text())
+        for m in re.finditer(r"\n\s*(?:@\w+\s+)*(?:static\s+)?func hydrate\b", body):
+            fn = braced(body, body[m.start():m.end()])
+            if fn is None:
+                continue
+            seen += 1
+            for verb in PERSISTENCE_VERBS:
+                if verb in fn:
+                    fail(rule, f"{f.name}'s hydrate contains `{verb}`. A "
+                               "hydration that persists writes the database's "
+                               "own reconstruction over the file it came from, "
+                               "and the slice stops being reversible with no "
+                               "symptom until somebody reverses it. §12.138")
+
+    counted(rule, seen, HYDRATING_STORES, "hydrations read for a write")
+    if seen > HYDRATING_STORES:
+        fail(rule, f"{seen} hydrations exist and this rule expects "
+                   f"{HYDRATING_STORES}. Raise HYDRATING_STORES — the number is "
+                   "here so a store added without a slice's argument is a "
+                   "failure rather than a silent extra.")
+
 
 RULES = [
     every_store_that_records_a_read_refuses_a_write,
@@ -697,6 +757,7 @@ RULES = [
     pinned_counts_match_the_source,
     the_state_documents_name_the_current_patch,
     every_collapsible_section_matches_its_header,
+    no_hydration_writes,
 ]
 
 for r in RULES:

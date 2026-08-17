@@ -104,6 +104,87 @@ final class DetailStore {
     /// files is the only instance that may touch them.
     private let mayWrite: Bool
 
+    // MARK: Hydration — D7 slice B4, patch 394
+
+    /// Where the details this store is serving came from — patch 394.
+    ///
+    /// **TWO PROPERTIES, NOT ONE, AND CONSTANTS RATHER THAN DERIVED.**
+    /// §12.130.1's finding: `ActivityStore` serves the activities from rows and
+    /// the receipts and the cursor from `UserDefaults`, so one answer per store
+    /// is right for one field of three. This store serves THREE things —
+    /// details, traces, and `workItems`, which is `failed` + `noStreams` on
+    /// `UserDefaults` until **B8**.
+    ///
+    /// They are constants for `ActivityStore.receiptsServedFrom`'s reason,
+    /// which is the point: B8 moves `workItems` while these two stay, so
+    /// deriving any of the three from a single `servedFrom` is precisely the
+    /// mistake §12.130.1 records. 395 changes these two lines, here, beside the
+    /// store that owns them.
+    ///
+    /// `.files` in this build. `hydrate` is what moves them and nothing calls
+    /// it until `hydratedFamilies` names the families.
+    private(set) var detailsServedFrom: StoreSource = .files
+    private(set) var tracesServedFrom: StoreSource = .files
+
+    /// Replaces the details and the traces with the stored ones — D7 slice B4.
+    ///
+    /// **IT MARKS NOTHING DIRTY, AND THAT IS THE WHOLE SAFETY OF THIS SLICE.**
+    /// `save()` writes exactly `dirtyDetails` and `dirtyStreams` — one file per
+    /// id, and only the ids that landed since the last write. So as long as
+    /// hydration does not touch those sets, **694 detail files and 668 trace
+    /// files cannot be overwritten by rows**, and `details/` and `streams/`
+    /// stay the complete legacy copy that makes taking `.details` and `.traces`
+    /// back out of `hydratedFamilies` a rollback rather than a data loss.
+    ///
+    /// That is `NotesStore.hydrate`'s rule — *hydration must never write* — and
+    /// it is sharper here, because the reconstruction is LOSSY in two named
+    /// ways (§12.38.4): `RecordingRepository.series` reads a NULL as zero and
+    /// rebuilds every optional stream at `distanceM.count`. A hydration that
+    /// marked its ids dirty would write those reconstructions over the
+    /// athlete's real traces on the next drain. `hydrateMarksNothingDirty` is
+    /// the test.
+    ///
+    /// **HALF IS PERMITTED HERE AND NOWHERE ELSE IN THIS LADDER.** The plan and
+    /// the athlete are all-or-nothing because half a plan blanks a screen while
+    /// every other figure stays right. Details and traces share no invariant —
+    /// a split table and a heart-rate profile are drawn from different rows by
+    /// different views — and the two families flip together in 395 but can be
+    /// reverted apart. Each side is `nil` for the two distinct reasons §12.92
+    /// keeps separate, and the caller has already resolved both.
+    ///
+    /// **IT DOES NOT SETTLE, unlike `ActivityStore.hydrate`.** There is no
+    /// roster rule for details: `ActivityRoster` filters and dedups activities,
+    /// and the exclusions that matter here were applied by the IMPORTER at the
+    /// door (§12.42.2), so the rows are already the set the app would keep.
+    func hydrate(details storedDetails: [ActivityDetail]?,
+                 streams storedStreams: [ActivityStreams]?) {
+        if let storedDetails {
+            details = Dictionary(storedDetails.map { ($0.activityId, $0) },
+                                 uniquingKeysWith: { a, _ in a })
+            detailsServedFrom = .database
+        }
+        if let storedStreams {
+            streams = Dictionary(storedStreams.map { ($0.activityId, $0) },
+                                 uniquingKeysWith: { a, _ in a })
+            tracesServedFrom = .database
+        }
+        // `dirtyDetails` and `dirtyStreams` ARE NOT TOUCHED. See the doc above;
+        // this line is a comment rather than code on purpose, because the
+        // absence is the mechanism.
+    }
+
+    /// One line, always sayable, in both states — `ActivityStore.hydrationLine`'s
+    /// shape and its reason. Pure, so a test can drive it.
+    nonisolated static func hydrationLine(details: Int?, traces: Int?) -> String {
+        guard details != nil || traces != nil else {
+            return "Details and traces hydrated: no — the store is serving its "
+                 + "own files"
+        }
+        return "Details and traces hydrated: "
+            + "\(details.map(String.init) ?? "no") details, "
+            + "\(traces.map(String.init) ?? "no") traces from the database"
+    }
+
     /// **WHAT THE LAST DIRECTORY READ FOUND, AND WHAT IT COULD NOT DECODE.**
     ///
     /// `load()` has skipped an undecodable file with `continue` since 169 and

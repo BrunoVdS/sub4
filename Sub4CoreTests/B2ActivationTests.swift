@@ -96,7 +96,9 @@ struct B2ActivationTests {
             authored: .loaded(notes: [note()], commutes: [commute()], skipped: 0),
             decisions: .loaded(decisions: [decision()], skipped: 0),
             moves: .loaded(moves: [], skipped: 0),
-            activities: .loaded(activities: [], skipped: 0))
+            activities: .loaded(activities: [], skipped: 0),
+                                     details: .loaded(details: [], skipped: 0),
+                                     traces: .loaded(recordings: [], skipped: 0))
     }
 
     // MARK: The line this patch is
@@ -205,7 +207,7 @@ struct B2ActivationTests {
     func thePayloadsTravel() {
         switch HydrationPlanner.decide(mode: .shadow("B2 — a test"),
                                        bootstrap: full()) {
-        case .hydrate(_, _, _, _, let authored, let decisions, _, _):
+        case .hydrate(_, _, _, _, let authored, let decisions, _, _, _, _):
             #expect(authored != nil)
             #expect(authored?.notes.count == 1)
             #expect(authored?.commutes.count == 1)
@@ -236,7 +238,9 @@ struct B2ActivationTests {
             authored: .loaded(notes: [note()], commutes: [], skipped: 0),
             decisions: .loaded(decisions: [], skipped: 0),
             moves: .loaded(moves: [], skipped: 0),
-            activities: .loaded(activities: [], skipped: 0))
+            activities: .loaded(activities: [], skipped: 0),
+                                     details: .loaded(details: [], skipped: 0),
+                                     traces: .loaded(recordings: [], skipped: 0))
 
         #expect(b.hydratableAuthored != nil, "one note is content")
         #expect(b.hydratableDecisions == nil, "and no decision is not")
@@ -382,7 +386,7 @@ struct B2ActivationTests {
         let lines = DatabaseBootstrapReader.read(db).diagnosticLines
         let head = try #require(lines.first)
 
-        #expect(head.hasPrefix("Database bootstrap: 7 families"),
+        #expect(head.hasPrefix("Database bootstrap: 9 families"),
                 "the prefix every earlier pin was written against")
         #expect(head.contains("read at launch"))
         #expect(head.lowercased().contains("live"),

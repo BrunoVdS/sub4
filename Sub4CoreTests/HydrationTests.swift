@@ -38,6 +38,35 @@ import Foundation
 /// 261-session plan with something whose every day is known.
 enum HydrationFixtures {
 
+    // PATCH 394 — MOVED HERE FROM `HydrationDecisionTests`, WHERE THEY WERE
+    // PRIVATE. `DetailHydrationTests` needs a whole plan and a whole athlete to
+    // reach `.hydrate` at all, and a second copy of these three is a second
+    // thing that must be kept agreeing with `PlanLoad`. §12.43 — do not
+    // reimplement a rule; call it.
+    static func loadedPlan() -> PlanLoad {
+        .loaded(meta: Meta(plan: "stored", week1Monday: "2026-07-27",
+                           raceDate: "2027-03-21", targetTime: "04:00:00",
+                           targetPaceSecKm: 341),
+                weeks: [HydrationFixtures.week("w1", startDate: "2026-07-27")],
+                sessions: [HydrationFixtures.session("s0", week: "w1",
+                                                     date: "2026-07-27")],
+                version: PlanLoad.VersionNote(sourceLabel: "test",
+                                              importedUTC: "2026-08-10T00:00:00Z",
+                                              versionsPresent: 1),
+                rows: PlanLoad.TableRows(), skipped: 0)
+    }
+
+    static func loadedExtras() -> PlanExtrasLoad {
+        .loaded(fuel: nil, warmup: nil, exercises: [], skipped: 0)
+    }
+
+    static func loadedAthlete() -> AthleteLoad {
+        .loaded(constants: AthleteConstants(hrMaxObserved: 181, version: 1),
+                ftp: 270,
+                zones: [.init(index: 1, min: 0, max: 115),
+                        .init(index: 2, min: 116, max: nil)])
+    }
+
     static func week(_ uid: String, startDate: String?) -> Week {
         Week(uid: uid, weekNo: 1, label: "1", dateRange: nil,
              startDate: startDate, tag: nil, badge: nil, kind: nil,

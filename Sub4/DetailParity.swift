@@ -130,7 +130,29 @@ enum DetailSource {
         /// right. A comparison cannot: a detail the app could not read shows up
         /// as `detailsOnlyInDatabase`, which reads as *the importer wrote a row
         /// the app never had* — the opposite of what happened.
-        var isTrustworthy: Bool { directoryFound && tally.isClean }
+        ///
+        /// **PER HALF SINCE 394, AND 390 WAS OVER-STRICT.** This asked
+        /// `tally.isClean`, which is BOTH halves — so three unreadable DETAIL
+        /// files would have blinded the TRACES comparison, which had read all
+        /// 668 of its own files perfectly. It failed in the safe direction
+        /// (refusing to claim evidence rather than claiming it falsely, which
+        /// is `PersistenceAuthority.everActivated`'s argument) and it was still
+        /// wrong: the row would have said *could not read its own side* about a
+        /// side that was fine. Found reading 390 back, unreachable on a device
+        /// where every file decodes, and fixed for the shape rather than the
+        /// odds — §12.125.5's rule.
+        var detailsAreTrustworthy: Bool {
+            directoryFound && tally.detailFilesUnreadable == 0
+        }
+
+        var tracesAreTrustworthy: Bool {
+            directoryFound && tally.streamFilesUnreadable == 0
+        }
+
+        /// Both halves. Compare's slice 4 compares details and reads nothing
+        /// from the traces, so it asks `detailsAreTrustworthy`; this is for a
+        /// caller that wants the whole read.
+        var isTrustworthy: Bool { detailsAreTrustworthy && tracesAreTrustworthy }
 
         /// Printed unconditionally, and it is the sentence every count under it
         /// means. A comparison that does not say where its own side came from
@@ -142,7 +164,8 @@ enum DetailSource {
             }
             guard tally.isClean else {
                 return "the detail and trace files were read and \(tally.line) "
-                     + "— the app's own store was compared instead"
+                     + "— the app's own store was compared for whichever half "
+                     + "could not be read"
             }
             return "details/ and streams/, read directly — \(tally.line)"
         }

@@ -539,11 +539,14 @@ final class ShadowParity {
     private func detailReport(_ database: [ActivityDetail]?) -> DetailParity.Report? {
         guard let database else { return nil }
         let own = DetailSource.read()
-        let mine = own.isTrustworthy ? Array(own.details.values)
-                                     : Array(DetailStore.shared.details.values)
+        // PATCH 394 — THE DETAIL HALF, NOT BOTH. This slice compares details
+        // and reads nothing from the traces, so a trace file that would not
+        // decode is not this comparison's problem. §12.138.
+        let mine = own.detailsAreTrustworthy ? Array(own.details.values)
+                                             : Array(DetailStore.shared.details.values)
         var report = DetailParity.compare(app: mine, database: database)
         report.appSideCameFrom = own.line
-        report.appSideWasReadCleanly = own.isTrustworthy
+        report.appSideWasReadCleanly = own.detailsAreTrustworthy
         return report
     }
 }

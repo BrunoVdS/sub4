@@ -84,6 +84,28 @@ nonisolated enum DetailLoad: Sendable {
         case .failed(let why): "The database could not be read — \(why)"
         }
     }
+
+    // MARK: The bootstrap's two verdicts — patch 394, §12.92
+
+    /// Did the read succeed. **TRUE FOR A CLEAN READ OF AN EMPTY TABLE**, which
+    /// is the whole reason this is not `holdsContent` — a device between its
+    /// first launch and its first backfill reads perfectly and holds nothing.
+    ///
+    /// §12.92 removed a single `isTrustworthy` from `DatabaseBootstrap` for
+    /// exactly this: the sibling loads do not agree about what one word means,
+    /// and `&&`-ing them produced a boolean that meant neither thing.
+    var wasReadCleanly: Bool { isTrustworthy }
+
+    /// Does this family hold anything to hydrate a store from.
+    ///
+    /// FALSE IS NOT A FAULT. `skipped` deliberately does not enter: a row the
+    /// reader could not turn into an `ActivityDetail` is a fault
+    /// `wasReadCleanly` already reports, and counting it here would make the
+    /// same defect say two different things.
+    var holdsContent: Bool {
+        if case .loaded(let d, _) = self { return !d.isEmpty }
+        return false
+    }
 }
 
 nonisolated enum ActivityDetailRepository {

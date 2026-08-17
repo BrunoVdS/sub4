@@ -106,6 +106,14 @@ final class Sub4Launch {
     /// before B1 is switched on. Nil only when the open failed.
     private(set) var bootstrap: DatabaseBootstrap?
 
+    /// **WHAT THE BOOTSTRAP COST THIS LAUNCH — patch 394, §12.138.**
+    ///
+    /// The read below is awaited BEFORE `.ready`, so this is time in front of
+    /// first paint. B4 adds the two largest families the app has; the number is
+    /// taken rather than estimated, and it is taken on the launch that reads
+    /// them and feeds nothing from them — before anything depends on it.
+    private(set) var bootstrapTiming = BootstrapTiming()
+
     /// WHAT THIS LAUNCH DID ABOUT IT, and why — patch 345.
     ///
     /// §12.54.2. A launch that decided not to hydrate and said nothing would
@@ -213,10 +221,12 @@ final class Sub4Launch {
                 // device, before anything depends on it. A bootstrap first
                 // exercised on the launch that also starts depending on it is
                 // a bootstrap nobody has seen succeed.
-                let boot = await Task.detached(priority: .userInitiated) {
-                    DatabaseBootstrapReader.read(db)
+                let read = await Task.detached(priority: .userInitiated) {
+                    DatabaseBootstrapReader.timed(db)
                 }.value
+                let boot = read.bootstrap
                 self.bootstrap = boot
+                self.bootstrapTiming = read.timing
                 self.hydration = Self.apply(
                     HydrationPlanner.decide(mode: self.persistence,
                                             bootstrap: boot))
@@ -320,7 +330,8 @@ final class Sub4Launch {
             return outcome
         case .hydrate(let plan, let constants, let zones, let ftp,
                       let authored, let decisions, let storedMoves,
-                      let storedActivities):
+                      let storedActivities, let storedDetails,
+                      let storedTraces):
             PlanStore.shared.hydrate(from: plan)
             // BEFORE `applyMoves`, NOT AFTER. The plan is corrected FROM this
             // store, so a store hydrated afterwards would be right and the
@@ -373,6 +384,29 @@ final class Sub4Launch {
             if let storedActivities {
                 ActivityStore.shared.hydrate(from: storedActivities)
                 what += ", the activities"
+            }
+            // PATCH 394 — THE MACHINERY, AND IT IS UNREACHABLE UNTIL 395.
+            //
+            // Both are nil in this build because `hydratedFamilies` names
+            // neither. Written now so the flip is one line somewhere else,
+            // which is what made 346's four failures and 382's three
+            // attributable. §12.103.
+            //
+            // **ONE CALL FOR BOTH, because they are one store.** Handing over
+            // half would leave the split tables showing rows and the heart-rate
+            // profiles showing files, with nothing on screen saying which —
+            // `hydratablePlan`'s argument, and `DetailStore` is the only store
+            // in this ladder that serves two families.
+            //
+            // **TOUCHING `DetailStore.shared` IS WHAT CONSTRUCTS IT**, and from
+            // 395 that happens HERE, before `.ready`: its own `init` decodes
+            // 1,362 files and 19.1 MB, and this replaces the result. File
+            // first, rows over it, in the one main-actor step with no
+            // suspension in it. §12.138 measures what that costs.
+            if storedDetails != nil || storedTraces != nil {
+                DetailStore.shared.hydrate(details: storedDetails,
+                                           streams: storedTraces)
+                what += ", the details and the traces"
             }
             return .hydrated(what)
         }

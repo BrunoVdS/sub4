@@ -33,32 +33,47 @@ struct ActivitiesAreReadTests {
 
     // MARK: THE ONE THAT IS THE POINT
 
-    /// **THE GAP IS CLOSED — patch 382, and this is the inversion 379 wrote
-    /// this test to make visible.** Seven read, seven fed. The `>` became an
-    /// `==` and the `!` went, in a diff that also contains the line that did
-    /// it, which is the whole reason the two were separate patches.
-    @Test("The two counts have met again, and that is the flip")
-    func theTwoCountsHaveMetAgain() {
-        #expect(PersistenceAuthority.Family.allCases.count == 7)
-        #expect(PersistenceAuthority.hydratedFamilies.count == 7)
-        #expect(PersistenceAuthority.Family.allCases.count
-                == PersistenceAuthority.hydratedFamilies.count,
-                "every family the bootstrap reads is now fed to a store")
+    /// **THE GAP IS CLOSED FOR B3 — patch 382, and this is the inversion 379
+    /// wrote this test to make visible.** `.activities` is read AND fed, and
+    /// the line that did it is one line in `PersistenceMode`.
+    ///
+    /// **RESCOPED AT 394, AND IT IS §12.126.6 HAPPENING TO THE SUITE THAT
+    /// QUOTED IT.** This asserted `Family.allCases.count ==
+    /// hydratedFamilies.count` and called it "the flip" — a GLOBAL claim in a
+    /// suite about one slice. It was true from 382 to 393 and B4's groundwork
+    /// makes it false on purpose: nine families read, seven fed, and **that gap
+    /// IS the slice**. 382 wrote exactly this criticism of `B2ActivationTests`
+    /// ("four global figures in a suite about one slice… every later slice
+    /// breaks all four, and the breakage says nothing about B2") and then left
+    /// the same shape here.
+    ///
+    /// What B3 owns is that ITS family is read and fed. The global counts have
+    /// one home — RULE 5, which derives both from the source.
+    @Test("The activities are read and fed, and that is the flip")
+    func theActivitiesAreReadAndFed() {
+        #expect(PersistenceAuthority.Family.allCases.contains(.activities))
         #expect(PersistenceAuthority.hydrates(.activities),
                 "and the line that did it is one line in PersistenceMode")
     }
 
-    /// **THE SET COMPARISON SURVIVES THE FLIP, AND IT IS WHY IT WAS WRITTEN
-    /// AS A SET.** A count of 7 against 7 could hide one family dropping out
-    /// as another joined; the two subtractions cannot.
-    @Test("Nothing is read that is not fed, and nothing fed that is not read")
-    func theTwoSetsAreTheSame() {
+    /// **NOTHING IS FED THAT IS NOT READ, AND THAT DIRECTION STILL HOLDS FOR
+    /// EVER.** The other one does not: a family read before it is fed is what
+    /// every slice looks like between its groundwork and its flip, and 394 has
+    /// two of them.
+    ///
+    /// So the subtraction that survives is the one whose emptiness is a real
+    /// invariant — a store fed from a family the bootstrap never read would be
+    /// a store hydrating from nothing, which is `Sub4Launch`'s worst failure.
+    /// The other subtraction is now NAMED rather than asserted empty, because
+    /// what it holds is the slice in flight.
+    @Test("Nothing is fed that is not read, and the gap is the slice")
+    func nothingIsFedThatIsNotRead() {
         let read = Set(PersistenceAuthority.Family.allCases)
         let fed = PersistenceAuthority.hydratedFamilies
-        #expect(read.subtracting(fed).isEmpty,
-                "the gap closed at 382 and nothing else opened one")
         #expect(fed.subtracting(read).isEmpty,
-                "and nothing is fed that the bootstrap does not read")
+                "a store fed from a family nobody read hydrates from nothing")
+        #expect(read.subtracting(fed) == [.details, .traces],
+                "B4's two, read at 394 and fed at 395 — the gap IS the slice")
     }
 
     // MARK: The read itself
@@ -68,7 +83,7 @@ struct ActivitiesAreReadTests {
         let db = try Sub4Database.inMemory()
         let b = DatabaseBootstrapReader.read(db)
 
-        #expect(DatabaseBootstrap.fieldCount == 7)
+        #expect(DatabaseBootstrap.fieldCount == 9)
         #expect(DatabaseBootstrap.diagnosticLineCount
                 == DatabaseBootstrap.fieldCount + 6,
                 "derived, so only the family term moves")
@@ -104,7 +119,9 @@ struct ActivitiesAreReadTests {
             plan: .unavailable, extras: .unavailable, athlete: .unavailable,
             authored: .unavailable, decisions: .unavailable,
             moves: .unavailable,
-            activities: .failed("no such table: activity"))
+            activities: .failed("no such table: activity"),
+                                     details: .loaded(details: [], skipped: 0),
+                                     traces: .loaded(recordings: [], skipped: 0))
         #expect(!b.wasReadCleanly)
         #expect(b.firstFault?.contains("plan") == true,
                 "field order — the plan failed first and is what gets named")
@@ -114,7 +131,9 @@ struct ActivitiesAreReadTests {
             extras: .noActiveVersion(versionsPresent: 0),
             athlete: .missing, authored: .noneWritten,
             decisions: .noneRecorded, moves: .loaded(moves: [], skipped: 0),
-            activities: .failed("no such table: activity"))
+            activities: .failed("no such table: activity"),
+                                     details: .loaded(details: [], skipped: 0),
+                                     traces: .loaded(recordings: [], skipped: 0))
         #expect(!onlyActivities.wasReadCleanly,
                 "the seventh family can fail the whole verdict on its own")
         #expect(onlyActivities.firstFault?.contains("activities") == true)
@@ -147,7 +166,9 @@ struct ActivitiesAreReadTests {
                              zones: [.init(index: 1, min: 0, max: 115)]),
             authored: .noneWritten, decisions: .noneRecorded,
             moves: .loaded(moves: [], skipped: 0),
-            activities: .loaded(activities: [], skipped: 0))
+            activities: .loaded(activities: [], skipped: 0),
+                                     details: .loaded(details: [], skipped: 0),
+                                     traces: .loaded(recordings: [], skipped: 0))
 
         #expect(planned.canHydrate,
                 "the plan, its trimmings and the athlete are all here")

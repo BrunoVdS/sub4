@@ -412,12 +412,13 @@ enum ReadBacks {
     async -> (load: DetailLoad, report: DetailRoundTrip.Report?,
               source: ReadBackSource) {
         let own = DetailSource.read()
-        let store = own.isTrustworthy ? Array(own.details.values)
-                                      : Array(DetailStore.shared.details.values)
+        // PATCH 394 — its own half. See `DetailSource.Read.detailsAreTrustworthy`.
+        let store = own.detailsAreTrustworthy ? Array(own.details.values)
+                                              : Array(DetailStore.shared.details.values)
         let load = ActivityDetailRepository.all(db)
         return (load, load.details.map {
             DetailRoundTrip.compare(store: store, database: $0)
-        }, own.isTrustworthy
+        }, own.detailsAreTrustworthy
             ? .ownRead(own.line)
             : .fellBackToStores(why: own.line,
                                 [.from(.details,
@@ -456,10 +457,12 @@ enum ReadBacks {
     static func recordings(_ db: Sub4Database)
     async -> (report: RecordingRoundTrip.Report, source: ReadBackSource) {
         let own = DetailSource.read()
-        let store = own.isTrustworthy ? Array(own.streams.values)
-                                      : Array(DetailStore.shared.streams.values)
+        // PATCH 394 — its own half. A detail file that will not decode is not
+        // this comparison's problem; 390 made it one.
+        let store = own.tracesAreTrustworthy ? Array(own.streams.values)
+                                             : Array(DetailStore.shared.streams.values)
         return (await RecordingRoundTrip.compareOffMain(db, store: store),
-                own.isTrustworthy
+                own.tracesAreTrustworthy
                     ? .ownRead(own.line)
                     : .fellBackToStores(why: own.line,
                                         [.from(.traces,

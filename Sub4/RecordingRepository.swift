@@ -79,6 +79,18 @@ nonisolated enum RecordingLoad: Sendable {
         case .failed(let why): "The database could not be read — \(why)"
         }
     }
+
+    // MARK: The bootstrap's two verdicts — patch 394, §12.92
+
+    /// Did the read succeed. TRUE FOR A CLEAN READ OF AN EMPTY TABLE — see
+    /// `DetailLoad.wasReadCleanly` for why this is two questions and not one.
+    var wasReadCleanly: Bool { isTrustworthy }
+
+    /// Does this family hold anything to hydrate a store from.
+    var holdsContent: Bool {
+        if case .loaded(let r, _) = self { return !r.isEmpty }
+        return false
+    }
 }
 
 /// A reason a read failed, as something `Result` will accept — 292a.

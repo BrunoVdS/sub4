@@ -199,6 +199,13 @@ nonisolated enum PersistenceAuthority {
         /// store from it, which is what `hydratedFamilies` not naming it
         /// means. 380 builds the machinery and 381 is the flip. §12.123.
         case activities
+        /// **PATCH 394 — D7 slice B4, and the two that separate the counts
+        /// again.** The bootstrap reads both as of this patch; nothing feeds a
+        /// store from either, which is what `hydratedFamilies` not naming them
+        /// means. 395 is the flip. §12.123's shape, one slice later — a family
+        /// read before it is fed is what 344/346, 357/358 and 379/382 all
+        /// looked like.
+        case details, traces
     }
 
     /// **PATCH 358 WAS THIS LINE, AND 379 IS WHERE IT STOPPED BEING THE
@@ -224,6 +231,11 @@ nonisolated enum PersistenceAuthority {
     /// can be fed without anything losing its ability to disagree. Reversible
     /// by deleting `.activities` from this line — `activities.json` is still
     /// written and still complete, which is what makes a slice a slice.
+    /// **PATCH 394 LEAVES THIS LINE ALONE, AND THAT IS THE PATCH.** `.details`
+    /// and `.traces` are in `Family` and in the bootstrap and are NOT here, so
+    /// nine families are read and seven are fed. **That gap is the slice.** 395
+    /// adds the two, and because it adds nothing else, any failure it produces
+    /// is attributable — 346's four failures were, and 382's three were.
     static let hydratedFamilies: Set<Family> = [.plan, .extras, .athlete,
                                                 .authored, .decisions, .moves,
                                                 .activities]

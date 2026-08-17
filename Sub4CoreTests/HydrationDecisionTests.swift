@@ -38,37 +38,15 @@ struct HydrationDecisionTests {
 
     // MARK: Fixtures
 
-    private func loadedPlan() -> PlanLoad {
-        .loaded(meta: Meta(plan: "stored", week1Monday: "2026-07-27",
-                           raceDate: "2027-03-21", targetTime: "04:00:00",
-                           targetPaceSecKm: 341),
-                weeks: [HydrationFixtures.week("w1", startDate: "2026-07-27")],
-                sessions: [HydrationFixtures.session("s0", week: "w1",
-                                                     date: "2026-07-27")],
-                version: PlanLoad.VersionNote(sourceLabel: "test",
-                                              importedUTC: "2026-08-10T00:00:00Z",
-                                              versionsPresent: 1),
-                rows: PlanLoad.TableRows(), skipped: 0)
-    }
-
-    private func loadedExtras() -> PlanExtrasLoad {
-        .loaded(fuel: nil, warmup: nil, exercises: [], skipped: 0)
-    }
-
-    private func loadedAthlete() -> AthleteLoad {
-        .loaded(constants: AthleteConstants(hrMaxObserved: 181, version: 1),
-                ftp: 270,
-                zones: [.init(index: 1, min: 0, max: 115),
-                        .init(index: 2, min: 116, max: nil)])
-    }
-
     /// Everything present and readable — the state Bruno's device is in.
     private func whole() -> DatabaseBootstrap {
-        DatabaseBootstrap(plan: loadedPlan(), extras: loadedExtras(),
-                          athlete: loadedAthlete(),
+        DatabaseBootstrap(plan: HydrationFixtures.loadedPlan(), extras: HydrationFixtures.loadedExtras(),
+                          athlete: HydrationFixtures.loadedAthlete(),
                           authored: .noneWritten, decisions: .noneRecorded,
                           moves: .loaded(moves: [], skipped: 0),
-                          activities: .loaded(activities: [], skipped: 0))
+                          activities: .loaded(activities: [], skipped: 0),
+                          details: .loaded(details: [], skipped: 0),
+                          traces: .loaded(recordings: [], skipped: 0))
     }
 
     /// A migrated database nobody has imported into.
@@ -78,7 +56,9 @@ struct HydrationDecisionTests {
                           athlete: .missing,
                           authored: .noneWritten, decisions: .noneRecorded,
                           moves: .loaded(moves: [], skipped: 0),
-                          activities: .loaded(activities: [], skipped: 0))
+                          activities: .loaded(activities: [], skipped: 0),
+                          details: .loaded(details: [], skipped: 0),
+                          traces: .loaded(recordings: [], skipped: 0))
     }
 
     private func isHydrate(_ i: HydrationPlanner.Instruction) -> Bool {
@@ -142,7 +122,8 @@ struct HydrationDecisionTests {
                                         bootstrap: whole())
         guard case .hydrate(let plan, let constants, let zones, let ftp,
                             let authored, let decisions,
-                            let storedMoves, let storedActivities) = i else {
+                            let storedMoves, let storedActivities,
+                            let storedDetails, let storedTraces) = i else {
             Issue.record("every family loaded, so the stores must be fed")
             return
         }
@@ -201,12 +182,14 @@ struct HydrationDecisionTests {
     @Test("A failed plan read is refused and carries no plan")
     func aFailedPlanReadIsRefusedAndCarriesNoPlan() {
         let broken = DatabaseBootstrap(plan: .failed("database disk image is malformed"),
-                                       extras: loadedExtras(),
-                                       athlete: loadedAthlete(),
+                                       extras: HydrationFixtures.loadedExtras(),
+                                       athlete: HydrationFixtures.loadedAthlete(),
                                        authored: .noneWritten,
                                        decisions: .noneRecorded,
                                        moves: .loaded(moves: [], skipped: 0),
-                                       activities: .loaded(activities: [], skipped: 0))
+                                       activities: .loaded(activities: [], skipped: 0),
+                                       details: .loaded(details: [], skipped: 0),
+                                       traces: .loaded(recordings: [], skipped: 0))
         let i = HydrationPlanner.decide(mode: .shadow("B1"), bootstrap: broken)
 
         #expect(!isHydrate(i), "no plan may leave this function")
@@ -231,7 +214,9 @@ struct HydrationDecisionTests {
                                      authored: .noneWritten,
                                      decisions: .noneRecorded,
                                      moves: .loaded(moves: [], skipped: 0),
-                                     activities: .loaded(activities: [], skipped: 0))
+                                     activities: .loaded(activities: [], skipped: 0),
+                                     details: .loaded(details: [], skipped: 0),
+                                     traces: .loaded(recordings: [], skipped: 0))
         let i = HydrationPlanner.decide(mode: .shadow("B1"), bootstrap: both)
         #expect(outcome(i)?.isFault == true)
     }
@@ -255,13 +240,15 @@ struct HydrationDecisionTests {
     /// than not hydrating, because it looks fine.
     @Test("A plan with no trimmings is not hydrated")
     func aPlanWithNoTrimmingsIsNotHydrated() {
-        let half = DatabaseBootstrap(plan: loadedPlan(),
+        let half = DatabaseBootstrap(plan: HydrationFixtures.loadedPlan(),
                                      extras: .noActiveVersion(versionsPresent: 0),
-                                     athlete: loadedAthlete(),
+                                     athlete: HydrationFixtures.loadedAthlete(),
                                      authored: .noneWritten,
                                      decisions: .noneRecorded,
                                      moves: .loaded(moves: [], skipped: 0),
-                                     activities: .loaded(activities: [], skipped: 0))
+                                     activities: .loaded(activities: [], skipped: 0),
+                                     details: .loaded(details: [], skipped: 0),
+                                     traces: .loaded(recordings: [], skipped: 0))
         let i = HydrationPlanner.decide(mode: .shadow("B1"), bootstrap: half)
         #expect(!isHydrate(i))
         #expect(outcome(i)?.isFault == false, "absent trimmings are not a read failure")
@@ -274,13 +261,15 @@ struct HydrationDecisionTests {
     func aStoredPlanWithNoAthleteIsNotHydrated() {
         let i = HydrationPlanner.decide(
             mode: .shadow("B1"),
-            bootstrap: DatabaseBootstrap(plan: loadedPlan(),
-                                         extras: loadedExtras(),
+            bootstrap: DatabaseBootstrap(plan: HydrationFixtures.loadedPlan(),
+                                         extras: HydrationFixtures.loadedExtras(),
                                          athlete: .missing,
                                          authored: .noneWritten,
                                          decisions: .noneRecorded,
                                          moves: .loaded(moves: [], skipped: 0),
-                                         activities: .loaded(activities: [], skipped: 0)))
+                                         activities: .loaded(activities: [], skipped: 0),
+                                         details: .loaded(details: [], skipped: 0),
+                                         traces: .loaded(recordings: [], skipped: 0)))
         #expect(!isHydrate(i))
         guard case .nothingStored(let who)? = outcome(i) else {
             Issue.record("a missing profile is not a fault")

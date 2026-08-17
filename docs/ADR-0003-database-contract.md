@@ -8962,6 +8962,160 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.138 Nine families read, seven fed — patch 394, D7 slice B4
+
+**394 changes nothing the app does, and that is the entire specification.**
+`DatabaseBootstrapReader` now reads `activity_detail` and `recording` on every
+launch, `DetailStore` can be fed from them, `HydrationPlanner` decides about
+them — and `hydratedFamilies` does not name either, so the decision is made
+and thrown away. **Nine families are read, seven are fed, and that gap is the
+slice.** 395 adds two enum cases to one line.
+
+The shape is 344/346's, 357/358's and 380/382's, and it is kept for the reason
+those three paid for: when the flip is the only thing in its patch, anything
+that breaks on flip day is attributable to it. 346 produced four failures and
+382 produced three, and every one was diagnosed in minutes because there was
+nothing else in the patch to suspect.
+
+### 12.138.1 The launch cost is measured, not estimated
+
+This was B4's one open question and it is why 394 exists as its own patch rather
+than as the first half of 395. `DatabaseBootstrapReader.read` is awaited BEFORE
+`.ready` (§12.92.6 — the ordering is itself a defect fix and must not be
+undone), so every millisecond it takes sits in front of first paint. Seven
+families were 1,200 plan rows and 694 activities. B4 adds 694 details with their
+splits, laps and best efforts, and **668 recordings over 199,848 sample rows** —
+by a wide margin the largest read this app makes.
+
+**The estimate available before this patch was wrong in a way worth recording.**
+It was `668 × DatabaseBenchmark.Budget.readMillisecondsPerRecording` = 3.3 s —
+a budget CEILING asserted at the ten-thousand-activity design target, read as a
+prediction for this database. §12.136.8 is the last time a figure in this area
+was computed instead of read, and that one reached a device footer.
+
+So `BootstrapTiming` carries three numbers and the paste prints them
+unconditionally on every launch, including the fast ones — a launch too quick
+to notice must still print, or a slow one cannot be told from a line nobody
+wired in (§12.54.2). **The two new families are timed apart from the seven**,
+because *the bootstrap got slower* and *the traces are the reason* are different
+findings and only one of them names a fix. `theOtherSeven` is a subtraction
+rather than a third measurement: a number derived from two cannot drift from
+them. It is clamped at zero — the inner measurements are separate `measure`
+calls inside the outer one, and a negative duration in the paste would read as a
+defect in the app rather than in arithmetic.
+
+`read(_:)` stays and gains a sibling rather than a wider signature. Widening it
+would have made every caller that wants a bootstrap carry a stopwatch it
+discards — §12.95.4's shape, one indirection over.
+
+### 12.138.2 Lazy reads are ruled out, and by something already in the tree
+
+The obvious alternative to reading 199,848 rows at launch is not reading them at
+launch. It does not survive contact with `LoadStore`, which keys its recompute
+on `streamCount` and walks every trace to build the load series. A lazy
+per-activity read would turn one bulk query into 668 of them on the first screen
+that draws a chart, which is the same work later and in a worse place.
+
+### 12.138.3 Two `servedFrom` properties, because the store serves three things
+
+§12.130.1's finding applied before it could be forgotten. `DetailStore` serves
+details, traces, and `workItems` — and `workItems` is `failed` + `noStreams` on
+`UserDefaults` until **B8**. One `servedFrom` per store was wrong for five of
+the verifier's twenty-two comparisons in both directions; here it would be
+wrong for one of three fields, and would go wrong again at B8 when the third
+moves and these two do not.
+
+They are constants rather than derived, for `ActivityStore.receiptsServedFrom`'s
+reason: **a sentence about what the data currently IS cannot be a constant
+(§12.127.5), but a sentence about what this BUILD does is exactly that.** 395
+changes these two lines, beside the store that owns them.
+
+### 12.138.4 Hydration must never write, and RULE 8 is what says so
+
+Every slice of D7 is reversible for one reason: the JSON file is still written
+and still complete, so deleting a family from `hydratedFamilies` puts the app
+back. **That holds only while hydration is read-only.** The day a `hydrate`
+marks its ids dirty, the next drain writes the database's reconstruction over
+the file it was reconstructed from, and the rollback becomes a data loss with no
+symptom until somebody rolls back.
+
+**It is sharpest here.** `RecordingRepository.series` reads a NULL as zero and
+rebuilds every optional stream at `distanceM.count` (§12.38.4). A
+`DetailStore.hydrate` that dirtied its ids would write those lossy traces over
+668 real ones — 17.2 MB with no restore path, the largest single thing this app
+holds. So `hydrate` touches neither `dirtyDetails` nor `dirtyStreams`, and the
+comment saying so is a comment because **the absence is the mechanism**.
+
+**AND NOTHING IN THE SUITE CAN SEE IT.** `dirtyDetails` is private, `save()` is
+private, and `save()`'s only caller is behind a network drain. The seam
+`DetailStore(directory:)` refuses every write, so a test driving it proves
+`mayWrite` and not this. That is RULE 7's situation exactly — a real,
+load-bearing property that no assertion can reach — so it gets the same answer:
+**RULE 8 reads the body of all nine `hydrate` functions and fails on any
+persistence verb.** Its negative control fires. The count of hydrations is
+pinned too, so a tenth store arriving without this argument is a failure rather
+than a silent extra.
+
+### 12.138.5 Half is permitted here, and nowhere else in this ladder
+
+The plan and the athlete are all-or-nothing because half a plan blanks a screen
+while every other figure stays right (§12.43, on `hydratablePlan`). Details and
+traces share no invariant — a split table and a heart-rate profile are drawn
+from different rows by different views — so they flip together in 395 and can be
+reverted apart, and `hydrationLine` can say *694 details, no traces* without
+that reading as a fault.
+
+Each side is still `nil` for the two distinct reasons §12.92 keeps separate:
+this build does not feed it, or the table read cleanly and holds nothing. **An
+empty `recording` table is the backfill mid-flight**, which is precisely what
+this device looked like for three days in August; hydrating there would blank
+every heart-rate profile and every map on the phone and take `streamCount` to
+zero with them.
+
+### 12.138.6 Four negative controls, and the first one never reached the suite
+
+§12.69, run before the patch was called finished:
+
+| sabotage | what caught it |
+|---|---|
+| `hydratableTraces` without its `holdsContent` guard | `anEmptyTableIsNotOffered` |
+| `theOtherSeven` without its clamp | `theBootstrapTimingIsUnconditional` |
+| `hydrate` merging instead of replacing | two tests, two files |
+| `hydrate` marking its ids dirty | **RULE 8** |
+| `.details` added to `hydratedFamilies` | **RULE 5, before xcodebuild starts** |
+
+The last is the one worth recording. `ActivityHydrationTests` pins
+`hydratedFamilies.count` at 7, `check-invariants.py` runs first in `test.sh` and
+is fatal, so the flip cannot be made by editing one line and hoping — it has to
+be taken as a decision in the patch that takes it. `twoFamiliesAreReadAndNotFed`
+is therefore the *second* thing that fails, not the first, which is the right
+order: a pin that reports before the simulator boots is worth more than one that
+reports two minutes in.
+
+### 12.138.7 What moved with `fieldCount`
+
+7 → 9, and `diagnosticLineCount` is written `fieldCount + 6` so only the family
+term moved. Fourteen pins across seven test files moved with them, and RULE 5
+failed the build before a test ran, which is what it is for (§12.121.8). Two
+paste lines were added to `DatabaseBootstrap.diagnosticLines`, two store lines
+and the timing and hydration lines to `DatabaseHealthView` — all unconditional.
+
+The three fixtures `HydrationDecisionTests` kept private (`loadedPlan`,
+`loadedExtras`, `loadedAthlete`) moved onto `HydrationFixtures`, because
+`DetailHydrationTests` needs a whole plan and a whole athlete to reach
+`.hydrate` at all and a second copy is a second thing to keep agreeing with
+`PlanLoad`. §12.43.
+
+### 12.138.8 What 395 is, and what the device has to say first
+
+395 adds `.details` and `.traces` to `hydratedFamilies` and extends
+`sliceUnderTest`. Nothing else. Before it lands, the device must report the
+bootstrap timing from a 394 launch — that number is the whole reason 394 is a
+patch, and it is taken on the launch that reads both families and feeds neither,
+before anything depends on it.
+
+---
+
 ## 12.137 Twenty-two sections that open and close — patch 393
 
 The other half of the request, and the risky half: `DatabaseHealthView` is where

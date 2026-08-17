@@ -6,10 +6,10 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 393a (2026-08-17).** §5.3 is the 390 device run, Compare and
-the roll-up together; §5.4 and
-§5.4a are the verifier's and the roll-up's accountings, both derived; §5.5's
-first bullet is the last read-back still comparing the database with itself.
+**Current at patch 394 (2026-08-17).** §5.3 is the 390 device run, Compare and
+the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
+accountings, both derived; §5.5's first bullet is the last read-back still
+comparing the database with itself.
 
 **§5 IS THIS PROJECT'S ONLY STATEMENT OF CURRENT STATE.** Every other document
 either points at it or is dated history. That rule exists because the opposite
@@ -366,13 +366,13 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 393, 2026-08-17
+## 5. State — patch 394, 2026-08-17
 
 **THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Everything below is
-current at 393; §5.3 is what the device said at 390, and §5.4 is the accounting
-that has now been wrong twice and corrected twice. Anything older
-than this section is history and lives in ADR §12; if a number here disagrees
-with the code, the code wins and this section is the defect.
+current at 394; §5.3 is what the device said at 390 and **394 has not been on
+the phone yet**; §5.4 is the accounting that has been wrong twice and corrected
+twice. Anything older is history and lives in ADR §12; if a number here
+disagrees with the code, the code wins and this section is the defect.
 
 ### 5.1 Where the ladder is
 
@@ -384,7 +384,7 @@ with the code, the code wins and this section is the defect.
 | **D7 B1** — the plan, the athlete, the constants | done, 344–346 |
 | **D7 B2** — notes, commutes, match decisions, plan moves | done, 355–358 and 377 |
 | **D7 B3** — the activities | **done, 379–383** |
-| **D7 B4** — details, traces | **388–390 done; 394, 395 to go** — `D7-B4-GROUNDWORK.md` |
+| **D7 B4** — details, traces | **388–390, 394 done; 395 is the flip** — `D7-B4-GROUNDWORK.md` |
 | D7 B5 — weather, gear | not started |
 | D7 B6 — derived metrics | not started |
 | D7 B7 — reviews | not started, and blocked until a real review exists |
@@ -394,19 +394,25 @@ with the code, the code wins and this section is the defect.
 
 ### 5.2 What the app reads from the database today
 
-Eight lines in the paste say it, and they are the first fact to check when a
+Ten lines in the paste say it, and they are the first fact to check when a
 screen looks wrong:
 
 - **the database**: the plan and its trimmings, the constants, the athlete's
   zones and FTP, the notes, the commute decisions, the match decisions, the
   plan moves, **and the activities**
-- **the app's own files**: gear and weather (B5), details and traces (B4),
+- **the app's own files**: gear and weather (B5), **details and traces**,
   reviews (B7), the sync cursor, work queue and rejection receipts (B8, all
   `UserDefaults`). `AthleteStore` is half-and-half and says so.
 
+**394 READS NINE FAMILIES AND FEEDS SEVEN.** Details and traces are read on
+every launch, offered to `DetailStore`, and refused — `hydratedFamilies` does
+not name them until 395. **That gap is the slice**, and it is what makes 395's
+failures attributable to 395.
+
 **Every JSON store is still written and still complete.** That is what makes a
 slice reversible by deleting one family from `hydratedFamilies`, and it is why
-hydration must never write.
+hydration must never write — checked at 394 by RULE 8 over all nine
+`hydrate` functions, because no assertion in the suite can reach it.
 
 ### 5.3 The evidence, from the device at 390 on 17 August 11:07
 
@@ -432,9 +438,7 @@ unexplained differences.**
   **`recording_sample 199848`**, `weather 603`. **`Traces still to fetch: 0`**;
   26 of 694 have none (24 under 500 m, 2 empty, **0 unexplained**).
 - **`Detail and trace files: 694 … 668 …, all readable`** — 390's line; the seam
-  read that 19.1 MB twice with every file still there. **391 added the activity,
-  detail, recording and write-through breakdowns, which were screen-only and are
-  why the screenshots existed; 392 gave every section its own export.**
+  read that 19.1 MB twice with every file still there.
 
 **The count reached 12 by two corrections** — 384 printed 14 (§12.129), 385 made
 it 13, 388 made it 12. §12.128–§12.134.
@@ -548,30 +552,25 @@ a fallback, which turns the row red. §12.133, §12.134.
    was this list asking for something the calendar forbids. B7 is blocked on the
    same fact. **AND ONE OF THE EIGHT IS NOT EVIDENCE** — §5.4a counts it, §5.5
    names it.
-2. **THE DATABASE SCREEN, 391–393**, interleaved into B4 at Bruno's request,
-   **all three done**. 391 was the one that mattered: three read-backs and the
-   write-through put nothing in the paste, so the only way to read which field
-   differed was a screenshot (§12.135). 392 gave all twenty-two headers a share
-   control handing over that section's own lines (§12.136). **393 collapses
-   them, closed by default, state dying with the sheet** — with
-   `if isExpanded(key)` rather than `Section(isExpanded:)`, so a closed
-   section's rows are NOT EVALUATED and this screen's worst-case body gets
-   smaller rather than larger. Footers collapse too, or it would barely shrink.
-   **RULE 7 matches every header key against every content key** — both live in
-   SwiftUI bodies where no test reaches them (§12.137). **393 needs one device
-   answer: does the tab open.**
-3. **B4 — details and traces: 388, 389, 390 done; 394, 395 to go.**
-   **`docs/D7-B4-GROUNDWORK.md`** is the plan. The residual stopped counting as
-   evidence, the roll-up counts its own, and Compare's slice 4 plus three
+2. **THE DATABASE SCREEN, 391–393a — done and confirmed on the phone.** 391
+   put three read-backs and the write-through into the paste, which is why the
+   screenshots existed (§12.135); 392 gave all twenty-two headers their own
+   export (§12.136); 393 collapsed them with `if isExpanded(key)`, so a closed
+   section's rows are NOT EVALUATED and §12.76's worst case got smaller rather
+   than larger. **RULE 7 joins every header key to every content key**, both
+   invisible to the suite (§12.137).
+3. **B4 — details and traces: 388–390 and 394 done; 395 IS THE FLIP.**
+   **`docs/D7-B4-GROUNDWORK.md`** is the plan. Compare's slice 4 and three
    read-backs read the files for themselves through a `DetailStore(directory:)`
-   seam that refuses every write in that class (§5.4, §5.4a, §12.134). **394**
-   builds the machinery switched off and measures the launch cost; **395** is
-   the flip.
-   **The one open question is that launch cost**: the bootstrap is awaited
-   before `.ready`, and lazy per-activity reads are ruled out because
-   `LoadStore` keys on `streamCount` and walks every trace. The read is
-   **199,848 sample rows**, not the 1.5 M this file used to say — that figure was
-   `ReadBacks.recordings`' COMPARISON count read as a row count. 394 measures it.
+   seam that refuses every write (§5.4, §5.4a, §12.134). **394 built the
+   machinery switched off**: nine families read, seven fed, and RULE 5 blocks
+   the flip until it is taken as a decision (§12.138).
+   **THE OPEN QUESTION IS THE LAUNCH COST AND ONLY THE PHONE CAN ANSWER IT.**
+   The bootstrap is awaited before `.ready`; lazy per-activity reads are ruled
+   out because `LoadStore` keys on `streamCount` and walks every trace. The read
+   is **199,848 sample rows** — not the 1.5 M this file used to say, which was
+   `ReadBacks.recordings`' COMPARISON count. 394 prints `Bootstrap read:` with
+   the two new families timed apart from the seven. **395 waits on that line.**
 4. **B5 — weather and gear**, including `ReadBacks.knownActivityIDs` and the
    `WeatherGearRoundTrip` read-back's own read. **Gear is the half of
    `AthleteStore` B1 did not take**, so the verifier's `gear` comparison is

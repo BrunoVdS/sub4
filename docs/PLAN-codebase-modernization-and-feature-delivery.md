@@ -10,7 +10,7 @@
 | **Persistence authority** | `docs/ADR-0003-database-contract.md` |
 | **Source-transition authority** | `docs/ADR-0002-strava-retirement.md` and `docs/PLAN-cutover-v2.md` |
 
-> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 393.**
+> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 394.**
 >
 > It was written against patch 334 and its opening stages describe work that has
 > since shipped: D6c closed at 330, and D7's B0, B1, B2 and B3 landed at 342,
@@ -22,7 +22,7 @@
 > the restructure and feature delivery. Where the two disagree about the present,
 > §5 wins; where they disagree about the sequence, this document does.
 >
-> **Progress against this plan, at 393.** Stage A's database-shadow work is
+> **Progress against this plan, at 394.** Stage A's database-shadow work is
 > closed. D7 has run B0 through B3 and the app reads the plan, the athlete, the
 > authored data and all 694 activities from SQLite on every launch, with a
 > verified migration run over that data. 385 through 388 are not slices: they
@@ -35,14 +35,21 @@
 > made `isTrustworthyEvidence` capable of failing at B9 rather than only
 > appearing to be. §12.130–§12.132.
 >
-> **B4 — details and traces — is under way in five patches**, 388 through 392.
-> Its enumeration is `docs/D7-B4-GROUNDWORK.md`: the flip empties five verifier
-> comparisons, Compare's slice 4 and two read-backs, and §12.125's rule is that
-> the patch before a flip is the one that asks what the flip makes vacuous. 389
-> extended that accounting to the read-back roll-up, where two rows had been the
-> database against itself since 346 and 382 with no way for the screen to say so.
-> §5.6 of `CLAUDE.md` carries the order and the one open question — the launch
-> cost of reading 668 traces and 199,848 samples before `.ready`.
+> **B4 — details and traces — is one patch from its flip.** Its enumeration is
+> `docs/D7-B4-GROUNDWORK.md`: the flip empties five verifier comparisons,
+> Compare's slice 4 and two read-backs, and §12.125's rule is that the patch
+> before a flip is the one that asks what the flip makes vacuous. 388 through
+> 390 did that, and 389 extended the same accounting to the read-back roll-up,
+> where two rows had been the database against itself since 346 and 382 with no
+> way for the screen to say so. 391 through 393a were the Database screen,
+> interleaved at Bruno's request.
+>
+> **394 built the machinery and switched it off: nine families are read and
+> seven are fed, and that gap is the slice** (§12.138). It also takes the
+> measurement B4's plan called its one open question — what reading 668 traces
+> and 199,848 samples costs in front of first paint — on the launch that reads
+> them and feeds nothing from them. **395 is the flip and waits on that number
+> from the phone.** §5.6 of `CLAUDE.md` carries the order.
 
 ## 1. Outcome
 

@@ -3858,6 +3858,17 @@ struct DatabaseHealthView: View {
             l.append("Database bootstrap: not assembled — the database did "
                      + "not open this launch")
         }
+        // PATCH 394 — WHAT THE BOOTSTRAP COST, UNCONDITIONALLY. §12.138: B4
+        // adds the two largest families the app has and the read is awaited
+        // before `.ready`, so this is time in front of first paint. Printed on
+        // every launch, including the fast ones, or a slow one cannot be told
+        // from a line nobody wired in.
+        l.append(Sub4Launch.shared.bootstrapTiming.line)
+        l.append(DetailStore.hydrationLine(
+            details: DetailStore.shared.detailsServedFrom == .database
+                ? DetailStore.shared.details.count : nil,
+            traces: DetailStore.shared.tracesServedFrom == .database
+                ? DetailStore.shared.streams.count : nil))
         l.append("Plan store reads: \(PlanStore.shared.servedFrom.line)")
         l.append("Athlete store reads: \(AthleteStore.shared.servedFrom.line)")
         l.append("Constants store reads: \(ConstantsStore.shared.servedFrom.line)")
@@ -3866,6 +3877,12 @@ struct DatabaseHealthView: View {
         l.append("Matcher reads: \(Matcher.shared.servedFrom.line)")
         l.append("Move store reads: \(PlanMoveStore.shared.servedFrom.line)")
         l.append("Activity store reads: \(ActivityStore.shared.servedFrom.line)")
+        // PATCH 394 — THE NINTH AND TENTH STORE LINES, and the family is not
+        // fed yet. 380's argument one slice later: a store with no line cannot
+        // be told from a store nobody wired in (§12.54.2), and the line has to
+        // exist BEFORE the thing it reports on. They say the files until 395.
+        l.append("Detail store reads: \(DetailStore.shared.detailsServedFrom.line)")
+        l.append("Trace store reads: \(DetailStore.shared.tracesServedFrom.line)")
         return l
     }
 

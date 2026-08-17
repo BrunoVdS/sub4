@@ -81,7 +81,7 @@ struct AuthoredHydrationTests {
             #expect(PersistenceAuthority.hydrates(f),
                     "a family B1 or B2 covers and this build does not feed")
         }
-        #expect(PersistenceAuthority.Family.allCases.count == 7,
+        #expect(PersistenceAuthority.Family.allCases.count == 9,
                 "and the seventh is B3's, fed at 382")
     }
 
@@ -128,7 +128,7 @@ struct AuthoredHydrationTests {
         let db = try Sub4Database.inMemory()
         let b = DatabaseBootstrapReader.read(db)
 
-        #expect(DatabaseBootstrap.fieldCount == 7)
+        #expect(DatabaseBootstrap.fieldCount == 9)
         #expect(b.wasReadCleanly, "a migrated empty database reads cleanly")
         #expect(b.firstFault == nil)
         #expect(!b.canHydrate, "and holds no plan, which is a fresh install")
@@ -156,7 +156,7 @@ struct AuthoredHydrationTests {
         // is NOT to be compared against into this line. What this test pins is
         // that the family count is the first thing said, which is what it
         // always meant.
-        #expect(lines.first?.hasPrefix("Database bootstrap: 7 families") == true)
+        #expect(lines.first?.hasPrefix("Database bootstrap: 9 families") == true)
     }
 
     // MARK: An empty family is not hydratable

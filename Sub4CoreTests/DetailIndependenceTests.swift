@@ -230,7 +230,51 @@ struct DetailIndependenceTests {
         let bad = DetailSource.Read(details: [:], streams: [:], tally: t,
                                     directoryFound: true)
         #expect(!bad.isTrustworthy)
-        #expect(bad.line.contains("the app's own store was compared instead"))
+        #expect(bad.line.contains("could not be decoded"))
+        #expect(bad.line.contains("whichever half"))
+    }
+
+    /// **PER HALF SINCE 394, AND THIS IS THE TEST 390 SHOULD HAVE HAD.**
+    /// `isTrustworthy` asked `tally.isClean`, which is BOTH halves — so an
+    /// unreadable DETAIL file blinded the TRACES comparison, which had read
+    /// every one of its own files perfectly. It failed safe and it was still
+    /// wrong: the row would have said *could not read its own side* about a
+    /// side that was fine.
+    @Test("One half failing does not blind the other")
+    func oneHalfFailingDoesNotBlindTheOther() {
+        var t = DetailStore.FileTally()
+        t.detailFiles = 694
+        t.detailFilesUnreadable = 3
+        t.streamFiles = 668
+        t.streamFilesUnreadable = 0
+        let r = DetailSource.Read(details: [:], streams: [:], tally: t,
+                                  directoryFound: true)
+
+        #expect(!r.detailsAreTrustworthy, "three of them would not decode")
+        #expect(r.tracesAreTrustworthy, "and all 668 traces did")
+        #expect(!r.isTrustworthy, "the whole read is not clean, which is a third question")
+
+        // AND THE OTHER WAY ROUND, because a property that is only ever asked
+        // about one half could be the wrong half and nothing would say so.
+        var u = DetailStore.FileTally()
+        u.detailFiles = 694
+        u.streamFiles = 668
+        u.streamFilesUnreadable = 2
+        let s = DetailSource.Read(details: [:], streams: [:], tally: u,
+                                  directoryFound: true)
+        #expect(s.detailsAreTrustworthy)
+        #expect(!s.tracesAreTrustworthy)
+    }
+
+    /// An unreachable container fails BOTH halves. There is nothing to be
+    /// half-right about when the app could not look at all. §12.15.
+    @Test("An unreachable container fails both halves")
+    func unreachableFailsBothHalves() {
+        let lost = DetailSource.Read(details: [:], streams: [:],
+                                     tally: DetailStore.FileTally(),
+                                     directoryFound: false)
+        #expect(!lost.detailsAreTrustworthy)
+        #expect(!lost.tracesAreTrustworthy)
     }
 
     // MARK: The report refuses to call a fallback a pass
