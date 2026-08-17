@@ -66,14 +66,18 @@ struct ActivitiesAreReadTests {
     /// a store hydrating from nothing, which is `Sub4Launch`'s worst failure.
     /// The other subtraction is now NAMED rather than asserted empty, because
     /// what it holds is the slice in flight.
-    @Test("Nothing is fed that is not read, and the gap is the slice")
+    /// **398 CLOSED THE GAP AND THIS ASSERTION INVERTED**, which is what a
+    /// slice looks like from a test's side. It read `[.details, .traces]` from
+    /// 394 to 397 and reads empty now. Kept as an inversion rather than deleted:
+    /// the day B5 declares `.gear` without feeding it, this fails and names it.
+    @Test("Nothing is fed that is not read, and nothing read is unfed")
     func nothingIsFedThatIsNotRead() {
         let read = Set(PersistenceAuthority.Family.allCases)
         let fed = PersistenceAuthority.hydratedFamilies
         #expect(fed.subtracting(read).isEmpty,
                 "a store fed from a family nobody read hydrates from nothing")
-        #expect(read.subtracting(fed) == [.details, .traces],
-                "B4's two, read at 394 and fed at 395 — the gap IS the slice")
+        #expect(read.subtracting(fed).isEmpty,
+                "B4 closed at 398 — a family declared and not fed is the next slice in flight")
     }
 
     // MARK: The read itself

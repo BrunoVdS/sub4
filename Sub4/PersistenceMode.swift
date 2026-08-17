@@ -176,6 +176,11 @@ nonisolated enum PersistenceAuthority {
         // own doc. A label that dropped B1 and B2 would read as those slices
         // having been switched off, which is the opposite of what happened.
         + "; B3 — the activities"
+        // PATCH 398. EXTENDS for 382's reason, and names both families rather
+        // than "the traces": they are two entries in `Family`, they can be
+        // reverted apart, and a label that said one would describe half a
+        // rollback as none of one.
+        + "; B4 — the details and the traces"
 
     /// WHICH FAMILIES THIS BUILD ACTUALLY HYDRATES — patch 357, §12.102.
     ///
@@ -236,9 +241,16 @@ nonisolated enum PersistenceAuthority {
     /// nine families are read and seven are fed. **That gap is the slice.** 395
     /// adds the two, and because it adds nothing else, any failure it produces
     /// is attributable — 346's four failures were, and 382's three were.
+    /// **PATCH 398 ADDS THE LAST TWO, AND THE PATCH IS THIS LINE.** Everything
+    /// else B4 needed was built and switched off across 388–397; nothing but
+    /// these two cases changes here, so any failure the flip produces is
+    /// attributable to the flip. 346's four failures were and 382's three
+    /// were. **`DetailStore.init` is what reads this one**, not `Sub4Launch` —
+    /// §12.139 measured why. Reversible by deleting them: `details/` and
+    /// `streams/` are still written and still complete.
     static let hydratedFamilies: Set<Family> = [.plan, .extras, .athlete,
                                                 .authored, .decisions, .moves,
-                                                .activities]
+                                                .activities, .details, .traces]
 
     /// Whether this build feeds a given store from the database. Asked by the
     /// planner and by nothing else — a second caller would be a second opinion

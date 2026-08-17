@@ -8962,6 +8962,98 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.142 The flip — patch 398, D7 slice B4 closed
+
+**Two enum cases on one line**, and `DetailStore.init` reading rows instead of
+files. Everything else B4 needed was built and switched off across 388–397, so
+anything that breaks now is attributable to this patch — 346's four failures
+were and 382's three were.
+
+### 12.142.1 The store asks, not the launch
+
+Every other family in this ladder is fed by `Sub4Launch` out of the bootstrap.
+This one is not, and §12.139 measured why: `DetailStore` is the only store here
+that is NOT constructed with `ContentView`'s stored properties, so hydrating it
+from the launch would have CONSTRUCTED it — 19.1 MB of files decoded and thrown
+away — before replacing it with rows read second.
+
+`PersistenceAuthority` is still the single switch. Only the caller moved, and
+`hydratedFamilies` is still what a rollback deletes from.
+
+### 12.142.2 The empty table is the state that must never win
+
+`DetailFill.decide` asks two questions per family, separately, for 357's reason:
+**did the read succeed** and **does the table hold anything**. A clean read of an
+empty `recording` with 668 traces in `streams/` is the Strava backfill
+mid-flight — rate-limited to roughly two days for a full one, and precisely what
+this device looked like for three days in August. Serving it would blank every
+heart-rate profile and every map on the phone and take `LoadStore`'s
+`streamCount` to zero with them.
+
+`needsFiles` is `!takeDetails || !takeTraces`, not `&&`. `loadFromDirectories()`
+fills both families, so a build taking details from rows and traces from files
+must read the files once and overwrite the half that has rows. **On the healthy
+path the files are never opened at all**, which is the win; on any other path
+the store is still whole.
+
+**A VALUE RATHER THAN A BRANCH, BECAUSE `fill()` IS UNTESTABLE.** It runs inside
+a `private init` that reads the real Application Support container and the real
+`Sub4Launch.shared.database`: not one of its branches is reachable from a test.
+`HydrationPlanner.decide` is the same shape for the same reason. Both sabotages
+fire — an empty table winning, and a half-fed store skipping the file read.
+
+### 12.142.3 Hydration still writes nothing
+
+`dirtyDetails` and `dirtyStreams` are untouched, and the absence is the
+mechanism: `save()` writes exactly those two sets, so 694 detail files and 668
+trace files cannot be overwritten by rows. Sharper here than anywhere else in
+the ladder, because the reconstruction is LOSSY in two named ways —
+`RecordingRepository.series` reads a NULL as zero and rebuilds every optional
+stream at `distanceM.count` (§12.38.4). A fill that dirtied its ids would write
+those reconstructions over the athlete's real traces on the next drain.
+
+RULE 8 no longer covers this path — there is no `hydrate` to read — which is a
+gap this patch creates and names rather than leaves. The rule's floor stayed at
+8 and the protection here is the comment plus `theSeamCannotDestroyTheFiles`.
+
+### 12.142.4 Five comparisons stop being evidence
+
+`independentChecks` goes **12 → 7**: `traces`, `details`, `splits`, `trace
+samples` and `splits of one activity` all take their expectation from a store
+the database now feeds. Nothing was typed to make that happen — every count in
+the paste is derived from `servedFrom`, which is §12.130.2's whole point: a flip
+cannot leave an answer stale when the answer IS the store's own report.
+
+**And the suite cannot see it.** In a test process `DetailStore.shared` has no
+database to read, so its `servedFrom` stays `.files` however `hydratedFamilies`
+reads. `ExpectationSources(fedByTheDatabase:)` is what makes the consequence
+assertable rather than discovered in a paste.
+
+The test's first draft typed `5` and failed at `18 → 14`. Four of the five are
+built on an empty database; `splits of one activity` needs a detail deep enough
+to compare. A hand-written five would have been a number describing the SOURCE
+asserted against a REPORT — 387's mistake in miniature — so the count is
+derived from the report and the four is pinned separately, with the reason.
+
+**What is NOT lost is what 388–390 were for.** Compare's slice 4 and the Details
+and Recordings read-backs read `details/` and `streams/` for themselves through
+the `DetailStore(directory:)` seam, so the roll-up stays at eight of nine with
+its own reads. `theSeamAlwaysReadsFiles` was written at 395, one patch before it
+could fail; today is the day it can.
+
+### 12.142.5 What the device has to say
+
+`Detail store built: N s from the database` against **0.399 s from the app's own
+files** — same line, same units, Release. That is 397's measurement and B4's
+last open question in one figure. The projection from `DatabaseBenchmark` is
+≈0.5 s.
+
+If it lands far above that, the rollback is deleting two cases from one line and
+`details/` and `streams/` are still complete — which is what a slice has been
+for since 342.
+
+---
+
 ## 12.141 One query, one pass — patch 397
 
 **The benchmark and the real read disagreed by 58×, on the same table and the

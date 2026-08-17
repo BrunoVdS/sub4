@@ -115,16 +115,19 @@ struct DetailHydrationTests {
         #expect(!lines.contains { $0.hasPrefix("  traces:") })
     }
 
-    /// The two families still EXIST as a switch — 396 needs one — and are still
-    /// not fed. What changed at 395 is who consults the switch, not the switch.
-    @Test("Both families are still declared and still not fed")
-    func bothFamiliesAreDeclaredAndNotFed() {
+    /// **398 — THE FLIP, AND IT IS TWO CASES ON ONE LINE.** What changed at 395
+    /// is who consults the switch; what changed here is the switch. The store
+    /// reads it, not `Sub4Launch` — §12.139 measured why.
+    @Test("Both families are fed, and the store is what asks")
+    func bothFamiliesAreFed() {
         let read = Set(PersistenceAuthority.Family.allCases)
         let fed = PersistenceAuthority.hydratedFamilies
-        #expect(read.subtracting(fed) == [.details, .traces],
-                "the details and the traces, and nothing else, wait for 396")
-        #expect(!PersistenceAuthority.hydrates(.details))
-        #expect(!PersistenceAuthority.hydrates(.traces))
+        #expect(read.subtracting(fed).isEmpty, "nine declared, nine fed")
+        #expect(PersistenceAuthority.hydrates(.details))
+        #expect(PersistenceAuthority.hydrates(.traces))
+        // AND THE LAUNCH STILL DOES NOT NAME THE STORE — the assertion below
+        // this one in the file. The flip did not move the read back into the
+        // launch path, which is the thing 395 was for.
     }
 
     /// **THE STORE IS NOT TOUCHED BY THE LAUNCH, AND THAT IS LOAD-BEARING.**
@@ -218,5 +221,167 @@ struct DetailHydrationTests {
 
         let after = try Data(contentsOf: file)
         #expect(after == before, "the seam wrote over the file it was reading")
+    }
+
+    // MARK: Which side each family is served from — patch 398, §12.142
+
+    private func fullDetails() -> DetailLoad {
+        .loaded(details: [detail("1", splits: 3)], skipped: 0)
+    }
+    private func fullTraces() -> RecordingLoad {
+        .loaded(recordings: [streams("1", samples: 12)], skipped: 0)
+    }
+
+    /// **THE ONE WITH 19.1 MB BEHIND IT.**
+    ///
+    /// A clean read of an empty table is the backfill mid-flight — 668 traces
+    /// in `streams/` and none in `recording`, which is exactly what this device
+    /// looked like for three days in August. Taking it would blank every
+    /// heart-rate profile and every map and take `LoadStore`'s `streamCount` to
+    /// zero with them.
+    ///
+    /// `wasReadCleanly` is TRUE here. That is the point: the read succeeded and
+    /// the answer is still no.
+    @Test("An empty table never wins, however clean the read")
+    func anEmptyTableNeverWins() {
+        let empty = DetailFill.decide(details: .loaded(details: [], skipped: 0),
+                                      traces: .loaded(recordings: [], skipped: 0),
+                                      hydratesDetails: true, hydratesTraces: true)
+        #expect(empty.takeDetails == false)
+        #expect(empty.takeTraces == false)
+        #expect(empty.needsFiles, "so the files are read and the store is whole")
+
+        // THE CONTROL. If a full table also lost, the assertions above would be
+        // passing on a stuck `false` — zero compared to zero, which is what
+        // every parity report in this project carries a denominator to avoid.
+        let full = DetailFill.decide(details: fullDetails(), traces: fullTraces(),
+                                     hydratesDetails: true, hydratesTraces: true)
+        #expect(full.takeDetails)
+        #expect(full.takeTraces)
+        #expect(full.needsFiles == false, "both sides stored, so the files are never opened")
+    }
+
+    /// A FAILED READ IS A DIFFERENT NIL FROM AN EMPTY TABLE — §12.92 — and both
+    /// end at the files. They are separated here so a future caller that wants
+    /// to tell them apart finds them already apart.
+    @Test("A failed read falls back, and is not an empty table")
+    func aFailedReadFallsBack() {
+        let broken = DetailFill.decide(details: .failed("disk I/O error"),
+                                       traces: .failed("disk I/O error"),
+                                       hydratesDetails: true, hydratesTraces: true)
+        #expect(broken.takeDetails == false)
+        #expect(broken.takeTraces == false)
+        #expect(broken.needsFiles)
+
+        let shut = DetailFill.decide(details: .unavailable, traces: .unavailable,
+                                     hydratesDetails: true, hydratesTraces: true)
+        #expect(shut.needsFiles, "a database that never opened serves the files")
+    }
+
+    /// **HALF IS PERMITTED HERE AND NOWHERE ELSE IN THIS LADDER.** The plan and
+    /// the athlete are all-or-nothing because half a plan blanks a screen while
+    /// every other figure stays right. A split table and a heart-rate profile
+    /// are drawn from different rows by different views, so the two flip
+    /// together and can be reverted apart — and `hydratedFamilies` losing one
+    /// of them has to leave the other working.
+    @Test("One family can be fed while the other reads its files")
+    func oneFamilyCanBeFedAlone() {
+        let detailsOnly = DetailFill.decide(details: fullDetails(),
+                                            traces: fullTraces(),
+                                            hydratesDetails: true,
+                                            hydratesTraces: false)
+        #expect(detailsOnly.takeDetails)
+        #expect(detailsOnly.takeTraces == false, "this build does not feed them")
+        #expect(detailsOnly.needsFiles, "so the files still have to be read")
+
+        let tracesOnly = DetailFill.decide(details: fullDetails(),
+                                           traces: fullTraces(),
+                                           hydratesDetails: false,
+                                           hydratesTraces: true)
+        #expect(tracesOnly.takeDetails == false)
+        #expect(tracesOnly.takeTraces)
+
+        // AND THE TABLE STILL HAS TO HOLD SOMETHING. A build that feeds a
+        // family says nothing about whether the family is there.
+        let wanted = DetailFill.decide(details: .loaded(details: [], skipped: 0),
+                                       traces: fullTraces(),
+                                       hydratesDetails: true, hydratesTraces: true)
+        #expect(wanted.takeDetails == false, "wanted, read cleanly, and empty")
+        #expect(wanted.takeTraces)
+    }
+
+    /// A build that feeds neither takes neither, whatever the tables hold.
+    /// This is what deleting both cases from `hydratedFamilies` does, and it is
+    /// the rollback the whole ladder is built on.
+    @Test("The rollback is the switch, not the data")
+    func theRollbackIsTheSwitch() {
+        let off = DetailFill.decide(details: fullDetails(), traces: fullTraces(),
+                                    hydratesDetails: false, hydratesTraces: false)
+        #expect(off.takeDetails == false)
+        #expect(off.takeTraces == false)
+        #expect(off.needsFiles, "and the files are complete, which is why it works")
+    }
+
+    // MARK: What the flip costs the verifier — patch 398, §12.142
+
+    /// **FIVE COMPARISONS STOP BEING EVIDENCE, AND THIS IS WHERE THAT IS SAID.**
+    /// `ActivitiesAreReadTests.fourComparisonsStoppedBeingEvidence` is the same
+    /// assertion one slice earlier, and §12.125's rule is why both exist: the
+    /// patch before a flip is the one that asks what the flip makes vacuous.
+    /// 388 recounted the buckets, 389 and 390 gave Compare's slice 4 and the
+    /// two read-backs their own reads, so what is left to lose here is exactly
+    /// these five and nothing that mattered goes with them.
+    ///
+    /// **INJECTED RATHER THAN OBSERVED.** In the test process `DetailStore.shared`
+    /// has no database to read, so its `servedFrom` stays `.files` however
+    /// `hydratedFamilies` reads — the live accounting only moves on the device.
+    /// `ExpectationSources(fedByTheDatabase:)` is what makes the consequence
+    /// assertable here rather than discovered in a paste.
+    @Test("Five comparisons stop being evidence when both families are fed")
+    func fiveComparisonsStopBeingEvidence() throws {
+        let db = try Sub4Database.inMemory()
+        let before = try SemanticVerifier.verify(
+            db, activities: [], sources: ExpectationSources(fedByTheDatabase: []))
+        let after = try SemanticVerifier.verify(
+            db, activities: [],
+            sources: ExpectationSources(fedByTheDatabase: [.details, .traces]))
+
+        for name in ["traces", "details", "splits", "trace samples",
+                     "splits of one activity"] {
+            guard let c = before.checks.first(where: { $0.name == name }) else {
+                // NOT `#expect(c != nil)`. `splits of one activity` is built
+                // only when a detail is deep enough to compare, so on an empty
+                // database it is legitimately absent — and a bare nil check
+                // would make this loop fail for the wrong reason. What must
+                // hold is the field of every one that IS built.
+                continue
+            }
+            #expect(c.reads.field == .details || c.reads.field == .traces,
+                    "\(name) takes its expectation from a store B4 feeds")
+            #expect(!after.independentChecks.contains { $0.name == name },
+                    "\(name) still counts as evidence after the flip")
+            #expect(after.selfReferentialChecks.contains { $0.name == name })
+        }
+
+        #expect(ExpectationField.details.slice == "B4")
+        #expect(ExpectationField.traces.slice == "B4")
+
+        // **DERIVED, NOT TYPED — and the first draft of this line typed 5 and
+        // failed.** Five comparisons declare these two fields in the source;
+        // four are built here, because `splits of one activity` needs a detail
+        // deep enough to compare and this database is empty. A hand-written 5
+        // would have been a number describing the SOURCE asserted against a
+        // report — §12.54.2's cousin, and exactly the mistake `HydratedStores`
+        // made at 387.
+        let affected = before.checks.filter {
+            $0.reads.field == .details || $0.reads.field == .traces
+        }
+        #expect(affected.count == 4,
+                "four of B4's five comparisons are built on an empty database; a fifth appearing here means a new one was added without this test being read")
+        #expect(after.independentChecks.count + affected.count
+                    == before.independentChecks.count,
+                "every comparison reading a fed field left the evidence column, and none that did not")
+        #expect(!after.independentChecks.isEmpty,
+                "B4 is not B9 — there is still evidence left, and B9 is where that ends")
     }
 }

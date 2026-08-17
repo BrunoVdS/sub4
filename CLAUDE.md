@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 397 (2026-08-17).** §5.3 is the 390 device run, Compare and
+**Current at patch 398 (2026-08-17).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself.
@@ -366,9 +366,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 397, 2026-08-17
+## 5. State — patch 398, 2026-08-17
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 397; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 398; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -383,7 +383,7 @@ code wins and this section is the defect.
 | **D7 B1** — the plan, the athlete, the constants | done, 344–346 |
 | **D7 B2** — notes, commutes, match decisions, plan moves | done, 355–358 and 377 |
 | **D7 B3** — the activities | **done, 379–383** |
-| **D7 B4** — details, traces | **388–390, 394, 395, 397 done; the flip is next** — `D7-B4-GROUNDWORK.md` |
+| **D7 B4** — details, traces | **DONE, 388–398** — `D7-B4-GROUNDWORK.md`, §12.139–§12.142 |
 | D7 B5 — weather, gear | not started |
 | D7 B6 — derived metrics | not started |
 | D7 B7 — reviews | not started, and blocked until a real review exists |
@@ -397,15 +397,16 @@ Ten lines in the paste say it — the first fact to check when a screen is wrong
 
 - **the database**: the plan and its trimmings, the constants, the athlete's
   zones and FTP, the notes, the commute decisions, the match decisions, the
-  plan moves, **and the activities**
-- **the app's own files**: gear and weather (B5), **details and traces**,
-  reviews (B7), the sync cursor, work queue and rejection receipts (B8, all
-  `UserDefaults`). `AthleteStore` is half-and-half and says so.
+  plan moves, the activities, **and the details and traces**
+- **the app's own files**: gear and weather (B5), reviews (B7), the sync
+  cursor, work queue and rejection receipts (B8, all `UserDefaults`).
+  `AthleteStore` is half-and-half and says so.
 
 **THE LAUNCH READS SEVEN AND 394 IS WHY IT IS NOT NINE.** 394 put both in the
 bootstrap and measured **3.963 s in front of first paint**; 395 took them back
-out, so the launch is 0.021 s and `DetailStore` reads for itself when built.
-`hydratedFamilies` is still the switch, consulted by the store. §12.139.
+out, so the launch is 0.021 s and **`DetailStore` reads for itself when built** —
+the one store here not constructed with `ContentView`. `hydratedFamilies` is
+still the switch and the store is what consults it. §12.139, §12.142.
 
 **Every JSON store is still written and still complete.** That is what makes a
 slice reversible by deleting one family from `hydratedFamilies`, and why
@@ -442,18 +443,18 @@ and order, and fractional fetch-time precision are outside the mapped set —
 
 ### 5.4 The verifier's accounting, derived end to end, and in THREE buckets
 
-**22 comparisons — 12 independent, 9 reading a store the database feeds, 1
-reading no store at all.** The nine: `heart-rate zones` (B1); `notes`, `commute
-corrections`, `match decisions`, `session moves` (B2); `activities`, `activity
-identities`, `volume by discipline`, `activity fields` (B3). The one is
-`unclaimed corrections`.
+**22 comparisons — 7 independent, 14 reading a store the database feeds, 1
+reading no store at all.** **398 moved five**: `traces`, `details`, `splits`,
+`trace samples` and `splits of one activity`, all B4's. The other nine are
+`heart-rate zones` (B1); `notes`, `commute corrections`, `match decisions`,
+`session moves` (B2); `activities`, `activity identities`, `volume by
+discipline`, `activity fields` (B3). The one is `unclaimed corrections`.
 
 **THE THIRD BUCKET IS 388 AND IT FIXED A GATE THAT COULD NOT FAIL.** `unclaimed
-corrections` reads `.databaseAlone`, so it could never be self-referential, sat
-in `independentChecks` for ever, and made `isTrustworthyEvidence` return `true`
-whatever the report held. **Evidence means *could this have disagreed about
-whether the migration carried the app's data*** — which a comparison that
-consults no store cannot answer however loudly it fails. §12.132.
+corrections` reads `.databaseAlone`, so it could never be self-referential and
+made `isTrustworthyEvidence` return `true` whatever the report held. **Evidence
+means *could this have disagreed about whether the migration carried the app's
+data*** — which a comparison consulting no store cannot answer. §12.132.
 
 **THE DERIVATION IS THE ANSWER SINCE 387 AND `HydratedStores` IS GONE.** Every
 comparison names the store FIELD it read (`VerificationCheck.reads`, no default)
@@ -464,8 +465,9 @@ receipts and cursor on `UserDefaults` until B8, `AthleteStore` is `.partial`.
 §12.130–§12.132.
 
 **`runs ever verified: 18`, the newest at patch 392**, over data the database
-feeds, with 12 comparisons that could still have disagreed. D7's exit criterion
-is met and the recount does not threaten it.
+feeds — taken when 12 comparisons could still have disagreed. **After 398 that
+is 7**, and the next Verify press will say so. D7's exit criterion is met; the
+number falling is what a slice landing looks like, and B9 is where it ends.
 
 ### 5.4a The roll-up's own accounting — patches 389 and 390
 
@@ -501,7 +503,11 @@ read the files itself or took the stores; only the second consults the sources.
 - **`newest removal` names the trigger, not the family** (369); **`canReconcile`
   tests readable, not correct** (§12.120.3); **Import is not a repair path for
   the activities** (§12.126.5); and **`LoadParity`'s app side is `LoadStore`**,
-  so slice 3 needs something no screen shows (§12.125.4). **B4 deepens it.**
+  so slice 3 needs something no screen shows (§12.125.4). **B4 deepened it: the
+  traces `LoadStore` walks are now rows.**
+- **RULE 8 NO LONGER COVERS `DetailStore`** — 398 fills it in `init` and there
+  is no `hydrate` for the rule to read. The floor stayed at 8; the protection is
+  the comment and `theSeamCannotDestroyTheFiles` (§12.142.3).
 - **`ReadBacks.athlete` IS THE LAST READ-BACK COMPARING THE DATABASE WITH
   ITSELF.** It reads `ConstantsStore.shared.c`, `AthleteStore.shared.ftp` and
   `.hrZones`, all **hydrated since 346** — 27 comparisons that could not have
@@ -510,10 +516,9 @@ read the files itself or took the stores; only the second consults the sources.
   **ITS OWN PATCH.** It needs `AthleteStore(directory:)` and
   `ConstantsStore(directory:)` — the two `UNPROTECTED_STORE_CEILING` counts —
   and closes **516 rows** nothing else checks: `athlete_profile` (1),
-  `resting_month` (15), and `activity_gear_reference` (500), reached only
-  through `ActivityRoundTrip`'s `gearId` `LEFT JOIN`.
-  **`ReadBacks.knownActivityIDs` is B5's** (381); **`DetailStore` is invisible
-  to RULE 1**, which `mayWrite` (390) covers.
+  `resting_month` (15), `activity_gear_reference` (500). **`knownActivityIDs`
+  is B5's** (381); **`DetailStore` is invisible to RULE 1**, `mayWrite` covers
+  it.
 - **The pre-activation snapshot is still `2026-08-10-084723`** (340); 384
   captured `2026-08-16-211009`. B9 moves it. **`Sub4/manual.html` is a hundred
   patches stale** (284), deferred until D7. **Two stores remain unprotected** by
@@ -539,27 +544,22 @@ read the files itself or took the stores; only the second consults the sources.
    with `if isExpanded(key)`, so a closed section's rows are NOT EVALUATED and
    §12.76's worst case shrank. **RULE 7 joins every header key to every content
    key**, both invisible to the suite (§12.137).
-3. **B4 — 388–390, 394, 395, 397 done; THE FLIP IS NEXT.**
-   **`docs/D7-B4-GROUNDWORK.md`** is the plan; §12.139 and §12.141 are the
-   corrections to it. Compare's slice 4 and three read-backs read the files for
-   themselves through a `DetailStore(directory:)` seam that refuses every write
-   (§5.4a, §12.134), **and that seam must stay on the files whatever the
-   singleton does** or three comparisons become the database against itself.
-   **394 MEASURED THE LAUNCH AND THE ANSWER KILLED ITS OWN DESIGN**: 3.963 s
-   before first paint, 94% of it 668 recordings over 199,848 sample rows. **395
-   moved both families out of the bootstrap into `DetailStore`'s own
-   construction** — the one store here NOT built with `ContentView`, so feeding
-   it from the launch would have decoded 19.1 MB of files and thrown them away
-   for rows read second.
-   **397 FIXED THE READ.** `RecordingRepository.all` ran one query per recording
-   — 668 — then walked every row EIGHT times by column name: 1.6 million lookups
-   over 199,848 rows, 3.730 s against the benchmark's **0.096 ms per recording**
-   for the same table. One ordered cursor, one pass, positional. Projected
-   **≈0.5 s** against a **0.399 s** Release file baseline.
-   `ActivityDetailRepository` has the same shape and reads in 0.195 s, so it was
-   left alone. **398 is the flip and it is what measures 397**, as
-   `Detail store built: … from the database` beside today's `… from the app's
-   own files` — same line, same units.
+3. **B4 — DONE, 388–398, AND THE MEASUREMENT REDESIGNED IT TWICE.**
+   §12.139–§12.142 are the corrections to `docs/D7-B4-GROUNDWORK.md`. **394
+   measured the launch and the answer killed its own design**: 3.963 s before
+   first paint, 94% of it 668 recordings over 199,848 sample rows. **395** moved
+   both families out of the bootstrap into `DetailStore`'s own construction —
+   the one store here NOT built with `ContentView`, so feeding it from the
+   launch would have decoded 19.1 MB of files and thrown them away for rows read
+   second. **397** fixed the read: 668 queries became one ordered cursor, and
+   eight name-keyed passes over 199,848 rows became one positional pass.
+   **398 is the flip** — two enum cases, and the store consults the switch.
+   **THE DEVICE OWES ONE FIGURE**: `Detail store built: N s from the database`
+   against **0.399 s from the app's own files**, Release, same line. Projection
+   ≈0.5 s. **Five comparisons stopped being evidence** (§5.4) and nothing that
+   mattered went with them — Compare's slice 4 and the two read-backs read the
+   files for themselves through a seam that refuses every write, and that seam
+   must stay on the files whatever the singleton does (§12.134).
 4. **396 — THE GATE ASKED THE WRONG QUESTION, and it blocked the measurement.**
    `ReleaseGates.isInternalBuild` was `#if DEBUG`, so **every diagnostic screen
    vanished in Release** and no device number this project has taken was a

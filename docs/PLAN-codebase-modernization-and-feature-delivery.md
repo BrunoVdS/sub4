@@ -10,7 +10,7 @@
 | **Persistence authority** | `docs/ADR-0003-database-contract.md` |
 | **Source-transition authority** | `docs/ADR-0002-strava-retirement.md` and `docs/PLAN-cutover-v2.md` |
 
-> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 397.**
+> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 398.**
 >
 > It was written against patch 334 and its opening stages describe work that has
 > since shipped: D6c closed at 330, and D7's B0, B1, B2 and B3 landed at 342,
@@ -22,7 +22,7 @@
 > the restructure and feature delivery. Where the two disagree about the present,
 > §5 wins; where they disagree about the sequence, this document does.
 >
-> **Progress against this plan, at 397.** Stage A's database-shadow work is
+> **Progress against this plan, at 398.** Stage A's database-shadow work is
 > closed. D7 has run B0 through B3 and the app reads the plan, the athlete, the
 > authored data and all 694 activities from SQLite on every launch, with a
 > verified migration run over that data. 385 through 388 are not slices: they
@@ -57,6 +57,15 @@
 > and waits on the other half of the comparison: nobody has ever measured what
 > the 1,362 files cost, so 3.730 s is only a regression if the files are
 > faster. §5.6 of `CLAUDE.md` carries the order.
+>
+> **B4 CLOSED AT 398.** 397 fixed the read the benchmark exposed — 668 queries
+> became one ordered cursor and eight name-keyed passes over 199,848 rows became
+> one positional pass — and 398 is the flip: two enum cases, with `DetailStore`
+> consulting the switch rather than `Sub4Launch` feeding it. Five verifier
+> comparisons stopped being evidence, which is what a slice landing looks like,
+> and the roll-up is unaffected because 388–390 gave Compare's slice 4 and the
+> two read-backs their own reads. §12.141, §12.142. **B5 — weather and gear —
+> is next.**
 >
 > **396 IS NOT A SLICE — it is the instrument.** Asking for that Release
 > measurement found that `ReleaseGates.isInternalBuild` was `#if DEBUG`, so

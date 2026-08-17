@@ -172,7 +172,10 @@ struct ActivityHydrationTests {
         #expect(DatabaseBootstrap.fieldCount == 7,
                 "the bootstrap gained no family — 379 did that")
         #expect(PersistenceAuthority.Family.allCases.count == 9)
-        #expect(PersistenceAuthority.hydratedFamilies.count == 7)
+        // 398 — AND NOW EVERY FAMILY IS FED. The gap 394 opened and 395 kept
+        // open closed at the flip: nine declared, nine hydrated. The next
+        // number to move here is B5's, and it moves `allCases` first.
+        #expect(PersistenceAuthority.hydratedFamilies.count == 9)
         // 387 — THE LIST'S COUNT WENT WITH THE LIST. `HydratedStores.all.count
         // == 9` was a hand-kept total that stood at 8 while nine comparisons
         // read a hydrated store; what is left is the fact this test is about,
