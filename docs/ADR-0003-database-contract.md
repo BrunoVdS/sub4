@@ -8962,6 +8962,109 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.144 The athlete's own writing gets a way back — patch 400
+
+§5.5 has said it in the project's own words for many patches: **five stores of
+the athlete's own writing have no restore path — the largest open risk.** 372
+stopped the lifecycle mechanism destroying them. Nothing built the recovery.
+Weather got one at 374 and the authored data — the category ADR-0002 promises
+survives the Strava retirement and everything after it — did not, while eleven
+patches went to B4.
+
+**Weather is fetched: lose it and the app asks Open-Meteo again. These records
+cannot be fetched from anywhere.** A note is the athlete's sentence about how a
+session felt; a commute decision says a ride was not training and decides
+whether it may satisfy a planned session at all.
+
+### 12.144.1 The contract was already written, once, and needed extracting
+
+`WeatherStore.restore` got it right at 374 and the reasoning is worth more than
+the code: **strictly additive**, because a record written since the last import
+exists in the file and not in the database and a wholesale replace deletes
+exactly those; **it satisfies `save()`'s guard rather than bypassing it**, by
+moving the unreadable bytes somewhere they survive so the ordinary write runs on
+the ordinary path; **memory goes back if the write does not land** (§12.17); **no
+write-through**, because the records came out of the database and announcing them
+back is a loop; and **counts, not a Bool** — "ran and added nothing" and "never
+ran" are different facts (§12.15).
+
+Copying that five times is five chances to drift, and §12.43's worst instance
+was five copies of one rule disagreeing across two tabs for 230 patches. So the
+two subtle steps moved into `StoreRestore`, **`WeatherStore.restore` was
+refactored onto them**, and each store's own `restore` is the ten lines that are
+genuinely its own. `WeatherRestoreTests` passing unchanged is what says the
+behaviour did not move, and `asideURL` now has one owner rather than one per
+store — two stores disagreeing about where a file nobody can read ends up is the
+same class of defect one level down.
+
+### 12.144.2 The merge keys on `id`, and a closure would have been wrong
+
+All five stores hold `[String: T]` and every one keys that dictionary by the
+record's own identity — `Note.id`, `MatchDecision.id` and `PlanMove.id` are
+`sessionUid`, `CommuteDecision.id` is `activityId`. `ActivityWeather` gained the
+conformance here; its store has been keyed by `activityId` since 374.
+
+A key CLOSURE would have let one call site key its merge differently from the
+dictionary it is merging into — silently, and invisibly to any test, because
+both sides would be internally consistent. `Identifiable` makes the key and the
+identity the same thing by construction.
+
+### 12.144.3 Two receipts, not one number
+
+One tap restores two stores. "Added 4" across `notes.json` and `commutes.json`
+leaves a reader unable to say which of the two was empty, which is §12.15 in the
+one line reporting a repair. `StoreRestore.Receipt` carries the store's name, and
+`Receipt.nothingStored(_:)` exists so a caller cannot build a zero receipt and
+get the name wrong.
+
+The control restores from `authoredLoad` — the load whose counts are on screen
+two rows below — rather than re-reading. The weather restore re-reads because its
+section predates that held load; copying that here would let the screen say five
+notes while the restore acted on four.
+
+**AND IT IS ONE CHILD IN THE SECTION, NOT FOUR.** §12.76's budget is depth, and
+331 is the precedent: the button, its error and its receipts sit behind one
+`@ViewBuilder` property, so the chain grows by one link rather than one per row.
+
+### 12.144.4 What is NOT covered, named rather than dropped
+
+**`proposals.json` has no restore path and cannot get one here.**
+`ReviewRepository` returns proposals only as part of a review load, the table
+holds 0 rows, and B7 is where reviews are dealt with. So §5.5's "five stores"
+becomes **three** after this patch and **one** after 401 — and that one is named,
+because a store quietly missing from a list of five is exactly §12.54.2.
+
+Match decisions and plan moves are 401. They take the same route through
+`MatchDecisionRepository` and `PlanMoveRepository`, both of which already run on
+every launch, and they were split off for verifiability rather than difficulty.
+
+### 12.144.5 The fixture that passed for the wrong reason
+
+The first draft of `AuthoredRestoreTests` seeded its stores with a bare
+`JSONEncoder`, while `NotesStore.save()` calls `StoreWrite.encode` with no
+encoder argument — which is `JSONEncoder.sub4`. **Every seeded store came up
+empty AND untrustworthy**, so the restores all "passed" while testing the
+unreadable-file path instead of the ordinary one. §12.122.4 is the rule and the
+fixture's comment now carries the instance.
+
+### 12.144.6 Two negative controls, and one crossed a suite
+
+| sabotage | caught by |
+|---|---|
+| the database wins the merge instead of the store | `theStoresCopyWins`, `commutesRestoreByActivity` — **and `WeatherRestoreTests`** |
+| the verdict does not move with the bytes | `theVerdictMovesWithTheBytes`, and the aside test |
+
+The first firing in both suites is the proof the mechanism is genuinely shared
+rather than merely named as shared.
+
+**And a self-inflicted one worth recording:** undoing that first sabotage with
+`git checkout Sub4/NotesStore.swift` destroyed forty lines of uncommitted work,
+because every other sabotage in this session used a `cp` backup and this one
+switched method. Cheap to rewrite and cheap to avoid: a working tree with
+uncommitted work has no undo but the backup you made yourself.
+
+---
+
 ## 12.143 Slice 3 stopped being able to disagree — patch 399
 
 `LoadParity`'s header says, in as many words, that it *"isolates exactly one

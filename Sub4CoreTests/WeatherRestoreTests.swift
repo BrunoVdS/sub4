@@ -270,15 +270,20 @@ struct WeatherRestoreTests {
     /// Two taps in the same second are two restores. `ProposalStore.add`
     /// already records what a running count costs when the second one lands on
     /// the first.
+    ///
+    /// **MOVED TO `StoreRestore` AT 400** and left in this file: it was written
+    /// for weather and it now covers five stores, so the coverage grew without
+    /// the test moving. The naming rule has one owner — a second copy would let
+    /// two stores disagree about where a file nobody can read ends up.
     @Test("A second aside in the same second does not collide")
     func asideNamesDoNotCollide() throws {
         let dir = try directory()
         let file = dir.appendingPathComponent("weather.json")
         let now = Date(timeIntervalSince1970: 1_755_000_000)
 
-        let first = WeatherStore.asideURL(for: file, now: now)
+        let first = StoreRestore.asideURL(for: file, now: now)
         try Data("x".utf8).write(to: first)
-        let second = WeatherStore.asideURL(for: file, now: now)
+        let second = StoreRestore.asideURL(for: file, now: now)
 
         #expect(first != second)
         #expect(second.lastPathComponent.contains("unreadable-"))

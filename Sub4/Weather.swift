@@ -126,7 +126,15 @@ nonisolated enum WeatherSource: String, Codable, Hashable, CaseIterable {
 /// Checked first, per §12.61.7.1: there is no `extension ActivityWeather` in
 /// the target, so every member is in the body below and the keyword reaches all
 /// of them.
-nonisolated struct ActivityWeather: Codable, Hashable {
+nonisolated struct ActivityWeather: Codable, Hashable, Identifiable {
+
+    /// **PATCH 400.** `WeatherStore.byActivity` has been keyed by `activityId`
+    /// since 374; this makes the key and the identity the same thing so
+    /// `StoreRestore.merge` cannot key a merge differently from the dictionary
+    /// it is merging into. Computed, so nothing is encoded and no stored
+    /// comparison moves — the other four authored records already read this
+    /// way.
+    var id: String { activityId }
 
     let activityId: String
     /// Degrees Celsius, mean over the session.
@@ -756,29 +764,19 @@ final class WeatherStore {
             return Restored(added: 0, alreadyHeld: 0, setAside: nil)
         }
 
-        var setAside: URL?
-        if !lastLoad.isTrustworthy,
-           FileManager.default.fileExists(atPath: fileURL.path) {
-            let destination = Self.asideURL(for: fileURL, now: now)
-            // NOT `try?`. A move that silently did not happen would leave the
-            // bytes exactly where the write below is about to land, which is
-            // the whole defect with an extra step. §12.20.
-            try FileManager.default.moveItem(at: fileURL, to: destination)
-            setAside = destination
-            lastLoad = .absent
-        }
+        // PATCH 400 — THE TWO SUBTLE STEPS MOVED TO `StoreRestore` AND THIS
+        // CALLS THEM. Four more stores needed the same contract, and five
+        // copies of one rule is §12.43's worst instance repeating. The
+        // behaviour is unchanged and `WeatherRestoreTests` is what says so.
+        let setAside = try StoreRestore.setAsideIfUnreadable(
+            at: fileURL, trustworthy: lastLoad.isTrustworthy, now: now)
+        if setAside != nil { lastLoad = .absent }
 
         let before = byActivity
-        var added = 0
-        var alreadyHeld = 0
-        for reading in stored {
-            if byActivity[reading.activityId] == nil {
-                byActivity[reading.activityId] = reading
-                added += 1
-            } else {
-                alreadyHeld += 1
-            }
-        }
+        let m = StoreRestore.merge(stored, into: byActivity)
+        byActivity = m.merged
+        let added = m.added
+        let alreadyHeld = m.alreadyHeld
 
         guard save() else {
             // §12.17. The screen reads this store, so putting memory back is
@@ -795,29 +793,10 @@ final class WeatherStore {
         return Restored(added: added, alreadyHeld: alreadyHeld, setAside: setAside)
     }
 
-    /// `weather.json.unreadable-20260816-084500`, and a suffix if that exists.
-    ///
-    /// The collision is not hypothetical: two restores in the same second are
-    /// two taps, and `ProposalStore.add` already records what a running count
-    /// costs when the second one lands on the first.
-    nonisolated static func asideURL(for file: URL, now: Date) -> URL {
-        let stamp = asideStamp.string(from: now)
-        var candidate = file.appendingPathExtension("unreadable-\(stamp)")
-        var n = 2
-        while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = file.appendingPathExtension("unreadable-\(stamp)-\(n)")
-            n += 1
-        }
-        return candidate
-    }
-
-    private nonisolated static let asideStamp: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyyMMdd-HHmmss"
-        f.timeZone = TimeZone(secondsFromGMT: 0)
-        f.locale = Locale(identifier: "en_US_POSIX")
-        return f
-    }()
+    /// **MOVED TO `StoreRestore.asideURL` AT 400.** It was here because weather
+    /// was the only store with a restore; it is now the naming rule for five,
+    /// and a second copy would let two of them disagree about where a file
+    /// nobody can read ends up. §12.43.
 
     /// **AND IT HAS TO CLEAR `lastLoad` — patch 371.**
     ///

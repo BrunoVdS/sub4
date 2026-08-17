@@ -161,6 +161,12 @@ struct DatabaseHealthView: View {
     @State private var restoringWeather = false
     @State private var weatherRestoreError: String?
     @State private var lastWeatherRestore: WeatherStore.Restored?
+    // PATCH 400. Receipts, plural: one control restores TWO stores and each
+    // has its own answer. A single combined count would say "added 4" over two
+    // files and leave a reader unable to tell which one was empty. §12.15.
+    @State private var restoringAuthored = false
+    @State private var authoredRestoreError: String?
+    @State private var lastAuthoredRestore: [StoreRestore.Receipt] = []
     // PATCH 327 — D6c slice 7. The ninth read-back, and the only one whose
     // subject may legitimately not exist yet: the first real review is due
     // 24 August 2026.
@@ -2156,6 +2162,11 @@ struct DatabaseHealthView: View {
     private var authoredReadBackSection: some View {
         Section {
             if isExpanded("readback-authored") {
+            // PATCH 400 — ONE CHILD, NOT FOUR. §12.76's budget is DEPTH, and
+            // 331 is the precedent: a group of rows behind a `@ViewBuilder`
+            // function adds one link to the chain rather than one per row.
+            // The button, its error and its two receipts are inside it.
+            authoredRestoreRows
             if let load = authoredLoad {
                 // PATCH 355 — A SWAPPED ROW, NOT AN ADDED ONE (§12.76). Both
                 // reads are one sentence because they are one read-back, and
@@ -2841,6 +2852,76 @@ struct DatabaseHealthView: View {
     /// The read-back is refreshed afterwards so the counts underneath describe
     /// the store as it is now — otherwise the section reports "only in the
     /// database: 601" directly beneath a line saying 601 were just added.
+    /// **THE ACTION §5.5 CALLED THE LARGEST OPEN RISK — patch 400, §12.144.**
+    ///
+    /// First in the section, like `Import and verify` and like the weather
+    /// restore: the action, then the numbers that justify it.
+    ///
+    /// TWO STORES, ONE TAP, TWO RECEIPTS. `notes.json` and `commutes.json`
+    /// come out of one read and are two files, so they get two lines — "added
+    /// 4" over both would leave a reader unable to say which one was empty.
+    @ViewBuilder
+    private var authoredRestoreRows: some View {
+        if restoringAuthored {
+            HStack { ProgressView(); Text("Restoring…").font(.caption) }
+        } else {
+            Button("Restore notes and commutes from the database") {
+                runAuthoredRestore()
+            }
+            .font(.caption)
+            // DISABLED UNTIL THE READ HAS HAPPENED, because the restore reads
+            // the load this section is already showing — offering it before
+            // there is one would throw `databaseUnreadable` at somebody who
+            // did nothing wrong.
+            .disabled(authoredLoad == nil)
+        }
+
+        if let e = authoredRestoreError {
+            Text(e).font(.caption).foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        // UNCONDITIONAL ONCE IT HAS RUN, and the zero cases are worth as much
+        // as the others: "added 0, already held 5" is the file agreeing with
+        // the database, and "added 0, already held 0" is a database with
+        // nothing in it. §12.15.
+        ForEach(lastAuthoredRestore, id: \.store) { r in
+            LabeledContent("Restored", value: r.line)
+                .font(.caption).foregroundStyle(Color.dim)
+            if let aside = r.setAside {
+                Text("The unreadable file was kept as \(aside.lastPathComponent)")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// **NO DATABASE ARGUMENT, AND THAT IS DELIBERATE.** It restores from
+    /// `authoredLoad` — the very load whose counts are on screen two rows
+    /// below — so the receipt and the numbers that justified pressing the
+    /// button describe the same read. The weather restore re-reads because its
+    /// section was built before that load was held; copying that here would
+    /// mean the screen could say 5 notes and the restore act on 4.
+    private func runAuthoredRestore() {
+        guard let load = authoredLoad else { return }
+        restoringAuthored = true
+        authoredRestoreError = nil
+        lastAuthoredRestore = []
+        do {
+            // BOTH, OR THE FIRST AND THEN THE ERROR. A throw from the notes
+            // leaves the commutes untried and says so by having one receipt
+            // and an error — which is the honest report of what happened,
+            // rather than a second attempt that hides which one failed.
+            lastAuthoredRestore.append(try NotesStore.shared.restore(from: load))
+            lastAuthoredRestore.append(try CommuteStore.shared.restore(from: load))
+        } catch let fault as AuthoredRestoreFault {
+            authoredRestoreError = fault.line
+        } catch {
+            authoredRestoreError = error.localizedDescription
+        }
+        restoringAuthored = false
+    }
+
     private func runWeatherRestore(_ db: Sub4Database) {
         restoringWeather = true
         weatherRestoreError = nil

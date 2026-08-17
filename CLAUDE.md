@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 399 (2026-08-17).** §5.3 is the 390 device run, Compare and
+**Current at patch 400 (2026-08-17).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself.
@@ -366,9 +366,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 399, 2026-08-17
+## 5. State — patch 400, 2026-08-17
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 399; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 400; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -416,9 +416,9 @@ no assertion in the suite can reach it.
 ### 5.3 The evidence, from the device at 398 on 17 August 15:50
 
 **Six slices, zero unexplained differences, ON THE LAUNCH THAT FLIPPED.**
-- **THE SEAM HELD.** Slice 4: *the app side came from `details/` and
-  `streams/`, read directly — 694 detail files and 668 trace files, all
-  readable* — while `DetailStore.shared` served rows. First day it could fail.
+- **THE SEAM HELD.** Slice 4 read `details/` and `streams/` directly — 694 and
+  668 files, all readable — while `DetailStore.shared` served rows. First day it
+  could have failed.
 - **SLICE 4'S TWENTY-FOUR FIGURES ARE IDENTICAL TO 389a AND 390** — 694 ·
   8328/6738/0 · **8129** · 4748 · 1144 · 638 · 629. 390 moved where that side is
   READ; 398 moved what the store HOLDS; nothing moved. Groundwork §3.1.
@@ -504,8 +504,11 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
 > `MatchResolverTests.anOverrideNamingAnIneligibleActivityIsLost` states the
 > defect as a test, so the day it is fixed the test inverts.
 
-- **Five authored stores have no restore path** — 372 stopped the mechanism
-  destroying them, nothing built the way back. **Largest open risk**, §5.6.
+- **THREE authored stores still have no restore path** — 400 gave `notes.json`
+  and `commutes.json` one, on the contract extracted from weather's (§12.144).
+  **401 takes the match decisions and `moves.json`; `proposals.json` cannot get
+  one** — `ReviewRepository` returns proposals only inside a review load, the
+  table holds 0 rows, and B7 owns it. Named, not dropped.
 - **SLICE 3 IS SELF-REFERENTIAL AND SAYS SO SINCE 399.** Both varied inputs —
   activities (381) and traces (398) — are the database's on both sides, so its
   413 days and 7211 buckets prove `LoadSeries` is deterministic and not that
@@ -516,9 +519,8 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
 - **`newest removal` names the trigger, not the family** (369); **`canReconcile`
   tests readable, not correct** (§12.120.3); **Import is not a repair path for
   the activities** (§12.126.5).
-- **RULE 8 NO LONGER COVERS `DetailStore`** — 398 fills it in `init` and there
-  is no `hydrate` for the rule to read. The floor stayed at 8; the protection is
-  the comment and `theSeamCannotDestroyTheFiles` (§12.142.3).
+- **RULE 8 NO LONGER COVERS `DetailStore`** — 398 fills it in `init`, so there
+  is no `hydrate` to read. Floor stayed 8; §12.142.3.
 - **`ReadBacks.athlete` IS THE LAST READ-BACK COMPARING THE DATABASE WITH
   ITSELF.** It reads `ConstantsStore.shared.c`, `AthleteStore.shared.ftp` and
   `.hrZones`, all **hydrated since 346** — 27 comparisons that could not have
@@ -527,9 +529,8 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   **ITS OWN PATCH.** It needs `AthleteStore(directory:)` and
   `ConstantsStore(directory:)` — the two `UNPROTECTED_STORE_CEILING` counts —
   and closes **516 rows** nothing else checks: `athlete_profile` (1),
-  `resting_month` (15), `activity_gear_reference` (500). **`knownActivityIDs`
-  is B5's** (381); **`DetailStore` is invisible to RULE 1**, `mayWrite` covers
-  it.
+  `resting_month` (15), `activity_gear_reference` (500). **`knownActivityIDs` is
+  B5's**; **`DetailStore` is invisible to RULE 1**, `mayWrite` covers it.
 - **The pre-activation snapshot is still `2026-08-10-084723`** (340); 384
   captured `2026-08-16-211009`. B9 moves it. **`Sub4/manual.html` is a hundred
   patches stale** (284), deferred until D7. **Two stores remain unprotected** by
@@ -544,10 +545,10 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
 **Done and now history — the arguments are in ADR §12, not here.** The Database
 screen 391–393a (§12.135–§12.137, RULE 7). **B4, 388–398** (§12.139–§12.142):
 394 measured 3.963 s in front of first paint and the answer killed its own
-design; 395 moved both families into `DetailStore`'s own construction; 397 made
-the read one cursor and one pass; 398 flipped. **396** replaced `#if DEBUG` in
+design; 395 moved both families into `DetailStore`'s construction; 397 made the
+read one cursor and one pass; 398 flipped. **396** replaced `#if DEBUG` in
 `ReleaseGates` with how the build was signed (§12.140, RULE 9). **399** marks
-slice 3 (§12.143).
+slice 3 (§12.143); **400** starts the restore path (§12.144).
 
 1. **THE ROLL-UP GATE IS 8 OF 9 UNTIL 24 AUGUST, AND THAT IS THE DECISION.**
    `provesSomething` wants all nine read-backs to have compared something, and
@@ -556,20 +557,20 @@ slice 3 (§12.143).
    abstention is the review trail** — named, not waved through. B7 is blocked on
    it too. **AND ONE OF THE EIGHT IS NOT EVIDENCE** — §5.4a counts it, §5.5
    names it.
-2. **THE AUTHORED RESTORE PATH, AND IT IS NOT B5.** Five stores of Bruno's own
-   writing have no way back — `notes.json`, the match decisions, `moves.json`,
-   `commutes.json`, `proposals.json`. §5.5 has called it the largest open risk
-   while eleven patches went to B4; weather got a restore at 374, these did not.
+2. **THE AUTHORED RESTORE PATH — 400 DONE, 401 NEXT.** 400 extracted the
+   contract from weather's proven one into `StoreRestore`, refactored weather
+   onto it, and gave `notes.json` and `commutes.json` a way back with a control
+   on the authored read-back section. **401 is the match decisions and
+   `moves.json`** through the same mechanism. §12.144.
 3. **FILE PROTECTION.** `FileProtection.protect` swallows its failure with
    `try?`, the screen prints `Until first unlock` as a string literal, and
-   `FileProtectionTests` says in its own comment that a simulator cannot check
-   it. A security property, applied silently, reported by a constant that cannot
-   fail. The fix is the screen reading the attribute back off the real files.
+   `FileProtectionTests` says a simulator cannot check it. A security property,
+   applied silently, reported by a constant that cannot fail — the fix is the
+   screen reading the attribute back off the real files.
 4. **Then Bruno's own list**, then **B5 — weather and gear**, with
    `ReadBacks.knownActivityIDs` and the `WeatherGearRoundTrip` read-back's own
    read. **Gear is the half of `AthleteStore` B1 did not take**, so the
-   verifier's `gear` comparison is still evidence and must not be reclassified
-   before that slice.
+   verifier's `gear` comparison is still evidence — do not reclassify it first.
 5. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed
    recovery screen `RootView` lacks.
