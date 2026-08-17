@@ -9156,7 +9156,43 @@ answering. The store lines below already give the rest. A line that had simply
 listed the details and traces here would have been worse: it would say the
 launch did something the whole of 395 exists to stop it doing.
 
-### 12.142.6 What the device has to say
+### 12.142.6 The app was driven by hand on rows — 17 August, 17:02–17:06
+
+Twelve patches of device evidence in this session were all DATA evidence:
+Compare, the read-backs, the roll-up, the diagnostics paste. **B4 is the first
+slice whose data gets drawn** — B1 moved plan text, B2 notes and decisions, B3
+activity rows, all of which end as labels; B4 moved 199,848 samples that become
+a map polyline and a heart-rate chart, through a reader rewritten from scratch
+at 397.
+
+Everything renders. Two route maps, one spanning two commute parts; zone
+distributions on three activities with **Z5 showing an em-dash**, which is
+`series()`'s nil rule reaching the screen; kilometre splits with per-split heart
+rates; the laps tab; the Progress curve and the rotated fitness landscape.
+`1:11:37 traced` sums its own four zone rows exactly.
+
+**THE FOUR-PANEL PROFILE IS THE ONE THAT CARRIES THE WEIGHT.** Scrubbed to
+9.72 km it reads HR 145 · pace 6:05 · elevation 47 m · grade 1.0% — four
+separate nullable columns out of `recording_sample`, rebuilt by 397, all indexed
+to the same sample position. §12.141.3 names that exact risk: a query listing
+the columns in a different order than `SampleSeries` reads them would put
+longitude into grade, silently, and draw a plausible chart. Four aligned panels
+is the closest thing to a proof of alignment the device can give.
+
+**§12.76 did not fire**, on the screen family where it has fired three times.
+
+**What is still uncovered:** an activity with no trace. 397 made a `recording`
+row with zero samples come back as a trace of LENGTH ZERO rather than absent
+(§12.141.2), so a view written `if let streams` now takes the present branch
+where it took the absent one. 26 of 694 qualify — 24 under 500 m and 2 empty.
+
+**And the lesson about when to ask.** This pass happened because Bruno asked
+whether it was needed, not because it was requested after the flip. It should
+have been requested at 398: the ladder's own evidence machinery is thorough
+about values and says nothing about rendering, and a slice that moves drawn data
+is exactly when that gap matters.
+
+### 12.142.7 What the device has to say
 
 `Detail store built: N s from the database` against **0.399 s from the app's own
 files** — same line, same units, Release. That is 397's measurement and B4's

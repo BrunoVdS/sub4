@@ -416,32 +416,38 @@ no assertion in the suite can reach it.
 ### 5.3 The evidence, from the device at 398 on 17 August 15:50
 
 **Six slices, zero unexplained differences, ON THE LAUNCH THAT FLIPPED.**
-- **THE SEAM HELD, AND THAT IS THE LINE THAT MATTERED.** Slice 4: *the app side
-  came from `details/` and `streams/`, read directly — 694 detail files and 668
-  trace files, all readable* — while `DetailStore.shared` served rows. 390 was
-  built for this day and it is the first day it could have failed.
+- **THE SEAM HELD.** Slice 4: *the app side came from `details/` and
+  `streams/`, read directly — 694 detail files and 668 trace files, all
+  readable* — while `DetailStore.shared` served rows. First day it could fail.
 - **SLICE 4'S TWENTY-FOUR FIGURES ARE IDENTICAL TO 389a AND 390** — 694 ·
-  8328/6738/0 · **8129** · 4748 · 1144 · 638 · 629, plus 90 vs 90 · 638 · 629.
-  390 moved where that side is READ; 398 moved what the store HOLDS; nothing
-  moved. Baseline in groundwork §3.1.
+  8328/6738/0 · **8129** · 4748 · 1144 · 638 · 629. 390 moved where that side is
+  READ; 398 moved what the store HOLDS; nothing moved. Groundwork §3.1.
 - Activity parity 694 · 332 days · order 0 of 694 · both lists settled ·
   `activities.json, read directly`; volume 332/284/12 zero; match 518 days ·
-  adherence 15 of 207; summary 27 vs 27 days.
-- **Load parity 413 days, and it is SELF-REFERENTIAL since 398** — §5.5, and
-  399 is what makes it say so.
+  adherence 15 of 207; summary 27 vs 27.
+- **Load parity 413 days, SELF-REFERENTIAL since 398** — §5.5; 399 says so.
 - **Roll-up at 390: 8 of 9 agree · 0 differ · 0 could not look · 1 nothing to
-  compare · 1 reading a store the database feeds** — `Athlete` (§5.5).
-- **`runs ever verified: 18`**, newest `patch 392 · 22 agreed · 12 independent`
-  — **7 after 398** (§5.4).
+  compare · 1 reading a store the database feeds** — `Athlete`.
+- **`runs ever verified: 18`**, newest `patch 392 · 12 independent` — **7 after
+  398** (§5.4).
 - **Tables**: `activity_detail 694`, `activity_split 8206`, `recording 668`,
   **`recording_sample 199848`**, `weather 603`. **`Traces still to fetch: 0`**;
-  26 of 694 have none (24 under 500 m, 2 empty, **0 unexplained**).
+  26 of 694 have none (24 under 500 m, 2 empty, 0 unexplained).
 
-**What that does and does not prove.** The app derives the same answers from
+**AND THE APP WAS DRIVEN BY HAND ON ROWS — 17 August 17:02.** Every earlier
+device check was DATA evidence; **B4 is the first slice whose data gets DRAWN.**
+Routes (one across two commute parts), zone distributions with an absent Z5,
+splits, laps, the Progress curve and the rotated landscape all render, and
+§12.76 did not fire. **The four-panel profile scrubbed to 9.72 km — HR 145 ·
+6:05 · 47 m · 1.0% — carries the weight**: four nullable columns aligned to one
+sample position, §12.141.3's named risk. **Uncovered: an activity with no
+trace**, now a trace of LENGTH ZERO rather than absent — 26 of 694. §12.142.6.
+
+**What it does and does not prove.** The app derives the same answers from
 either side for everything the slices cover — **except slice 3, which since 398
-cannot disagree.** It does not prove a lossless round trip: gear status,
-rejection and match-date metadata, plan source and order and fractional
-fetch-time precision are outside the mapped set — §12.86.
+cannot disagree.** Not a lossless round trip: gear status, rejection and
+match-date metadata, plan source and order and fractional fetch-time precision
+are outside the mapped set — §12.86.
 
 ### 5.4 The verifier's accounting, derived end to end, and in THREE buckets
 
@@ -475,15 +481,14 @@ number falling is what a slice landing looks like, and B9 is where it ends.
 
 **The nine read-backs carry the same split, derived the same way**: each row says
 where its APP SIDE came from and `ExpectationSources.live` resolves it. **390
-gave `Activities`, `Details` and `Recordings` their own reads, so the count is
-1 — `Athlete`.**
+gave `Activities`, `Details` and `Recordings` their own reads — the count is 1,
+`Athlete`.**
 
 **THE UNIT IS NOT THE FIELD HERE.** `Notes and commutes` reads four fed fields
-and is evidence anyway, because 356 gave it its own read. A row says whether it
-read the files itself or took the stores; only the second consults the sources.
-**FOUR marks**: *own read*, *self-referential*, *from the stores — not fed yet*
-(B7's tripwire), and *COULD NOT READ ITS OWN SIDE*, which turns the row red.
-§12.133, §12.134.
+and is evidence anyway, because 356 gave it its own read: a row says whether it
+read the files itself or took the stores, and only the second consults the
+sources. **FOUR marks** — *own read*, *self-referential*, *from the stores, not
+fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.134.
 
 ### 5.5 Open, and the first one is Bruno's call
 
@@ -499,9 +504,8 @@ read the files itself or took the stores; only the second consults the sources.
 > `MatchResolverTests.anOverrideNamingAnIneligibleActivityIsLost` states the
 > defect as a test, so the day it is fixed the test inverts.
 
-- **Five authored stores have no restore path** — `notes.json`, the match
-  decisions, `moves.json`, `commutes.json`, `proposals.json`. 372 stopped the
-  mechanism destroying them. **Largest open risk.**
+- **Five authored stores have no restore path** — 372 stopped the mechanism
+  destroying them, nothing built the way back. **Largest open risk**, §5.6.
 - **SLICE 3 IS SELF-REFERENTIAL AND SAYS SO SINCE 399.** Both varied inputs —
   activities (381) and traces (398) — are the database's on both sides, so its
   413 days and 7211 buckets prove `LoadSeries` is deterministic and not that
@@ -542,27 +546,25 @@ screen 391–393a (§12.135–§12.137, RULE 7). **B4, 388–398** (§12.139–�
 394 measured 3.963 s in front of first paint and the answer killed its own
 design; 395 moved both families into `DetailStore`'s own construction; 397 made
 the read one cursor and one pass; 398 flipped. **396** replaced `#if DEBUG` in
-`ReleaseGates` with how the build was signed, which is what made a Release
-measurement possible at all (§12.140, RULE 9). **399** marks slice 3 (§12.143).
+`ReleaseGates` with how the build was signed (§12.140, RULE 9). **399** marks
+slice 3 (§12.143).
 
 1. **THE ROLL-UP GATE IS 8 OF 9 UNTIL 24 AUGUST, AND THAT IS THE DECISION.**
    `provesSomething` wants all nine read-backs to have compared something, and
    `Review trail` reads *nothing on either side* until **24 August 2026**. The
    gate is **eight of nine agree, zero differ, zero could not look, and the
-   abstention is the review trail** — named, not waved through. B7 is blocked
-   on the same fact. **AND ONE OF THE EIGHT IS NOT EVIDENCE** — §5.4a counts
-   it, §5.5 names it.
+   abstention is the review trail** — named, not waved through. B7 is blocked on
+   it too. **AND ONE OF THE EIGHT IS NOT EVIDENCE** — §5.4a counts it, §5.5
+   names it.
 2. **THE AUTHORED RESTORE PATH, AND IT IS NOT B5.** Five stores of Bruno's own
    writing have no way back — `notes.json`, the match decisions, `moves.json`,
    `commutes.json`, `proposals.json`. §5.5 has called it the largest open risk
-   while eleven patches went to B4; weather got a restore at 374 and these did
-   not.
+   while eleven patches went to B4; weather got a restore at 374, these did not.
 3. **FILE PROTECTION.** `FileProtection.protect` swallows its failure with
    `try?`, the screen prints `Until first unlock` as a string literal, and
    `FileProtectionTests` says in its own comment that a simulator cannot check
-   it. A security property, applied silently, reported by a constant that
-   cannot fail. The fix is the screen reading the attribute back off the real
-   files — three answers, including *no attribute recorded*.
+   it. A security property, applied silently, reported by a constant that cannot
+   fail. The fix is the screen reading the attribute back off the real files.
 4. **Then Bruno's own list**, then **B5 — weather and gear**, with
    `ReadBacks.knownActivityIDs` and the `WeatherGearRoundTrip` read-back's own
    read. **Gear is the half of `AthleteStore` B1 did not take**, so the
@@ -573,9 +575,9 @@ measurement possible at all (§12.140, RULE 9). **399** marks slice 3 (§12.143)
    recovery screen `RootView` lacks.
 6. **D8** — stabilise one release window, then remove the JSON writers.
 
-**B4's cost, for the record:** `Detail store built: 0.872 / 0.930 s from the
-database` in Debug, against 0.443 s of files in Debug and 3.925 s before 397.
-A Release reading is still owed; the file side is 0.399 s there.
+**B4's cost:** `Detail store built: 0.872 / 0.930 s from the database` in
+Debug, against 0.443 s of files in Debug and 3.925 s before 397. A Release
+reading is owed; the file side is 0.399 s there.
 
 Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
 `review-data-pool.md` and `ADR-0002-strava-retirement.md`.
