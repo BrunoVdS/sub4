@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 391 (2026-08-17).** §5.3 is the 390 device run, Compare and
+**Current at patch 392 (2026-08-17).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and
 §5.4a are the verifier's and the roll-up's accountings, both derived; §5.5's
 first bullet is the last read-back still comparing the database with itself.
@@ -366,10 +366,10 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 391, 2026-08-17
+## 5. State — patch 392, 2026-08-17
 
 **THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Everything below is
-current at 391; §5.3 is what the device said at 390, and §5.4 is the accounting
+current at 392; §5.3 is what the device said at 390, and §5.4 is the accounting
 that has now been wrong twice and corrected twice. Anything older
 than this section is history and lives in ADR §12; if a number here disagrees
 with the code, the code wins and this section is the defect.
@@ -412,34 +412,32 @@ hydration must never write.
 
 **Compare and the roll-up on one launch — six slices, nine read-backs, zero
 unexplained differences.**
-
 - **Roll-up: 8 of 9 agree · 0 differ · 0 could not look · 1 nothing to compare ·
   1 read a store the database feeds** — `Athlete`, the last (§5.5); `Activities`,
   `Details` and `Recordings` now read `own read`.
 - **SLICE 4'S TWENTY-FOUR FIGURES ARE IDENTICAL TO 389a** — 694 · 8328/6738/0 ·
-  **8129** · 4748 · 90 vs 90 · 1144 · 638 · 629. §12.125.6's check: 390 moved
-  where that side is READ and not one number moved. Baseline in groundwork §3.1.
+  **8129** · 4748 · 1144 · 638 · 629. §12.125.6: 390 moved where that side is
+  READ and not one number moved. Baseline in groundwork §3.1.
 - Activity parity 694 · 332 days · order 0 of 694 · **live store settled: yes**;
-  volume 332/284/12 all zero; match 518 days · adherence 15 of 207 both sides ·
-  7 overrides; summary 4 weeks · 27 vs 27 days.
+  volume 332/284/12 zero; match 518 days · adherence 15 of 207 both sides; summary
+  4 weeks · 27 vs 27 days.
 - **Load parity 413 days · fitness 33 vs 33 · fatigue 40 vs 40.** Fitness read
-  34 vs 34 forty minutes earlier. **Both sides moved together, which is what the
-  comparison is for** — the LEVEL depends on what that slice lists as `held from
-  the app: … and Apple Health`, which is memory-only and loads on demand, so it
-  moves both sides identically. Not a parity finding.
+  34 vs 34 forty minutes earlier; **both sides moved together, which is what the
+  comparison is for.** The LEVEL depends on what that slice lists as `held from
+  the app: … and Apple Health`, memory-only and loaded on demand. Not a finding.
 - **`runs ever verified: 17`**, newest `verified · patch 388 · 12 independent`.
-  **Verify unpressed since 388**; `SemanticVerifier.swift` is untouched since,
-  so that line is settled by diff rather than by press.
+  **Verify unpressed since 388**; `SemanticVerifier.swift` untouched since, so
+  that line is settled by diff.
 - **Tables**: `activity_detail 694`, `activity_split 8206`, `recording 668`,
   **`recording_sample 199848`**, `weather 603`. **`Traces still to fetch: 0`**;
   26 of 694 have none (24 under 500 m, 2 empty, **0 unexplained**).
 - **`Detail and trace files: 694 … 668 …, all readable`** — 390's line; the seam
-  read that 19.1 MB twice in one roll-up with every file still there. **And since
-  391 the paste also carries the activity, detail, recording and write-through
-  breakdowns, which were screen-only and are why the screenshots existed.**
+  read that 19.1 MB twice with every file still there. **391 added the activity,
+  detail, recording and write-through breakdowns, which were screen-only and are
+  why the screenshots existed; 392 gave every section its own export.**
 
-**The independent count reached 12 by two corrections** — 384 printed 14 (§12.129),
-385 made it 13, 388 made it 12. §12.128–§12.134.
+**The count reached 12 by two corrections** — 384 printed 14 (§12.129), 385 made
+it 13, 388 made it 12. §12.128–§12.134.
 
 **What that does and does not prove.** It proves the app derives the same
 answers from either side for everything the slices cover. It does not prove a
@@ -528,9 +526,8 @@ a fallback, which turns the row red. §12.133, §12.134.
   **516 rows** nothing else checks: `athlete_profile` (1) and `resting_month`
   (15) have no verifier comparison at all, and `activity_gear_reference` (500) is
   reached only through `ActivityRoundTrip`'s `gearId` `LEFT JOIN`.
-- **`ReadBacks.knownActivityIDs` is B5's**, under 381's general rule. And
-  **`DetailStore` is invisible to RULE 1** (its population is `let fileURL: URL`);
-  `mayWrite` (390) covers the risk.
+- **`ReadBacks.knownActivityIDs` is B5's**, under 381's general rule; and
+  **`DetailStore` is invisible to RULE 1**, which `mayWrite` (390) covers.
 - **The pre-activation snapshot is still `2026-08-10-084723`** (340); 384
   captured `2026-08-16-211009`. B9 moves it. And **`Sub4/manual.html` is a
   hundred patches stale** (284) — §11 is the wrong part, deferred until D7.
@@ -554,12 +551,15 @@ a fallback, which turns the row red. §12.133, §12.134.
    blocked on the same fact. **AND ONE OF THE EIGHT IS NOT EVIDENCE** — §5.4a
    counts it, §5.5 names it.
 2. **THE DATABASE SCREEN, 391–393**, interleaved into B4 at Bruno's request.
-   **391 is done and it is the one that mattered**: three read-backs and the
-   write-through put nothing in the diagnostics paste, so the only way to read
-   which field differed was a screenshot. All four now do (§12.135). **392** adds
-   a per-section export — a slice of those lines, no new content. **393** makes
+   **391 and 392 are done.** 391 was the one that mattered: three read-backs and
+   the write-through put nothing in the paste, so the only way to read which
+   field differed was a screenshot (§12.135). 392 gives all twenty-two section
+   headers a share control handing over that section's own lines — the same
+   property the paste appends, so the two cannot drift (§12.136). **393** makes
    the sections collapsible, and it is the risky one: `DatabaseHealthView` is
-   where §12.76 has been paid three times, so it lands alone.
+   where §12.76 has been paid three times, so it lands alone. **It needs two
+   answers first — collapsed by default, and does the state survive closing the
+   sheet.**
 3. **B4 — details and traces: 388, 389, 390 done; 394, 395 to go.**
    **`docs/D7-B4-GROUNDWORK.md`** is the plan. The residual stopped counting as
    evidence, the roll-up counts its own, and Compare's slice 4 plus three

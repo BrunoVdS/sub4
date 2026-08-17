@@ -58,6 +58,12 @@ struct ShadowParitySections: View {
     /// The open database. Needed for exactly one thing — the button.
     let db: Sub4Database
 
+    /// **THE SHEET LIVES ON THE PARENT AND THAT IS PATCH 332'S DECISION** —
+    /// patch 392. A sheet presented from inside a `List` row is presented from
+    /// a view the list is free to recycle, so `DatabaseHealthView` owns the one
+    /// `.sheet(item:)` on this screen and these two headers write into it.
+    @Binding var shared: ShareItem?
+
     /// D6c — patch 312, moved off `@State` at 313.
     ///
     /// OBSERVED RATHER THAN OWNED. The result used to live in the screen, so
@@ -93,7 +99,9 @@ struct ShadowParitySections: View {
             detailRows
             matchRows
         } header: {
-            Text("Shadow parity")
+            DiagnosticSectionHeader(title: "Shadow parity",
+                                    lines: { parity.last.diagnosticLines },
+                                    shared: $shared)
         } footer: {
             Text(Self.parityFooter).font(.caption2)
         }
@@ -639,7 +647,9 @@ struct ShadowParitySections: View {
                 summaryDayAndVolumeRows(s)
                 summaryContextRows(s)
             } header: {
-                Text("Shadow parity · tab summaries")
+                DiagnosticSectionHeader(title: "Shadow parity · tab summaries",
+                                        lines: { parity.last.diagnosticLines },
+                                        shared: $shared)
             } footer: {
                 Text(Self.summaryFooter).font(.caption2)
             }

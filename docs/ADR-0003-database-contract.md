@@ -8962,6 +8962,107 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.136 Every section hands over its own numbers — patch 392
+
+The half of the request 391 did not do. Twenty-two section headers on the
+Database screen gained a share control that writes that section's lines to a
+dated file.
+
+### 12.136.1 The lines are the paste's, not a second rendering
+
+`SectionExport` takes the lines it is given and formats nothing. Every header
+hands over the **same property `diagnosticsText` appends** — `rollUp.last
+.diagnosticLines`, `recordingTrip?.diagnosticLines`, and so on — so a section
+read on its own and the same section read inside the full file cannot say
+different things. §12.43, and it is the whole value of the screen: a figure read
+here and a figure read in a message have to be the same figure.
+
+**The redaction is inherited rather than re-decided.** §12.7's promise is made
+in the footer the athlete taps. Every block this carries already had to satisfy
+it to be in the paste, so there is no new judgement and no new surface.
+
+### 12.136.2 Six blocks belonged to nobody
+
+Fifteen sections already owned a `diagnosticLines` on their report type. Six
+were written INLINE in `diagnosticsText` and had no owner, so a header had
+nothing to hand over: the file and its bootstrap, the table counts, the
+snapshot, the ledger, the store journals, and the trace backlog.
+
+They are now `fileLines`, `tableLines`, `snapshotLines`, `ledgerLines`,
+`storeFileLines` and `traceBacklogLines`, and `diagnosticsText` is what it
+should always have been — an assembly of named blocks rather than three hundred
+lines of `append`. **One copy of each**, so the export and the paste cannot
+drift.
+
+### 12.136.3 Two things in the paste moved, and both are said here rather than found
+
+**The survey block moved.** It sat between the benchmark and the verification;
+it now sits at the end of `storeFileLines`, with the two journals, the activity
+roster and the detail tally — which is the section it belongs to on the screen
+(`The app's own files`). Same content, later position. A reader diffing a 391
+paste against a 392 one will see it, so it is written down.
+
+**An absent snapshot now says so.** The old code appended the manifest only
+`if let m = snapshot`, so a device with none produced no line at all;
+`snapshotLines` says `Protected snapshot: none taken`. §12.54.2 — a block that
+vanishes cannot be told from a block nobody wired in. It cannot fire on this
+device, which holds two.
+
+Nothing else in the paste changes, in content or in order.
+
+### 12.136.4 The header costs no depth, and the closure is load-bearing
+
+**A header is a slot of its own, not a child of the section's `@ViewBuilder`
+block.** One `Text` becomes one `HStack`; the content chain that
+`EXC_BAD_ACCESS` inside `___chkstk_darwin` was about is untouched. §12.76 has
+been paid three times on this screen and this patch does not put a finger on it
+— 393 does, which is why 393 is separate.
+
+**`lines` is `() -> [String]` rather than `[String]`, and that matters.**
+`RecordingRoundTrip.Report.diagnosticLines` sorts dictionaries over the tallies
+of 199,848 samples. Passing the value would compute every section's block on
+every layout pass of the one screen in this app with a known runtime size
+problem; passing the closure computes one block, once, when somebody presses the
+button.
+
+### 12.136.5 A filename is not a title
+
+Half these titles carry a middle dot, an apostrophe or an em dash —
+`Read-back · details`, `The plan's versions`, `Rows — 51 tables`. A file named
+with any of them needs quoting in every shell and mangles in half the transports
+it will meet. `slug` keeps letters and digits, turns everything else into one
+hyphen, and trims the ends.
+
+**A title of nothing but punctuation still has to produce a file** — it becomes
+`section`, because `sub4--2026-08-17-p392.txt` is not a failure anybody can act
+on. §12.15.
+
+**The stamp leads the file.** §12.79: *a capture that names its own build is a
+capture that can still be read next week*, and a section exported alone has less
+context than the full file rather than more.
+
+### 12.136.6 What is compiler-forced and what is not
+
+**Not forced: that a section was given its own lines.** `DiagnosticSectionHeader`
+is a SwiftUI view and the twenty-two call sites are inside two view files, so no
+assertion can prove `Read-back · recordings` hands over the recording report
+rather than the detail one. The mitigation is placement — the closure is written
+at the header, three lines from the section it titles — and the honest statement
+is that this is a reviewer's job, the same standing §12.133.9 recorded for the
+roll-up's provenance.
+
+**Forced: everything with a failure mode.** `SectionExportTests` holds the slug
+for all eight real title shapes, the filename's three parts including a letter
+fix-up, the stamp's position, and the empty case. The negative control replaced
+`slug` with `title.lowercased()` and failed eleven assertions across four tests.
+
+### 12.136.7 The suite
+
+1,658 before, **1,665 after**, 152 suites. `SectionExportTests` is new; seven
+arrived, none went.
+
+---
+
 ## 12.135 Four sections the paste never carried — patch 391
 
 Not a D7 slice. It came out of a request to add a per-section export to the

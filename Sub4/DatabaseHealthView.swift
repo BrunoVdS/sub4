@@ -257,7 +257,7 @@ struct DatabaseHealthView: View {
                     // A SEPARATE VIEW rather than a group, because it is the
                     // largest thing on this screen by a wide margin and it
                     // needs none of this screen's state. §12.76.2.
-                    ShadowParitySections(db: db)
+                    ShadowParitySections(db: db, shared: $shared)
                     toolSections(db)
                 }
             }
@@ -489,7 +489,9 @@ struct DatabaseHealthView: View {
 
             LabeledContent("Protection", value: "Until first unlock")
         } header: {
-            Text("The file")
+            DiagnosticSectionHeader(title: "The file",
+                                        lines: { fileLines },
+                                        shared: $shared)
         } footer: {
             Text("The database and its journal files sit in their own folder, "
                  + "which carries the protection class so anything SQLite "
@@ -527,7 +529,9 @@ struct DatabaseHealthView: View {
                 }
             }
         } header: {
-            Text("Rows — \(counts.count) table\(counts.count == 1 ? "" : "s")")
+            DiagnosticSectionHeader(title: "Rows — \(counts.count) table\(counts.count == 1 ? "" : "s")",
+                                        lines: { tableLines },
+                                        shared: $shared)
         } footer: {
             Text(importedRows == 0
                  ? "Nothing imported yet, which is correct: the schema is built "
@@ -616,7 +620,9 @@ struct DatabaseHealthView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            Text("Protected snapshot")
+            DiagnosticSectionHeader(title: "Protected snapshot",
+                                        lines: { snapshotLines },
+                                        shared: $shared)
         } footer: {
             Text("A dated copy of every legacy file plus the declared "
                  + "UserDefaults values, with a SHA-256 for each. Live data is "
@@ -968,7 +974,9 @@ struct DatabaseHealthView: View {
                 }
             }
         } header: {
-            Text("Import")
+            DiagnosticSectionHeader(title: "Import",
+                                        lines: { lastImport.last.diagnosticLines },
+                                        shared: $shared)
         } footer: {
             Text("Copies activities and gear from the app's current stores into "
                  + "the database. Nothing else changes: the app still reads its "
@@ -1095,7 +1103,9 @@ struct DatabaseHealthView: View {
                     .foregroundStyle(l.isFault ? .red : Color.dim)
             }
         } header: {
-            Text("Read-back roll-up")
+            DiagnosticSectionHeader(title: "Read-back roll-up",
+                                        lines: { rollUp.last.diagnosticLines },
+                                        shared: $shared)
         } footer: {
             Text(Self.rollUpFooter).font(.caption2)
         }
@@ -1261,7 +1271,9 @@ struct DatabaseHealthView: View {
             backlogHeadlineRows
             backlogAccountRows
         } header: {
-            Text("Traces still to fetch")
+            DiagnosticSectionHeader(title: "Traces still to fetch",
+                                        lines: { traceBacklogLines },
+                                        shared: $shared)
         } footer: {
             Text(Self.backlogFooter).font(.caption2)
         }
@@ -1491,7 +1503,9 @@ struct DatabaseHealthView: View {
                 benchmarkResult(r)
             }
         } header: {
-            Text("Benchmark")
+            DiagnosticSectionHeader(title: "Benchmark",
+                                        lines: { benchmark.result?.diagnosticLines ?? ["Benchmark: not run"] },
+                                        shared: $shared)
         } footer: {
             Text(benchmark.result == nil
                  ? "Builds a throwaway database in temporary space, measures it, "
@@ -1652,7 +1666,9 @@ struct DatabaseHealthView: View {
                 }
             }
         } header: {
-            Text("Verification")
+            DiagnosticSectionHeader(title: "Verification",
+                                        lines: { verification.last.diagnosticLines },
+                                        shared: $shared)
         } footer: {
             Text("Compares the database against the app's own stores: counts, "
                  + "which activities are there, the fields of every one, and a "
@@ -1720,7 +1736,9 @@ struct DatabaseHealthView: View {
                 }
             }
         } header: {
-            Text("Read-back")
+            DiagnosticSectionHeader(title: "Read-back",
+                                        lines: { roundTrip?.diagnosticLines ?? ["Activity read-back: \(roundTripLoad?.line ?? "not read")"] },
+                                        shared: $shared)
         } footer: {
             Text("Reads every activity out of the database through "
                  + "ActivityRepository and compares it, field by field, to the "
@@ -1791,7 +1809,9 @@ struct DatabaseHealthView: View {
 
             }
         } header: {
-            Text("Read-back · details")
+            DiagnosticSectionHeader(title: "Read-back · details",
+                                        lines: { detailTrip?.diagnosticLines ?? ["Detail read-back: \(detailLoad?.line ?? "not read")"] },
+                                        shared: $shared)
         } footer: {
             Text("The same comparison one level down: splits, laps and best "
                  + "efforts, matched by index and by name rather than by "
@@ -1878,7 +1898,9 @@ struct DatabaseHealthView: View {
                 }
             }
         } header: {
-            Text("Read-back · recordings")
+            DiagnosticSectionHeader(title: "Read-back · recordings",
+                                        lines: { recordingTrip?.diagnosticLines ?? ["Recording read-back: not read"] },
+                                        shared: $shared)
         } footer: {
             Text("Every sample of every stream, compared one recording at a "
                  + "time. A recording whose lengths disagree is reported as a "
@@ -1991,7 +2013,9 @@ struct DatabaseHealthView: View {
                     .font(.caption2).foregroundStyle(Color.dim)
             }
         } header: {
-            Text("Read-back · athlete")
+            DiagnosticSectionHeader(title: "Read-back · athlete",
+                                        lines: { athleteTrip?.diagnosticLines ?? ["Athlete read-back: \(athleteLoad?.line ?? "not read")"] },
+                                        shared: $shared)
         } footer: {
             Text("Reads the profile, the resting series and the zones back out "
                  + "and compares them, field by field, to the ones the app is "
@@ -2114,7 +2138,9 @@ struct DatabaseHealthView: View {
                     .font(.caption2).foregroundStyle(Color.dim)
             }
         } header: {
-            Text("Read-back · authored")
+            DiagnosticSectionHeader(title: "Read-back · authored",
+                                        lines: { authoredTrip?.diagnosticLines ?? ["Authored read-back: \(authoredLoad?.line ?? "not read")"] },
+                                        shared: $shared)
         } footer: {
             Text("The two tables the athlete writes rather than the source: "
                  + "session notes and commute decisions. Small, and load-"
@@ -2216,7 +2242,9 @@ struct DatabaseHealthView: View {
                 HStack { ProgressView(); Text("Counting versions…").font(.caption) }
             }
         } header: {
-            Text("The plan's versions")
+            DiagnosticSectionHeader(title: "The plan's versions",
+                                        lines: { planCensus?.diagnosticLines ?? ["Plan versions: not counted"] },
+                                        shared: $shared)
         } footer: {
             Text("A stored version is a full copy of one plan. Four of them is "
                  + "not four copies of the same thing: every revision writes "
@@ -2434,7 +2462,9 @@ struct DatabaseHealthView: View {
                     .font(.caption2).foregroundStyle(Color.dim)
             }
         } header: {
-            Text("Read-back · the plan")
+            DiagnosticSectionHeader(title: "Read-back · the plan",
+                                        lines: { planReadBackLines },
+                                        shared: $shared)
         } footer: {
             Text("The bundled plan, decomposed across six tables on import and "
                  + "reassembled here. Unlike every other read-back this one "
@@ -2630,7 +2660,9 @@ struct DatabaseHealthView: View {
                     .font(.caption2).foregroundStyle(Color.dim)
             }
         } header: {
-            Text("Read-back · weather and gear")
+            DiagnosticSectionHeader(title: "Read-back · weather and gear",
+                                        lines: { weatherGearTrip?.diagnosticLines ?? ["Weather and gear read-back: \(weatherGearLoad?.line ?? "not read")"] },
+                                        shared: $shared)
         } footer: {
             Text("The two caches of fetched source data. Weather is the largest "
                  + "table in the database and is drawn on every activity "
@@ -2937,7 +2969,9 @@ struct DatabaseHealthView: View {
                     .font(.caption2).foregroundStyle(Color.dim)
             }
         } header: {
-            Text("Read-back · reviews")
+            DiagnosticSectionHeader(title: "Read-back · reviews",
+                                        lines: { reviewTrip?.diagnosticLines ?? ["Review read-back: \(reviewLoad?.line ?? "not read")"] },
+                                        shared: $shared)
         } footer: {
             // HOISTED TO A CONSTANT — patch 327a, same reason `diagnosticLines`
             // stopped being one array literal. A footer built from eleven `+`
@@ -3187,7 +3221,9 @@ struct DatabaseHealthView: View {
                 }
             }
         } header: {
-            Text("The app's own files")
+            DiagnosticSectionHeader(title: "The app's own files",
+                                        lines: { storeFileLines },
+                                        shared: $shared)
         } footer: {
             Text("Reads every file the app has written and classifies it: "
                  + "readable, missing, interrupted part way, or holding a "
@@ -3472,7 +3508,9 @@ struct DatabaseHealthView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            Text("Write-through")
+            DiagnosticSectionHeader(title: "Write-through",
+                                        lines: { writeThrough.diagnosticLines },
+                                        shared: $shared)
         } footer: {
             Text("Runs the import above on its own when the app goes to the "
                  + "background. It costs about a third of a second and copies "
@@ -3574,7 +3612,9 @@ struct DatabaseHealthView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            Text("Import ledger")
+            DiagnosticSectionHeader(title: "Import ledger",
+                                        lines: { ledgerLines },
+                                        shared: $shared)
         } footer: {
             // "One row per import" is what this said until 311, and it
             // is the sentence the migration's own body still carries. It
@@ -3624,124 +3664,129 @@ struct DatabaseHealthView: View {
         }
     }
 
-    /// Built from figures that cannot describe anybody — see the header.
-    private var diagnosticsText: String {
-        var lines: [String] = [AppVersion.full]
+    // MARK: - The blocks a section can hand over — patch 392, §12.136
+
+    //  EVERY SECTION ON THIS SCREEN CAN NOW EXPORT ITS OWN NUMBERS, and the
+    //  numbers it exports are the ones the paste carries — the same property,
+    //  not a second rendering of the same figures. §12.43: a block written
+    //  twice is two things that can drift, and this screen's whole value is
+    //  that a figure read here and a figure read in a message are the same
+    //  figure.
+    //
+    //  Fifteen sections already owned a `diagnosticLines` on their report type.
+    //  The six below were written INLINE in `diagnosticsText` and belonged to
+    //  nobody, so a header had nothing to hand over. Extracting them changed no
+    //  text: `diagnosticsText` appends exactly these, in exactly this order.
+
+    /// "The file" — what this database IS, what opened it, and what every store
+    /// is reading. One run with no blank line in it, because a reader meets the
+    /// verdict, the mode and the stores as one fact.
+    private var fileLines: [String] {
+        var l = [AppVersion.full]
         if let report {
-            lines.append("Integrity: \(report.quickCheck)")
-            lines.append("Orphaned rows: \(report.foreignKeyViolations)")
-            lines.append("Foreign keys: \(report.foreignKeysEnabled ? "on" : "OFF")")
-            lines.append("Migrations: \(report.appliedMigrations.joined(separator: ", "))")
-            lines.append("Expected: \(Sub4Migrations.all.joined(separator: ", "))")
+            l.append("Integrity: \(report.quickCheck)")
+            l.append("Orphaned rows: \(report.foreignKeyViolations)")
+            l.append("Foreign keys: \(report.foreignKeysEnabled ? "on" : "OFF")")
+            l.append("Migrations: \(report.appliedMigrations.joined(separator: ", "))")
+            l.append("Expected: \(Sub4Migrations.all.joined(separator: ", "))")
             if let bytes = report.bytesOnDisk {
-                lines.append("Size: \(bytes) bytes")
+                l.append("Size: \(bytes) bytes")
             }
         }
-        lines.append("Prepared: \(Sub4Launch.shared.database != nil ? "at launch" : "by this screen")")
-        // PATCH 343. THE VALUE D7 TURNS ON, READABLE OFF THE DEVICE.
-        //
-        // 342 computed it and printed it nowhere, which was defensible while
-        // nothing consumed it — the state was provable by construction. From
-        // B1 it decides what three stores read, and a value that decides that
-        // and cannot be read is the shape §12.54.2 keeps naming. §12.91.
-        lines.append("Reads from: \(Sub4Launch.shared.persistence.line)")
-        // PATCH 345. WHAT THE LAUNCH READ, AND WHAT IT DID ABOUT IT.
-        //
-        // Every line unconditional, including the ones that say nothing
-        // happened — §12.54.2, whose whole subject is that a row which
-        // disappears when the answer is boring cannot be told from a row
-        // nobody wired in. "Hydration: not this launch" and no hydration line
-        // at all look identical from a paste, and only one of them means the
-        // code is working.
-        //
-        // The three store lines are the §12.15 pair this slice turns on:
-        // `PlanStore.init` decodes the bundle, so a store that was never
-        // hydrated holds a perfectly good plan and is otherwise
-        // indistinguishable from one that was.
-        lines.append("Hydration: \(Sub4Launch.shared.hydration.line)")
+        l.append("Prepared: \(Sub4Launch.shared.database != nil ? "at launch" : "by this screen")")
+        l.append("Reads from: \(Sub4Launch.shared.persistence.line)")
+        l.append("Hydration: \(Sub4Launch.shared.hydration.line)")
         if let boot = Sub4Launch.shared.bootstrap {
-            lines.append(contentsOf: boot.diagnosticLines)
+            l.append(contentsOf: boot.diagnosticLines)
         } else {
-            lines.append("Database bootstrap: not assembled — the database did "
-                         + "not open this launch")
+            l.append("Database bootstrap: not assembled — the database did "
+                     + "not open this launch")
         }
-        lines.append("Plan store reads: \(PlanStore.shared.servedFrom.line)")
-        lines.append("Athlete store reads: \(AthleteStore.shared.servedFrom.line)")
-        lines.append("Constants store reads: \(ConstantsStore.shared.servedFrom.line)")
-        // PATCH 359 — THE THREE B2 MOVED AND DID NOT ANNOUNCE.
-        //
-        // `Hydration:` above says what moved, once, on the launch it moved. It
-        // is a sentence about an event. These say where each store READS, on
-        // every paste, which is a different fact and the one somebody checks
-        // against a screen that looks wrong six weeks from now. §12.54.2: they
-        // print whatever the answer is, so "the app's own files" on one of them
-        // after B2 is a finding rather than a missing line.
-        lines.append("Notes store reads: \(NotesStore.shared.servedFrom.line)")
-        lines.append("Commute store reads: \(CommuteStore.shared.servedFrom.line)")
-        lines.append("Matcher reads: \(Matcher.shared.servedFrom.line)")
-        // PATCH 368, and it is the same argument as the three above rather than
-        // a new one. Found in 366c's paste: this store was the only authored
-        // one with no line, and the bootstrap census counts five families
-        // because moves are not hydrated. Both true, together unreadable.
-        lines.append("Move store reads: \(PlanMoveStore.shared.servedFrom.line)")
-        // PATCH 380 — THE EIGHTH, AND THE FAMILY IS NOT FED YET. 368's
-        // argument one slice later: this store was the only one with no line,
-        // so "the app's own files" and "nobody wired it in" read the same. It
-        // says the files until 381 and then it moves on its own. §12.54.2.
-        lines.append("Activity store reads: \(ActivityStore.shared.servedFrom.line)")
-        lines.append("Tables: \(counts.count), imported rows: \(importedRows), total: \(totalRows)")
-        // PATCH 336. EVERY TABLE, INCLUDING THE EMPTY ONES.
-        //
-        // This said `where row.rows > 0` from the day it was written, so the
-        // header claimed 51 tables and the list printed 38. The thirteen it
-        // hid are `review_evidence_source`, `content_revision`,
-        // `match_decision`, `user_note`, `correction` and their neighbours —
-        // which is to say, every table this project has spent a week arguing
-        // about, invisible in the one artefact that gets read later by
-        // somebody who cannot see the screen.
-        //
-        // §12.54.2, in the place it costs most: a row that vanishes at zero
-        // cannot be told from a row nobody wired in. The screen has always
-        // drawn all 51. The paste now agrees with it.
-        for row in counts {
-            lines.append("  \(row.table): \(row.rows)")
+        l.append("Plan store reads: \(PlanStore.shared.servedFrom.line)")
+        l.append("Athlete store reads: \(AthleteStore.shared.servedFrom.line)")
+        l.append("Constants store reads: \(ConstantsStore.shared.servedFrom.line)")
+        l.append("Notes store reads: \(NotesStore.shared.servedFrom.line)")
+        l.append("Commute store reads: \(CommuteStore.shared.servedFrom.line)")
+        l.append("Matcher reads: \(Matcher.shared.servedFrom.line)")
+        l.append("Move store reads: \(PlanMoveStore.shared.servedFrom.line)")
+        l.append("Activity store reads: \(ActivityStore.shared.servedFrom.line)")
+        return l
+    }
+
+    /// "Rows — N tables". EVERY TABLE, INCLUDING THE EMPTY ONES — patch 336.
+    private var tableLines: [String] {
+        ["Tables: \(counts.count), imported rows: \(importedRows), total: \(totalRows)"]
+        + counts.map { "  \($0.table): \($0.rows)" }
+    }
+
+    /// "Protected snapshot" — the manifest and what retention did to it.
+    private var snapshotLines: [String] {
+        (snapshot?.redactedLines ?? ["Protected snapshot: none taken"])
+        + [""] + LegacySnapshot.retentionLines()
+    }
+
+    /// "Import ledger" — the newest run, what is open, and the census.
+    private var ledgerLines: [String] {
+        var l = ["Last import: \(lastRun?.line ?? "no import has been recorded")",
+                 "Runs open right now: \(staleRuns)",
+                 "Recovered at launch: \(Sub4Launch.shared.interruptedAtLaunch)",
+                 "Recovery error: "
+                 + (Sub4Launch.shared.ledgerRecoveryFailure == nil
+                    ? "none" : "present — see the on-device screen")]
+        if let c = ledgerCensus {
+            l.append(contentsOf: c.diagnosticLines)
+        } else {
+            l.append("Import ledger: could not be counted")
         }
-        // Patch 248. The five numbers on screen cannot say WHICH files are
-        // missing or how the directories decompose, and the manifest that can
-        // is inside the app container where nothing may read it.
-        if let m = snapshot {
-            lines.append("")
-            lines.append(contentsOf: m.redactedLines)
-        }
+        return l
+    }
+
+    /// "Read-back · the plan" — the plan and its trimmings, which the screen
+    /// draws as one section because they describe one version.
+    private var planReadBackLines: [String] {
+        (planTrip?.diagnosticLines
+         ?? ["Plan read-back: \(planLoad?.line ?? "not read")"])
+        + [""]
+        + (planExtrasTrip?.diagnosticLines
+           ?? ["Plan extras read-back: \(planExtrasLoad?.line ?? "not read")"])
+    }
+
+    /// "The app's own files" — the two journals, the roster and the file tally.
+    /// The survey is separate because it only exists once somebody has run it.
+    private var storeFileLines: [String] {
+        StoreWriteJournal.shared.diagnosticLines
+        + StoreReadJournal.shared.diagnosticLines
+        + ActivityStore.shared.loadDiagnosticLines
+        + ["Detail and trace files: \(DetailStore.shared.tally.line)"]
+        + (survey.map { [""] + LegacyReader.diagnosticLines($0) } ?? [])
+    }
+
+    /// "Traces still to fetch" — patch 331's block.
+    private var traceBacklogLines: [String] {
+        ["Traces still to fetch: \(detailStore.backfillRemaining)",
+         "  fetching now: \(detailStore.isFetching ? "yes" : "no")",
+         "  rate limited: \(Self.rateLimitLine(detailStore.rateLimitedUntil))",
+         "  activities with no trace: \(coverage.missing) of \(coverage.total)",
+         "    queued, not yet reached: \(coverage.queued)",
+         "    under 500 m, never asked: \(coverage.belowThreshold)",
+         "    asked, nothing there: \(coverage.answeredEmpty)",
+         "    the source refused it: \(coverage.refused)",
+         "    unexplained: \(coverage.unexplained)"]
+    }
+
+    /// Built from figures that cannot describe anybody — see the header.
+    private var diagnosticsText: String {
+        // PATCH 392 — ONE COPY. Every run below is a property above, so a
+        // section header and this paste hand over the same lines rather than
+        // two renderings of the same figures. §12.43.
+        var lines = fileLines
+        lines.append(contentsOf: tableLines)
         lines.append("")
-        lines.append(contentsOf: LegacySnapshot.retentionLines())
-        // Patch 255. `MigrationRun.line` is counts and timestamps of the import
-        // itself — nothing from the athlete's history — so it is safe here.
-        // PATCH 311, AND EVERY LINE OF IT IS UNCONDITIONAL. `migration_run: 45`
-        // in the table counts above is what made this patch necessary, and a
-        // tally that only appeared when something was wrong would repeat
-        // §12.54.2 in the same week it was written down.
-        // PATCH 341. The report the Import section draws, in the file for the
-        // first time. UNCONDITIONAL — `.never` says no import has run this
-        // launch rather than the block being absent, §12.54.2 — and counts
-        // only, because a refusal names an activity. §12.89.
+        lines.append(contentsOf: snapshotLines)
         lines.append("")
         lines.append(contentsOf: lastImport.last.diagnosticLines)
         lines.append("")
-        lines.append("Last import: \(lastRun?.line ?? "no import has been recorded")")
-        lines.append("Runs open right now: \(staleRuns)")
-        lines.append("Recovered at launch: \(Sub4Launch.shared.interruptedAtLaunch)")
-        lines.append("Recovery error: "
-                     + (Sub4Launch.shared.ledgerRecoveryFailure == nil
-                        ? "none" : "present — see the on-device screen"))
-        if let c = ledgerCensus {
-            lines.append(contentsOf: c.diagnosticLines)
-        } else {
-            lines.append("Import ledger: could not be counted")
-        }
-        // The benchmark is the reason this screen gets pasted at all now — the
-        // §9 decision is made from these lines. They are counts and durations
-        // over synthetic fixtures, so they describe nobody.
+        lines.append(contentsOf: ledgerLines)
         if let r = benchmark.result {
             lines.append("")
             lines.append(contentsOf: r.diagnosticLines)
@@ -3750,23 +3795,6 @@ struct DatabaseHealthView: View {
         // an identity fault are the athlete's own identifiers, and §12.7
         // promises this paste carries none — so the screen gets the names and
         // this gets how many there were.
-        if let survey {
-            lines.append("")
-            lines.append(contentsOf: LegacyReader.diagnosticLines(survey))
-        }
-        // Patch 263. Counts, table names and verdicts — the `detail` on each
-        // check can carry an activity id, and that stays on the screen.
-        //
-        // PATCH 340. UNCONDITIONAL, unlike the survey above it. This block used
-        // to appear only after a press AND only while the sheet that produced
-        // it was open, which made the one fact D7 acts on the one fact this
-        // paste could not carry. `.never` says "not run since this launch"
-        // rather than being absent — §12.54.2.
-        //
-        // The DURABLE half of the same question is in the ledger census
-        // higher up: `runs ever verified` survives every launch, and this says
-        // what the last press found.
-        lines.append("")
         lines.append(contentsOf: verification.last.diagnosticLines)
         // Patch 266c. UNCONDITIONAL, unlike the two above it. Those are nil
         // until a button is pressed; the journal always has an answer, and
@@ -3777,47 +3805,9 @@ struct DatabaseHealthView: View {
         // Store names, stages and counts only. The underlying reason is left
         // out because a file-system error can carry a container path.
         lines.append("")
-        lines.append(contentsOf: StoreWriteJournal.shared.diagnosticLines)
-        // PATCH 273. UNCONDITIONAL, like the line above it and for 266c's
-        // reason: "Unreadable stores: none" in a paste is evidence, and a
-        // line that only appears when something is wrong cannot be
-        // distinguished from a line nobody wired in.
-        lines.append(contentsOf: StoreReadJournal.shared.diagnosticLines)
-        // PATCH 310. UNCONDITIONAL, for 266c's reason, which 309 briefly
-        // forgot on the Settings screen — see §12.54.2. This is also the only
-        // place the roster's numbers appear when they are all zero, which is
-        // what makes "0 collapsed" evidence rather than an absence.
-        lines.append(contentsOf: ActivityStore.shared.loadDiagnosticLines)
-        // PATCH 390 — THE STORE'S OWN FILE TALLY, WHICH IT HAS ALWAYS HAD AND
-        // NEVER SAID.
-        //
-        // `loadFromDirectories` has skipped an undecodable file with `continue`
-        // since 169. The skip is right — `refreshQueue` re-queues whatever is
-        // missing, which is what makes the cache self-healing — and the SILENCE
-        // was not: a detail the store could not decode is a detail the athlete
-        // will refetch, and nothing anywhere said it had happened.
-        //
-        // The tally is computed either way now, because the seam needs it. A
-        // number computed and not printed is §12.77.5, so it is printed. Counts
-        // only, both denominators — §12.54.3.
-        lines.append("Detail and trace files: "
-                     + DetailStore.shared.tally.line)
-        // PATCH 331. UNCONDITIONAL, and counts only — no ids, so §12.7's
-        // promise about this paste is untouched. It is here because the paste
-        // is what somebody reads LATER, and "the details were still coming
-        // down" is the single most useful thing to know about a figure taken
-        // during a backfill. Every parity and read-back number below is
-        // conditioned on it.
+        lines.append(contentsOf: storeFileLines)
         lines.append("")
-        lines.append("Traces still to fetch: \(detailStore.backfillRemaining)")
-        lines.append("  fetching now: \(detailStore.isFetching ? "yes" : "no")")
-        lines.append("  rate limited: \(Self.rateLimitLine(detailStore.rateLimitedUntil))")
-        lines.append("  activities with no trace: \(coverage.missing) of \(coverage.total)")
-        lines.append("    queued, not yet reached: \(coverage.queued)")
-        lines.append("    under 500 m, never asked: \(coverage.belowThreshold)")
-        lines.append("    asked, nothing there: \(coverage.answeredEmpty)")
-        lines.append("    the source refused it: \(coverage.refused)")
-        lines.append("    unexplained: \(coverage.unexplained)")
+        lines.append(contentsOf: traceBacklogLines)
         // PATCH 333. The roll-up, and it is the only place in this paste where
         // all nine read-backs are answered together. Unconditional — §12.54.2,
         // and `.never` says "not rolled up since this launch" rather than
