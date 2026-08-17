@@ -713,19 +713,10 @@ final class WeatherStore {
 
     // MARK: - Restore — patch 374, §12.118
 
-    /// What a restore did.
-    ///
-    /// Counts rather than a Bool, for §12.15's reason: "ran and added nothing"
-    /// and "never ran" are different facts, and on this screen the difference
-    /// is whether the database has anything to give.
-    struct Restored: Equatable {
-        let added: Int
-        let alreadyHeld: Int
-        /// Where an unreadable file was moved to. Nil is the ordinary case and
-        /// not a failure — it means the file read cleanly and nothing had to be
-        /// preserved.
-        let setAside: URL?
-    }
+    // **`Restored` BECAME `StoreRestore.Receipt` AT 402.** Two receipt types
+    // for one concept is the defect `asideURL` was at 400, one level up: the
+    // authored receipts carry a store name and weather's did not, so no shared
+    // line-builder could print both. One type, one `line`, one reader. §12.43.
 
     /// **PUTS BACK WHAT THE FILE LOST, FROM THE DATABASE — patch 374.**
     ///
@@ -752,7 +743,8 @@ final class WeatherStore {
     ///   be moved, and `StoreWriteError` when the write does not land. In every
     ///   one of those, nothing has been written and memory is as it was.
     @discardableResult
-    func restore(from load: WeatherGearLoad, now: Date = Date()) throws -> Restored {
+    func restore(from load: WeatherGearLoad, now: Date = Date()) throws
+    -> StoreRestore.Receipt {
         guard let stored = load.weather else {
             throw WeatherRestoreFault.databaseUnreadable(load.line)
         }
@@ -761,7 +753,7 @@ final class WeatherStore {
         // and the counts still tell the two cases apart, because "added 0,
         // already held 0" is only reachable from here.
         guard !stored.isEmpty else {
-            return Restored(added: 0, alreadyHeld: 0, setAside: nil)
+            return .nothingStored("weather.json")
         }
 
         // PATCH 400 — THE TWO SUBTLE STEPS MOVED TO `StoreRestore` AND THIS
@@ -790,7 +782,8 @@ final class WeatherStore {
                 ?? StoreWriteError(store: "weather.json", stage: .writing,
                                    reason: "the restore did not reach the disk")
         }
-        return Restored(added: added, alreadyHeld: alreadyHeld, setAside: setAside)
+        return StoreRestore.Receipt(store: "weather.json", added: added,
+                                    alreadyHeld: alreadyHeld, setAside: setAside)
     }
 
     /// **MOVED TO `StoreRestore.asideURL` AT 400.** It was here because weather

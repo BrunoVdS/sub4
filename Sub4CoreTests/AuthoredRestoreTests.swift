@@ -263,6 +263,38 @@ struct AuthoredRestoreTests {
 
     // MARK: The receipt
 
+    /// **THE DEFECT THE DEVICE PROVED — patch 402, §12.146.**
+    ///
+    /// Two exports of the authored read-back on 17 August, one of them after
+    /// pressing Restore, were BYTE-IDENTICAL. The receipt lived in `@State`
+    /// and rendered as a row, so the paste could not tell a restore that ran
+    /// from a button nobody pressed. "Not run" is the answer that makes every
+    /// other answer readable. §12.54.2.
+    @Test("A restore that has not run says so, and a restore that has says what")
+    func theRestoreLinesSayWhichCaseThisIs() {
+        let none = StoreRestore.lines([], subject: "Authored")
+        #expect(none.count == 1)
+        #expect(none[0] == "Authored restore: not run since this launch.",
+                "silence here is indistinguishable from a control nobody wired in")
+
+        let ran = StoreRestore.lines(
+            [.nothingStored("moves.json"),
+             StoreRestore.Receipt(store: "notes.json", added: 2, alreadyHeld: 3,
+                                  setAside: URL(fileURLWithPath: "/tmp/aside"))],
+            subject: "Authored")
+        #expect(ran.count == 3, "a heading and one line per store")
+        #expect(ran[0] == "Authored restore:")
+        #expect(ran[1].contains("moves.json") && ran[1].contains("added 0"))
+        #expect(ran[2].contains("notes.json") && ran[2].contains("added 2"))
+        #expect(ran[2].contains("unreadable file set aside"))
+
+        // §12.7 — THE PASTE CARRIES NOTHING OF THE ATHLETE'S. Store names,
+        // counts and an aside FILENAME. A receipt cannot carry a note's text or
+        // an activity's identity because it never holds one.
+        #expect(!ran.joined().contains("/tmp/aside"),
+                "an absolute container path is not something this paste may carry")
+    }
+
     /// §12.54.2 and §12.15. One control restores several stores, so a count
     /// without its store name is a number nobody can act on.
     @Test("The receipt names its store in every state")

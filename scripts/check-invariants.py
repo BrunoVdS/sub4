@@ -865,6 +865,51 @@ def every_tracked_source_is_compiled():
                        "no copy of it. An edit landing there passes every test "
                        "and silently did not happen. §12.145")
 
+# --------------------------------------------------------------------------
+# RULE 11 — patch 402, §12.146
+# --------------------------------------------------------------------------
+
+
+def every_restore_receipt_reaches_a_paste():
+    """**A FIGURE THAT EXISTS ONLY ON SCREEN IS READ BY WHOEVER HELD THE PHONE.**
+
+    On 17 August two exports of the authored read-back — one of them taken
+    after pressing Restore — came back BYTE-IDENTICAL. The receipt lived in
+    `@State` and rendered as a row, so the paste could not tell a restore that
+    ran from a button nobody pressed.
+
+    **AND THE WEATHER RESTORE HAD THE SAME HOLE SINCE 374.** Patch 391 was
+    written to close exactly this class (§12.135) and swept the three
+    read-backs and the write-through; the restore receipts were not looked at,
+    and no `diagnosticLines` in the app mentioned one for twenty-seven patches.
+    A recurrence is the bar this project sets for turning a lesson into code.
+
+    So: **every receipt a view holds must be handed to `StoreRestore.lines`.**
+    Counted rather than named, so a third restore added without a paste line
+    fails here instead of being discovered by a device export somebody thought
+    to take twice.
+
+    A rule and not a test, for RULE 7's reason: both halves are SwiftUI view
+    state and a `lines:` closure, and no assertion in the suite reaches either.
+    """
+    rule = "every restore receipt reaches a paste"
+
+    held = 0
+    printed = 0
+    for f in app_sources():
+        body = strip_comments(f.read_text())
+        held += len(re.findall(r"@State[^\n]*:\s*\[?StoreRestore\.Receipt", body))
+        printed += body.count("StoreRestore.lines(")
+
+    if not counted(rule, held, 2, "restore receipts held in view state"):
+        return
+    counted(rule, printed, 2, "handed to the paste")
+    if printed < held:
+        fail(rule, f"{held} restore receipts are held in view state and only "
+                   f"{printed} reach a paste. The one that does not is readable "
+                   "by whoever is holding the phone and by nobody else — two "
+                   "exports either side of it are identical. §12.146")
+
 
 RULES = [
     every_store_that_records_a_read_refuses_a_write,
@@ -877,6 +922,7 @@ RULES = [
     no_hydration_writes,
     the_gate_does_not_branch_on_the_build,
     every_tracked_source_is_compiled,
+    every_restore_receipt_reaches_a_paste,
 ]
 
 for r in RULES:

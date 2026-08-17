@@ -160,7 +160,7 @@ struct DatabaseHealthView: View {
     // that has not run has nothing to say at all.
     @State private var restoringWeather = false
     @State private var weatherRestoreError: String?
-    @State private var lastWeatherRestore: WeatherStore.Restored?
+    @State private var lastWeatherRestore: StoreRestore.Receipt?
     // PATCH 400. Receipts, plural: one control restores TWO stores and each
     // has its own answer. A single combined count would say "added 4" over two
     // files and leave a reader unable to tell which one was empty. §12.15.
@@ -2262,7 +2262,7 @@ struct DatabaseHealthView: View {
             DiagnosticSectionHeader(title: "Read-back · authored",
                                         key: "readback-authored",
                                         expanded: $expanded,
-                                        lines: { authoredTrip?.diagnosticLines ?? ["Authored read-back: \(authoredLoad?.line ?? "not read")"] },
+                                        lines: { (authoredTrip?.diagnosticLines ?? ["Authored read-back: \(authoredLoad?.line ?? "not read")"]) + authoredRestoreLines },
                                         shared: $shared)
         } footer: {
             if isExpanded("readback-authored") {
@@ -2691,8 +2691,7 @@ struct DatabaseHealthView: View {
             // agreeing with the database, and "added 0, already held 0" is a
             // database with no weather in it. §12.15.
             if let r = lastWeatherRestore {
-                LabeledContent("Restored", value: "\(r.added) added, "
-                               + "\(r.alreadyHeld) already held")
+                LabeledContent("Restored", value: r.line)
                     .font(.caption).foregroundStyle(Color.dim)
                 if let aside = r.setAside {
                     Text("The unreadable file was kept as "
@@ -2802,7 +2801,7 @@ struct DatabaseHealthView: View {
             DiagnosticSectionHeader(title: "Read-back · weather and gear",
                                         key: "readback-weather-gear",
                                         expanded: $expanded,
-                                        lines: { weatherGearTrip?.diagnosticLines ?? ["Weather and gear read-back: \(weatherGearLoad?.line ?? "not read")"] },
+                                        lines: { (weatherGearTrip?.diagnosticLines ?? ["Weather and gear read-back: \(weatherGearLoad?.line ?? "not read")"]) + weatherRestoreLines },
                                         shared: $shared)
         } footer: {
             if isExpanded("readback-weather-gear") {
@@ -2852,6 +2851,18 @@ struct DatabaseHealthView: View {
     /// The read-back is refreshed afterwards so the counts underneath describe
     /// the store as it is now — otherwise the section reports "only in the
     /// database: 601" directly beneath a line saying 601 were just added.
+    /// **PATCH 402, §12.146.** One builder, two readers — the section's own
+    /// export and the whole-screen paste — so the two cannot disagree about
+    /// what a restore did. Before this, neither carried it at all.
+    private var authoredRestoreLines: [String] {
+        StoreRestore.lines(lastAuthoredRestore, subject: "Authored")
+    }
+
+    private var weatherRestoreLines: [String] {
+        StoreRestore.lines(lastWeatherRestore.map { [$0] } ?? [],
+                           subject: "Weather")
+    }
+
     /// **THE ACTION §5.5 CALLED THE LARGEST OPEN RISK — patch 400, §12.144.**
     ///
     /// First in the section, like `Import and verify` and like the weather
@@ -4177,6 +4188,7 @@ struct DatabaseHealthView: View {
         } else {
             lines.append("Plan versions: not counted")
         }
+        lines.append(contentsOf: authoredRestoreLines)
         lines.append(contentsOf: planPrune.diagnosticLines)
         // PATCH 324. Strava activity ids, gear ids, field names and counts.
         lines.append("")
@@ -4186,6 +4198,7 @@ struct DatabaseHealthView: View {
             lines.append("Weather and gear read-back: "
                        + "\(weatherGearLoad?.line ?? "not read")")
         }
+        lines.append(contentsOf: weatherRestoreLines)
         // PATCH 327. Counts, field names, ISO run times, plan session uids and
         // CHARACTER COUNTS. The evidence pack and the model's prose are
         // compared and never printed — §12.7 promises this paste carries

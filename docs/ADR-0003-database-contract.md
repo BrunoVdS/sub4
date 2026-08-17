@@ -8962,6 +8962,75 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.146 Two identical exports — patch 402
+
+On 17 August Bruno exported the authored read-back twice, once after pressing
+**Restore notes and commutes**. The two files were **byte-identical**.
+
+The receipt lived in `@State` and rendered as a `LabeledContent` row. The
+section's export hands over `authoredTrip.diagnosticLines` — the read-back's own
+lines — so **the paste could not tell a restore that ran from a button nobody
+pressed.** §12.54.2 in its purest form, and proved on the device rather than
+argued.
+
+### 12.146.1 The weather restore had it since 374
+
+No `diagnosticLines` anywhere in the app mentioned a restore.
+`lastWeatherRestore` existed to render one row and for nothing else, for
+**twenty-seven patches**.
+
+**Patch 391 was written to close exactly this class.** §12.135: three read-backs
+and the write-through put nothing in the paste, so the only way to read which
+field differed was a screenshot. That patch swept the read-backs. Nobody looked
+at the restore receipts, which had been sitting in the same file with the same
+shape since before it.
+
+**And 400 repeated it while writing the campaign that would have caught it.**
+That campaign's step 4 listed its evidence as "screenshot" — which was the tell,
+written down and not read. The plan's own campaign contract says it plainly:
+*if the needed line does not exist, the implementation task must add a redacted
+diagnostic before asking for the campaign.* The campaign was asked for first.
+
+### 12.146.2 One receipt type, one builder, two readers
+
+`WeatherStore.Restored` and `StoreRestore.Receipt` were two types for one
+concept, and the difference mattered: the authored receipts carry a store name
+and weather's did not, so no shared line-builder could print both. **That is
+`asideURL` at 400 one level up** — §12.43, and the same fix. `Restored` is gone;
+weather's restore returns a `Receipt` naming `weather.json`, and
+`WeatherRestoreTests` passing unchanged says the behaviour did not move.
+
+`StoreRestore.lines(_:subject:)` is the single builder, used by the section's own
+export AND the whole-screen paste, so the two cannot disagree about what a
+restore did. It is unconditional: **"not run since this launch" is the answer
+that makes every other answer readable.**
+
+Store names, counts and an aside FILENAME only — §12.7. A receipt cannot carry a
+note's text or an activity's identity because it never holds one, and the test
+asserts the absolute container path does not reach the paste.
+
+### 12.146.3 RULE 11, counted rather than named
+
+Every `StoreRestore.Receipt` a view holds must be handed to
+`StoreRestore.lines`. Two held, two printed. A third restore added without a
+paste line fails the build instead of being found by a device export somebody
+thought to take twice.
+
+A rule and not a test, for RULE 7's reason: both halves are SwiftUI view state
+and a `lines:` closure, and no assertion in the suite reaches either. Its
+negative control returns the weather receipt to being screen-only — the exact
+374 defect — and the rule names it.
+
+### 12.146.4 What the two identical files were worth
+
+They are the best piece of evidence in this session. A campaign step that reads
+"take the export, press the button, take it again" produced two files a diff
+could compare, and the diff said *nothing changed*. **No screenshot could have
+said that**, because a screenshot of a row that is not there looks like a
+screenshot of a screen that is fine.
+
+---
+
 ## 12.145 A file compiled by nothing — patch 401
 
 `DetailStore.swift` existed twice: at the repository root and at

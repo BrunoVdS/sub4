@@ -91,6 +91,28 @@ nonisolated enum StoreRestore {
         }
     }
 
+    /// **WHAT A RESTORE DID, AS LINES — patch 402, §12.146.**
+    ///
+    /// UNCONDITIONAL, and "not run" is the answer that makes the others
+    /// readable. Two exports of the authored read-back taken on 17 August, one
+    /// of them after pressing Restore, were BYTE-IDENTICAL: the receipt lived
+    /// in `@State` and rendered as a row, so the paste could not tell a restore
+    /// that ran from a button nobody pressed. §12.54.2, exactly.
+    ///
+    /// **AND THE WEATHER RESTORE HAD IT SINCE 374.** 391 was written to close
+    /// screen-only figures (§12.135) and swept the three read-backs and the
+    /// write-through; nobody looked at the restore receipts, and no
+    /// `diagnosticLines` in the app mentioned one until this patch.
+    ///
+    /// Store names, counts and an aside FILENAME only — §12.7. Nothing here can
+    /// carry a note's text or an activity's identity.
+    static func lines(_ receipts: [Receipt], subject: String) -> [String] {
+        guard !receipts.isEmpty else {
+            return ["\(subject) restore: not run since this launch."]
+        }
+        return ["\(subject) restore:"] + receipts.map { "  " + $0.line }
+    }
+
     /// **THE ADDITIVE MERGE.** Records the store already holds win.
     ///
     /// That direction is the whole safety of a restore: the store's copy may
