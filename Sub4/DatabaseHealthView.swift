@@ -3851,7 +3851,16 @@ struct DatabaseHealthView: View {
         }
         l.append("Prepared: \(Sub4Launch.shared.database != nil ? "at launch" : "by this screen")")
         l.append("Reads from: \(Sub4Launch.shared.persistence.line)")
-        l.append("Hydration: \(Sub4Launch.shared.hydration.line)")
+        // PATCH 398a — "AT LAUNCH", AND IT IS A CORRECTION. This is
+        // `Sub4Launch`'s account of what THE LAUNCH fed, and since 395 that
+        // correctly excludes the details and the traces: `DetailStore` fills
+        // itself at construction, after the first frame (§12.139). Labelled
+        // `Hydration:` it read as a complete account and silently omitted two
+        // families, leaving "hydration did not include the details" beside
+        // "Detail store reads: the database" with nothing saying why. §12.15.
+        // The store lines below give the whole picture; this one now says which
+        // question it is answering.
+        l.append("Hydration at launch: \(Sub4Launch.shared.hydration.line)")
         if let boot = Sub4Launch.shared.bootstrap {
             l.append(contentsOf: boot.diagnosticLines)
         } else {

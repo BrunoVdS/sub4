@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 398 (2026-08-17).** §5.3 is the 390 device run, Compare and
+**Current at patch 398a (2026-08-17).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself.
@@ -554,9 +554,9 @@ read the files itself or took the stores; only the second consults the sources.
    second. **397** fixed the read: 668 queries became one ordered cursor, and
    eight name-keyed passes over 199,848 rows became one positional pass.
    **398 is the flip** — two enum cases, and the store consults the switch.
-   **THE DEVICE OWES ONE FIGURE**: `Detail store built: N s from the database`
-   against **0.399 s from the app's own files**, Release, same line. Projection
-   ≈0.5 s. **Five comparisons stopped being evidence** (§5.4) and nothing that
+   **THE DEVICE SAID 0.872 / 0.930 s from the database, in DEBUG** — against
+   0.443 s of files in Debug, so **about 2×**, and 3.925 s before 397. A Release
+   reading is still owed; the file side is 0.399 s there. **Five comparisons stopped being evidence** (§5.4) and nothing that
    mattered went with them — Compare's slice 4 and the two read-backs read the
    files for themselves through a seam that refuses every write, and that seam
    must stay on the files whatever the singleton does (§12.134).

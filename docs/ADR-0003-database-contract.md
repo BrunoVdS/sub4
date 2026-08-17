@@ -9041,7 +9041,28 @@ the `DetailStore(directory:)` seam, so the roll-up stays at eight of nine with
 its own reads. `theSeamAlwaysReadsFiles` was written at 395, one patch before it
 could fail; today is the day it can.
 
-### 12.142.5 What the device has to say
+### 12.142.5 `Hydration:` stopped being a complete account — patch 398a
+
+The device paste read:
+
+```
+Hydration: hydrated the plan, … the plan moves, the activities
+…
+Detail store reads: the database
+```
+
+Both lines are true and together they are misleading. `Sub4Launch.hydration` is
+what THE LAUNCH fed, and since 395 that correctly excludes these two families —
+the store fills itself at construction, after the first frame. Labelled
+`Hydration:` it reads as the whole account and silently omits two families,
+which is §12.15 in the one line that reports hydration.
+
+**`Hydration at launch:`.** One word, and the line states which question it is
+answering. The store lines below already give the rest. A line that had simply
+listed the details and traces here would have been worse: it would say the
+launch did something the whole of 395 exists to stop it doing.
+
+### 12.142.6 What the device has to say
 
 `Detail store built: N s from the database` against **0.399 s from the app's own
 files** — same line, same units, Release. That is 397's measurement and B4's
