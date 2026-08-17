@@ -173,10 +173,12 @@ struct ActivityHydrationTests {
                 "the bootstrap gained no family — 379 did that")
         #expect(PersistenceAuthority.Family.allCases.count == 7)
         #expect(PersistenceAuthority.hydratedFamilies.count == 7)
-        #expect(HydratedStores.all.count == 9,
-                "B1's one, B2's four and B3's four — the fourth is 385's")
-        #expect(HydratedStores.entry(for: "activities")?.slice == "B3",
-                "so the verifier's activity comparison is no longer evidence")
+        // 387 — THE LIST'S COUNT WENT WITH THE LIST. `HydratedStores.all.count
+        // == 9` was a hand-kept total that stood at 8 while nine comparisons
+        // read a hydrated store; what is left is the fact this test is about,
+        // which is that the activities are B3's.
+        #expect(ExpectationField.activities.slice == "B3",
+                "so the verifier's activity comparisons are no longer evidence")
     }
 
     // MARK: What the bootstrap will hand over

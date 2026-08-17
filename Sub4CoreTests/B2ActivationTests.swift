@@ -247,65 +247,90 @@ struct B2ActivationTests {
 
     // MARK: What stopped being evidence — §12.99
 
-    /// FOUR COMPARISONS DIE HERE, and the list is what says so. `notes`,
-    /// `commute corrections`, `match decisions` and — since 377 — `session
-    /// moves` all read a store this build now feeds from the database, so each
-    /// is the database agreeing with itself. §12.69: a check that cannot fail
-    /// has not been tested.
+    /// FOUR COMPARISONS DIE HERE. `notes`, `commute corrections`, `match
+    /// decisions` and — since 377 — `session moves` all read a store this build
+    /// now feeds from the database, so each is the database agreeing with
+    /// itself. §12.69: a check that cannot fail has not been tested.
     ///
     /// `session moves` WAS THE LAST INDEPENDENT COMPARISON B2 HAD, and 377
     /// spent it. `PlanMoveImportTests.theMoveComparisonIsIndependent` said so
     /// in as many words and is inverted in the same patch.
     /// RESCOPED AT 382. This asserted `HydratedStores.all.count == 5` — a
     /// global figure in a suite about one slice, which every later slice
-    /// breaks. B2's four are what B2 owns; the total lives in
-    /// `ActivitiesAreReadTests`.
-    @Test("The four comparisons B2 made self-referential are declared")
-    func theListNamesWhatB2Took() {
-        #expect(HydratedStores.all.filter { $0.slice == "B2" }.count == 4,
-                "B2 took four, whatever the later slices take")
-        for (check, store) in [("notes", "NotesStore.notes"),
-                               ("commute corrections", "CommuteStore.decisions"),
-                               ("match decisions", "Matcher.decisions"),
-                               ("session moves", "PlanMoveStore.moves")] {
-            let e = HydratedStores.entry(for: check)
-            #expect(e != nil, "a comparison B2 made self-referential is undeclared")
-            #expect(e?.store == store)
-            #expect(e?.slice == "B2")
-        }
-        #expect(HydratedStores.entry(for: "heart-rate zones")?.slice == "B1",
-                "B1's entry did not move")
-        // 382 — WAS `== nil`. The activities are fed from the database now and
-        // the entry is B3's; what this suite still asserts is that B2 did not
-        // acquire it.
-        #expect(HydratedStores.entry(for: "activities")?.slice == "B3",
-                "the activities are B3's, not B2's")
-    }
-
-    /// The tripwire, re-run at B2. Every declared entry must name a comparison
-    /// the real verifier actually makes — a name that drifted on one side would
-    /// move a self-referential check back into the evidence column and every
-    /// number below it would read better than the truth.
-    @Test("Every B2 entry names a comparison the verifier actually makes")
-    func everyEntryNamesARealComparison() throws {
+    /// breaks. B2's four are what B2 owns.
+    ///
+    /// **AND AT 387 IT NAMES THE VERIFIER'S OWN COMPARISONS RATHER THAN A HAND
+    /// LIST, WHICH IS STRICTLY STRONGER.** The old version counted entries in
+    /// `HydratedStores` whose `slice` read `B2` — four rows somebody typed. This
+    /// runs the real verifier and counts the comparisons whose FIELD belongs to
+    /// B2, so a comparison that quietly stopped being made fails it and a
+    /// comparison added over a B2 field fails it too. Neither was visible
+    /// before. §12.131.
+    @Test("The four comparisons B2 made self-referential are the verifier's own")
+    func theVerifierMakesWhatB2Took() throws {
         let db = try Sub4Database.inMemory()
         let r = try SemanticVerifier.verify(db, activities: [])
 
-        #expect(r.unmatchedHydratedEntries.isEmpty,
-                "an entry naming no comparison is a rename nobody finished")
+        let b2 = r.checks.filter { $0.reads.field.slice == "B2" }
+        #expect(Set(b2.map(\.name))
+                == ["notes", "commute corrections",
+                    "match decisions", "session moves"],
+                "B2 took four, whatever the later slices take")
+
+        for (check, field, store) in [
+            ("notes", ExpectationField.notes, "NotesStore.notes"),
+            ("commute corrections", .commutes, "CommuteStore.decisions"),
+            ("match decisions", .matchDecisions, "Matcher.decisions"),
+            ("session moves", .moves, "PlanMoveStore.moves")
+        ] {
+            let c = r.checks.first { $0.name == check }
+            #expect(c?.reads.field == field, "a B2 comparison reads another field")
+            #expect(field.storeDescription == store)
+            #expect(field.slice == "B2")
+        }
+        #expect(ExpectationField.zones.slice == "B1", "B1's field did not move")
+        // 382 — WAS `== nil`. The activities are fed from the database now and
+        // the field is B3's; what this suite still asserts is that B2 did not
+        // acquire it.
+        #expect(ExpectationField.activities.slice == "B3",
+                "the activities are B3's, not B2's")
+    }
+
+    /// **THE SPLIT AT B2, AGAINST A BUILD THAT SAYS WHAT IT IS SERVING.**
+    ///
+    /// This asserted `unmatchedHydratedEntries.isEmpty` until 387 — the
+    /// tripwire over a join that no longer exists. What it always meant is
+    /// below and does not need a list: the four comparisons B2 took land on the
+    /// self-referential side, and something is still left on the other.
+    ///
+    /// **`sources:` IS PASSED AND THAT IS THE PATCH.** Before 387 the
+    /// classification came from a compile-time constant, so this call reported
+    /// four self-referential comparisons in a process that had hydrated
+    /// nothing. It now reports what the build is actually serving, which means
+    /// a test about B2 has to say that B2's fields are fed. §12.131.
+    @Test("B2's four comparisons land on the self-referential side")
+    func b2sFourAreNotEvidence() throws {
+        let db = try Sub4Database.inMemory()
+        let b2Fields: Set<ExpectationField> = [.notes, .commutes,
+                                               .matchDecisions, .moves]
+        let r = try SemanticVerifier.verify(
+            db, activities: [],
+            sources: ExpectationSources(fedByTheDatabase: b2Fields))
+
         // 382 — B2'S FOUR, NOT THE WHOLE LIST. The set literal pinned five
         // names and broke the moment B3 declared three more, which is what a
         // global assertion in a slice's own suite always does.
         #expect(Set(r.selfReferentialChecks.map(\.name))
-                .isSuperset(of: ["notes", "commute corrections",
-                                 "match decisions", "session moves"]),
-                "every comparison B2 took is still declared as taken")
+                == ["notes", "commute corrections",
+                    "match decisions", "session moves"],
+                "every comparison B2 took, and nothing else this build feeds")
         #expect(!r.independentChecks.isEmpty,
                 "B2 is not B9 — there is still evidence left")
         // DERIVED, NOT PINNED. `- 5` was a literal that had to be chased; this
         // cannot go stale, because both sides move together by construction.
         #expect(r.independentChecks.count
-                == r.checks.count - HydratedStores.all.count)
+                == r.checks.count - r.selfReferentialChecks.count,
+                "every comparison is on exactly one side")
     }
 
     /// THE NUMBER THAT MOVED, and the reason 354 built this accounting at all.
@@ -318,9 +343,13 @@ struct B2ActivationTests {
     @Test("The independent count falls by exactly four")
     func theIndependentCountFalls() throws {
         let db = try Sub4Database.inMemory()
-        let r = try SemanticVerifier.verify(db, activities: [])
+        let b2Fields: Set<ExpectationField> = [.notes, .commutes,
+                                               .matchDecisions, .moves]
+        let r = try SemanticVerifier.verify(
+            db, activities: [],
+            sources: ExpectationSources(fedByTheDatabase: b2Fields))
         #expect(r.selfReferentialChecks.filter {
-            HydratedStores.entry(for: $0.name)?.slice == "B2"
+            $0.reads.field.slice == "B2"
         }.count == 4, "B2 spent four comparisons and no later slice spends them")
         #expect(r.ledgerNote.contains("\(r.independentChecks.count) independent"))
     }

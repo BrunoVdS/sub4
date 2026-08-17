@@ -207,25 +207,38 @@ struct ActivitiesAreReadTests {
     @Test("Four comparisons stopped being evidence, and this is where that is said")
     func fourComparisonsStoppedBeingEvidence() throws {
         let db = try Sub4Database.inMemory()
-        let r = try SemanticVerifier.verify(db, activities: [])
+        let r = try SemanticVerifier.verify(
+            db, activities: [],
+            sources: ExpectationSources(fedByTheDatabase: [.activities]))
 
         // 385 — AND `activity fields` IS THE ONE THIS LOOP DID NOT NAME.
         // Written at 382 from an enumeration that found three. The fourth reads
         // the same list and was counted as evidence until the device printed it
         // without a mark. §12.129.
+        //
+        // 387 — IT ASKS THE CHECK NOW, NOT A LIST. `HydratedStores.entry(for:)`
+        // joined this name to a row somebody typed in another file; the check
+        // carries the answer at its own construction site and the compiler will
+        // not let a new one omit it.
         for name in ["activities", "activity identities",
                      "volume by discipline", "activity fields"] {
-            let e = HydratedStores.entry(for: name)
-            #expect(e != nil, "a comparison B3 made self-referential is undeclared")
-            #expect(e?.slice == "B3")
-            #expect(!r.independentChecks.contains { $0.name == name },
-                    "its expectation now comes from a store the database feeds")
+            let c = r.checks.first { $0.name == name }
+            #expect(c != nil, "a comparison B3 made self-referential is missing")
+            #expect(c?.reads.field == .activities,
+                    "its expectation comes from a store the database feeds")
+            #expect(!r.independentChecks.contains { $0.name == name })
             #expect(r.selfReferentialChecks.contains { $0.name == name })
         }
-        #expect(HydratedStores.all.count == 9,
-                "B1's one, B2's four, B3's four")
-        #expect(r.unmatchedHydratedEntries.isEmpty,
-                "and every one of them names a comparison the verifier makes")
+        // THE TOTAL WENT WITH THE LIST — 387. It read
+        // `HydratedStores.all.count == 9`, and that number was the LIST's, not
+        // the verifier's: it stood at 8 for three patches while nine
+        // comparisons read a hydrated store, and every assertion in this file
+        // passed over it. §12.129, and `theWholeMapIsPinned` is the successor
+        // that can fail on incompleteness.
+        #expect(ExpectationField.activities.slice == "B3",
+                "the activities are B3's")
+        #expect(r.selfReferentialChecks.count == 4,
+                "and this build feeds one field, which four comparisons read")
         #expect(!r.independentChecks.isEmpty,
                 "B3 is not B9 — there is still evidence left")
     }

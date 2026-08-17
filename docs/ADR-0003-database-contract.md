@@ -8962,6 +8962,171 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.131 The derivation is the answer, and the list is gone — patch 387
+
+386 built the derivation beside the list and made disagreeing with it a
+failure. The device printed them agreeing. This deletes the list.
+
+**It is a refactor and the device's numbers must not move**: `22 comparisons —
+13 independent, 9 self-referential`, the same nine.
+
+### 12.131.1 The precondition, and it was met before the patch was written
+
+§12.130.5 said 387 does not start until the device has printed that the two
+mechanisms reach the same nine. It did, at 386a on 17 August 08:14, on a run
+marked verified:
+
+```
+comparisons: 22 — 13 independent, 9 reading a store the database feeds
+derived from the stores: 9 of 22 read a field this build feeds — agrees with the declared list
+```
+
+That line is the whole reason 386 was a separate patch. A patch deleting the
+list and installing the derivation in one move would have had nothing to check
+the derivation against, and "every comparison agreed" is what both a right
+answer and a wrong one look like. Same order as 381 and 382, same reason.
+
+### 12.131.2 What the classification now is
+
+`selfReferentialChecks` filters on `VerificationCheck.isSelfReferential(given:)`
+— the check's own `reads.field`, against the `ExpectationSources` the run was
+given. `independentChecks` is its complement. `HydratedStores`,
+`unmatchedHydratedEntries` and `undeclaredSelfReferential` are deleted, and so
+is `PersistenceMode.swift`'s tail: the file ends at `derive`'s closing brace.
+
+**THE SEMANTIC SHIFT IS THE BULK OF THE PATCH AND IT IS THE CORRECT OUTCOME.**
+The classification now depends on `sources`, which defaults to `.allFromFiles`.
+`verify(db, activities: [])` in a test process reported nine self-referential
+comparisons before this patch and reports **zero** after it — because nothing
+is hydrated in a test process and that is the honest answer. Every test
+asserting that a comparison IS self-referential now passes `sources:`
+explicitly. Those tests were using a compile-time constant to simulate a
+runtime state, and the compiler could not see the difference.
+
+### 12.131.3 A gate was relaxed, and the argument is on the line
+
+`isTrustworthyEvidence` drops from four conditions to two:
+
+```swift
+passed && !independentChecks.isEmpty
+```
+
+The two removed are `unmatchedHydratedEntries.isEmpty` (358a) and
+`undeclaredSelfReferential.isEmpty` (386). **Both were about a list drifting
+from the checks** — one caught a declared entry naming no comparison, the other
+a comparison the derivation called self-referential that the list did not name.
+With one source there are not two things that can drift, so the failure mode
+does not occur rather than going unwatched.
+
+The condition carrying the actual meaning — **at least one comparison could
+have disagreed** — is untouched, and it is the one that fires at B9. The
+argument is written into the doc comment rather than left to look like a
+simplification, because §12.99's own guard exists to stop that expression being
+reduced back to `passed`.
+
+### 12.131.4 What replaces the tripwire, and the asymmetry is the point
+
+`ExpectationProvenanceTests.theWholeMapIsPinned` holds every comparison's name
+against the field it reads.
+
+**The old list was a SUBSET.** A comparison missing from it passed in silence,
+which is exactly what `activity fields` did from 382 to 385 (§12.129). **The map
+is COMPLETE**: a comparison missing from it fails, a comparison whose field
+changed fails, and a comparison B4 adds fails until somebody answers for it.
+That is the protection the two removed conditions were giving, in the one form
+that can actually fail.
+
+**The fixture is sized by what makes all twenty-two RUN, not by what makes them
+pass.** Three comparisons are conditional — `sync position` on a cursor,
+`splits of one activity` on a detail with splits, `one weather reading` on a
+reading whose activity is in the store. A call omitting them pins nineteen while
+reading like a complete map, which is the shape this test exists to refuse. They
+compare a populated store against an empty database and therefore fail; nothing
+here asserts otherwise.
+
+### 12.131.5 The cross-check line was replaced, not deleted
+
+386's `derived from the stores: 9 of 22 … agrees with the declared list` has
+nothing left to agree with. **A row that vanishes cannot be told from a row
+nobody wired in** — §12.54.2 — so the derivation states its own answer in the
+same place:
+
+```
+  fields fed by the database: 6 of 14 — activities, commutes, matchDecisions, moves, notes, zones
+```
+
+Sorted, so two runs compare. 14 is `ExpectationField.allCases` less
+`.databaseAlone`, derived rather than typed, so B4 moves it without an edit.
+
+### 12.131.6 One mark gained two words, and the groundwork did not predict it
+
+The self-referential mark is now built from `reads.storeDescription` and
+`field.slice` instead of the entry's hand-written `note`. Eight of the nine
+produce byte-identical text. **The ninth does not.** `activities` is built with
+`reads: .from(.activities, "counted")` while its `HydratedStores` entry carried
+no note, so the mark goes:
+
+```
+  ok activities [activity]: … · self-referential: ActivityStore.activities, hydrated at B3
+  ok activities [activity]: … · self-referential: ActivityStore.activities, counted, hydrated at B3
+```
+
+The note was written deliberately at 386 and it completes the set the four B3
+comparisons make — *counted*, *as an id set*, *summed*, *seven fields each* —
+which is the distinction §12.129 was about. Dropping it to preserve a byte
+would trade information for a diff. **No count moves**, which is what "the
+device's numbers must not move" was protecting.
+
+### 12.131.7 RULE 5 read the list, so RULE 5 moved with it
+
+`check-invariants.py`'s RULE 5 derived `HydratedStores.all.count` from
+`PersistenceMode.swift` and **hard-failed if it could not locate it** — so
+deleting the enum would have failed the build before a single test ran. The
+parse and its four pin patterns are gone, and `counts derived from the app`
+drops from five to four. That floor is lowered on purpose, which is what
+`counted`'s own docstring asks for; the pin floor of eight stays, because
+fourteen pins remain and a floor that is not being reached is a floor that has
+stopped meaning anything.
+
+The parsing note is kept in place of the code, because the shape outlives the
+list: RULE 5 once bracket-matched the wrong thing, compared every pin against
+zero, and reported a healthy count of pins while checking nothing — §12.69's
+exact failure inside the rule written to enforce §12.69.
+
+### 12.131.8 The last join-by-name, named
+
+`ComparedCorrections.Family.check` still joins a `(subjectKind, field)` pair to
+a comparison by name, and it explained itself by analogy to
+`unmatchedHydratedEntries` — a symbol that no longer exists. It survives on
+different grounds and now says so: the pair is the **importer's**, the
+comparison is the **verifier's**, and no single site can carry both. The
+direction that cost 382 to 385 — a family nobody declared — is covered by
+`unclaimed corrections` counting the residual, which is an account rather than
+a second list. §12.129.3.
+
+### 12.131.9 The suite
+
+1,623 tests before, **1,622 after**. Four went — three in
+`VerificationIndependenceTests` (`everyDeclaredEntryNamesARealComparison`,
+`anEntryNamingNothingWithholdsIt`, `anUnmatchedEntryIsNamedInThePaste`) and one
+in `ExpectationProvenanceTests` (`theUndeclaredOneIsCaught`); each tested a
+failure mode that stopped existing. Three arrived: `theWholeMapIsPinned`, and
+two over the new paste line — `thePasteNamesTheFedFields` and
+`theFedFieldsLinePrintsAtZero`. The groundwork predicted 1,620 because it did
+not enumerate the second pair. **A patch that adds a line to `diagnosticLines`
+and no test for it is the warning-shaped defect §6 keeps re-learning**, and the
+zero case is §12.54.2's own.
+
+### 12.131.10 After 387
+
+**B4 — details and traces.** It is the first slice to add comparisons under the
+derived scheme: each new check names its field at construction, and flipping
+`.details`/`.traces` means answering for them in
+`ExpectationSources.servesFromDatabase` rather than remembering a list. That is
+what 385 to 387 were for.
+
+---
+
 ## 12.130 An expectation says where it came from — patch 386
 
 385 made the number honest. This makes it derived, and it is the first half of

@@ -1596,9 +1596,13 @@ struct DatabaseHealthView: View {
                     // PATCH 354. The label is swapped, not a row added. A
                     // self-referential check draws the same tick as a real one
                     // and means something entirely different.
-                    LabeledContent(HydratedStores.entry(for: check.name) == nil
-                                   ? "  \(check.name)"
-                                   : "  \(check.name) — self-referential",
+                    // 387 — THE ANSWER MOVED, THE ROW DID NOT. This read
+                    // `HydratedStores.entry(for:)`; it now asks the check
+                    // itself, against what this build is serving. Still a label
+                    // swap, so the screen's DEPTH does not move. §12.76.
+                    LabeledContent(check.isSelfReferential(given: v.sources)
+                                   ? "  \(check.name) — self-referential"
+                                   : "  \(check.name)",
                                    value: check.passed ? check.found
                                                        : "\(check.expected) → \(check.found)")
                         .font(.caption2)

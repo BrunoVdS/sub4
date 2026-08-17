@@ -6,8 +6,8 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 386 (2026-08-17).** §5.3 carries the device evidence from the
-384 and 385 runs; §5.4 is the verifier's accounting and how it is now derived.
+**Current at patch 387 (2026-08-17).** §5.3 carries the device evidence from the
+384, 385 and 386a runs; §5.4 is the verifier's accounting, now derived end to end.
 
 **§5 IS THIS PROJECT'S ONLY STATEMENT OF CURRENT STATE.** Every other document
 either points at it or is dated history. That rule exists because the opposite
@@ -271,8 +271,8 @@ stopped being true at 342. Rename it `docs/REVIEW-2026-08-10-…` when convenien
 
 ## 3. Build, test, run
 
-**The suite is the gate, and it is fast.** 1,623 tests in 149 suites, well under a second
-at patch 386. The run prints the current total; this figure is here for the order of
+**The suite is the gate, and it is fast.** 1,622 tests in 149 suites, well under a second
+at patch 387. The run prints the current total; this figure is here for the order of
 magnitude, and `test.sh` fails below 500 for the same reason.
 
 ```sh
@@ -349,10 +349,10 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 386, 2026-08-17
+## 5. State — patch 387, 2026-08-17
 
 **THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Everything below is
-current at 386; §5.3 is what the device said on 16 and 17 August, and §5.4 is
+current at 387; §5.3 is what the device said on 16 and 17 August, and §5.4 is
 the one number in this project that was wrong when it was read. Anything older than
 this section is history and lives in ADR §12; if a number here disagrees with
 the code, the code wins and this section is the defect.
@@ -394,7 +394,7 @@ first when a screen looks wrong:
 slice reversible by deleting one family from `PersistenceAuthority.hydratedFamilies`,
 and it is why hydration must never write.
 
-### 5.3 The evidence, from the device at 383 and 384
+### 5.3 The evidence, from the device at 383, 384, 385 and 386a
 
 **At 384, 16 August, 23:10 — the first full pass since the flip:**
 
@@ -418,6 +418,11 @@ and it is why hydration must never write.
 - `Recovered at launch: 1` — a run interrupted by an Xcode rebuild and recovered
   at the next launch, `Recovery error: none`. The mechanism working, not news.
 
+**At 386a, 17 August 08:14 — 387's precondition, on a verified run:** `derived
+from the stores: 9 of 22 read a field this build feeds — agrees with the
+declared list`. Two mechanisms reached the same nine, and that is what made
+deleting the list safe.
+
 **At 383 — Compare, six parity slices at zero differences** over 694 activities
 · 332 days, including load (fitness 35 vs 35, fatigue 47 vs 47) and summaries
 (15 of 18 both sides). Activity parity's app side is `activities.json` read
@@ -431,42 +436,44 @@ lossless round trip: gear classification and status, rejection and match-date
 metadata, plan source and top-level order, and fractional fetch-time precision
 are still outside the mapped set — §12.86 draws that line and it has not moved.
 
-### 5.4 The verifier's accounting, and how it is decided
+### 5.4 The verifier's accounting, and it is derived end to end
 
-**22 comparisons — 13 independent, 9 reading a store the database feeds.**
-`HydratedStores.all` holds those nine: `heart-rate zones` (B1); `notes`,
-`commute corrections`, `match decisions`, `session moves` (B2); `activities`,
-`activity identities`, `volume by discipline` and `activity fields` (B3).
+**22 comparisons — 13 independent, 9 reading a store the database feeds.** The
+nine: `heart-rate zones` (B1); `notes`, `commute corrections`, `match
+decisions`, `session moves` (B2); `activities`, `activity identities`, `volume
+by discipline` and `activity fields` (B3).
 
-**The ninth is 385's, and 382 missed it** — `fingerprintCheck` builds a
-seven-field fingerprint from `ActivityStore.activities` and compares it against
-the `activity` table, so it is the same shape as `volume by discipline`, which
-382 did declare. It spent three patches in the evidence column. Nothing on the
-device was ever wrong; one row was counted as proof that could not disagree.
-§12.129.
+**The ninth is 385's, and 382 missed it** — `activity fields` fingerprints the
+same rows as `volume by discipline`, which 382 did declare, and spent three
+patches in the evidence column. Nothing on the device was ever wrong; one row
+was counted as proof that could not disagree. §12.129.
 
-**Since 386 the same answer is also DERIVED, beside the list.** Every comparison
-names the store FIELD its expectation came from — `VerificationCheck.reads`, no
-default, so one added without answering does not compile — and
-`ExpectationSources.live` resolves *is that field database-fed* in one exhaustive
-switch asking each store's own `servedFrom`.
+**THE DERIVATION IS THE ANSWER SINCE 387 AND `HydratedStores` IS GONE.** Every
+comparison names the store FIELD its expectation came from —
+`VerificationCheck.reads`, no default, so one added without answering does not
+compile — and `ExpectationSources.live` resolves *is that field database-fed* in
+one exhaustive switch asking each store's `servedFrom`. §12.130, §12.131.
 
 **The unit is the field, not the store, and two stores decided that.**
-`ActivityStore.servedFrom` reads `.database` — 381 wrote it for the activities —
-while the same store serves the rejection receipts and the sync cursor from
-`UserDefaults` until B8. `AthleteStore` is split the other way:
-`.partial(fromDatabase: "zones and FTP", fromFiles: "gear")`. A store-level
-derivation would discount `gear`, `refused recordings` and `sync position`, all
-three of which can still disagree.
+`ActivityStore` serves the activities from the database but the receipts and
+cursor from `UserDefaults` until B8; `AthleteStore` is `.partial(fromDatabase:
+"zones and FTP", fromFiles: "gear")`. A store-level answer would discount
+`gear`, `refused recordings` and `sync position` — all still able to disagree.
 
-**The list is still the operative answer at 386, on purpose.** The derivation
-runs beside it as a negative control: `undeclaredSelfReferential` names any
-comparison the derivation calls self-referential and the list does not, prints
-every run, and fails `isTrustworthyEvidence`. **Against the 382 tree it would
-have caught `activity fields` and refused that run `verified`.** It is
-one-directional — declared-and-not-derived is what reverting a slice looks like,
-and failing on it would remove the escape hatch this ladder rests on. 387 makes
-the derivation operative and deletes the list. §12.130.
+**386 PROVED IT BEFORE 387 TRUSTED IT.** The derivation ran beside the list as a
+negative control — against the 382 tree it would have caught `activity fields`
+and refused that run `verified` — and the device printed the two reaching the
+same nine. **The classification now follows what the build is SERVING:**
+`verify(db, activities: [])` in a test process reports zero self-referential
+comparisons where the list said nine regardless, so a test that needs one passes
+`sources:`.
+
+**`isTrustworthyEvidence` is `passed && !independentChecks.isEmpty`, and both
+dropped conditions were about a list drifting from the checks.** With one source
+there is nothing to drift. `ExpectationProvenanceTests.theWholeMapIsPinned`
+replaces them and is stronger in the direction that cost 382 to 385: the list
+was a SUBSET, so a comparison missing from it passed in silence; the map is
+COMPLETE, so one missing from it fails.
 
 **`runs ever verified: 14`, the newest at patch 385**, over data the database
 feeds, with 13 comparisons that could still have disagreed. D7's exit criterion
@@ -541,27 +548,21 @@ first three steps and they are struck from this list rather than left to rot.
    the right property and is not being weakened; what was wrong was this list
    asking for something the calendar forbids. B7 is blocked on the same fact.
    Re-press the roll-up after the first review and the ninth becomes real.
-2. **387 — make the derivation operative and delete the list.**
-   `selfReferentialChecks` and `independentChecks` read the derivation,
-   `HydratedStores` and `unmatchedHydratedEntries` go, and the total pinned in
-   three suites goes with them; `VerificationIndependenceTests` is rewritten
-   around the derivation rather than edited. **The device printed it at 386a, 17 August 08:14** —
-   `derived from the stores: 9 of 22 read a field this build feeds — agrees
-   with the declared list`, on a run marked verified with 13 independent
-   comparisons. Two mechanisms reached the same nine, so 387 is unblocked. Do it before B4, because B4 and
-   B5 each add comparisons that would otherwise get the same chance to be
-   missed.
-3. **B4 — details and traces.** The 1.5-million-sample read stays off the main
-   actor; the read-back keeps its own read, per 381's rule.
-4. **B5 — weather and gear**, including `ReadBacks.knownActivityIDs` and the
+2. **B4 — details and traces.** The 1.5-million-sample read stays off the main
+   actor; the read-back keeps its own read, per 381's rule. **It is the first
+   slice under the derived scheme**: each new comparison names its field at
+   construction, and flipping `.details`/`.traces` means answering for them in
+   `ExpectationSources.servesFromDatabase` — there is no list to forget.
+   `theWholeMapIsPinned` fails until the new comparisons are written into it.
+3. **B5 — weather and gear**, including `ReadBacks.knownActivityIDs` and the
    `WeatherGearRoundTrip` read-back's own read. **Gear is the half of
    `AthleteStore` that B1 did not take** — `StoreSource.partial(fromDatabase:
    "zones and FTP", fromFiles: "gear")` — so the verifier's `gear` comparison is
    still real evidence and must not be reclassified before this slice.
-5. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
+4. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed
    recovery screen `RootView` does not yet have.
-6. **D8** — stabilise one release window, then remove the JSON writers.
+5. **D8** — stabilise one release window, then remove the JSON writers.
 
 Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
 `docs/context/review-data-pool.md` and `docs/ADR-0002-strava-retirement.md`.
@@ -604,6 +605,14 @@ Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
   database" is wrong for five of the verifier's twenty-two comparisons, in both
   directions. **Before deriving anything from an object, check whether the object
   has one answer to give.** §12.130.1.
+- **A TRIPWIRE OVER A SUBSET CANNOT SEE WHAT IS MISSING FROM IT; A COMPLETE MAP
+  CAN.** `HydratedStores` listed the comparisons that read a hydrated store, so
+  a comparison nobody added simply passed — the list had no opinion about it.
+  387 replaced it with `theWholeMapIsPinned`, which holds EVERY comparison's
+  field: one that is missing fails, and one whose field changed fails. **When a
+  guard is a list of things that are wrong, ask what it says about a thing that
+  is not on it.** Usually nothing, and nothing reads exactly like a pass.
+  §12.131.4.
 - **A JOIN THAT IS CHECKED IN ONE DIRECTION IS UNCHECKED IN THE OTHER.**
   `unmatchedHydratedEntries` catches a declared entry naming no comparison, and it
   is a good tripwire — it is also the only one, so a COMPARISON that nobody

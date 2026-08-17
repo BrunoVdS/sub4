@@ -224,26 +224,46 @@ struct CorrectionFamilyTests {
         let db = try Sub4Database.inMemory()
         let r = try SemanticVerifier.verify(db, activities: [])
 
-        #expect(HydratedStores.entry(for: "unclaimed corrections") == nil)
+        // **`.databaseAlone` SAYS MORE THAN `entry(for:) == nil` DID — 387.**
+        // The old assertion said only that a hand-kept list did not name this
+        // comparison, which is also true of a comparison somebody forgot to
+        // declare — the exact silence §12.129 was about. This says what the
+        // check actually reads: nothing. It is a residual computed from the
+        // database on its own, so it can never be self-referential, and
+        // `ExpectationSources` refuses to hold `.databaseAlone` at all.
+        let unclaimed = try #require(
+            r.checks.first { $0.name == "unclaimed corrections" })
+        #expect(unclaimed.reads.field == .databaseAlone)
         #expect(r.independentChecks.contains { $0.name == "unclaimed corrections" })
     }
 
     /// **THE RENAME, FINISHED ON BOTH SIDES.** 358 left a comment on
     /// `HydratedStores` saying `corrections` is the commute decisions and the
     /// name does not say so — and warning that a helpful rename on one side is
-    /// exactly what `unmatchedHydratedEntries` exists to catch. This is the
-    /// patch that renames it, so this is the test that both lists moved.
-    @Test("The rename moved the declared list too")
+    /// exactly what `unmatchedHydratedEntries` existed to catch. 361 is the
+    /// patch that renamed it.
+    ///
+    /// **AND 387 IS WHERE THE SECOND SIDE STOPPED EXISTING.** There is no
+    /// declared list to move any more; the comparison carries its own
+    /// provenance, so the rename cannot be finished on one side only. What this
+    /// test now asserts is the half that is still capable of drifting: the name
+    /// `ComparedCorrections` joins on, and the field the comparison reads.
+    @Test("The rename left one name and the comparison reads the commutes")
     func theRenameMovedBothLists() throws {
-        #expect(HydratedStores.entry(for: "commute corrections")?.store
+        #expect(ComparedCorrections.commute.check == "commute corrections",
+                "the old bare `corrections` is gone")
+        #expect(ExpectationField.commutes.storeDescription
                 == "CommuteStore.decisions")
-        #expect(HydratedStores.entry(for: "commute corrections")?.slice == "B2")
-        #expect(HydratedStores.entry(for: "corrections") == nil,
-                "the old name is gone from the declared list")
+        #expect(ExpectationField.commutes.slice == "B2")
 
         let db = try Sub4Database.inMemory()
-        let r = try SemanticVerifier.verify(db, activities: [])
-        #expect(r.unmatchedHydratedEntries.isEmpty)
-        #expect(r.selfReferentialChecks.count == HydratedStores.all.count)
+        let r = try SemanticVerifier.verify(
+            db, activities: [],
+            sources: ExpectationSources(fedByTheDatabase: [.commutes]))
+        let commute = try #require(
+            r.checks.first { $0.name == "commute corrections" })
+        #expect(commute.reads.field == .commutes)
+        #expect(Set(r.selfReferentialChecks.map(\.name)) == ["commute corrections"],
+                "one field fed, one comparison reading it")
     }
 }

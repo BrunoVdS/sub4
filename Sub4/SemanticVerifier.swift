@@ -302,8 +302,15 @@ nonisolated struct VerificationReport: Equatable {
 
     /// Comparisons whose expectation came from something the database does not
     /// feed. THESE ARE THE ONES THAT CAN FAIL.
+    ///
+    /// **DERIVED SINCE 387, NOT LOOKED UP — §12.131.** Each check names the
+    /// store field its expectation came from, and `sources` says which fields
+    /// this build feeds. The classification therefore comes from the comparison
+    /// itself rather than from a list in another file joined to it by name, and
+    /// the failure that list allowed — a comparison nobody declared, counted as
+    /// evidence in silence — has nowhere left to happen.
     var independentChecks: [VerificationCheck] {
-        checks.filter { HydratedStores.entry(for: $0.name) == nil }
+        checks.filter { !$0.isSelfReferential(given: sources) }
     }
 
     /// Comparisons reading a store this build hydrates FROM the database.
@@ -312,104 +319,65 @@ nonisolated struct VerificationReport: Equatable {
     /// would mean hydration itself is broken, which is worth knowing — it is
     /// only as evidence that the migration carried something that they are
     /// worth nothing.
+    ///
+    /// **THIS WAS `derivedSelfReferential` AT 386**, running beside
+    /// `HydratedStores` as a negative control rather than answering anything.
+    /// The device printed the two reaching the same nine on 17 August, which is
+    /// the evidence 386 existed to produce, and 387 makes this the only answer.
+    /// §12.130.5.
+    ///
+    /// **AND IT NOW DEPENDS ON `sources`, WHICH IS THE POINT.** `verify(db,
+    /// activities: [])` in a test process reports NOTHING self-referential,
+    /// because nothing has been hydrated in a test process and that is the
+    /// honest answer. A test that wants a comparison classified as
+    /// self-referential must say what this build is serving.
     var selfReferentialChecks: [VerificationCheck] {
-        checks.filter { HydratedStores.entry(for: $0.name) != nil }
-    }
-
-    /// Declared hydrated, and naming no comparison in this report.
-    ///
-    /// §12.15 IN ITS SHARPEST FORM. `HydratedStores` joins to the checks BY
-    /// NAME. A rename on one side and not the other would silently move a
-    /// self-referential check back into the evidence column, and every number
-    /// below would read better than the truth. An entry that matches nothing is
-    /// the symptom that produces, so it is surfaced rather than ignored.
-    ///
-    /// **AND IT POINTS ONE WAY ONLY — PATCH 385, §12.129.** This reports an
-    /// ENTRY naming no check. Nothing reports a CHECK naming no entry, and that
-    /// is the direction the damage runs: a comparison whose expectation comes
-    /// from a hydrated store and which nobody declared counts as evidence, in
-    /// silence, and reads on the device exactly like a comparison that could
-    /// have failed. `activity fields` did that for three patches.
-    ///
-    /// It cannot be closed from this end. Deciding whether a check is
-    /// self-referential means knowing WHICH STORE FIELD its expectation came
-    /// from, and this type is handed arrays. **386 moves that answer to each
-    /// check's own construction site**, where the compiler can require it, and
-    /// this property and the list behind it both stop existing.
-    var unmatchedHydratedEntries: [HydratedStores.Entry] {
-        let names = Set(checks.map(\.name))
-        return HydratedStores.all.filter { !names.contains($0.check) }
-    }
-
-    // MARK: The derivation, and the direction nothing watched — patch 386
-
-    /// Comparisons the DERIVATION says read a field the database feeds.
-    ///
-    /// Not yet the operative answer: `selfReferentialChecks` above still reads
-    /// `HydratedStores`, so nothing about this build's numbers moves. This runs
-    /// beside it as a negative control, and 387 makes it operative once the
-    /// device has shown the two agree. §12.130.
-    var derivedSelfReferential: [VerificationCheck] {
         checks.filter { $0.isSelfReferential(given: sources) }
-    }
-
-    /// **THE DIRECTION THAT COST 382 TO 385.**
-    ///
-    /// A comparison whose expectation comes from a field this build feeds from
-    /// the database, and which `HydratedStores` does not name — so it is
-    /// counted as evidence while being incapable of disagreeing. Nothing in
-    /// this repository could see that before 386.
-    ///
-    /// ONE-DIRECTIONAL, DELIBERATELY. The opposite — declared and not derived —
-    /// is what reverting a slice looks like: take a family out of
-    /// `hydratedFamilies` and the entry stays while the store returns to its
-    /// file. Reversibility by deleting one family is a property this whole
-    /// ladder rests on, and a build that failed verification for using the
-    /// escape hatch would have no escape hatch.
-    var undeclaredSelfReferential: [VerificationCheck] {
-        derivedSelfReferential.filter { HydratedStores.entry(for: $0.name) == nil }
     }
 
     /// WHAT `verified` MAY BE GRANTED ON — and it is no longer `passed`.
     ///
-    /// Three conditions, each with a distinct failure: every comparison agreed,
-    /// at least one of them was CAPABLE of disagreeing, and the list that
-    /// decides which is which still lines up with the checks.
+    /// Two conditions, each with a distinct failure: every comparison agreed,
+    /// and at least one of them was CAPABLE of disagreeing.
     ///
-    /// The middle one is the whole patch. At B9 every store is fed by the
+    /// The second is the whole of §12.99. At B9 every store is fed by the
     /// database, `independentChecks` is empty, and twenty green rows mean
     /// nothing at all. This is the line that refuses to write `verified` on
     /// that — which forces the question then, rather than after activation.
-    /// PATCH 386 ADDS THE FOURTH, AND IT IS THE ONE THE OTHER THREE COULD NOT
-    /// MAKE: a comparison that could not have disagreed and that nobody said so
-    /// about. Every one of these has a distinct failure and its own sentence in
-    /// `withheldReason`.
+    ///
+    /// **387 REMOVED TWO CONDITIONS AND THIS IS THE ARGUMENT, NOT A
+    /// SIMPLIFICATION.** They were `unmatchedHydratedEntries.isEmpty` (358a)
+    /// and `undeclaredSelfReferential.isEmpty` (386), and BOTH WERE ABOUT A
+    /// LIST DRIFTING FROM THE CHECKS: the first caught a declared entry naming
+    /// no comparison, the second a comparison the derivation called
+    /// self-referential that the list did not name. With the list deleted there
+    /// are no longer two things that can drift apart. The classification is
+    /// computed from the check's own `reads` and this build's `sources`, so
+    /// that failure mode cannot occur — it is not merely no longer watched.
+    ///
+    /// **WHAT REPLACES THEM IS STRONGER IN THE DIRECTION THAT COST 382 TO 385.**
+    /// `ExpectationProvenanceTests.theWholeMapIsPinned` holds every comparison's
+    /// field. The old list was a SUBSET, so a comparison missing from it passed
+    /// in silence for three patches; that map is COMPLETE, so a comparison
+    /// missing from it fails, and so does one whose field changed.
+    ///
+    /// **THE CONDITION THAT CARRIES THE MEANING IS UNTOUCHED** — at least one
+    /// comparison could have disagreed — and it is the one that fires at B9.
+    /// §12.131.
     var isTrustworthyEvidence: Bool {
         passed && !independentChecks.isEmpty
-            && unmatchedHydratedEntries.isEmpty
-            && undeclaredSelfReferential.isEmpty
     }
 
     /// Non-nil when the report PASSED and still may not be believed. Nil when
     /// it failed — that is `failures`' story and this one would only blur it.
+    ///
+    /// ONE ARM SINCE 387. The two that named the removed properties went with
+    /// them; this is the sentence B9 will print.
     var withheldReason: String? {
         guard passed else { return nil }
-        if !unmatchedHydratedEntries.isEmpty {
-            let n = unmatchedHydratedEntries.count
-            return "the hydrated-store list names \(n) comparison"
-                 + (n == 1 ? "" : "s") + " this report does not contain"
-        }
         if independentChecks.isEmpty {
             return "every comparison reads a store the database feeds, so none "
                  + "of them could have disagreed"
-        }
-        if !undeclaredSelfReferential.isEmpty {
-            let n = undeclaredSelfReferential.count
-            return "\(n) comparison" + (n == 1 ? "" : "s")
-                 + " read a store the database feeds and "
-                 + (n == 1 ? "is" : "are") + " not declared, so "
-                 + (n == 1 ? "it counted" : "they counted") + " as evidence "
-                 + "while being unable to disagree"
         }
         return nil
     }
@@ -444,26 +412,29 @@ nonisolated struct VerificationReport: Equatable {
                  + "database feeds")
         out.append("  may be believed: \(isTrustworthyEvidence ? "yes" : "no")"
                  + (withheldReason.map { " — \($0)" } ?? ""))
-        // PATCH 386, UNCONDITIONAL AND DIRECTLY UNDER THE COUNTS IT CHECKS.
-        // A cross-check that only printed when it disagreed would be a row
-        // that vanishes at zero — §12.54.2 — and a reader could not tell it
-        // from a build where nobody wired it in.
-        out.append("  derived from the stores: \(derivedSelfReferential.count) "
-                 + "of \(checks.count) read a field this build feeds — "
-                 + (undeclaredSelfReferential.isEmpty
-                    ? "agrees with the declared list"
-                    : "DISAGREES on \(undeclaredSelfReferential.count)"))
-        for c in undeclaredSelfReferential {
-            out.append("  COUNTED AS EVIDENCE AND COULD NOT DISAGREE: \(c.name) "
-                     + "reads \(c.reads.storeDescription)")
-        }
-        for e in unmatchedHydratedEntries {
-            out.append("  DECLARED HYDRATED AND NOT COMPARED: \(e.check) "
-                     + "(\(e.note))")
-        }
+        // PATCH 387 — 386'S LINE REPLACED, NOT DELETED. It read `derived from
+        // the stores: N of M … agrees with the declared list`, and there is no
+        // longer a list for it to agree with. A row that vanishes cannot be
+        // told from a row nobody wired in — §12.54.2 — so the derivation states
+        // its own answer in the same place: which fields this build feeds, out
+        // of the fields a comparison can read. `.databaseAlone` is not one of
+        // them; it names no store. SORTED, so two runs compare.
+        let fedFields = sources.fields.map(\.rawValue).sorted()
+        let readableFields = ExpectationField.allCases
+            .filter { $0 != .databaseAlone }.count
+        out.append("  fields fed by the database: \(fedFields.count) of "
+                 + "\(readableFields)"
+                 + (fedFields.isEmpty
+                    ? "" : " — " + fedFields.joined(separator: ", ")))
         for c in checks {
-            let mark = HydratedStores.entry(for: c.name)
-                .map { " · self-referential: \($0.note)" } ?? ""
+            // THE MARK IS DERIVED — 387. It read `HydratedStores.entry(for:)`
+            // and printed that entry's hand-written note; it now asks the check
+            // where its expectation came from and the field which slice owns it.
+            // Same sentence, one source instead of two.
+            let mark = c.isSelfReferential(given: sources)
+                ? " · self-referential: \(c.reads.storeDescription)"
+                  + (c.reads.field.slice.map { ", hydrated at \($0)" } ?? "")
+                : ""
             out.append("  \(c.passed ? "ok" : "NO") \(c.name) [\(c.table)]: "
                        + "expected \(c.expected), found \(c.found)\(mark)")
         }
@@ -505,11 +476,21 @@ nonisolated enum ComparedCorrections {
         let field: String
         /// The comparison that counts it, BY NAME.
         ///
-        /// `everyFamilyNamesARealComparison` joins on this exactly the way
-        /// `unmatchedHydratedEntries` joins on `HydratedStores.Entry.check`,
-        /// and for the same reason: a rename finished on one side only leaves
-        /// a family whose comparison does not exist, and `unclaimed
-        /// corrections` would then count rows the report claims to compare.
+        /// `everyFamilyNamesARealComparison` joins on it: a rename finished on
+        /// one side only leaves a family whose comparison does not exist, and
+        /// `unclaimed corrections` would then count rows the report claims to
+        /// compare.
+        ///
+        /// **THIS IS THE LAST JOIN-BY-NAME IN THE VERIFIER, AND 387 IS WHY IT
+        /// IS WORTH SAYING SO.** `HydratedStores` was the other one and it is
+        /// gone — the self-referential classification is now computed from each
+        /// check's own `reads`. This one survives on different grounds: it joins
+        /// a `(subjectKind, field)` pair the IMPORTER owns to a comparison this
+        /// file makes, so there is no single site that could carry both. The
+        /// tripwire above points from the declaration to the check, and the
+        /// direction that cost 382 to 385 — a row family nobody declared — is
+        /// covered by `unclaimed corrections` counting the residual rather than
+        /// by a second list. §12.129.3, §12.131.
         let check: String
     }
 

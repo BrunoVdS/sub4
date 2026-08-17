@@ -126,15 +126,26 @@ struct MoveHydrationTests {
         #expect(PersistenceAuthority.hydrates(.moves))
     }
 
-    /// An entry naming a comparison that does not exist is what
-    /// `unmatchedHydratedEntries` reports — a defect, not a note. The string
-    /// is the verifier's own.
+    /// An entry naming a comparison that does not exist was what
+    /// `unmatchedHydratedEntries` reported — a defect, not a note.
+    ///
+    /// **387 DELETED THAT LIST AND THIS ASSERTION IMPROVED BY IT.** It required
+    /// a row somebody typed; it now requires the VERIFIER to make a comparison
+    /// over the moved sessions and that comparison to name `.moves`. A
+    /// hydration with nothing verifying it fails here, which is the direction
+    /// the old join could not point in. §12.131.
+    /// `@MainActor` SINCE 387 — the assertion moved from a `nonisolated` list
+    /// to the verifier, which is main-actor isolated. Three tests in this suite
+    /// already carry it.
     @Test("Every hydrated family is named")
+    @MainActor
     func everyHydratedFamilyIsNamed() throws {
-        let entry = try #require(
-            HydratedStores.all.first { $0.check == "session moves" },
-            "the moves have no hydration entry")
-        #expect(entry.store == "PlanMoveStore.moves")
-        #expect(entry.slice == "B2")
+        let db = try Sub4Database.inMemory()
+        let r = try SemanticVerifier.verify(db, activities: [])
+        let check = try #require(r.checks.first { $0.name == "session moves" },
+                                 "the moves are hydrated and nothing compares them")
+        #expect(check.reads.field == .moves)
+        #expect(ExpectationField.moves.storeDescription == "PlanMoveStore.moves")
+        #expect(ExpectationField.moves.slice == "B2")
     }
 }

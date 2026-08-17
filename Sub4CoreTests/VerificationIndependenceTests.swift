@@ -3,7 +3,8 @@
 //  Sub4CoreTests
 //
 //  A check that reads a store the database feeds is not evidence —
-//  patch 354, ADR-0003 §12.99.
+//  patch 354, ADR-0003 §12.99. Derived rather than declared since 387,
+//  §12.131.
 //
 //  WHAT IS TESTED HERE AND WHAT IS GUARDED INSTEAD
 //  ----------------------------------------------
@@ -18,12 +19,27 @@
 //  the patch if it is relaxed back to `passed`. What IS tested here is the
 //  thing that decides the answer, which is pure and exhaustible.
 //
-//  THE ONE THAT WILL FIRE AT B5.
-//  `everyDeclaredEntryNamesARealComparison` runs the real verifier over an
-//  empty database and requires every `HydratedStores` entry to match a check
-//  that actually exists. The list joins BY NAME. A typo, or a check renamed on
-//  one side only, moves a self-referential comparison quietly back into the
-//  evidence column — and this is the test that stops it.
+//  387 REWROTE THIS FILE ROUND THE DERIVATION, AND `covering()` DIED WITH THE
+//  LIST.
+//  358a built that fixture because `unmatchedHydratedEntries` withheld any
+//  report not naming every declared entry, so every fixture here broke each
+//  time `HydratedStores` grew. There is no list now: `selfReferentialChecks`
+//  filters on each check's own `reads` against what the build is serving, and a
+//  report satisfies nothing but itself.
+//
+//  THE THREE TESTS THAT WENT, AND WHY EACH STOPPED BEING POSSIBLE.
+//  `everyDeclaredEntryNamesARealComparison` — there are no declared entries.
+//  `ExpectationProvenanceTests.everyFieldIsCompared` is its derived successor
+//  and already existed at 386. `anEntryNamingNothingWithholdsIt` — an entry
+//  naming nothing cannot occur. `anUnmatchedEntryIsNamedInThePaste` — the line
+//  it asserted is gone from `diagnosticLines`.
+//
+//  THE CLASSIFICATION NOW DEPENDS ON `sources`, AND THAT IS THE POINT.
+//  `verify(db, activities: [])` in a test process finds NOTHING
+//  self-referential, because nothing is hydrated in a test process. Every test
+//  below that wants a comparison counted as self-referential says so, by
+//  passing the fields this notional build feeds. Those tests used to lean on a
+//  compile-time constant to simulate a runtime state. §12.131.
 //
 
 import Testing
@@ -36,12 +52,10 @@ struct VerificationIndependenceTests {
 
     // MARK: Fixtures
 
-    /// PATCH 386 — `reads:` HAS NO DEFAULT ON THE REAL TYPE, and this fixture
-    /// gives it one so the suite keeps testing what it was written to test:
-    /// the DECLARED classification, which is unchanged. `.databaseAlone` means
-    /// these synthetic checks read no store, so the derivation says nothing
-    /// about them and the cross-check stays silent here. The derivation has its
-    /// own suite — `ExpectationProvenanceTests`.
+    /// `reads:` HAS NO DEFAULT ON THE REAL TYPE — patch 386 — and this fixture
+    /// gives it one so a test that is not about provenance need not restate it.
+    /// `.databaseAlone` means the check reads no store at all, so it is
+    /// independent under every `fed:` set below.
     private func check(_ name: String,
                        table: String = "t",
                        expected: Int = 1,
@@ -51,123 +65,72 @@ struct VerificationIndependenceTests {
                  reads: reads)
     }
 
-    private func report(_ checks: [VerificationCheck]) -> VerificationReport {
-        VerificationReport(checks: checks, seconds: 0.01)
+    /// **WHAT THIS BUILD WOULD BE SERVING**, stated per test rather than read
+    /// off a constant. `fed: []` is the honest default and it is what a test
+    /// process really is.
+    private func report(_ checks: [VerificationCheck],
+                        fed: Set<ExpectationField> = []) -> VerificationReport {
+        VerificationReport(checks: checks, seconds: 0.01,
+                           sources: ExpectationSources(fedByTheDatabase: fed))
     }
 
-    /// **A REPORT CONTAINING ONE CHECK PER DECLARED ENTRY, DERIVED FROM THE
-    /// LIST — patch 358a.**
-    ///
-    /// `unmatchedHydratedEntries` is `HydratedStores.all` minus the checks this
-    /// report contains, and `withheldReason` reports it before anything else.
-    /// So a fixture that does not name every declared entry is a report
-    /// withholding itself for a reason the test is not about — which is what
-    /// happened to five tests in this file the day B2 declared three more.
-    ///
-    /// DERIVED RATHER THAN LISTED, and that is the whole point. `HydratedStores`
-    /// grows again at B5 and at B9. A hand-listed fixture goes stale on each
-    /// growth; this one does not, and neither do the assertions below it, which
-    /// are written against `HydratedStores.all` rather than against a number.
-    ///
-    /// `omitting:` is for the ONE test that wants an unmatched entry. It takes a
-    /// name rather than an index so the test reads as what it means, and the
-    /// caller derives that name from the list rather than writing
-    /// `heart-rate zones` — so a reordering does not break it either.
-    private func covering(_ extra: [VerificationCheck] = [],
-                          omitting: String? = nil) -> VerificationReport {
-        report(HydratedStores.all.map(\.check)
-                .filter { $0 != omitting }
-                .map { check($0) }
-               + extra)
-    }
+    // MARK: The comparison B1 spent
 
-    // MARK: The list
-
-    /// PINNED. `heart-rate zones` is the name `countChecks` gives the
-    /// comparison and `AthleteStore.hrZones` is what B1 hydrated. If either
-    /// moves, this fails here rather than on a device six weeks from now.
+    /// PINNED, AND AT ITS SOURCE NOW. `heart-rate zones` is the name
+    /// `countChecks` gives the comparison; what B1 hydrated is `.zones`, and
+    /// the check itself is what says so. This asserted a `HydratedStores` entry
+    /// until 387 — a hand-written row in another file, joined to this name.
     ///
-    /// THE COUNT MOVED AT 358 AND THIS TEST DID NOT CHANGE SHAPE. B2 declared
-    /// three more; which three, and that they name real comparisons, is
-    /// `B2ActivationTests`' business. What this suite still owns is B1's entry
-    /// and the machinery around it.
-    /// 5 UNTIL 382, WHICH DECLARED THREE — AND 9 AT 385, WHICH FOUND B3'S
-    /// FOURTH. This is the suite that owns the total, and it is the second home
-    /// the number has had — the first was `B2ActivationTests`, which had no
-    /// business holding it.
-    ///
-    /// **THIS NUMBER MOVING IS NOT THE SAME AS THIS NUMBER BEING RIGHT.** It
-    /// went 5 → 8 at 382 and every assertion in this file passed, over a list
-    /// that was one short. Nothing here joins the other way — see
-    /// `unmatchedHydratedEntries`, which reports an entry naming no comparison
-    /// and has no counterpart reporting a comparison naming no entry. §12.129.
-    @Test("The list names the comparison B1 made self-referential")
-    func theListNamesTheZoneCheck() {
-        #expect(HydratedStores.all.count == 9,
-                "one from B1, four from B2, four from B3; B5 and B9 add more")
-        let e = HydratedStores.entry(for: "heart-rate zones")
-        #expect(e != nil)
-        #expect(e?.store == "AthleteStore.hrZones")
-        #expect(e?.slice == "B1")
-        // 382 — WAS `== nil`. The activities are fed from the database now;
-        // what this suite still owns is that B1's entry did not move.
-        #expect(HydratedStores.entry(for: "activities")?.slice == "B3",
-                "the activities are B3's, and B1's entry is untouched")
-    }
-
-    /// **THE TRIPWIRE.** The real verifier, over an empty database, produces
-    /// the real set of check names. Every declared entry must match one.
-    @Test("Every declared entry names a comparison the verifier actually makes")
-    func everyDeclaredEntryNamesARealComparison() throws {
+    /// **THE OLD VERSION ALSO PINNED THE TOTAL, AND THAT TOTAL WAS ONCE WRONG.**
+    /// It went 5 → 8 at 382 and every assertion in this file passed over a list
+    /// one entry short, because a pin asserts that a declaration is TRUE and
+    /// cannot assert it is COMPLETE. §12.129. There is no total to pin now;
+    /// completeness is `ExpectationProvenanceTests.theWholeMapIsPinned`, which
+    /// holds every comparison's field and fails on one that is missing.
+    @Test("The comparison B1 made self-referential says so itself")
+    func theZoneCheckNamesItsField() throws {
         let db = try Sub4Database.inMemory()
         let r = try SemanticVerifier.verify(db, activities: [])
+        let zones = try #require(r.checks.first { $0.name == "heart-rate zones" })
 
-        #expect(r.unmatchedHydratedEntries.isEmpty,
-                "an entry naming no comparison is a rename nobody finished")
-        #expect(!r.checks.isEmpty)
-        #expect(r.selfReferentialChecks.count == HydratedStores.all.count)
-        #expect(r.independentChecks.count
-                == r.checks.count - HydratedStores.all.count)
-        // A SET, NOT A FIRST — patch 358. `selfReferentialChecks` filters
-        // `checks`, so "first" is whichever declared comparison `countChecks`
-        // happens to emit earliest. At B1 there was one entry and the two were
-        // the same sentence; at B2 there are four and `notes` comes first,
-        // which says nothing about anything. Pinning an emission order is how a
-        // test starts failing for a reordering that changed no behaviour.
-        #expect(Set(r.selfReferentialChecks.map(\.name))
-                .contains("heart-rate zones"))
+        #expect(zones.reads.field == .zones,
+                "the expectation is AthleteStore.hrZones and the check says so")
+        #expect(ExpectationField.zones.slice == "B1")
+        #expect(ExpectationField.zones.storeDescription == "AthleteStore.hrZones")
+        // AND IT IS NOT SELF-REFERENTIAL HERE, which is the honest answer in a
+        // test process: nothing is hydrated, so nothing reads the database.
+        // Before 387 this same call reported nine self-referential checks off a
+        // compile-time list, whatever the process had actually loaded.
+        #expect(!zones.isSelfReferential(given: .allFromFiles))
+        #expect(zones.isSelfReferential(
+            given: ExpectationSources(fedByTheDatabase: [.zones])))
     }
 
     // MARK: The split
 
-    /// PATCH 358 MOVED THIS AND THE MOVE IS THE EVIDENCE. `notes` was an
-    /// independent comparison in this exact report until the flip; it reads
-    /// `NotesStore.notes`, which now comes out of `user_note`. The same four
-    /// checks, one fewer of them worth anything.
-    @Test("The split follows the declared list and nothing else")
+    /// **THE SPLIT FOLLOWS THE SOURCES AND NOTHING ELSE.** Every check here is
+    /// the same shape; the only thing deciding which side it lands on is the
+    /// field it reads and whether this build feeds that field.
+    @Test("The split follows the sources and nothing else")
     func theSplitIsWhereItShouldBe() {
-        // 382 — `activities` LEFT THIS FIXTURE, AND THE REASON IS THE PATCH.
-        // These extras are the checks that are NOT declared hydrated, so that
-        // the split has something to put on each side. `activities` was one
-        // until this patch declared it; leaving it here would have added a
-        // second check by that name, put both on the self-referential side,
-        // and quietly emptied the independent one. `weather readings` is a
-        // real comparison and stays independent — only its id FILTER moved.
-        // §12.126.3.
-        let r = covering([check("weather readings"), check("gear")])
+        let r = report([
+            check("notes", reads: .from(.notes)),
+            check("activities", reads: .from(.activities, "counted")),
+            check("weather readings", reads: .from(.weather)),
+            check("gear", reads: .from(.gear))
+        ], fed: [.notes, .activities])
 
         #expect(Set(r.independentChecks.map(\.name))
                 == ["weather readings", "gear"],
                 "both still read the app's own files")
         #expect(Set(r.selfReferentialChecks.map(\.name))
-                == Set(HydratedStores.all.map(\.check)),
-                "and the split is the declared list, not a copy of it")
-        #expect(r.selfReferentialChecks.count == HydratedStores.all.count)
+                == ["notes", "activities"],
+                "and both of those read a field this build feeds")
 
         // B2, NAMED. `notes` was an independent comparison in this suite until
-        // the flip; it reads `NotesStore.notes`, which now comes out of
-        // `user_note`. Asserted separately from the set above, because that set
-        // would go on passing if `notes` had never been declared at all.
+        // the flip; it reads `NotesStore.notes`, which comes out of `user_note`
+        // now. Asserted separately from the set above, because that set would
+        // go on passing if the field had never been fed at all.
         #expect(!r.independentChecks.contains { $0.name == "notes" },
                 "notes stopped being evidence at B2")
 
@@ -176,56 +139,39 @@ struct VerificationIndependenceTests {
         #expect(r.withheldReason == nil)
     }
 
-    /// **B9, AND THE REASON THE PATCH EXISTS.** Every comparison reads a store
-    /// the database feeds. Every one of them agrees. None of it is evidence.
+    /// **B9, AND THE REASON THE ACCOUNTING EXISTS.** Every comparison reads a
+    /// store the database feeds. Every one of them agrees. None of it is
+    /// evidence.
     @Test("A report of nothing but self-referential checks passes and is not believed")
     func nothingButSelfReferentialIsNotBelieved() {
-        // EVERY DECLARED ENTRY AND NOTHING ELSE — which is what B9 is. Naming
-        // one of them and leaving the rest unmatched would withhold the report
-        // for the rename reason instead, and this test would pass on the wrong
-        // sentence.
-        let r = covering()
+        let r = report([
+            check("notes", reads: .from(.notes)),
+            check("activities", reads: .from(.activities, "counted")),
+            check("heart-rate zones", reads: .from(.zones))
+        ], fed: [.notes, .activities, .zones])
+
         #expect(r.passed, "every comparison agreed — that much is true")
         #expect(r.independentChecks.isEmpty)
         #expect(!r.isTrustworthyEvidence, "and none of them could have failed")
         #expect(r.withheldReason?.contains("could have disagreed") == true)
     }
 
-    /// The rename case. The entry is declared, the check it names is gone, and
-    /// everything downstream would read better than the truth.
-    @Test("An entry naming no comparison withholds the whole report")
-    func anEntryNamingNothingWithholdsIt() {
-        // EXACTLY ONE MISSING, and which one is taken from the list rather than
-        // written down. The test is about a name existing on one side only; it
-        // is not about the zones, and it should not start failing because the
-        // list was reordered.
-        guard let gone = HydratedStores.all.first?.check else {
-            Issue.record("nothing is declared hydrated, so nothing can be lost")
-            return
-        }
-        let r = covering([check("weather readings"), check("gear")],
-                         omitting: gone)
-        #expect(r.passed)
-        #expect(r.unmatchedHydratedEntries.count == 1)
-        #expect(r.unmatchedHydratedEntries.first?.check == gone)
-        #expect(!r.isTrustworthyEvidence)
-        #expect(r.withheldReason?.contains("does not contain") == true)
-    }
-
     /// A FAILING report is not a withheld one, and saying so would send
     /// somebody to look at the verifier instead of at the data.
     @Test("A failing report reports its failure and withholds nothing")
     func aFailureIsNotAWithholding() {
-        // COVERING — patch 358a. The old fixture named `heart-rate zones` for
-        // no reason and would have carried three unmatched entries after B2, so
-        // it could have gone on passing on the wrong sentence. Now the ONLY
-        // thing wrong with this report is the failure, which is what it is for.
-        // 382 — `weather readings` FOR `activities`, and it is not cosmetic.
-        // A failing check that is also DECLARED would leave this report with
-        // no independent comparison at all, so `withheldReason` would name the
-        // emptiness rather than being nil — and the assertion below would fail
-        // for a reason that has nothing to do with what this test is about.
-        let r = covering([check("weather readings", expected: 689, found: 688)])
+        // THE FAILING CHECK IS INDEPENDENT AND THE SECOND ONE IS TOO, so the
+        // ONLY thing wrong with this report is the failure. A report whose one
+        // independent comparison is the failing one would still be withheld if
+        // it passed, and the assertion below would be testing the wrong
+        // sentence. 382 made this mistake in the other direction. §12.69.
+        let r = report([
+            check("weather readings", expected: 689, found: 688,
+                  reads: .from(.weather)),
+            check("gear", reads: .from(.gear)),
+            check("notes", reads: .from(.notes))
+        ], fed: [.notes])
+
         #expect(!r.passed)
         #expect(r.failures.count == 1)
         #expect(r.withheldReason == nil, "the failure is the story")
@@ -236,35 +182,34 @@ struct VerificationIndependenceTests {
 
     @Test("The ledger note carries how much of it was evidence")
     func theLedgerNoteCarriesTheCount() {
-        // DERIVED — patch 358a, and this one was a real latent break rather
-        // than a stale fixture. "3 comparisons · 2 independent" is only right
-        // while exactly ONE of the three is declared. B5 declares gear; this
-        // would then read "3 comparisons · 1 independent" and fail on a patch
-        // that changed nothing whatever about the ledger note.
-        // 382 — SAME SUBSTITUTION AS ABOVE. This note reads "N comparisons
-        // · 2 independent", and 2 is the number of extras that are NOT
-        // declared. `activities` became declared in this patch, so leaving it
-        // here would make the note read 1 and fail a test about the ledger
-        // sentence rather than about the list.
-        let good = covering([check("weather readings"), check("gear")])
-        #expect(good.ledgerNote
-                == "\(HydratedStores.all.count + 2) comparisons, all agreed "
-                 + "· 2 independent")
+        // A PLAIN COUNT OF THIS FIXTURE'S OWN CHECKS — 387. It read
+        // `HydratedStores.all.count + 2`, which was derived from the list so
+        // that B5 and B9 could not break a test about a sentence. The fixture
+        // states its own contents now, so there is nothing left to derive
+        // from and nothing that can go stale.
+        let good = report([
+            check("notes", reads: .from(.notes)),
+            check("weather readings", reads: .from(.weather)),
+            check("gear", reads: .from(.gear))
+        ], fed: [.notes])
+        #expect(good.ledgerNote == "3 comparisons, all agreed · 2 independent")
 
-        let bad = report([check("weather readings", expected: 1, found: 2)])
+        let bad = report([check("weather readings", expected: 1, found: 2,
+                                reads: .from(.weather))])
         #expect(bad.ledgerNote == "1 of 1 comparisons disagreed",
                 "a failing note is unchanged — it was never misleading")
     }
 
-    /// §12.54.2. Both lines print on a healthy run, which is the case they
-    /// exist for: twenty ticks and no independent count cannot be told from a
-    /// verified migration.
+    /// §12.54.2. Every one of these lines prints on a healthy run, which is the
+    /// case they exist for: twenty ticks and no independent count cannot be
+    /// told from a verified migration.
     @Test("The paste says it on a healthy run, and marks the check")
     func thePasteSaysItUnconditionally() {
-        // 382 — the one extra has to be a check the database does not feed,
-        // or "1 independent" becomes 0 and the marked/unmarked assertion
-        // below tests nothing.
-        let lines = covering([check("weather readings")]).diagnosticLines
+        let lines = report([
+            check("heart-rate zones", reads: .from(.zones)),
+            check("weather readings", reads: .from(.weather))
+        ], fed: [.zones]).diagnosticLines
+
         #expect(lines.contains(where: { $0.contains("1 independent") }))
         #expect(lines.contains(where: { $0.contains("may be believed: yes") }))
         #expect(lines.contains(where: {
@@ -273,23 +218,52 @@ struct VerificationIndependenceTests {
         #expect(lines.contains(where: {
             $0.contains("weather readings") && !$0.contains("self-referential")
         }), "a real comparison is not marked")
+
+        // THE MARK CARRIES THE STORE AND THE SLICE, both derived. 386a's paste
+        // read `· self-referential: AthleteStore.hrZones, hydrated at B1` off a
+        // hand-written note; this is the same sentence from the field itself.
+        #expect(lines.contains(where: {
+            $0.contains("· self-referential: AthleteStore.hrZones, hydrated at B1")
+        }))
+    }
+
+    /// **387'S REPLACEMENT FOR 386'S CROSS-CHECK LINE, AND IT IS A REPLACEMENT
+    /// RATHER THAN A DELETION ON PURPOSE.** `derived from the stores: … agrees
+    /// with the declared list` had nothing left to agree with. A row that
+    /// vanishes cannot be told from a row nobody wired in — §12.54.2 — so the
+    /// derivation states its own answer in the same place.
+    @Test("The paste says which fields the database feeds, sorted")
+    func thePasteNamesTheFedFields() {
+        let lines = report([check("notes", reads: .from(.notes))],
+                           fed: [.zones, .notes, .activities]).diagnosticLines
+
+        #expect(lines.contains(
+            "  fields fed by the database: 3 of 14 — activities, notes, zones"),
+                "sorted, so two runs compare")
+
+        // AND THE DENOMINATOR IS DERIVED. 14 is every field a comparison can
+        // read — `allCases` less `.databaseAlone`, which names no store — so
+        // B4 adding a field moves it without anybody editing this.
+        #expect(ExpectationField.allCases.filter { $0 != .databaseAlone }.count
+                == 14)
+    }
+
+    /// THE ZERO CASE, and it is not cosmetic: a build feeding nothing is what
+    /// this project looked like before B1 and what it looks like after a
+    /// revert. The line must still print, without a dangling dash.
+    @Test("The fed-fields line prints when nothing is fed")
+    func theFedFieldsLinePrintsAtZero() {
+        let lines = report([check("gear", reads: .from(.gear))]).diagnosticLines
+        #expect(lines.contains("  fields fed by the database: 0 of 14"))
     }
 
     @Test("A withheld report says so in the paste, with the reason")
     func aWithheldReportSaysSoInThePaste() {
-        let lines = covering().diagnosticLines
+        let lines = report([check("notes", reads: .from(.notes))],
+                           fed: [.notes]).diagnosticLines
         #expect(lines.contains(where: { $0.contains("may be believed: no") }))
         #expect(lines.contains(where: { $0.contains("could have disagreed") }))
         #expect(lines.contains(where: { $0.contains("0 independent") }))
-    }
-
-    @Test("An unmatched entry is named in the paste in capitals")
-    func anUnmatchedEntryIsNamedInThePaste() {
-        let lines = report([check("weather readings")]).diagnosticLines
-        #expect(lines.contains(where: {
-            $0.contains("DECLARED HYDRATED AND NOT COMPARED")
-                && $0.contains("heart-rate zones")
-        }))
     }
 
     // MARK: The sixth ledger sentence

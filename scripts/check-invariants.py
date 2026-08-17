@@ -446,36 +446,22 @@ def pinned_counts_match_the_source():
         return
     truth["hydratedFamilies.count"] = len(re.findall(r"\.(\w+)", m.group(1)))
 
-    # BRACKET-MATCHED, NOT BRACE-MATCHED. `braced` finds the next `{` after a
-    # header; `all` is an ARRAY literal, so the nearest brace belongs to some
-    # later declaration entirely and the entry count came back 0. The rule
-    # reported a number of pins well above its floor while comparing them all
-    # against nothing — §12.69's exact failure, in the rule written to enforce
-    # §12.69. Caught by 377d's own guard, which parses this differently on
-    # purpose.
-    i = msrc.find("nonisolated static let all: [Entry] = [")
-    if i < 0:
-        fail(rule, "HydratedStores.all could not be located")
-        return
-    j = msrc.index("[", msrc.index("= [", i))
-    depth, k = 0, j
-    while k < len(msrc):
-        if msrc[k] == "[":
-            depth += 1
-        elif msrc[k] == "]":
-            depth -= 1
-            if depth == 0:
-                break
-        k += 1
-    else:
-        fail(rule, "HydratedStores.all is not bracket-balanced")
-        return
-    truth["HydratedStores.all.count"] = msrc[j:k].count(".init(check:")
-    if truth["HydratedStores.all.count"] == 0:
-        fail(rule, "HydratedStores.all parsed to zero entries — this rule is "
-                   "reading the wrong thing and every comparison below it is "
-                   "meaningless. §12.69")
-        return
+    # `HydratedStores.all` WAS READ HERE AND IS GONE — PATCH 387, §12.131.
+    #
+    # It was bracket-matched rather than brace-matched, because `all` is an
+    # ARRAY literal and `braced` found the next declaration's brace instead;
+    # the rule then compared every pin against zero while reporting a healthy
+    # count of pins. That was §12.69's exact failure inside the rule written to
+    # enforce §12.69, and it is recorded here because the shape outlives the
+    # list: A RULE THAT CANNOT PARSE ITS SOURCE MUST FAIL, NEVER SUCCEED
+    # QUIETLY. The four `truth` entries below each hard-fail if unreadable.
+    #
+    # The list itself stopped existing at 387: which comparisons are
+    # self-referential is now computed from each check's own `reads` and what
+    # the build is serving, so there is no hand-kept count for a test to pin.
+    # `ExpectationProvenanceTests.theWholeMapIsPinned` is what guards it now,
+    # and it is a complete map rather than a count — a shape this rule cannot
+    # check and does not pretend to.
 
     # EVERY FAMILY MUST BE HYDRATED IS *NOT* WHAT THIS ASSERTS. B3 will read a
     # family before it feeds it and the two counts will differ on purpose.
@@ -500,12 +486,10 @@ def pinned_counts_match_the_source():
          "Family.allCases.count"),
         (r"PersistenceAuthority\.hydratedFamilies\.count\s*==\s*(\d+)",
          "hydratedFamilies.count"),
-        (r"HydratedStores\.all\.count\s*==\s*(\d+)", "HydratedStores.all.count"),
-        (r"selfReferentialChecks\.count\s*==\s*(\d+)",
-         "HydratedStores.all.count"),
-        (r"\.checks\.count\s*-\s*(\d+)", "HydratedStores.all.count"),
-        (r"\.checks\.count\s*-\s*\S*\.independentChecks\.count\s*==\s*(\d+)",
-         "HydratedStores.all.count"),
+        # FOUR PATTERNS REMOVED AT 387, all reading `HydratedStores.all.count`:
+        # the count itself, `selfReferentialChecks.count == N`, and the two
+        # `checks.count - N` forms. The number they compared against no longer
+        # exists anywhere in the app — see the note above.
         (r'"Database bootstrap:\s*(\d+) families', "fieldCount"),
     ]
 
@@ -534,12 +518,20 @@ def pinned_counts_match_the_source():
     # this file's usual "well under the real figure", not one below it. A
     # floor sitting on top of the count fires on the next patch that retires
     # an assertion, which teaches a reader to lower it without thinking.
+    # 387 RETIRED FOUR PINS AND THE FLOOR STAYS AT EIGHT: fourteen remain, so
+    # it is still well under, and lowering a floor that is not being reached is
+    # how a floor stops meaning anything.
     counted(rule, pins, 8, "count pins compared against the source")
-    # NOT THE SAME KIND OF FLOOR. The five above are a DECLARED arity, not a
+    # NOT THE SAME KIND OF FLOOR. The four above are a DECLARED arity, not a
     # discovered population: every one of them hard-fails this rule if it
     # cannot be parsed. It is here so the printed report says what the rule
     # was comparing against, which is the other half of §12.69.
-    counted(rule, len(truth), 5, "counts derived from the app")
+    #
+    # FIVE UNTIL 387, AND THIS IS THE DELIBERATE LOWERING `counted`'s own
+    # docstring asks for. `HydratedStores.all.count` was the fifth and the list
+    # was deleted; the classification it held is derived now, so there is no
+    # count left to read. §12.131.
+    counted(rule, len(truth), 4, "counts derived from the app")
 
     # WHAT THIS RULE DOES NOT COVER, said out loud. Ten of 377's eighteen
     # stale assertions are numbers and are above. The other eight are array

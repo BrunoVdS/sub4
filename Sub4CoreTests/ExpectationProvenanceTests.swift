@@ -3,32 +3,41 @@
 //  Sub4CoreTests
 //
 //  Where a comparison's expectation came from, derived rather than declared —
-//  patch 386, ADR-0003 §12.130.
+//  patch 386, ADR-0003 §12.130. THE DERIVATION IS THE ANSWER SINCE 387,
+//  §12.131.
 //
 //  WHY THIS FILE EXISTS
 //  --------------------
-//  `HydratedStores` is a list, kept by hand, in a different file from the
-//  comparisons it classifies. It joins to the checks BY NAME and its only
-//  tripwire — `unmatchedHydratedEntries` — points one way: an ENTRY naming no
+//  `HydratedStores` was a list, kept by hand, in a different file from the
+//  comparisons it classified. It joined to the checks BY NAME and its only
+//  tripwire — `unmatchedHydratedEntries` — pointed one way: an ENTRY naming no
 //  check. The damage runs the other way. A CHECK reading a store the database
-//  feeds, which nobody added to the list, counts as evidence in silence, and
+//  feeds, which nobody added to the list, counted as evidence in silence, and
 //  `activity fields` did exactly that from patch 382 to 385.
 //
-//  386 derives the same answer from the stores themselves and cross-checks the
-//  two. It does NOT yet replace the list: `selfReferentialChecks` and
-//  `independentChecks` still read `HydratedStores`, unchanged, so every
-//  assertion written against them still means what it meant. What is new is
-//  `undeclaredSelfReferential`, which fails `isTrustworthyEvidence` when the
-//  derivation finds a self-referential comparison the list does not name.
+//  386 derived the same answer from the stores themselves and ran it beside the
+//  list as a negative control. The device printed the two reaching the same
+//  nine on 17 August, which is the evidence that patch existed to produce, and
+//  387 deleted the list: `selfReferentialChecks` and `independentChecks` now
+//  filter on each check's own `reads` against what the build is serving.
 //
-//  387 makes the derivation operative and deletes the list. This patch is the
-//  negative control that has to pass on the device first — the same order 381
-//  and 382 were done in, and for the same reason.
+//  WHAT 387 GAVE UP AND WHAT REPLACED IT
+//  -------------------------------------
+//  Two conditions left `isTrustworthyEvidence` with the list —
+//  `unmatchedHydratedEntries.isEmpty` and `undeclaredSelfReferential.isEmpty`.
+//  Both guarded a list drifting from the checks, and with one source there is
+//  nothing to drift.
 //
-//  THE ONE-DIRECTIONAL CHECK IS DELIBERATE, AND `theOppositeIsNotAFault` IS
-//  WHERE THAT IS ASSERTED. Declared-but-not-derived is what reverting a slice
-//  looks like: take `.activities` out of `hydratedFamilies` and the entry stays
-//  while the store goes back to its file. Reversibility by deleting one family
+//  `theWholeMapIsPinned` is what replaces them, and THE ASYMMETRY IS THE POINT.
+//  The old list was a SUBSET, so a comparison missing from it passed in
+//  silence. That map is COMPLETE: a comparison missing from it fails, and so
+//  does one whose field changed. It is the protection those two conditions were
+//  giving, in the one form that can actually fail.
+//
+//  A REVERTED SLICE IS NOT A FAULT, AND `theOppositeIsNotAFault` IS WHERE THAT
+//  IS ASSERTED. Take `.activities` out of `hydratedFamilies` and the store goes
+//  back to its file; the comparison returns to the evidence column, which is
+//  the honest answer rather than an error. Reversibility by deleting one family
 //  is a property this whole ladder rests on, and a build that failed
 //  verification for using the escape hatch would have no escape hatch.
 //
@@ -57,28 +66,56 @@ struct ExpectationProvenanceTests {
                            sources: ExpectationSources(fedByTheDatabase: fed))
     }
 
-    /// **ONE CHECK PER DECLARED ENTRY, SO THE CONDITION UNDER TEST IS THE ONE
-    /// THAT DECIDES — patch 386a.**
-    ///
-    /// `isTrustworthyEvidence` has four conditions. A report built from two
-    /// synthetic checks leaves all nine `HydratedStores` entries unmatched, so
-    /// it is withheld by 358a's condition before this patch's is ever
-    /// consulted. A test asserting `!isTrustworthyEvidence` over such a report
-    /// passes whether 386 exists or not, and the two asserting the opposite
-    /// fail for a reason that has nothing to do with them.
-    ///
-    /// §12.69, in the suite written to hold §12.69. It was wrong in the first
-    /// cut of this file and the re-read found it.
-    private func covering(_ extras: [VerificationCheck],
-                          reading: [String: ExpectationOrigin] = [:],
-                          fed: Set<ExpectationField>) -> VerificationReport {
-        let declared = HydratedStores.all.map {
-            check($0.check, reads: reading[$0.check] ?? .databaseAlone)
-        }
-        return VerificationReport(
-            checks: declared + extras, seconds: 0.01,
-            sources: ExpectationSources(fedByTheDatabase: fed))
+    /// **JUST ENOUGH TO MAKE EVERY CONDITIONAL COMPARISON RUN**, and nothing
+    /// is asserted about the values. `SemanticVerifierTests` has the migrated
+    /// fixture that makes them pass; copying it here would be a second thing to
+    /// keep true about the importer, for a test that never looks at a count.
+    private func activity(_ id: String) -> Activity {
+        Activity(id: id, name: "Morning Run", sportType: "Run",
+                 startLocal: "2026-07-28T09:24:06",
+                 distance: 10_000,
+                 movingTime: 3_000, elapsedTime: 3_100,
+                 elevationGain: 40, averageHeartrate: 142, isTrainer: nil,
+                 maxHeartrate: 160, gearId: nil, maxSpeed: 4.2,
+                 deviceWatts: nil, averageWatts: nil,
+                 startUTC: "2026-07-28T07:24:06Z", startLat: nil, startLon: nil,
+                 timeZoneIdentifier: nil, startOffsetSeconds: 7200)
     }
+
+    private func weather(_ id: String) -> ActivityWeather {
+        ActivityWeather(activityId: id, tempC: 18.5, feelsLikeC: 17.1,
+                        humidity: 0.62, windKmh: 14.0, windFromDegrees: 225,
+                        precipitationMm: 0.4, symbolName: "cloud.sun",
+                        conditionLabel: "Partly cloudy", samples: 3,
+                        fetched: Date(timeIntervalSince1970: 1_780_000_000),
+                        source: .openMeteo)
+    }
+
+    /// SPLITS ARE NOT OPTIONAL HERE. `splits of one activity` picks the
+    /// richest detail and skips a detail with none, so a splitless fixture
+    /// would silently pin twenty-one.
+    private func detail(_ id: String) -> ActivityDetail {
+        ActivityDetail(activityId: id,
+                       splits: (1...3).map {
+                           .init(index: $0, distanceM: 1000, movingTime: 300,
+                                 elapsedTime: 305, elevationDiff: nil,
+                                 averageHR: nil)
+                       },
+                       bestEfforts: [], laps: [],
+                       fetched: Date(timeIntervalSince1970: 1_780_000_000))
+    }
+
+    // `covering()` LIVED HERE AND DIED WITH THE LIST — 387.
+    //
+    // 386a added it because `isTrustworthyEvidence` had four conditions, and a
+    // report built from two synthetic checks left all nine `HydratedStores`
+    // entries unmatched — so 358a's condition withheld it before this file's
+    // was ever consulted. A test asserting `!isTrustworthyEvidence` over such
+    // a report passed whether 386 existed or not. §12.69, in the suite written
+    // to hold §12.69.
+    //
+    // There are two conditions now and neither is about a list, so a report
+    // satisfies nothing but itself and `report(_:fed:)` is enough.
 
     // MARK: The field is the unit, and the reason is two stores
 
@@ -103,70 +140,56 @@ struct ExpectationProvenanceTests {
             check("gear", reads: .from(.gear))
         ], fed: fed)
 
-        #expect(Set(r.derivedSelfReferential.map(\.name))
+        #expect(Set(r.selfReferentialChecks.map(\.name))
                 == ["activities", "heart-rate zones"],
                 "only the two fields this build feeds")
-        #expect(!r.derivedSelfReferential.contains { $0.name == "gear" },
+        #expect(!r.selfReferentialChecks.contains { $0.name == "gear" },
                 "gear is the file half of AthleteStore until B5")
-        #expect(!r.derivedSelfReferential.contains { $0.name == "sync position" },
+        #expect(!r.selfReferentialChecks.contains { $0.name == "sync position" },
                 "the cursor is UserDefaults until B8")
     }
 
-    // MARK: The tripwire that 382 did not have
+    // MARK: What the classification does to a report
 
-    /// **BROKEN ON PURPOSE — §12.69.** A comparison reading a field the
-    /// database feeds, under a name `HydratedStores` does not declare. This is
-    /// the shape `activity fields` had for three patches, and before 386
-    /// nothing in this repository could see it.
-    @Test("A self-referential comparison nobody declared fails the report")
-    func theUndeclaredOneIsCaught() {
-        let r = covering([
-            check("gear", reads: .from(.gear)),
-            check("a comparison no list names",
-                  reads: .from(.activities, "the shape 382 missed"))
+    /// **A SELF-REFERENTIAL COMPARISON IS NOT A DISAGREEMENT AND MUST NOT
+    /// WITHHOLD A REPORT.** It is the ordinary state of every slice from B1
+    /// onward: some comparisons read the database on both sides, and the report
+    /// is still evidence for as long as one of them does not.
+    ///
+    /// **THIS TEST HAD A DIFFERENT SUBJECT UNTIL 387.** It read
+    /// `theDeclaredOneIsFine` and asserted that a self-referential comparison
+    /// the LIST also named passed the cross-check. There is no list and no
+    /// cross-check; what survives is the half that was always about the report.
+    @Test("A self-referential comparison does not withhold a report")
+    func aSelfReferentialCheckIsNotAWithholding() {
+        let r = report([
+            check("activities", reads: .from(.activities, "counted")),
+            check("gear", reads: .from(.gear))
         ], fed: [.activities])
 
+        #expect(r.selfReferentialChecks.contains { $0.name == "activities" })
         #expect(r.passed, "every comparison agreed — that is not the question")
-        // THE OTHER THREE CONDITIONS ARE SATISFIED, asserted rather than
-        // assumed. Without these two lines the assertion below would pass over
-        // a report withheld for a reason this patch did not add.
-        #expect(r.unmatchedHydratedEntries.isEmpty,
-                "every declared entry is present, so that is not what withholds it")
-        #expect(!r.independentChecks.isEmpty,
-                "and something could still have disagreed")
-        #expect(r.undeclaredSelfReferential.count == 1)
-        #expect(r.undeclaredSelfReferential.first?.name
-                == "a comparison no list names")
-        #expect(!r.isTrustworthyEvidence,
-                "it agreed and it could not have disagreed, and nothing said so")
-        #expect(r.withheldReason != nil)
-    }
-
-    /// And it passes when the same comparison IS declared — otherwise the test
-    /// above proves only that the property is never empty.
-    @Test("A declared self-referential comparison is not a disagreement")
-    func theDeclaredOneIsFine() {
-        let r = covering([check("gear", reads: .from(.gear))],
-                         reading: ["activities": .from(.activities)],
-                         fed: [.activities])
-
-        #expect(r.derivedSelfReferential.contains { $0.name == "activities" })
-        #expect(r.undeclaredSelfReferential.isEmpty)
         #expect(r.isTrustworthyEvidence, "gear could still have disagreed")
+        #expect(r.withheldReason == nil)
     }
 
-    /// Declared and not derived is the escape hatch, not a fault. See the
-    /// header.
-    @Test("Declared but no longer fed is a reverted slice, not a defect")
+    /// A slice that has been reverted is not a fault. See the header.
+    @Test("A field no longer fed is a reverted slice, not a defect")
     func theOppositeIsNotAFault() {
-        let r = covering([check("gear", reads: .from(.gear))],
-                         reading: ["activities": .from(.activities)],
-                         fed: [])
+        let r = report([
+            check("activities", reads: .from(.activities, "counted")),
+            check("gear", reads: .from(.gear))
+        ], fed: [])
 
-        #expect(r.derivedSelfReferential.isEmpty,
+        // **AND IT MEANS SOMETHING BETTER THAN IT DID AT 386.** The list used
+        // to go on naming `activities` after the family was pulled out of
+        // `hydratedFamilies`, and the cross-check had to be one-directional to
+        // tolerate that. Now the comparison simply returns to the evidence
+        // column, because that is what it has become.
+        #expect(r.selfReferentialChecks.isEmpty,
                 "nothing is fed from the database in this report")
-        #expect(r.undeclaredSelfReferential.isEmpty,
-                "and the declared list being ahead of the stores is reversal")
+        #expect(r.independentChecks.count == 2,
+                "so both comparisons can disagree again")
         #expect(r.isTrustworthyEvidence)
     }
 
@@ -203,6 +226,80 @@ struct ExpectationProvenanceTests {
                 "the cursor comparison names its field when it runs")
     }
 
+    /// **387'S REPLACEMENT TRIPWIRE, AND THE REASON THE PATCH DOES NOT LOSE
+    /// PROTECTION.**
+    ///
+    /// THE ASYMMETRY IS THE POINT. `HydratedStores` was a SUBSET of the
+    /// comparisons — a check missing from it passed in silence, which is
+    /// exactly what happened to `activity fields` for three patches (§12.129).
+    /// THIS MAP IS COMPLETE. A comparison missing from it fails, a comparison
+    /// whose field changed fails, and a comparison added at B4 fails until
+    /// somebody writes down what it reads. That is what
+    /// `unmatchedHydratedEntries` and `undeclaredSelfReferential` were
+    /// providing, in the one form that can actually fail.
+    ///
+    /// **THE FIXTURE IS SIZED BY WHAT MAKES ALL TWENTY-TWO RUN, not by what
+    /// makes them pass.** Three comparisons are conditional — `sync position`
+    /// on a cursor, `splits of one activity` on a detail with splits, `one
+    /// weather reading` on a reading whose activity is in the store — and a
+    /// call omitting them pins nineteen while reading like a complete map,
+    /// which is the shape this test exists to refuse. They compare a populated
+    /// store against an empty database and therefore FAIL; that is irrelevant
+    /// here and asserted nowhere. `SemanticVerifierTests` owns whether they
+    /// pass.
+    ///
+    /// `reading the database` is not here and cannot be: it is the check
+    /// `verify` returns INSTEAD of a report when the read throws, so it never
+    /// appears beside another one.
+    @Test("Every comparison's field is pinned, so a new one forces a decision")
+    func theWholeMapIsPinned() throws {
+        let db = try Sub4Database.inMemory()
+        let id = "44444444"
+        let r = try SemanticVerifier.verify(
+            db, activities: [activity(id)],
+            syncState: SyncState(sourceID: Sub4Import.sourceID,
+                                 cursor: "2026-07-28T07:24:06Z",
+                                 lastSync: nil, lastResult: nil),
+            weather: [weather(id)],
+            details: [detail(id)],
+            sources: ExpectationSources.allFromFiles)
+
+        // ANNOTATED, NOT INFERRED. A twenty-two element literal inside
+        // `#expect` is one expression for the type checker to solve, and
+        // §12.71.9 was bought on a smaller one than this.
+        let expected: [String: ExpectationField] = [
+            "activities":             .activities,
+            "activity identities":    .activities,
+            "activity fields":        .activities,
+            "volume by discipline":   .activities,
+            "gear":                   .gear,
+            "notes":                  .notes,
+            "match decisions":        .matchDecisions,
+            "commute corrections":    .commutes,
+            "session moves":          .moves,
+            "reviews":                .reviews,
+            "stopped asking":         .workItems,
+            "refused recordings":     .rejections,
+            "sync position":          .syncPosition,
+            "heart-rate zones":       .zones,
+            "weather readings":       .weather,
+            "one weather reading":    .weather,
+            "traces":                 .traces,
+            "trace samples":          .traces,
+            "details":                .details,
+            "splits":                 .details,
+            "splits of one activity": .details,
+            "unclaimed corrections":  .databaseAlone,
+        ]
+
+        let map = Dictionary(uniqueKeysWithValues:
+                                r.checks.map { ($0.name, $0.reads.field) })
+        #expect(map == expected,
+                "a comparison was added, removed, or now reads a different field")
+        #expect(r.checks.count == 22,
+                "and the count is the device's, so the fixture is complete")
+    }
+
     /// The four B3 comparisons, derived rather than listed. This is the
     /// assertion `ActivitiesAreReadTests` could not make, because it starts
     /// from the list.
@@ -212,12 +309,12 @@ struct ExpectationProvenanceTests {
         let r = try SemanticVerifier.verify(db, activities: [],
                                             sources: ExpectationSources(fedByTheDatabase: [.activities]))
 
-        #expect(Set(r.derivedSelfReferential.map(\.name))
+        #expect(Set(r.selfReferentialChecks.map(\.name))
                 == ["activities", "activity identities",
                     "activity fields", "volume by discipline"],
                 "the count, the id set, the fingerprint and the sums")
-        #expect(r.undeclaredSelfReferential.isEmpty,
-                "and 385 declared all four, so the two mechanisms agree")
+        #expect(r.independentChecks.allSatisfy { $0.reads.field != .activities },
+                "and no comparison reading the activities is left in evidence")
     }
 
     // MARK: The type's own edges
@@ -232,7 +329,7 @@ struct ExpectationProvenanceTests {
 
         let r = report([check("unclaimed corrections", reads: .databaseAlone)],
                        fed: [.databaseAlone])
-        #expect(r.derivedSelfReferential.isEmpty)
+        #expect(r.selfReferentialChecks.isEmpty)
     }
 
     /// The slice each field belongs to, asserted where it is read from. These

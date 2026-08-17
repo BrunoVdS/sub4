@@ -193,8 +193,13 @@ struct PlanMoveImportTests {
     ///
     /// 377 feeds it. The comparison now reads a store the database filled and
     /// compares it against the database, which is the definition of
-    /// self-referential and exactly what `HydratedStores` exists to declare.
-    /// §12.69: a check that cannot fail has not been tested.
+    /// self-referential. §12.69: a check that cannot fail has not been tested.
+    ///
+    /// **387 — THE CHECK SAYS IT, NOT A LIST.** This required a
+    /// `HydratedStores` entry naming `session moves`; the comparison carries
+    /// its own `reads` now, and the build has to say it feeds `.moves` for the
+    /// classification to follow. That second half is what a test process
+    /// honestly is: nothing hydrated unless it says so.
     ///
     /// **THIS IS NOT A NUMBER THAT MOVED.** The other sixteen assertions 377d
     /// touches are counts. These two are a claim about what the check MEANS,
@@ -208,12 +213,15 @@ struct PlanMoveImportTests {
     @Test("The moved sessions stopped being evidence at 377")
     func theMoveComparisonIsSelfReferential() throws {
         let db = try Sub4Database.inMemory()
-        let r = try SemanticVerifier.verify(db, activities: [])
+        let r = try SemanticVerifier.verify(
+            db, activities: [],
+            sources: ExpectationSources(fedByTheDatabase: [.moves]))
 
-        let entry = try #require(HydratedStores.entry(for: "session moves"),
-                                 "377 hydrates the moves and must declare it")
-        #expect(entry.store == "PlanMoveStore.moves")
-        #expect(entry.slice == "B2")
+        let check = try #require(r.checks.first { $0.name == "session moves" },
+                                 "377 hydrates the moves and must compare them")
+        #expect(check.reads.field == .moves)
+        #expect(ExpectationField.moves.storeDescription == "PlanMoveStore.moves")
+        #expect(ExpectationField.moves.slice == "B2")
         #expect(!r.independentChecks.contains { $0.name == "session moves" },
                 "a store the database feeds cannot be evidence about it")
         #expect(r.selfReferentialChecks.contains { $0.name == "session moves" },
