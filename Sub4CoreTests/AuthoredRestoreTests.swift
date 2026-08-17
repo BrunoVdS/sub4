@@ -261,6 +261,80 @@ struct AuthoredRestoreTests {
         #expect(commutes.decisions.count == 1)
     }
 
+    // MARK: The third file — plan moves, patch 404
+
+    private func move(_ uid: String, to day: String) -> PlanMove {
+        PlanMove(sessionUid: uid, movedTo: day,
+                 decided: Date(timeIntervalSince1970: 1_755_000_000))
+    }
+
+    private func movesStore(_ dir: URL, holding: [PlanMove]) throws -> PlanMoveStore {
+        let map = Dictionary(holding.map { ($0.sessionUid, $0) },
+                             uniquingKeysWith: { a, _ in a })
+        try JSONEncoder.sub4.encode(map)
+            .write(to: dir.appendingPathComponent("moves.json"))
+        return PlanMoveStore(directory: dir)
+    }
+
+    /// **A MOVE IS THE ATHLETE DISAGREEING WITH THE PLAN**, and `moves.json` is
+    /// the only copy. It changes what Today shows, what counts as adherence and
+    /// which session a match may satisfy.
+    @Test("A move missing from the file is added, and reaches the disk")
+    func aMissingMoveIsAdded() throws {
+        let dir = try directory()
+        let store = try movesStore(dir, holding: [move("wk-01-mon", to: "2026-08-04")])
+
+        let r = try store.restore(from: .loaded(moves: [
+            move("wk-01-mon", to: "2026-08-04"),
+            move("wk-03-thu", to: "2026-08-20")], skipped: 0))
+        #expect(r.store == "moves.json")
+        #expect(r.added == 1)
+        #expect(r.alreadyHeld == 1)
+        #expect(PlanMoveStore(directory: dir).moves.count == 2,
+                "a restore that repaired memory and not the file is gone next launch")
+    }
+
+    /// The store's copy wins, here as everywhere. A move re-decided since the
+    /// import must not be reverted to the day the row remembers.
+    @Test("A move re-decided since the import is not reverted")
+    func aReDecidedMoveIsNotReverted() throws {
+        let dir = try directory()
+        let store = try movesStore(dir, holding: [move("wk-01-mon", to: "2026-08-06")])
+
+        _ = try store.restore(from: .loaded(
+            moves: [move("wk-01-mon", to: "2026-08-04")], skipped: 0))
+        #expect(store.moves["wk-01-mon"]?.movedTo == "2026-08-06",
+                "the database moved the session back to a day he changed his mind about")
+    }
+
+    /// An empty table is the ordinary state for this store — no gesture wrote a
+    /// move until 366 — so "nothing stored" must be a clean no-op rather than
+    /// anything that touches the file.
+    @Test("An empty moves table touches nothing")
+    func anEmptyMovesTableTouchesNothing() throws {
+        let dir = try directory()
+        let file = dir.appendingPathComponent("moves.json")
+        try Data("{ not json".utf8).write(to: file)
+        let store = PlanMoveStore(directory: dir)
+
+        let r = try store.restore(from: .loaded(moves: [], skipped: 0))
+        #expect(r.added == 0 && r.alreadyHeld == 0)
+        #expect(r.setAside == nil)
+        #expect(FileManager.default.fileExists(atPath: file.path),
+                "an empty database must not move an unreadable file aside")
+    }
+
+    /// A failed read is not an empty one — §12.92 — and neither writes.
+    @Test("A failed moves read restores nothing")
+    func aFailedMovesReadRestoresNothing() throws {
+        let dir = try directory()
+        let store = try movesStore(dir, holding: [move("wk-01-mon", to: "2026-08-04")])
+        #expect(throws: AuthoredRestoreFault.self) {
+            try store.restore(from: .failed("disk I/O error"))
+        }
+        #expect(store.moves.count == 1)
+    }
+
     // MARK: The receipt
 
     /// **THE DEFECT THE DEVICE PROVED — patch 402, §12.146.**
@@ -272,7 +346,7 @@ struct AuthoredRestoreTests {
     /// other answer readable. §12.54.2.
     @Test("A restore that has not run says so, and a restore that has says what")
     func theRestoreLinesSayWhichCaseThisIs() {
-        let none = StoreRestore.lines([], subject: "Authored")
+        let none = StoreRestore.lines([], failures: [], subject: "Authored")
         #expect(none.count == 1)
         #expect(none[0] == "Authored restore: not run since this launch.",
                 "silence here is indistinguishable from a control nobody wired in")
@@ -281,7 +355,7 @@ struct AuthoredRestoreTests {
             [.nothingStored("moves.json"),
              StoreRestore.Receipt(store: "notes.json", added: 2, alreadyHeld: 3,
                                   setAside: URL(fileURLWithPath: "/tmp/aside"))],
-            subject: "Authored")
+            failures: [], subject: "Authored")
         #expect(ran.count == 3, "a heading and one line per store")
         #expect(ran[0] == "Authored restore:")
         #expect(ran[1].contains("moves.json") && ran[1].contains("added 0"))
@@ -293,6 +367,39 @@ struct AuthoredRestoreTests {
         // an activity's identity because it never holds one.
         #expect(!ran.joined().contains("/tmp/aside"),
                 "an absolute container path is not something this paste may carry")
+    }
+
+    /// **A FAILURE IS NOT A RECEIPT WITH ZEROS — patch 404, §12.148.**
+    ///
+    /// `added: 0` means the store was looked at and needed nothing.
+    /// `NOT RESTORED` means it was not looked at, or could not be written.
+    /// Collapsing them would let "nothing to do" and "could not be done" print
+    /// the same line, which is §12.15 in a repair tool.
+    @Test("A store that could not be restored says so beside the ones that were")
+    func aFailedStoreIsNamedBesideTheOthers() {
+        let lines = StoreRestore.lines(
+            [StoreRestore.Receipt(store: "notes.json", added: 1,
+                                  alreadyHeld: 4, setAside: nil)],
+            failures: [.init(store: "moves.json", why: "the read has not run yet")],
+            subject: "Authored")
+
+        #expect(lines.count == 3)
+        #expect(lines[1].contains("notes.json") && lines[1].contains("added 1"))
+        #expect(lines[2].contains("moves.json"))
+        #expect(lines[2].contains("NOT RESTORED"),
+                "a reader must not have to infer failure from an absence")
+        #expect(!lines[2].contains("added"),
+                "a failure carries no counts — it never got far enough to have any")
+
+        // AND A RUN THAT ONLY FAILED IS STILL A RUN. Without this the paste
+        // would say "not run since this launch" after a press that tried three
+        // stores and could not write one, which is the opposite of what
+        // happened.
+        let onlyFailed = StoreRestore.lines(
+            [], failures: [.init(store: "notes.json", why: "disk full")],
+            subject: "Authored")
+        #expect(onlyFailed.count == 2)
+        #expect(!onlyFailed[0].contains("not run"))
     }
 
     /// §12.54.2 and §12.15. One control restores several stores, so a count

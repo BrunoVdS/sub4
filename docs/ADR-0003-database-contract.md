@@ -8962,6 +8962,78 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.148 The third file, and failures stop being one error — patch 404
+
+`moves.json` joins `notes.json` and `commutes.json` on `StoreRestore`'s
+contract. It is the **last of the authored FILES**; what is left after this is
+the match decisions, which are not a file at all (§12.148.3).
+
+**A move is the athlete disagreeing with the plan**, and nothing else records
+it: `movedTo` says a session was done on a day the plan did not ask for, and it
+changes what Today shows, what counts as adherence and which session a match may
+satisfy. Ten lines over the shared helpers, exactly as `NotesStore` and
+`WeatherStore` are.
+
+### 12.148.1 A failure is not a receipt with zeros
+
+The 400 runner stopped at the first throw and recorded one error for the run.
+Its own comment argued that was honest. **With three independent files it is
+not.** A notes problem has nothing to do with `moves.json`, and stopping leaves
+the rest untried AND unreported — so a reader cannot tell *moves was fine* from
+*moves was never attempted*. §12.15, inside a repair tool.
+
+So every store is attempted and every store gets an outcome. `Receipt` and
+`Failure` are separate types because they are different facts: `added: 0` means
+the store was looked at and needed nothing; `NOT RESTORED` means it was not
+looked at, or could not be written. Collapsing them would let *nothing to do*
+and *could not be done* print the same line.
+
+**A run that only failed is still a run.** Without that, the paste would say
+"not run since this launch" after a press that tried three stores and could not
+write one — the opposite of what happened. Its negative control makes exactly
+that mistake and the test names it.
+
+### 12.148.2 Moves reads its own load, and the screen already had it
+
+`AuthoredLoad` carries notes and commutes; `moves.json` comes from
+`PlanMoveRepository`, which the Database screen has already read into
+`moveLoad` for the row two below the button. Using that read means **the receipt
+and the count on screen describe the same thing**. Where it has not run, the
+store gets a `Failure` saying so rather than a silent skip.
+
+### 12.148.3 What is left, and why it is not this patch
+
+**The match decisions are a `Data` value in `UserDefaults`, not a file.**
+`Matcher.swift`'s own header records why they stayed there and what it costs: a
+`UserDefaults.set` has no failure to report, so §12.116's read-before-write rule
+"cannot be applied here". `StoreRestore.setAsideIfUnreadable` MOVES A FILE.
+Pointing it at a preference key would be a file solution wearing the name of a
+general one — the §12.43 mistake in the direction that hurts, because it would
+look like coverage. Undecodable bytes in a preference need their own lossless
+set-aside, and that is its own increment.
+
+**`proposals.json` is deferred to B7 and stays deferred.** `ReviewRepository`
+returns proposals only inside a review load, the review table holds zero rows,
+and a zero-versus-zero restore proves nothing about reconstructing a graph of
+reviews, evidence, changes and watch items. Recorded rather than fabricated.
+
+### 12.148.4 The campaign this patch does not discharge
+
+Restore touches real authored files, so 1A ends in a device campaign under the
+plan's contract. It is not written here because the increment is not finished:
+the match decisions arrive next and the campaign covers all four stores in one
+session rather than two.
+
+What 402 changed is that it can now be a campaign at all — the receipts reach
+the paste, so steps produce diffable text instead of screenshots (§12.146).
+Steps 1–3 are already discharged by the 17 August export: the section opens, the
+app side reads `notes.json, commutes.json, moves.json and the stored match
+decisions, read directly`, and the expectations are fixed at **notes 5,
+commutes 1, match decisions 8, moved sessions 2**, with zero unexplained
+differences.
+
+---
+
 ## 12.147 A gate that did not read its own output — patch 403
 
 `CommuteStore.restore` bound a value it never used at 400. **The suite was

@@ -165,7 +165,7 @@ struct DatabaseHealthView: View {
     // has its own answer. A single combined count would say "added 4" over two
     // files and leave a reader unable to tell which one was empty. §12.15.
     @State private var restoringAuthored = false
-    @State private var authoredRestoreError: String?
+    @State private var authoredRestoreFailures: [StoreRestore.Failure] = []
     @State private var lastAuthoredRestore: [StoreRestore.Receipt] = []
     // PATCH 327 — D6c slice 7. The ninth read-back, and the only one whose
     // subject may legitimately not exist yet: the first real review is due
@@ -2855,11 +2855,12 @@ struct DatabaseHealthView: View {
     /// export and the whole-screen paste — so the two cannot disagree about
     /// what a restore did. Before this, neither carried it at all.
     private var authoredRestoreLines: [String] {
-        StoreRestore.lines(lastAuthoredRestore, subject: "Authored")
+        StoreRestore.lines(lastAuthoredRestore, failures: authoredRestoreFailures,
+                           subject: "Authored")
     }
 
     private var weatherRestoreLines: [String] {
-        StoreRestore.lines(lastWeatherRestore.map { [$0] } ?? [],
+        StoreRestore.lines(lastWeatherRestore.map { [$0] } ?? [], failures: [],
                            subject: "Weather")
     }
 
@@ -2876,7 +2877,7 @@ struct DatabaseHealthView: View {
         if restoringAuthored {
             HStack { ProgressView(); Text("Restoring…").font(.caption) }
         } else {
-            Button("Restore notes and commutes from the database") {
+            Button("Restore notes, commutes and moves from the database") {
                 runAuthoredRestore()
             }
             .font(.caption)
@@ -2887,8 +2888,8 @@ struct DatabaseHealthView: View {
             .disabled(authoredLoad == nil)
         }
 
-        if let e = authoredRestoreError {
-            Text(e).font(.caption).foregroundStyle(.red)
+        ForEach(authoredRestoreFailures, id: \.store) { f in
+            Text(f.line).font(.caption).foregroundStyle(.red)
                 .fixedSize(horizontal: false, vertical: true)
         }
 
@@ -2913,22 +2914,47 @@ struct DatabaseHealthView: View {
     /// button describe the same read. The weather restore re-reads because its
     /// section was built before that load was held; copying that here would
     /// mean the screen could say 5 notes and the restore act on 4.
+    /// **EACH STORE IS TRIED, AND EACH GETS AN OUTCOME — patch 404.**
+    ///
+    /// The first version stopped at the first throw. Three independent files
+    /// make that wrong: a notes problem has nothing to do with `moves.json`,
+    /// and stopping leaves the rest untried AND unreported — so a reader cannot
+    /// tell *moves was fine* from *moves was never attempted*. §12.15.
+    ///
+    /// So every store is attempted, receipts and failures are collected side by
+    /// side, and the paste carries both.
     private func runAuthoredRestore() {
         guard let load = authoredLoad else { return }
         restoringAuthored = true
-        authoredRestoreError = nil
         lastAuthoredRestore = []
-        do {
-            // BOTH, OR THE FIRST AND THEN THE ERROR. A throw from the notes
-            // leaves the commutes untried and says so by having one receipt
-            // and an error — which is the honest report of what happened,
-            // rather than a second attempt that hides which one failed.
-            lastAuthoredRestore.append(try NotesStore.shared.restore(from: load))
-            lastAuthoredRestore.append(try CommuteStore.shared.restore(from: load))
-        } catch let fault as AuthoredRestoreFault {
-            authoredRestoreError = fault.line
-        } catch {
-            authoredRestoreError = error.localizedDescription
+        authoredRestoreFailures = []
+
+        func attempt(_ store: String,
+                     _ body: () throws -> StoreRestore.Receipt) {
+            do {
+                lastAuthoredRestore.append(try body())
+            } catch let fault as AuthoredRestoreFault {
+                authoredRestoreFailures.append(.init(store: store, why: fault.line))
+            } catch let write as StoreWriteError {
+                authoredRestoreFailures.append(
+                    .init(store: store, why: write.reason))
+            } catch {
+                authoredRestoreFailures.append(
+                    .init(store: store, why: error.localizedDescription))
+            }
+        }
+
+        attempt("notes.json") { try NotesStore.shared.restore(from: load) }
+        attempt("commutes.json") { try CommuteStore.shared.restore(from: load) }
+        // MOVES READS ITS OWN LOAD. `AuthoredLoad` carries notes and commutes;
+        // `moves.json` comes from `PlanMoveRepository`, which the screen has
+        // already read into `moveLoad` for the row two below. Using it means
+        // the receipt and the count on screen describe the same read.
+        if let moves = moveLoad {
+            attempt("moves.json") { try PlanMoveStore.shared.restore(from: moves) }
+        } else {
+            authoredRestoreFailures.append(
+                .init(store: "moves.json", why: "the read has not run yet"))
         }
         restoringAuthored = false
     }

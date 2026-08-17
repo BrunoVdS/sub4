@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 403 (2026-08-17).** §5.3 is the 390 device run, Compare and
+**Current at patch 404 (2026-08-17).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself.
@@ -372,9 +372,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 403, 2026-08-17
+## 5. State — patch 404, 2026-08-17
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 403; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 404; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -510,11 +510,10 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
 > `MatchResolverTests.anOverrideNamingAnIneligibleActivityIsLost` states the
 > defect as a test, so the day it is fixed the test inverts.
 
-- **THREE authored stores still have no restore path** — 400 gave `notes.json`
-  and `commutes.json` one (§12.144). **`moves.json` and the match decisions are
-  NOT the same problem**: moves is a file; the decisions are a `Data` value in
-  `UserDefaults` needing their own lossless set-aside. **`proposals.json` cannot
-  get one** — B7 owns it. Named, not dropped.
+- **ONE authored store still has no restore path.** 400 and 404 gave the three
+  FILES one. **The match decisions are next and are not a file** — a `Data`
+  value in `UserDefaults` needing its own lossless set-aside. **`proposals.json`
+  is B7's**; zero-versus-zero proves nothing. §12.144, §12.148.
 - **SLICE 3 IS SELF-REFERENTIAL AND SAYS SO SINCE 399.** Both varied inputs —
   activities (381) and traces (398) — are the database's on both sides, so its
   413 days and 7211 buckets prove `LoadSeries` is deterministic and not that
@@ -563,12 +562,12 @@ file compiled by nothing (§12.145, RULE 10).
    nine agree, zero differ, zero could not look, and the abstention is the
    review trail** — named, not waved through; B7 blocked on it too. **AND ONE OF
    THE EIGHT IS NOT EVIDENCE** — §5.4a counts it, §5.5 names it.
-2. **THE AUTHORED RESTORE PATH — 400 AND 402 DONE.** 400 extracted the contract
-   from weather's into `StoreRestore` and gave `notes.json` and `commutes.json`
-   a way back; 402 put every receipt in the paste. **Next: `moves.json` through
-   the same mechanism, then the match decisions through their own** — a `Data`
-   value in `UserDefaults`, where `setAsideIfUnreadable` is a file solution that
-   must not be dressed up as covering a preference key. §12.144, §12.146.
+2. **THE AUTHORED RESTORE PATH — 400, 402, 404 DONE.** The contract came out of
+   weather's into `StoreRestore`; `notes.json`, `commutes.json` and `moves.json`
+   have a way back; every receipt reaches the paste and every store gets its own
+   outcome. **Next: the match decisions**, a `Data` value in `UserDefaults`
+   needing their own lossless set-aside — `setAsideIfUnreadable` moves a file.
+   **Then the four-store device campaign in one session.** §12.144–§12.148.
 3. **FILE PROTECTION.** `protect` swallows its failure with `try?`, the screen
    prints `Until first unlock` as a literal, and `FileProtectionTests` says a
    simulator cannot check it — a security property applied silently and reported

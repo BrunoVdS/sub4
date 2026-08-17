@@ -106,11 +106,32 @@ nonisolated enum StoreRestore {
     ///
     /// Store names, counts and an aside FILENAME only — §12.7. Nothing here can
     /// carry a note's text or an activity's identity.
-    static func lines(_ receipts: [Receipt], subject: String) -> [String] {
-        guard !receipts.isEmpty else {
+    /// **PATCH 404 — FAILURES ARE PER STORE, NOT ONE ERROR FOR THE RUN.** Three
+    /// independent files: a notes problem has nothing to do with `moves.json`,
+    /// and a runner that stopped at the first throw would leave the others
+    /// untried AND unreported, so a reader could not tell "moves was fine" from
+    /// "moves was never attempted". That is §12.15 in a repair tool.
+    static func lines(_ receipts: [Receipt], failures: [Failure],
+                      subject: String) -> [String] {
+        guard !receipts.isEmpty || !failures.isEmpty else {
             return ["\(subject) restore: not run since this launch."]
         }
-        return ["\(subject) restore:"] + receipts.map { "  " + $0.line }
+        return ["\(subject) restore:"]
+            + receipts.map { "  " + $0.line }
+            + failures.map { "  " + $0.line }
+    }
+
+    /// One store's restore that did not happen, and why.
+    ///
+    /// SEPARATE FROM `Receipt` because they are different facts. A receipt with
+    /// `added: 0` means the store was looked at and needed nothing; a failure
+    /// means it was not looked at, or could not be written. Collapsing them
+    /// would let "nothing to do" and "could not be done" print the same.
+    struct Failure: Equatable, Sendable {
+        let store: String
+        let why: String
+
+        var line: String { "\(store): NOT RESTORED — \(why)" }
     }
 
     /// **THE ADDITIVE MERGE.** Records the store already holds win.

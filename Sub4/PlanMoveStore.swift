@@ -444,6 +444,68 @@ final class PlanMoveStore {
         lastLoad = outcome
     }
 
+
+    // MARK: - Restore — patch 404, §12.148
+
+    /// **PUTS BACK WHAT THE FILE LOST, FROM THE DATABASE.**
+    ///
+    /// The third store on `StoreRestore`'s contract, and the last of the
+    /// authored FILES. The reasoning and the two subtle steps are there —
+    /// §12.43, and `NotesStore.restore` and `WeatherStore.restore` are the same
+    /// ten lines over the same helpers. What is this store's is here: which
+    /// load it reads, which file it writes and which memory it rolls back.
+    ///
+    /// **A MOVE IS THE ATHLETE DISAGREEING WITH THE PLAN**, and nothing else
+    /// records it: `movedTo` says a session was done on a day the plan did not
+    /// ask for, and it changes what Today shows, what counts as adherence and
+    /// which session a match may satisfy. `moves.json` is the only copy.
+    ///
+    /// ADDITIVE, so a move made since the last import survives; the guard is
+    /// satisfied rather than bypassed; memory goes back if the write does not
+    /// land; and there is NO write-through, because these rows came out of the
+    /// database and announcing them back is a loop.
+    ///
+    /// - Throws: `AuthoredRestoreFault.databaseUnreadable` when the load
+    ///   produced nothing, the underlying error when an unreadable file cannot
+    ///   be moved, and `StoreWriteError` when the write does not land. In every
+    ///   one of those, nothing has been written and memory is as it was.
+    @discardableResult
+    func restore(from load: PlanMoveLoad, now: Date = Date()) throws
+    -> StoreRestore.Receipt {
+        guard case .loaded(let stored, _) = load else {
+            throw AuthoredRestoreFault.databaseUnreadable(load.line)
+        }
+        // Nothing to restore is not a repair. Returning early means an empty
+        // database cannot move a readable file aside or write over anything —
+        // and the counts still tell the two cases apart, because "added 0,
+        // already held 0" is only reachable from here.
+        guard !stored.isEmpty else { return .nothingStored("moves.json") }
+
+        let setAside = try StoreRestore.setAsideIfUnreadable(
+            at: fileURL, trustworthy: lastLoad.isTrustworthy, now: now)
+        // THE HALF THE HELPER CANNOT DO. `save()`'s guard reads `lastLoad`, and
+        // a store whose file was unreadable stays unwritable for the rest of
+        // the session unless the verdict moves with the bytes.
+        if setAside != nil { lastLoad = .absent }
+
+        let before = moves
+        let m = StoreRestore.merge(stored, into: moves)
+        moves = m.merged
+        do {
+            try save()
+        } catch {
+            // §12.17. The screens read this store, so putting memory back is
+            // what stops Today showing a session moved to a day the disk does
+            // not agree with. The file moved aside STAYS moved: it is the only
+            // copy of bytes nobody could read.
+            moves = before
+            throw error
+        }
+        return StoreRestore.Receipt(store: "moves.json", added: m.added,
+                                    alreadyHeld: m.alreadyHeld,
+                                    setAside: setAside)
+    }
+
     private func save() throws {
         // **THE 371 GUARD, ON THE STORE THAT CANNOT BE FETCHED AGAIN.**
         //
