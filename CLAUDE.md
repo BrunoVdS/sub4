@@ -511,16 +511,17 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
 > defect as a test, so the day it is fixed the test inverts.
 
 - **ONE authored store still has no restore path.** 400 and 404 gave the three
-  FILES one. **The match decisions are next and are not a file** — a `Data`
-  value in `UserDefaults` needing its own lossless set-aside. **`proposals.json`
-  is B7's**; zero-versus-zero proves nothing. §12.144, §12.148.
+  FILES one, **confirmed on the device at 404: added 0 · already held 5/1/2**,
+  which is the first run of the singleton path any test can reach (§12.148.4).
+  **The match decisions are next and are not a file** — a `Data` value in
+  `UserDefaults` needing its own lossless set-aside. **`proposals.json` is
+  B7's**; zero-versus-zero proves nothing. §12.144, §12.148.
 - **SLICE 3 IS SELF-REFERENTIAL AND SAYS SO SINCE 399.** Both varied inputs —
-  activities (381) and traces (398) — are the database's on both sides, so its
-  413 days and 7211 buckets prove `LoadSeries` is deterministic and not that
-  the migration carried the data. **Marked, not rescued.** The rescue is an app
-  side built from the files through the seams, which changes what the slice
-  MEANS; §12.125.4's "no screen shows it" expired when 378 and 390 built those
-  seams. §12.143.
+  activities (381), traces (398) — are the database's on both sides, so its 413
+  days and 7211 buckets prove `LoadSeries` is deterministic, not that the
+  migration carried the data. **Marked, not rescued**: the rescue is an app side
+  built from the files through the seams, which changes what the slice MEANS.
+  §12.125.4's "no screen shows it" expired when 378 and 390 built them. §12.143.
 - **`newest removal` names the trigger, not the family**; **`canReconcile` tests
   readable, not correct**; **Import is not a repair path** (§12.126.5).
 - **RULE 8 no longer covers `DetailStore`** (§12.142.3); **no gate reads compiler

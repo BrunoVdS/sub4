@@ -9017,7 +9017,36 @@ returns proposals only inside a review load, the review table holds zero rows,
 and a zero-versus-zero restore proves nothing about reconstructing a graph of
 reviews, evidence, changes and watch items. Recorded rather than fabricated.
 
-### 12.148.4 The campaign this patch does not discharge
+### 12.148.4 The live path ran — 17 August, patch 404, 21:41
+
+**The short check, and it closed the gap no test can reach.** Every restore test
+drives `init(directory:)` into a temporary folder, deliberately, because the
+singletons point at the athlete's real files. So `NotesStore.shared.restore(...)`
+had never executed anywhere — **the code path that runs on the phone was the one
+path nothing exercised.**
+
+Two exports of the authored read-back, either side of one press:
+
+```
+before   Authored restore: not run since this launch.
+
+after    Authored restore:
+           notes.json: added 0, already held 5
+           commutes.json: added 0, already held 1
+           moves.json: added 0, already held 2
+```
+
+- **`added 0` on all three.** The files are intact and the database agrees;
+  the restore had nothing to repair, which is the healthy answer and the one
+  that would have been invisible before 402.
+- **`already held` 5 / 1 / 2 equals the read-back's own `in the database`
+  counts** — and those come from the repositories while the receipts come from
+  the stores, so the sides are independent rather than one number printed twice.
+- **No `NOT RESTORED` line**: all three were reached and written, moves included,
+  through the `moveLoad` the screen already held.
+- **The two exports DIFFER**, where the 401 pair were byte-identical (§12.146).
+
+### 12.148.5 The campaign this patch does not discharge
 
 Restore touches real authored files, so 1A ends in a device campaign under the
 plan's contract. It is not written here because the increment is not finished:
