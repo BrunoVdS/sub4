@@ -216,11 +216,28 @@ struct CorrectionFamilyTests {
         #expect(names.contains("unclaimed corrections"))
     }
 
-    /// `unclaimed corrections` expects zero because this file says so, not
-    /// because a store said so — nothing the database feeds is consulted. So
-    /// it is evidence, and it must land on the evidence side of §12.99's split.
-    @Test("The unclaimed comparison counts as evidence")
-    func theUnclaimedComparisonIsIndependent() throws {
+    /// **THIS TEST ASSERTED THE OPPOSITE UNTIL 388, AND THE ARGUMENT IT CARRIED
+    /// WAS HALF RIGHT.** It read: *`unclaimed corrections` expects zero because
+    /// this file says so, not because a store said so — nothing the database
+    /// feeds is consulted. So it is evidence, and it must land on the evidence
+    /// side of §12.99's split.*
+    ///
+    /// The first two sentences are true and are still asserted below. The
+    /// conclusion does not follow. §12.99's split is not *can this comparison
+    /// fail* — this one can, and `theStrayRowIsCountedBySomething` makes it. It is
+    /// *could this comparison have disagreed about whether the migration carried
+    /// the app's data*, which is the only question `verified` is granted on. A
+    /// comparison that never consults a store cannot answer it however loudly it
+    /// fails.
+    ///
+    /// **AND THE COST OF THE WRONG CONCLUSION WAS A GATE THAT COULD NOT FIRE.**
+    /// `.databaseAlone` is never self-referential by construction, so this check
+    /// sat in `independentChecks` under every possible `sources` — which made
+    /// `independentChecks.isEmpty` unreachable and `isTrustworthyEvidence`
+    /// unable to withhold anything at B9, where withholding is its entire job.
+    /// §12.132.
+    @Test("The unclaimed comparison reads no store, so it is neither side")
+    func theUnclaimedComparisonIsAResidual() throws {
         let db = try Sub4Database.inMemory()
         let r = try SemanticVerifier.verify(db, activities: [])
 
@@ -228,13 +245,54 @@ struct CorrectionFamilyTests {
         // The old assertion said only that a hand-kept list did not name this
         // comparison, which is also true of a comparison somebody forgot to
         // declare — the exact silence §12.129 was about. This says what the
-        // check actually reads: nothing. It is a residual computed from the
-        // database on its own, so it can never be self-referential, and
-        // `ExpectationSources` refuses to hold `.databaseAlone` at all.
+        // check actually reads: nothing.
         let unclaimed = try #require(
             r.checks.first { $0.name == "unclaimed corrections" })
         #expect(unclaimed.reads.field == .databaseAlone)
-        #expect(r.independentChecks.contains { $0.name == "unclaimed corrections" })
+
+        #expect(r.residualChecks.contains { $0.name == "unclaimed corrections" },
+                "it is counted, in its own bucket")
+        #expect(!r.independentChecks.contains { $0.name == "unclaimed corrections" },
+                "and not in the evidence column, which is 388")
+        #expect(!r.selfReferentialChecks.contains { $0.name == "unclaimed corrections" },
+                "nor is it the database agreeing with itself — it reads no store")
+    }
+
+    /// **THE GATE 388 MADE ABLE TO FAIL, EXERCISED ON THE SHAPE B9 WILL HAVE.**
+    /// Every comparison that reads a store reads one the database feeds, and the
+    /// only survivor is the residual. Run against the 387 tree this passed
+    /// `isTrustworthyEvidence` and would have written `verified` into the ledger
+    /// that `activateVerified` reads.
+    ///
+    /// §12.69 is the rule and this is the sixth time it has been paid: a guard
+    /// that cannot fail has not been tested, so the first thing to do with a new
+    /// one is break something on purpose and watch it complain.
+    @Test("A report whose only survivor is the residual is not believed")
+    func aResidualAloneIsNotEvidence() {
+        let r = VerificationReport(
+            checks: [
+                .compare("notes", table: "user_note", expected: 1, found: 1,
+                         reads: .from(.notes)),
+                .compare("activities", table: "activity", expected: 1, found: 1,
+                         reads: .from(.activities, "counted")),
+                .compare("unclaimed corrections", table: "correction",
+                         expected: 0, found: 0, reads: .databaseAlone)
+            ],
+            seconds: 0.01,
+            sources: ExpectationSources(fedByTheDatabase: [.notes, .activities]))
+
+        #expect(r.passed, "every comparison agreed — that much is true")
+        #expect(r.residualChecks.count == 1)
+        #expect(r.independentChecks.isEmpty,
+                "and this is what could not happen before 388")
+        #expect(!r.isTrustworthyEvidence)
+        // THE SENTENCE NAMES THE RESIDUAL rather than claiming every comparison
+        // reads a fed store, which would be false of this report and would send
+        // a reader looking for a store that does not exist. §12.15.
+        let why = r.withheldReason ?? ""
+        #expect(why.contains("read no store at all")
+                || why.contains("reads no store at all"),
+                "got \(why)")
     }
 
     /// **THE RENAME, FINISHED ON BOTH SIDES.** 358 left a comment on

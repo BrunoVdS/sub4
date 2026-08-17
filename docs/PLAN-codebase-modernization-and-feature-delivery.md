@@ -10,7 +10,7 @@
 | **Persistence authority** | `docs/ADR-0003-database-contract.md` |
 | **Source-transition authority** | `docs/ADR-0002-strava-retirement.md` and `docs/PLAN-cutover-v2.md` |
 
-> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 387.**
+> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 388.**
 >
 > It was written against patch 334 and its opening stages describe work that has
 > since shipped: D6c closed at 330, and D7's B0, B1, B2 and B3 landed at 342,
@@ -22,17 +22,25 @@
 > the restructure and feature delivery. Where the two disagree about the present,
 > §5 wins; where they disagree about the sequence, this document does.
 >
-> **Progress against this plan, at 387.** Stage A's database-shadow work is
+> **Progress against this plan, at 388.** Stage A's database-shadow work is
 > closed. D7 has run B0 through B3 and the app reads the plan, the athlete, the
 > authored data and all 694 activities from SQLite on every launch, with a
-> verified migration run over that data. 385, 386 and 387 are not slices: they
-> correct, then mechanise, then make operative the verifier's own accounting of
-> how much of its agreement is evidence — the number B9's gate reads. **That
-> accounting is now derived end to end**: every comparison names the store field
-> its expectation came from, and which fields the database feeds is resolved by
-> asking each store, so a comparison added at B4 cannot be counted as evidence
-> without somebody answering for it. **B4 — details and traces — is the next
-> slice**, and §5.6 of `CLAUDE.md` carries the order.
+> verified migration run over that data. 385 through 388 are not slices: they
+> correct, mechanise, make operative and then repair the verifier's own
+> accounting of how much of its agreement is evidence — the number B9's gate
+> reads. **That accounting is now derived end to end and counted in three
+> buckets**: every comparison names the store field its expectation came from,
+> which fields the database feeds is resolved by asking each store, and a
+> residual that reads no store is no longer counted as evidence — which is what
+> made `isTrustworthyEvidence` capable of failing at B9 rather than only
+> appearing to be. §12.130–§12.132.
+>
+> **B4 — details and traces — is under way in four patches**, 388 through 391.
+> Its enumeration is `docs/D7-B4-GROUNDWORK.md`: the flip empties five verifier
+> comparisons, Compare's slice 4 and two read-backs, and §12.125's rule is that
+> the patch before a flip is the one that asks what the flip makes vacuous.
+> §5.6 of `CLAUDE.md` carries the order and the one open question — the launch
+> cost of reading ~668 traces before `.ready`.
 
 ## 1. Outcome
 

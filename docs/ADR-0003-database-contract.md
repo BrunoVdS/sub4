@@ -8962,6 +8962,165 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.132 The one condition that could not fail — patch 388
+
+D7 slice B4, and the patch before its machinery. §12.125's rule is that the
+patch before a flip asks what the flip is about to make vacuous. This one found
+something already vacuous, and the flip is what would have made it matter.
+
+### 12.132.1 The line, and it is 387's own sentence
+
+§12.131.3 argued the relaxation of `isTrustworthyEvidence` from four conditions
+to two, and closed with this:
+
+> The condition carrying the actual meaning — **at least one comparison could
+> have disagreed** — is untouched, and it is the one that fires at B9.
+
+**It could not have fired at B9.** It could not have fired at all.
+
+`unclaimed corrections` reads `.databaseAlone`. `ExpectationSources.init`
+subtracts `.databaseAlone` from the fed set — deliberately, §12.130, so that a
+residual can never call itself the database agreeing with itself. Every check is
+therefore either self-referential or independent, and `.databaseAlone` is never
+the first, so it is always the second. **`independentChecks` contained
+`unclaimed corrections` under every possible `sources`, so
+`independentChecks.isEmpty` was unreachable, and the guard the whole accounting
+rests on returned `true` for ever.**
+
+At B9, with all fourteen store fields fed, the report would have read twenty-one
+self-referential comparisons and one residual — and `record` would have written
+`verified` into the row `activateVerified` reads.
+
+### 12.132.2 The argument that produced it was half right, and the half matters
+
+The doctrine was written down as a test, `CorrectionFamilyTests
+.theUnclaimedComparisonIsIndependent`, in its own words:
+
+> *expects zero because this file says so, not because a store said so — nothing
+> the database feeds is consulted. So it is evidence, and it must land on the
+> evidence side of §12.99's split.*
+
+The premises are true and are still asserted. The conclusion does not follow,
+because §12.99's split is **not** *can this comparison fail*. `unclaimed
+corrections` can fail: a correction row belonging to a family no comparison
+names makes it fail, and `theStrayRowIsCountedBySomething` makes it. The split
+is *could this comparison have disagreed about whether the migration carried the
+app's data* — the only question `verified` is granted on — and a comparison that
+never consults a store cannot answer it however loudly it fails.
+
+**Two different properties collapsed into one word.** "Independent" was doing
+duty for *not self-referential* and for *evidence about the app*, and those came
+apart the moment a comparison existed that was neither.
+
+### 12.132.3 Three buckets, and the third one is printed
+
+`residualChecks` is `reads.field == .databaseAlone`. `independentChecks` is
+neither self-referential nor residual. The three partition `checks`, and
+`VerificationIndependenceTests.theThreeBucketsPartitionTheChecks` asserts both
+the sum and the absence of overlap — three collections of the right sizes could
+still double-count one check and drop another.
+
+**It is counted rather than dropped**, which is §12.54.2 in the row that would
+hide a gate: a residual excluded from the accounting altogether would make the
+paste's own line stop adding up, and a reader checking 12 + 9 against 22 would
+go looking for a comparison that was not missing. So the line grew a third
+number and prints at zero.
+
+```
+  comparisons: 22 — 12 independent, 9 reading a store the database feeds, 1 reading no store at all
+```
+
+### 12.132.4 The device's number moves, and 387's did not
+
+387 was a refactor and its whole acceptance criterion was that no count moved.
+**This one moves a count on purpose:** `13 independent` becomes `12`, in the
+paste, on the screen's `Compared` row, and in every `migration_run` note written
+from here on. Rows already in the ledger keep their own note; that is what a
+ledger is (§12.99).
+
+The figure was wrong before and is right now, and there is no reading of it that
+was ever load-bearing: `runs ever verified: 14` was granted on twelve
+comparisons that could have disagreed and one that could not, and twelve is
+still comfortably more than one. D7's exit criterion is unaffected.
+
+### 12.132.5 `isTrustworthyEvidence` is character-for-character unchanged
+
+```swift
+passed && !independentChecks.isEmpty
+```
+
+That is deliberate and it is the clearest statement of what this patch is. The
+line was never wrong; the collection it asks about was. A patch that "fixed the
+gate" by rewriting the condition would have had to argue against §12.99's own
+guard, which exists to stop that expression being reduced back to `passed`.
+
+`withheldReason` DID gain an arm, and it had to. The single sentence read *every
+comparison reads a store the database feeds*, which at B9 is **false** —
+`unclaimed corrections` reads no store at all — so a reader handed it would go
+looking for the store it names. §12.15 in the one sentence a withheld
+verification gets to say for itself. The residual arm is asked first, because
+the general sentence would otherwise answer for it and be wrong.
+
+### 12.132.6 The negative control, run rather than reasoned about
+
+§12.69 says the first thing to do with a new guard is break something on purpose
+and watch it complain. `independentChecks` was reverted to its 387 body and the
+suite run: **six tests failed across three suites**, and the one that matters
+reported
+
+```
+isTrustworthyEvidence → true
+```
+
+over a report whose only non-self-referential comparison was the residual. That
+is the B9 shape, and on the 387 tree it would have been marked verified. The
+body was then restored and the suite is green again.
+
+This is the sixth time this project has had to make a check able to fail before
+believing it, and the second time the check in question was the one written to
+enforce §12.69 — §12.131.7 recorded the first, inside RULE 5.
+
+### 12.132.7 A fixture default that was about to become the same defect
+
+`VerificationIndependenceTests.check(...)` defaulted `reads:` to
+`.databaseAlone`, with a comment stating that this made the check *"independent
+under every `fed:` set below"*. True until this patch and false after it. A test
+written tomorrow that omitted `reads:` would have got a report with an **empty**
+evidence column, and every assertion in it about `isTrustworthyEvidence` would
+have passed or failed for a reason unrelated to its subject — §12.130.7's exact
+finding, where three tests in the provenance suite turned on a condition they
+had already tripped.
+
+The default is removed rather than corrected. Every call in the file already
+passed `reads:` explicitly, so it cost nothing, and §12.95.4 is the reason to
+prefer removal: **a default argument is a call site that carries a value the
+caller never writes**, so no grep for the value finds it.
+
+`B2ActivationTests.b2sFourAreNotEvidence` carried the same shape as an identity:
+`independentChecks.count == checks.count - selfReferentialChecks.count`. It
+passed because the residual was miscounted, and a two-term identity over three
+buckets stops holding the moment the third one is right.
+
+### 12.132.8 The suite
+
+1,622 before, **1,626 after**. Four arrived: `aResidualAloneIsNotEvidence` in
+`CorrectionFamilyTests`, and `theThreeBucketsPartitionTheChecks`,
+`aResidualIsUnmovable` and `thePasteCarriesTheResidualCount` in
+`VerificationIndependenceTests`. None went. One was renamed and its argument
+inverted — `theUnclaimedComparisonIsIndependent` is now
+`theUnclaimedComparisonIsAResidual`, and it keeps the two premises it always
+had (§12.132.2) while asserting the opposite conclusion.
+
+### 12.132.9 What this does not do
+
+It does not touch a store, a repository, the bootstrap or `hydratedFamilies`.
+B4's machinery is the next patch and its flip the one after. What 388 buys is
+that when the evidence column falls from thirteen to eight, the number means
+eight comparisons that could have disagreed about the app — and when it
+eventually reaches zero, something says so.
+
+---
+
 ## 12.131 The derivation is the answer, and the list is gone — patch 387
 
 386 built the derivation beside the list and made disagreeing with it a

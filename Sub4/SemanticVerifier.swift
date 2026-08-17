@@ -87,6 +87,13 @@ nonisolated enum ExpectationField: String, CaseIterable, Sendable {
     /// No store at all — a residual, or a constant, computed from the database
     /// on its own. It can never be self-referential, and `ExpectationSources`
     /// refuses to hold it for that reason.
+    ///
+    /// **AND IT IS NOT INDEPENDENT EITHER — PATCH 388, §12.132.** "Not
+    /// self-referential" was read as "evidence" for two patches, which put
+    /// `unclaimed corrections` permanently in `independentChecks` and made
+    /// `isTrustworthyEvidence` incapable of failing. A field naming no store is
+    /// its own third answer; `VerificationReport.residualChecks` is where that
+    /// is spent.
     case databaseAlone
 
     /// What to call it in the paste. Counts and table names only, like every
@@ -300,8 +307,38 @@ nonisolated struct VerificationReport: Equatable {
 
     // MARK: Whether any of it is evidence — patch 354, ADR-0003 §12.99
 
-    /// Comparisons whose expectation came from something the database does not
-    /// feed. THESE ARE THE ONES THAT CAN FAIL.
+    /// Comparisons that read no store at all — a residual, or a constant,
+    /// computed from the database on its own.
+    ///
+    /// **A THIRD BUCKET, AND PATCH 388 IS WHY THERE HAD TO BE ONE.** Until this
+    /// patch `independentChecks` was every check that was not self-referential,
+    /// and `.databaseAlone` can never be self-referential — `ExpectationSources`
+    /// refuses to hold it, deliberately, so that a residual cannot call itself
+    /// the database agreeing with itself. The consequence ran the other way and
+    /// nobody had looked: **`unclaimed corrections` was permanently in the
+    /// evidence column, so `independentChecks` could never be empty, so
+    /// `isTrustworthyEvidence` could never fail.** §12.131.3 says in as many
+    /// words that the surviving condition "is the one that fires at B9". It
+    /// could not have fired at B9, or ever.
+    ///
+    /// **THESE CHECKS ARE REAL AND THEY ARE NOT EVIDENCE, AND BOTH HALVES
+    /// MATTER.** `unclaimed corrections` can fail — a correction row belonging
+    /// to a family no comparison names makes it fail, and
+    /// `CorrectionFamilyTests` makes it — so it is not a check that cannot
+    /// fail. What it cannot do is answer the question `verified` is granted on.
+    /// It compares the database's own leftovers against the constant zero; it
+    /// never consults a store, so it cannot say the migration carried anything.
+    /// Housekeeping the database owes itself, which is worth failing on and is
+    /// not proof about the app.
+    ///
+    /// So it is counted, printed, and kept out of the evidence column — rather
+    /// than dropped, which would be §12.54.2 in the row that hides a gate.
+    var residualChecks: [VerificationCheck] {
+        checks.filter { $0.reads.field == .databaseAlone }
+    }
+
+    /// Comparisons whose expectation came from a store the database does not
+    /// feed. THESE ARE THE ONES THAT CAN FAIL *AND SAY SOMETHING ABOUT THE APP*.
     ///
     /// **DERIVED SINCE 387, NOT LOOKED UP — §12.131.** Each check names the
     /// store field its expectation came from, and `sources` says which fields
@@ -309,8 +346,15 @@ nonisolated struct VerificationReport: Equatable {
     /// itself rather than from a list in another file joined to it by name, and
     /// the failure that list allowed — a comparison nobody declared, counted as
     /// evidence in silence — has nowhere left to happen.
+    ///
+    /// **AND SINCE 388 A RESIDUAL IS NOT ONE OF THESE** — see `residualChecks`
+    /// for the whole argument. The three buckets partition `checks`, which is
+    /// what `B2ActivationTests` asserts and what the paste's line adds up to.
     var independentChecks: [VerificationCheck] {
-        checks.filter { !$0.isSelfReferential(given: sources) }
+        checks.filter {
+            !$0.isSelfReferential(given: sources)
+                && $0.reads.field != .databaseAlone
+        }
     }
 
     /// Comparisons reading a store this build hydrates FROM the database.
@@ -364,6 +408,15 @@ nonisolated struct VerificationReport: Equatable {
     /// **THE CONDITION THAT CARRIES THE MEANING IS UNTOUCHED** — at least one
     /// comparison could have disagreed — and it is the one that fires at B9.
     /// §12.131.
+    ///
+    /// **388 DID NOT CHANGE THIS LINE AND THAT IS THE POINT OF 388.** The
+    /// expression is character-for-character what 387 left; what changed is that
+    /// `independentChecks` no longer counts `unclaimed corrections`, so the
+    /// sentence above became TRUE. Before 388 the residual sat in that
+    /// collection for ever, `independentChecks.isEmpty` was unreachable, and the
+    /// one condition this project kept because it could fail was a condition
+    /// that could not. §12.69 in the line written to enforce §12.69, and the
+    /// seventh time. §12.132.
     var isTrustworthyEvidence: Bool {
         passed && !independentChecks.isEmpty
     }
@@ -371,15 +424,30 @@ nonisolated struct VerificationReport: Equatable {
     /// Non-nil when the report PASSED and still may not be believed. Nil when
     /// it failed — that is `failures`' story and this one would only blur it.
     ///
-    /// ONE ARM SINCE 387. The two that named the removed properties went with
-    /// them; this is the sentence B9 will print.
+    /// **TWO ARMS SINCE 388, AND THE SECOND ONE IS THE SENTENCE B9 WILL
+    /// ACTUALLY PRINT.** 387 left one arm reading *every comparison reads a
+    /// store the database feeds*. At B9 that sentence is FALSE: `unclaimed
+    /// corrections` reads no store at all, so a reader handed it would go
+    /// looking for the store it names and find that there isn't one. §12.15,
+    /// in the one sentence a withheld verification gets to say for itself.
+    ///
+    /// The residual is NAMED rather than folded in, because "nothing could have
+    /// disagreed" and "nothing that consults a store could have disagreed" send
+    /// a reader to different places — the second is B9 working as designed, and
+    /// the first would mean the verifier had stopped making comparisons at all.
     var withheldReason: String? {
         guard passed else { return nil }
-        if independentChecks.isEmpty {
-            return "every comparison reads a store the database feeds, so none "
-                 + "of them could have disagreed"
+        guard independentChecks.isEmpty else { return nil }
+        // ORDER IS THE POINT: the residual arm is more specific and must be
+        // asked first, or the general sentence answers for it and is wrong.
+        if !residualChecks.isEmpty {
+            return "every comparison that reads a store reads one the database "
+                 + "feeds; the \(residualChecks.count) left "
+                 + "\(residualChecks.count == 1 ? "reads" : "read") no store at "
+                 + "all, so none of them could have disagreed about the app"
         }
-        return nil
+        return "every comparison reads a store the database feeds, so none "
+             + "of them could have disagreed"
     }
 
     /// One line for the ledger. Counts only — this is stored in the database
@@ -406,10 +474,18 @@ nonisolated struct VerificationReport: Equatable {
         // is what the numbers below it mean. A reader who sees twenty ticks
         // and no independent count cannot tell a verified migration from a
         // database agreeing with itself twenty times.
+        // PATCH 388 — A THIRD NUMBER, AND IT IS THERE SO THE LINE ADDS UP.
+        //
+        // Two numbers over three buckets is a line whose parts no longer sum to
+        // its own total, and a reader checking 12 + 9 against 22 would go
+        // looking for the missing comparison. The residual is the answer and it
+        // says so — §12.54.2, which is also why it prints at zero rather than
+        // vanishing when a report happens to hold none.
         out.append("  comparisons: \(checks.count) — "
                  + "\(independentChecks.count) independent, "
                  + "\(selfReferentialChecks.count) reading a store the "
-                 + "database feeds")
+                 + "database feeds, "
+                 + "\(residualChecks.count) reading no store at all")
         out.append("  may be believed: \(isTrustworthyEvidence ? "yes" : "no")"
                  + (withheldReason.map { " — \($0)" } ?? ""))
         // PATCH 387 — 386'S LINE REPLACED, NOT DELETED. It read `derived from
@@ -1127,6 +1203,13 @@ enum SemanticVerifier {
                      // A RESIDUAL. Its expectation is the constant zero and its
                      // found value is the database's own leftovers — no store
                      // is read, so it can never be self-referential.
+                     //
+                     // AND SINCE 388 IT IS NOT COUNTED AS EVIDENCE EITHER. It
+                     // can fail, and `CorrectionFamilyTests` makes it fail —
+                     // but a comparison that never consults a store cannot say
+                     // the migration carried anything, and while it sat in
+                     // `independentChecks` it was the one thing keeping that
+                     // collection non-empty at B9. §12.132.
                      reads: .databaseAlone)
     }
 

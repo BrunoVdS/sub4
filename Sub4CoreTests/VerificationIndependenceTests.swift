@@ -52,15 +52,27 @@ struct VerificationIndependenceTests {
 
     // MARK: Fixtures
 
-    /// `reads:` HAS NO DEFAULT ON THE REAL TYPE — patch 386 — and this fixture
-    /// gives it one so a test that is not about provenance need not restate it.
-    /// `.databaseAlone` means the check reads no store at all, so it is
-    /// independent under every `fed:` set below.
+    /// `reads:` HAS NO DEFAULT ON THE REAL TYPE — patch 386 — **AND IT NO LONGER
+    /// HAS ONE HERE EITHER, WHICH IS A DEFECT REMOVED RATHER THAN A TIDY-UP.**
+    ///
+    /// It defaulted to `.databaseAlone`, and the comment above it said that
+    /// meant *"the check reads no store at all, so it is independent under every
+    /// `fed:` set below"*. Since 388 a residual is NOT independent — it is its
+    /// own third bucket — so that default would hand a caller who wanted an
+    /// ordinary check a report with an EMPTY evidence column, and every
+    /// assertion about `isTrustworthyEvidence` in it would pass or fail for a
+    /// reason that had nothing to do with its subject.
+    ///
+    /// That is exactly §12.130.7: three tests in the provenance suite turned on
+    /// a condition they had already tripped, and the compiler could not see it.
+    /// Every call in this file passed `reads:` explicitly already, so removing
+    /// the default costs nothing and closes the door. §12.43's own argument
+    /// about a default argument being a call site nobody writes — §12.95.4.
     private func check(_ name: String,
                        table: String = "t",
                        expected: Int = 1,
                        found: Int = 1,
-                       reads: ExpectationOrigin = .databaseAlone) -> VerificationCheck {
+                       reads: ExpectationOrigin) -> VerificationCheck {
         .compare(name, table: table, expected: expected, found: found,
                  reads: reads)
     }
@@ -142,6 +154,12 @@ struct VerificationIndependenceTests {
     /// **B9, AND THE REASON THE ACCOUNTING EXISTS.** Every comparison reads a
     /// store the database feeds. Every one of them agrees. None of it is
     /// evidence.
+    ///
+    /// THIS FIXTURE HOLDS NO RESIDUAL, so it is the arm of `withheldReason` that
+    /// says *every comparison reads a store the database feeds* — which is true
+    /// here and false of a real B9 report. `CorrectionFamilyTests
+    /// .aResidualAloneIsNotEvidence` owns the other arm, and the two exist
+    /// separately because the sentences send a reader to different places.
     @Test("A report of nothing but self-referential checks passes and is not believed")
     func nothingButSelfReferentialIsNotBelieved() {
         let r = report([
@@ -152,8 +170,81 @@ struct VerificationIndependenceTests {
 
         #expect(r.passed, "every comparison agreed — that much is true")
         #expect(r.independentChecks.isEmpty)
+        #expect(r.residualChecks.isEmpty, "so the general arm is the right one")
         #expect(!r.isTrustworthyEvidence, "and none of them could have failed")
         #expect(r.withheldReason?.contains("could have disagreed") == true)
+        #expect(r.withheldReason?.contains("no store at all") == false,
+                "that arm belongs to a report holding a residual")
+    }
+
+    // MARK: The third bucket — patch 388, §12.132
+
+    /// **THE THREE BUCKETS PARTITION THE CHECKS, AND THE PASTE'S OWN LINE IS
+    /// WHAT MADE THIS WORTH ASSERTING.** Two numbers over three buckets is a
+    /// line whose parts do not sum to its total, and a reader checking 12 + 9
+    /// against 22 goes looking for a comparison that is not missing.
+    @Test("Independent, self-referential and residual partition the checks")
+    func theThreeBucketsPartitionTheChecks() {
+        let r = report([
+            check("notes", reads: .from(.notes)),
+            check("gear", reads: .from(.gear)),
+            check("unclaimed corrections", expected: 0, found: 0,
+                  reads: .databaseAlone)
+        ], fed: [.notes])
+
+        #expect(r.independentChecks.map(\.name) == ["gear"])
+        #expect(r.selfReferentialChecks.map(\.name) == ["notes"])
+        #expect(r.residualChecks.map(\.name) == ["unclaimed corrections"])
+        #expect(r.independentChecks.count + r.selfReferentialChecks.count
+                + r.residualChecks.count == r.checks.count)
+        // AND THE BUCKETS DO NOT OVERLAP, which the sum alone would not catch:
+        // three collections of the right total sizes could still double-count
+        // one check and drop another.
+        let named = Set(r.independentChecks.map(\.name))
+            .union(r.selfReferentialChecks.map(\.name))
+            .union(r.residualChecks.map(\.name))
+        #expect(named.count == r.checks.count, "no check is in two buckets")
+    }
+
+    /// A residual is not reclassified by what the build happens to be serving.
+    /// `ExpectationSources` refuses to hold `.databaseAlone` at all, so there is
+    /// no `fed:` set that can move this check anywhere.
+    @Test("No set of fed fields can move a residual out of its bucket")
+    func aResidualIsUnmovable() {
+        let everything = Set(ExpectationField.allCases)
+        let r = report([check("unclaimed corrections", expected: 0, found: 0,
+                              reads: .databaseAlone)],
+                       fed: everything)
+
+        #expect(r.residualChecks.count == 1)
+        #expect(r.independentChecks.isEmpty)
+        #expect(r.selfReferentialChecks.isEmpty)
+        #expect(!r.isTrustworthyEvidence,
+                "a report of nothing but residuals proves nothing about the app")
+    }
+
+    /// The paste prints the third number, and it prints at zero — §12.54.2. A
+    /// count that appears only when it is interesting cannot be told from a
+    /// count nobody wired in.
+    @Test("The paste carries the residual count, including when it is zero")
+    func thePasteCarriesTheResidualCount() {
+        // HOISTED, NOT WRITTEN INSIDE `#expect` — §12.71.9. A `+` of literals
+        // inside a macro argument is one more expression for the type checker,
+        // and this project has paid for that on a smaller one.
+        let expectedWith = "  comparisons: 2 — 1 independent, 0 reading a store "
+                         + "the database feeds, 1 reading no store at all"
+        let expectedWithout = "  comparisons: 1 — 1 independent, 0 reading a "
+                            + "store the database feeds, 0 reading no store at all"
+
+        let with = report([
+            check("gear", reads: .from(.gear)),
+            check("unclaimed corrections", expected: 0, found: 0,
+                  reads: .databaseAlone)
+        ]).diagnosticLines
+        #expect(with.contains(expectedWith))
+
+        let without = report([check("gear", reads: .from(.gear))]).diagnosticLines
+        #expect(without.contains(expectedWithout))
     }
 
     /// A FAILING report is not a withheld one, and saying so would send

@@ -328,9 +328,17 @@ struct B2ActivationTests {
                 "B2 is not B9 — there is still evidence left")
         // DERIVED, NOT PINNED. `- 5` was a literal that had to be chased; this
         // cannot go stale, because both sides move together by construction.
+        //
+        // **THREE TERMS SINCE 388, AND THE MISSING ONE WAS A DEFECT RATHER THAN
+        // A ROUNDING.** This read `checks.count - selfReferentialChecks.count`
+        // and passed, because `unclaimed corrections` was counted as
+        // independent — which is precisely what 388 removed. A two-term identity
+        // over three buckets is an assertion that stops holding the moment the
+        // third one is right. §12.132.
         #expect(r.independentChecks.count
-                == r.checks.count - r.selfReferentialChecks.count,
-                "every comparison is on exactly one side")
+                == r.checks.count - r.selfReferentialChecks.count
+                   - r.residualChecks.count,
+                "every comparison is in exactly one bucket")
     }
 
     /// THE NUMBER THAT MOVED, and the reason 354 built this accounting at all.
