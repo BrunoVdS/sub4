@@ -173,8 +173,8 @@ struct ActivityHydrationTests {
                 "the bootstrap gained no family — 379 did that")
         #expect(PersistenceAuthority.Family.allCases.count == 7)
         #expect(PersistenceAuthority.hydratedFamilies.count == 7)
-        #expect(HydratedStores.all.count == 8,
-                "B1's one, B2's four and B3's three")
+        #expect(HydratedStores.all.count == 9,
+                "B1's one, B2's four and B3's four — the fourth is 385's")
         #expect(HydratedStores.entry(for: "activities")?.slice == "B3",
                 "so the verifier's activity comparison is no longer evidence")
     }

@@ -6,8 +6,8 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 384 (2026-08-16).** 384 is documentation only — it changes no
-behaviour, so every fact about the app in §5 is the state proved on the device at 383.
+**Current at patch 385 (2026-08-16).** §5.3 carries the device evidence from the
+384 run — snapshot, import, verify and roll-up, all on 16 August.
 
 **§5 IS THIS PROJECT'S ONLY STATEMENT OF CURRENT STATE.** Every other document
 either points at it or is dated history. That rule exists because the opposite
@@ -342,11 +342,11 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 384, 2026-08-16
+## 5. State — patch 385, 2026-08-16
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** 384 is a documentation
-patch and changes no behaviour; everything below is the app as it stood at 383,
-read off the device on 16 August. Anything older than
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Everything below is
+current at 385; §5.3 is what the device said on 16 August, and §5.4 is the one
+number in this project that was wrong when it was read. Anything older than
 this section is history and lives in ADR §12; if a number here disagrees with
 the code, the code wins and this section is the defect.
 
@@ -387,9 +387,22 @@ first when a screen looks wrong:
 slice reversible by deleting one family from `PersistenceAuthority.hydratedFamilies`,
 and it is why hydration must never write.
 
-### 5.3 The evidence, from the device at 383
+### 5.3 The evidence, from the device at 383 and 384
 
-Compare and the nine read-backs, 16 August:
+**At 384, 16 August, 23:10 — the first full pass since the flip:**
+
+- **snapshot `2026-08-16-211009`**, taken by patch 384: 1,371 of 1,371 copied,
+  19.6 MB, 2 declared-not-present (both retired formats, which cannot exist on
+  this install), **0 stores not written**, `preferences.plist` included
+- **Import: 694 seen, 0 new, 694 refreshed**, 0 rows removed, reconciled, 0.311 s
+- **Verified** — the ledger row reads `verified · patch 384 · snapshot
+  2026-08-16-211009 · 22 comparisons, all agreed · 14 independent`, and
+  `runs ever verified` moved 12 → 13. **That 14 is one too generous; see §5.4.**
+- **Read-back roll-up: 8 of 9 agree · 0 differ · 0 could not look · 1 nothing
+  to compare.** The one is `Review trail`, and it holds nothing on either side
+  because no review exists until 24 August. See §5.6 step 1.
+
+**At 383 — Compare and the nine read-backs:**
 
 - **six parity slices, zero differences**: 694 activities · 332 days; volume
   0 of 332 days and 0 of 284 week figures; load 412 days with fitness 35 vs 35
@@ -409,18 +422,44 @@ lossless round trip: gear classification and status, rejection and match-date
 metadata, plan source and top-level order, and fractional fetch-time precision
 are still outside the mapped set — §12.86 draws that line and it has not moved.
 
-### 5.4 The verifier's accounting
+### 5.4 The verifier's accounting — and B3's enumeration missed one
 
-`HydratedStores.all` holds **eight** entries: `heart-rate zones` (B1), `notes`,
-`commute corrections`, `match decisions`, `session moves` (B2), and `activities`,
-`activity identities`, `volume by discipline` (B3). Each names a comparison whose
-expectation now comes from a store the database feeds, so each is the database
-agreeing with itself.
+`HydratedStores.all` holds **nine** entries: `heart-rate zones` (B1); `notes`,
+`commute corrections`, `match decisions`, `session moves` (B2); and `activities`,
+`activity identities`, `volume by discipline`, **`activity fields`** (B3). Each
+names a comparison whose expectation comes from a store the database feeds, so
+each is the database agreeing with itself.
 
-**`runs ever verified: 12`, the newest at patch 368 — and none since the flip.**
-The independent count in that row is 18 and is expected to fall by three the next
-time Verify runs. Until it does, no verified run exists over the current data,
-which is D7's own exit criterion and step 5 of §5.6.
+**The ninth is patch 385's, and it was missing from 382.** `SemanticVerifier`'s
+`fingerprintCheck` builds a seven-field fingerprint per activity from
+`ActivityStore.activities` and compares it against the `activity` table. Since
+B3 that store *is* the database. It is the same shape as `volume by discipline`,
+which 382 did declare — the same rows, read twice — and it was in neither 382's
+list of three nor its list of deliberate exclusions. It spent 382, 383 and 384
+in the evidence column. §12.129.
+
+**So the device's own `14 independent` at 384 was one too generous.** The honest
+split is **22 comparisons — 13 independent, 9 self-referential**, and the next
+Verify will print it.
+
+**Nothing was ever wrong on the device**, and the residual value of that check
+after the flip is close to zero anyway: since 370 the control is *Import and
+verify* in one press, so the import writes the hydrated store into `activity`
+and the verify then compares the hydrated store against what it just wrote.
+
+> **THE STRUCTURAL DEFECT IS WORSE THAN THE INSTANCE, AND IT IS STILL OPEN.**
+> `unmatchedHydratedEntries` joins one way only — entry → check. A comparison
+> whose expectation comes from a hydrated store and which nobody added to the
+> list is invisible and counts as evidence in silence. **386 is the patch that
+> derives the classification instead of declaring it**, and the enumeration is
+> already done: `PersistenceAuthority.Family` is too coarse to derive from,
+> because `.athlete` hydrates the zones and the FTP while gear stays on files
+> until B5 — so the provenance has to be per store-field, named at each check's
+> own construction site where the compiler can demand it. §12.129.4.
+
+**`runs ever verified: 13`, the newest at patch 384**, over data the database
+feeds, with 13 comparisons that could still have disagreed. D7's exit criterion
+is met for the first time.
 
 ### 5.5 Open, and the first one is Bruno's call
 
@@ -478,21 +517,34 @@ which is D7's own exit criterion and step 5 of §5.6.
 
 ### 5.6 Next, in order
 
-1. **A fresh protected snapshot**, post-383 and preferences-inclusive. The
-   current one predates the flip.
-2. **Press the read-back roll-up** and get `provesSomething`, not merely
-   healthy — it needs every read-back to have looked at something.
-3. **Import once, then Verify immediately.** This is the first verification over
-   data the database feeds. Watch the ledger row beside the verdict, and expect
-   `independent` to fall by three.
-4. **B4 — details and traces.** The 1.5-million-sample read stays off the main
+**Done at 384, on the device, 16 August 23:10** — the snapshot, the import, the
+verify and the roll-up. §5.3 records what each said. Three of them were §5.6's
+first three steps and they are struck from this list rather than left to rot.
+
+1. **THE ROLL-UP GATE IS 8 OF 9 UNTIL 24 AUGUST, AND THAT IS THE DECISION.**
+   `provesSomething` requires all nine read-backs to have compared something,
+   and `Review trail` reads *nothing on either side* because the first monthly
+   review does not exist until **24 August 2026**. The gate is therefore **eight
+   of nine agree, zero differ, zero could not look, and the one abstention is
+   the review trail** — named, not waved through. `provesSomething` itself is
+   the right property and is not being weakened; what was wrong was this list
+   asking for something the calendar forbids. B7 is blocked on the same fact.
+   Re-press the roll-up after the first review and the ninth becomes real.
+2. **386 — derive the self-referential classification** rather than declaring
+   it in a list. §5.4's blockquote has the enumeration and the reason `Family`
+   cannot carry it. Do this before B4, because B4 and B5 each add checks that
+   would otherwise get the same chance to be missed.
+3. **B4 — details and traces.** The 1.5-million-sample read stays off the main
    actor; the read-back keeps its own read, per 381's rule.
-5. **B5 — weather and gear**, including `ReadBacks.knownActivityIDs` and the
-   `WeatherGearRoundTrip` read-back's own read.
-6. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
+4. **B5 — weather and gear**, including `ReadBacks.knownActivityIDs` and the
+   `WeatherGearRoundTrip` read-back's own read. **Gear is the half of
+   `AthleteStore` that B1 did not take** — `StoreSource.partial(fromDatabase:
+   "zones and FTP", fromFiles: "gear")` — so the verifier's `gear` comparison is
+   still real evidence and must not be reclassified before this slice.
+5. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed
    recovery screen `RootView` does not yet have.
-7. **D8** — stabilise one release window, then remove the JSON writers.
+6. **D8** — stabilise one release window, then remove the JSON writers.
 
 Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
 `docs/context/review-data-pool.md` and `docs/ADR-0002-strava-retirement.md`.
@@ -527,6 +579,17 @@ Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
   showed, because its only remaining job was the ADR.
 - **A count derived from the thing it counts never needs chasing.** Paid for at 369a, 372,
   377, 377d, 381a and 383; RULE 5 and RULE 6 are what that lesson looks like as code.
+- **A JOIN THAT IS CHECKED IN ONE DIRECTION IS UNCHECKED IN THE OTHER.**
+  `unmatchedHydratedEntries` catches a declared entry naming no comparison, and it
+  is a good tripwire — it is also the only one, so a COMPARISON that nobody
+  declared counted as evidence in silence for three patches. **When you build a
+  tripwire over a join, write down which way it points, and say what watches the
+  other way.** Here nothing did. §12.129, and 386 is the patch that stops
+  declaring the classification and derives it.
+- **A number a device prints is not a number a device verified.** `14 independent`
+  was rendered, stored in the ledger and pasted into a diagnostics file, and it was
+  wrong — because every one of those steps read the same list. Printing is not
+  checking. §12.129.2.
 - **A document that names itself CURRENT is a claim with nothing holding it up.**
   `SUB4_CURRENT_PEER_REVIEW_AND_REMEDIATION_PLAN.md` sat at the repository root for
   46 patches saying *Status: active* and *not yet running from the database*, and it

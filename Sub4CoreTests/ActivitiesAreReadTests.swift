@@ -189,22 +189,32 @@ struct ActivitiesAreReadTests {
     /// `PlanMoveImportTests` asserted the same thing about the moves and 377d
     /// had to invert it four rounds later. This test exists so that inversion
     /// is expected rather than discovered.
-    /// **THE INVERSION, AND IT IS THREE COMPARISONS RATHER THAN ONE.**
+    /// **THE INVERSION, AND IT IS FOUR COMPARISONS RATHER THAN ONE.**
     ///
     /// 379 pinned this so the day it stopped being evidence was a claim
     /// becoming false rather than a number quietly sliding. That day is 382,
     /// and the enumeration found two more comparisons taking their expectation
     /// from the same list: the id set and the volume sums. §12.126.2.
     ///
+    /// **AND IT MISSED A THIRD — `activity fields`, added at 385.** The pin did
+    /// exactly what it was built for and still did not catch this, because a
+    /// pin asserts that a declared claim is true and cannot assert that the
+    /// declaration is complete. That is §12.129's whole subject.
+    ///
     /// **THE GLOBAL COUNT LIVES HERE AND NOWHERE ELSE NOW.** `B2ActivationTests`
     /// pinned it too, which meant every future slice broke a suite about a
     /// past one — 377d's four rounds in miniature. It is rescoped there.
-    @Test("Three comparisons stopped being evidence, and this is where that is said")
-    func threeComparisonsStoppedBeingEvidence() throws {
+    @Test("Four comparisons stopped being evidence, and this is where that is said")
+    func fourComparisonsStoppedBeingEvidence() throws {
         let db = try Sub4Database.inMemory()
         let r = try SemanticVerifier.verify(db, activities: [])
 
-        for name in ["activities", "activity identities", "volume by discipline"] {
+        // 385 — AND `activity fields` IS THE ONE THIS LOOP DID NOT NAME.
+        // Written at 382 from an enumeration that found three. The fourth reads
+        // the same list and was counted as evidence until the device printed it
+        // without a mark. §12.129.
+        for name in ["activities", "activity identities",
+                     "volume by discipline", "activity fields"] {
             let e = HydratedStores.entry(for: name)
             #expect(e != nil, "a comparison B3 made self-referential is undeclared")
             #expect(e?.slice == "B3")
@@ -212,8 +222,8 @@ struct ActivitiesAreReadTests {
                     "its expectation now comes from a store the database feeds")
             #expect(r.selfReferentialChecks.contains { $0.name == name })
         }
-        #expect(HydratedStores.all.count == 8,
-                "B1's one, B2's four, B3's three")
+        #expect(HydratedStores.all.count == 9,
+                "B1's one, B2's four, B3's four")
         #expect(r.unmatchedHydratedEntries.isEmpty,
                 "and every one of them names a comparison the verifier makes")
         #expect(!r.independentChecks.isEmpty,

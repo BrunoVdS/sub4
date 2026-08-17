@@ -8962,6 +8962,118 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.129 The fourth comparison B3 made self-referential — patch 385
+
+Found in a diagnostics paste from the device at 384, twenty minutes after 384
+was committed, by reading a line that had no mark on it.
+
+### 12.129.1 The line
+
+```
+comparisons: 22 — 14 independent, 8 reading a store the database feeds
+ok activity fields [activity]: expected 694 matching, found 694 matching, 0 different
+```
+
+Every other comparison reading `ActivityStore.activities` carries
+`· self-referential`. This one does not, and it should.
+
+`SemanticVerifier.fingerprintCheck` builds a seven-field fingerprint per
+activity — `startLocal`, `dayKey`, `discipline`, `name`, distance, moving and
+elapsed — from the `activities` array, and compares it against the `activity`
+table. That array is `AppStores.gather` reading `ActivityStore.shared.activities`,
+and since B3 that store is fed by `DatabaseBootstrapReader`.
+
+It is the same shape as `volume by discipline`, which 382 declared: the same
+rows, read twice.
+
+**The honest split at 384 is 22 comparisons — 13 independent, 9
+self-referential.** Nothing on the device was ever wrong; every comparison
+agreed and every one still agrees. One row was counted as evidence that could
+not have disagreed.
+
+**And its residual value is near zero anyway.** Since 370 the control is
+*Import and verify* in one press. The import writes the hydrated store into
+`activity`; the verify then compares the hydrated store against what it has
+just written. Even a hydration decode fault would be laundered by the write
+that precedes the read.
+
+### 12.129.2 Why 382's enumeration missed it
+
+382's comment in `PersistenceMode` states the rule correctly — *every
+comparison whose EXPECTATION is computed from `ActivityStore.activities`
+belongs here* — and then lists three. It also lists what it excluded on
+purpose: **"the seven expectations FILTERED by `storeIDs`"**.
+
+`activity fields` has no `storeIDs` filter and is not a domain check, so it was
+in neither list. The exclusion was framed as *everything except these seven*,
+which only holds if the seven were counted against the whole population. They
+were not; they were counted against the checks that happened to come to mind.
+
+**A number a device prints is not a number a device verified.** `14 independent`
+was computed, rendered on the screen, written into `migration_run`'s ledger note
+and pasted into a diagnostics file — four appearances, all reading the same
+list, none of them a check.
+
+### 12.129.3 No test could have caught it, and that is the finding
+
+`ActivitiesAreReadTests.threeComparisonsStoppedBeingEvidence` pins the three
+names and the total. `VerificationIndependenceTests` owns the count and derives
+both sides from `HydratedStores.all`. `B2ActivationTests` asserts the split is
+the declared list rather than a copy of it. Every one of them passed.
+
+They all assert that **the declaration is true**. None can assert that **the
+declaration is complete**, because completeness is a claim about the checks and
+every one of these tests starts from the list.
+
+`unmatchedHydratedEntries` is the only tripwire over the join and it points one
+way: an ENTRY naming no check. The damage runs the other way — a CHECK naming
+no entry — and nothing watches it. **When you build a tripwire over a join,
+write down which way it points and say what watches the other way.**
+
+### 12.129.4 Why 385 is an entry and 386 is the fix
+
+Adding a ninth entry makes tonight's number honest and closes nothing. B4 adds
+comparisons over details and traces; B5 adds weather and gear. Each gets the
+same chance to be missed the same way.
+
+**386 derives the classification instead of declaring it.** The enumeration
+that patch needs is done:
+
+- **`PersistenceAuthority.Family` is too coarse to derive from.** `.athlete` is
+  hydrated, and `StoreSource.partial(fromDatabase: "zones and FTP", fromFiles:
+  "gear")` is `AthleteStore` saying why: B1 took the zones and the FTP, B5 takes
+  gear. A family-level derivation would mark the `gear` comparison
+  self-referential while it is still file-backed and still real evidence —
+  trading a count that is one too generous for one that is one too mean.
+- **So the provenance is per store-field, and it belongs at the check's own
+  construction site**, as a non-defaulted argument the compiler will not let an
+  author omit. A new comparison cannot then be added without answering the
+  question that was missed here.
+- **Resolving "is that field database-fed" is one exhaustive switch**, next to
+  the stores, asking each one what it is serving. Exhaustive over an enum means
+  a new field forces the answer; asking the store means a flip cannot leave it
+  stale.
+- `HydratedStores`, `unmatchedHydratedEntries` and the count pinned in three
+  test files all stop existing, which is the point: they are a list kept by hand
+  in a different file from the thing it describes. §12.128 shipped ninety
+  minutes before this defect was found, arguing exactly that.
+
+### 12.129.5 The roll-up gate, restated rather than weakened
+
+The 384 roll-up read `8 of 9 agree · 0 differ · 0 could not look · 1 nothing to
+compare`. The abstention is `Review trail`, which holds nothing on either side
+because the first monthly review is due **24 August 2026**.
+
+`provesSomething` requires all nine to have compared something, so §5.6's
+"press the roll-up and get `provesSomething`" asked for something the calendar
+forbids. **The property is right and is not being weakened** — 333a bought the
+distinction between *healthy* and *proved* and it stays. What was wrong was a
+state document listing an unreachable step, which is a step that sits there
+looking undone. The gate is now stated as eight of nine with the abstention
+named, and B7 is already blocked on the same fact.
+
+---
+
 ## 12.128 One document says what is true now — patch 384
 
 Not a code patch. It fixes the thing that made three of the last four sessions

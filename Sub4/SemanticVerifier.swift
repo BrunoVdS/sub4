@@ -121,6 +121,19 @@ nonisolated struct VerificationReport: Equatable {
     /// self-referential check back into the evidence column, and every number
     /// below would read better than the truth. An entry that matches nothing is
     /// the symptom that produces, so it is surfaced rather than ignored.
+    ///
+    /// **AND IT POINTS ONE WAY ONLY — PATCH 385, §12.129.** This reports an
+    /// ENTRY naming no check. Nothing reports a CHECK naming no entry, and that
+    /// is the direction the damage runs: a comparison whose expectation comes
+    /// from a hydrated store and which nobody declared counts as evidence, in
+    /// silence, and reads on the device exactly like a comparison that could
+    /// have failed. `activity fields` did that for three patches.
+    ///
+    /// It cannot be closed from this end. Deciding whether a check is
+    /// self-referential means knowing WHICH STORE FIELD its expectation came
+    /// from, and this type is handed arrays. **386 moves that answer to each
+    /// check's own construction site**, where the compiler can require it, and
+    /// this property and the list behind it both stop existing.
     var unmatchedHydratedEntries: [HydratedStores.Entry] {
         let names = Set(checks.map(\.name))
         return HydratedStores.all.filter { !names.contains($0.check) }

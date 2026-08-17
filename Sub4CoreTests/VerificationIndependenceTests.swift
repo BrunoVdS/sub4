@@ -83,13 +83,20 @@ struct VerificationIndependenceTests {
     /// three more; which three, and that they name real comparisons, is
     /// `B2ActivationTests`' business. What this suite still owns is B1's entry
     /// and the machinery around it.
-    /// 5 UNTIL 382, WHICH DECLARED THREE. This is the suite that owns the
-    /// total, and it is the second home the number has had — the first was
-    /// `B2ActivationTests`, which had no business holding it.
+    /// 5 UNTIL 382, WHICH DECLARED THREE — AND 9 AT 385, WHICH FOUND B3'S
+    /// FOURTH. This is the suite that owns the total, and it is the second home
+    /// the number has had — the first was `B2ActivationTests`, which had no
+    /// business holding it.
+    ///
+    /// **THIS NUMBER MOVING IS NOT THE SAME AS THIS NUMBER BEING RIGHT.** It
+    /// went 5 → 8 at 382 and every assertion in this file passed, over a list
+    /// that was one short. Nothing here joins the other way — see
+    /// `unmatchedHydratedEntries`, which reports an entry naming no comparison
+    /// and has no counterpart reporting a comparison naming no entry. §12.129.
     @Test("The list names the comparison B1 made self-referential")
     func theListNamesTheZoneCheck() {
-        #expect(HydratedStores.all.count == 8,
-                "one from B1, four from B2, three from B3; B5 and B9 add more")
+        #expect(HydratedStores.all.count == 9,
+                "one from B1, four from B2, four from B3; B5 and B9 add more")
         let e = HydratedStores.entry(for: "heart-rate zones")
         #expect(e != nil)
         #expect(e?.store == "AthleteStore.hrZones")

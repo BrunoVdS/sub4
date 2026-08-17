@@ -374,10 +374,14 @@ nonisolated enum HydratedStores {
         .init(check: "session moves",
               store: "PlanMoveStore.moves",
               slice: "B2"),
-        // PATCH 382 — B3, AND IT IS THREE ENTRIES RATHER THAN THE ONE §12.123
-        // PREDICTED. Every comparison whose EXPECTATION is computed from
-        // `ActivityStore.activities` belongs here, and the enumeration found
-        // three:
+        // PATCH 382 — B3. **THE ENUMERATION FOUND THREE AND THERE WERE FOUR;
+        // 385 ADDS `activity fields` AT THE BOTTOM OF THIS LIST.** The rule
+        // below is right and was applied incompletely: every comparison whose
+        // EXPECTATION is computed from `ActivityStore.activities` belongs here.
+        // Read the four together — the count, the id set, the sums and the
+        // fingerprint are four ways of asking the same rows the same question.
+        //
+        // 382's three:
         //
         //   · `activities`           — the count itself
         //   · `activity identities`  — the id set, against `activity_alias`.
@@ -398,6 +402,13 @@ nonisolated enum HydratedStores {
         // domain checks. Their values still come from stores the database does
         // not feed, so they can still disagree; only the population filter
         // moved. §12.126.3.
+        //
+        // **AND THAT SENTENCE IS WHY 385 EXISTS.** A check is excluded here
+        // when its VALUE comes from a store the database does not feed. The
+        // `storeIDs` filter was a good test for the seven and a bad one for the
+        // whole population: `activity fields` has no filter, so it fell out of
+        // both lists and nothing said so. A rule stated as "everything except
+        // these seven" only holds if the seven were counted against the whole.
         .init(check: "activities",
               store: "ActivityStore.activities",
               slice: "B3"),
@@ -406,6 +417,20 @@ nonisolated enum HydratedStores {
               slice: "B3"),
         .init(check: "volume by discipline",
               store: "ActivityStore.activities, summed",
+              slice: "B3"),
+        // **PATCH 385 — THE FOURTH, AND 382 MISSED IT.** `activity fields` is
+        // `SemanticVerifier.fingerprintCheck`: a seven-field fingerprint per
+        // activity, built from THIS LIST and compared against the `activity`
+        // table. Same shape as `volume by discipline` directly above — the same
+        // rows, read twice — and it has no `storeIDs` filter, so it is not one
+        // of the seven the comment above excludes on purpose. It was in neither
+        // list, and it spent 382, 383 and 384 counted as evidence.
+        //
+        // Found on the device at 384, in a paste, by reading a line that had no
+        // self-referential mark on it. Not by any test — see §12.129.3 for why
+        // no test could have, and 386 for the fix that is not another entry.
+        .init(check: "activity fields",
+              store: "ActivityStore.activities, seven fields each",
               slice: "B3"),
     ]
 
