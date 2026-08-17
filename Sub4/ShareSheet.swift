@@ -134,6 +134,22 @@ extension SectionExport {
 struct DiagnosticSectionHeader: View {
 
     let title: String
+
+    /// **A STABLE KEY, NOT THE TITLE — patch 393.** One title on this screen is
+    /// interpolated: `Rows — \(counts.count) tables`. Keying the expansion on
+    /// the displayed text would collapse that section the moment a row count
+    /// moved, which is a defect nobody would connect to a table count changing.
+    ///
+    /// No default. §12.95.4: a default argument is a call site that carries a
+    /// value the caller never writes, and `key = title` would have been exactly
+    /// the trap above with nothing at the call site to show it.
+    let key: String
+
+    /// **WHICH SECTIONS ARE OPEN, OWNED BY THE SCREEN AND DYING WITH IT.**
+    /// Collapsed is the default and the state is deliberately NOT persisted:
+    /// the sheet opens as an index every time. Bruno's call, 17 August.
+    @Binding var expanded: Set<String>
+
     let lines: () -> [String]
     @Binding var shared: ShareItem?
 
@@ -142,9 +158,26 @@ struct DiagnosticSectionHeader: View {
     /// sentence in a section header and no need for one.
     @State private var failed = false
 
+    private var isOpen: Bool { expanded.contains(key) }
+
     var body: some View {
         HStack {
-            Text(title)
+            // THE TITLE IS THE CONTROL. A chevron alone is a small target and
+            // this screen has twenty-two of them; the whole label toggles, and
+            // the share button beside it is `.borderless` so the two do not
+            // merge into one tap target inside a `List` header.
+            Button {
+                if isOpen { expanded.remove(key) } else { expanded.insert(key) }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                    Text(title)
+                }
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(isOpen ? "Collapse \(title)" : "Expand \(title)")
             Spacer()
             Button {
                 let export = SectionExport(title: title, lines: lines())

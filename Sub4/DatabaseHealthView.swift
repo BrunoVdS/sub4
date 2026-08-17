@@ -225,6 +225,23 @@ struct DatabaseHealthView: View {
     /// a different kind.
     @State private var rollingUp = false
 
+    /// **WHICH SECTIONS ARE OPEN — patch 393, §12.137.**
+    ///
+    /// EMPTY IS COLLAPSED AND EMPTY IS THE DEFAULT. This screen is twenty-three
+    /// sections and roughly four hundred lines; opening it as an index of
+    /// headers is the whole point.
+    ///
+    /// **A PLAIN `@State`, SO IT DIES WITH THE SHEET, AND THAT IS THE DECISION
+    /// RATHER THAN AN OVERSIGHT.** §12.57 is this screen's own history — a
+    /// result that evaporated on Done — so a `@State` here needs saying out
+    /// loud: what evaporates is a VIEW PREFERENCE, not an answer. Bruno's call,
+    /// 17 August: back to collapsed every time the sheet opens.
+    @State private var expanded: Set<String> = []
+
+    /// Asked by every section's content and footer. One place, so a section
+    /// cannot disagree with its own header about whether it is open.
+    private func isExpanded(_ key: String) -> Bool { expanded.contains(key) }
+
     var body: some View {
         NavigationStack {
             List {
@@ -257,7 +274,7 @@ struct DatabaseHealthView: View {
                     // A SEPARATE VIEW rather than a group, because it is the
                     // largest thing on this screen by a wide margin and it
                     // needs none of this screen's state. §12.76.2.
-                    ShadowParitySections(db: db, shared: $shared)
+                    ShadowParitySections(db: db, shared: $shared, expanded: $expanded)
                     toolSections(db)
                 }
             }
@@ -455,6 +472,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private func fileSection(_ db: Sub4Database) -> some View {
         Section {
+            if isExpanded("file") {
             LabeledContent("Location", value: db.location.isInMemory ? "In memory" : "On this phone")
             if let report {
                 LabeledContent("Size", value: report.bytesOnDisk.map {
@@ -488,16 +506,21 @@ struct DatabaseHealthView: View {
                                  ? Color.primary : Color.red)
 
             LabeledContent("Protection", value: "Until first unlock")
+        }
         } header: {
             DiagnosticSectionHeader(title: "The file",
+                                        key: "file",
+                                        expanded: $expanded,
                                         lines: { fileLines },
                                         shared: $shared)
         } footer: {
+            if isExpanded("file") {
             Text("The database and its journal files sit in their own folder, "
                  + "which carries the protection class so anything SQLite "
                  + "creates inside it inherits. Delete local data removes the "
                  + "folder whole, so nothing is left in a sidecar.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -511,6 +534,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private var contentsSection: some View {
         Section {
+            if isExpanded("rows") {
             if counts.isEmpty {
                 Text("No tables").foregroundStyle(.secondary)
             } else {
@@ -528,11 +552,18 @@ struct DatabaseHealthView: View {
                     .font(.caption)
                 }
             }
+        }
         } header: {
+            // **THE ONE INTERPOLATED TITLE, AND THE REASON `key` EXISTS.**
+            // Keying the expansion on this text would close the section the
+            // moment a table count moved. §12.137.
             DiagnosticSectionHeader(title: "Rows — \(counts.count) table\(counts.count == 1 ? "" : "s")",
+                                        key: "rows",
+                                        expanded: $expanded,
                                         lines: { tableLines },
                                         shared: $shared)
         } footer: {
+            if isExpanded("rows") {
             Text(importedRows == 0
                  ? "Nothing imported yet, which is correct: the schema is built "
                  + "and step 3.3 is what fills it. The rows in source are seeded "
@@ -540,6 +571,7 @@ struct DatabaseHealthView: View {
                  + "from, not data."
                  : "\(importedRows) imported rows, \(totalRows) in total.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -551,6 +583,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private var snapshotSection: some View {
         Section {
+            if isExpanded("snapshot") {
             if let m = snapshot {
                 // NOT LOCALISED, and that is the decision — patch 304.
                 //
@@ -619,17 +652,22 @@ struct DatabaseHealthView: View {
                 Text(notice).font(.caption2).foregroundStyle(Color.dim)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Protected snapshot",
+                                        key: "snapshot",
+                                        expanded: $expanded,
                                         lines: { snapshotLines },
                                         shared: $shared)
         } footer: {
+            if isExpanded("snapshot") {
             Text("A dated copy of every legacy file plus the declared "
                  + "UserDefaults values, with a SHA-256 for each. Live data is "
                  + "never moved or removed. After a new copy verifies, that copy "
                  + "and the newest previous verified copy stay in full; older complete "
                  + "copies become small audit receipts. Incomplete or unreadable "
                  + "snapshots are never pruned. Delete local data removes all of it.")
+        }
         }
     }
 
@@ -645,6 +683,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private func importSection(_ db: Sub4Database) -> some View {
         Section {
+            if isExpanded("import") {
             if importing {
                 HStack { ProgressView(); Text("Importing…").font(.caption) }
             } else {
@@ -973,16 +1012,21 @@ struct DatabaseHealthView: View {
                     }
                 }
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Import",
+                                        key: "import",
+                                        expanded: $expanded,
                                         lines: { lastImport.last.diagnosticLines },
                                         shared: $shared)
         } footer: {
+            if isExpanded("import") {
             Text("Copies activities and gear from the app's current stores into "
                  + "the database. Nothing else changes: the app still reads its "
                  + "JSON files, and the JSON files are not touched. Running it "
                  + "twice imports nothing twice.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -1078,6 +1122,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private func rollUpSection(_ db: Sub4Database) -> some View {
         Section {
+            if isExpanded("rollup") {
             if rollingUp {
                 HStack { ProgressView(); Text("Reading all nine…").font(.caption) }
             } else {
@@ -1102,12 +1147,17 @@ struct DatabaseHealthView: View {
                     .font(.caption2)
                     .foregroundStyle(l.isFault ? .red : Color.dim)
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Read-back roll-up",
+                                        key: "rollup",
+                                        expanded: $expanded,
                                         lines: { rollUp.last.diagnosticLines },
                                         shared: $shared)
         } footer: {
+            if isExpanded("rollup") {
             Text(Self.rollUpFooter).font(.caption2)
+        }
         }
     }
 
@@ -1284,14 +1334,20 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private var traceBacklogSection: some View {
         Section {
+            if isExpanded("traces") {
             backlogHeadlineRows
             backlogAccountRows
+        }
         } header: {
             DiagnosticSectionHeader(title: "Traces still to fetch",
+                                        key: "traces",
+                                        expanded: $expanded,
                                         lines: { traceBacklogLines },
                                         shared: $shared)
         } footer: {
+            if isExpanded("traces") {
             Text(Self.backlogFooter).font(.caption2)
+        }
         }
     }
 
@@ -1481,6 +1537,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private var benchmarkSection: some View {
         Section {
+            if isExpanded("benchmark") {
             Picker("Activities", selection: $benchmarkSize) {
                 ForEach(DatabaseBenchmarkRunner.sizes, id: \.self) { n in
                     Text(n.formatted()).tag(n)
@@ -1518,11 +1575,15 @@ struct DatabaseHealthView: View {
             if let r = benchmark.result {
                 benchmarkResult(r)
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Benchmark",
+                                        key: "benchmark",
+                                        expanded: $expanded,
                                         lines: { benchmark.result?.diagnosticLines ?? ["Benchmark: not run"] },
                                         shared: $shared)
         } footer: {
+            if isExpanded("benchmark") {
             Text(benchmark.result == nil
                  ? "Builds a throwaway database in temporary space, measures it, "
                  + "and deletes it. Your own database is never opened by this. "
@@ -1534,6 +1595,7 @@ struct DatabaseHealthView: View {
                  + "the importer both change, which is why this runs before step "
                  + "3.3 and not after.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -1628,6 +1690,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private func verifySection(_ db: Sub4Database) -> some View {
         Section {
+            if isExpanded("verification") {
             if verifying {
                 HStack { ProgressView(); Text("Comparing…").font(.caption) }
             } else {
@@ -1681,11 +1744,15 @@ struct DatabaseHealthView: View {
                     }
                 }
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Verification",
+                                        key: "verification",
+                                        expanded: $expanded,
                                         lines: { verification.last.diagnosticLines },
                                         shared: $shared)
         } footer: {
+            if isExpanded("verification") {
             Text("Compares the database against the app's own stores: counts, "
                  + "which activities are there, the fields of every one, and a "
                  + "few figures the app actually shows. The last import is "
@@ -1698,6 +1765,7 @@ struct DatabaseHealthView: View {
                  + "ADR-0003 §12.99.")
                 .font(.caption2)
         }
+        }
     }
 
     /// PATCH 290. The reader against the real data.
@@ -1709,6 +1777,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private func readBackSection(_ db: Sub4Database) -> some View {
         Section {
+            if isExpanded("readback-activities") {
             if readingBack {
                 HStack { ProgressView(); Text("Reading back…").font(.caption) }
             } else {
@@ -1751,16 +1820,21 @@ struct DatabaseHealthView: View {
                         .font(.caption2).foregroundStyle(Color.dim)
                 }
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Read-back",
+                                        key: "readback-activities",
+                                        expanded: $expanded,
                                         lines: { roundTrip?.diagnosticLines ?? ["Activity read-back: \(roundTripLoad?.line ?? "not read")"] },
                                         shared: $shared)
         } footer: {
+            if isExpanded("readback-activities") {
             Text("Reads every activity out of the database through "
                  + "ActivityRepository and compares it, field by field, to the "
                  + "one the app is running on. This is the question D6c asks of "
                  + "everything, asked of one table now. Nothing is written.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -1768,6 +1842,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private func detailReadBackSection(_ db: Sub4Database) -> some View {
         Section {
+            if isExpanded("readback-details") {
             if readingBackDetail {
                 HStack { ProgressView(); Text("Reading back…").font(.caption) }
             } else {
@@ -1824,17 +1899,22 @@ struct DatabaseHealthView: View {
                 }
 
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Read-back · details",
+                                        key: "readback-details",
+                                        expanded: $expanded,
                                         lines: { detailTrip?.diagnosticLines ?? ["Detail read-back: \(detailLoad?.line ?? "not read")"] },
                                         shared: $shared)
         } footer: {
+            if isExpanded("readback-details") {
             Text("The same comparison one level down: splits, laps and best "
                  + "efforts, matched by index and by name rather than by "
                  + "position. A heart rate the importer normalised to nothing "
                  + "is expected to show here, as one row rather than one per "
                  + "lap — see ADR-0003 §12.37 and §12.40.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -1848,6 +1928,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private func recordingReadBackSection(_ db: Sub4Database) -> some View {
         Section {
+            if isExpanded("readback-recordings") {
             if readingBackRecording {
                 HStack { ProgressView(); Text("Walking samples…").font(.caption) }
             } else {
@@ -1913,11 +1994,15 @@ struct DatabaseHealthView: View {
                     }
                 }
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Read-back · recordings",
+                                        key: "readback-recordings",
+                                        expanded: $expanded,
                                         lines: { recordingTrip?.diagnosticLines ?? ["Recording read-back: not read"] },
                                         shared: $shared)
         } footer: {
+            if isExpanded("readback-recordings") {
             Text("Every sample of every stream, compared one recording at a "
                  + "time. A recording whose lengths disagree is reported as a "
                  + "length and not walked, so one missing sample cannot report "
@@ -1926,6 +2011,7 @@ struct DatabaseHealthView: View {
                  + "original length is gone — that is a real loss and it is "
                  + "expected to show here. See ADR-0003 §12.39.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -1956,6 +2042,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private var athleteReadBackSection: some View {
         Section {
+            if isExpanded("readback-athlete") {
             if let load = athleteLoad {
                 LabeledContent("The read", value: load.line)
                     .font(.caption)
@@ -2028,11 +2115,15 @@ struct DatabaseHealthView: View {
                                        .joined(separator: ", "))
                     .font(.caption2).foregroundStyle(Color.dim)
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Read-back · athlete",
+                                        key: "readback-athlete",
+                                        expanded: $expanded,
                                         lines: { athleteTrip?.diagnosticLines ?? ["Athlete read-back: \(athleteLoad?.line ?? "not read")"] },
                                         shared: $shared)
         } footer: {
+            if isExpanded("readback-athlete") {
             Text("Reads the profile, the resting series and the zones back out "
                  + "and compares them, field by field, to the ones the app is "
                  + "running on. These are the least-checked rows in the "
@@ -2045,6 +2136,7 @@ struct DatabaseHealthView: View {
                  + "a local counter with no column and is listed as an approved "
                  + "difference rather than compared — ADR-0003 §12.61.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -2063,6 +2155,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private var authoredReadBackSection: some View {
         Section {
+            if isExpanded("readback-authored") {
             if let load = authoredLoad {
                 // PATCH 355 — A SWAPPED ROW, NOT AN ADDED ONE (§12.76). Both
                 // reads are one sentence because they are one read-back, and
@@ -2153,11 +2246,15 @@ struct DatabaseHealthView: View {
                                        .joined(separator: ", "))
                     .font(.caption2).foregroundStyle(Color.dim)
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Read-back · authored",
+                                        key: "readback-authored",
+                                        expanded: $expanded,
                                         lines: { authoredTrip?.diagnosticLines ?? ["Authored read-back: \(authoredLoad?.line ?? "not read")"] },
                                         shared: $shared)
         } footer: {
+            if isExpanded("readback-authored") {
             Text("The two tables the athlete writes rather than the source: "
                  + "session notes and commute decisions. Small, and load-"
                  + "bearing twice over — an RPE becomes the sRPE that scales a "
@@ -2170,6 +2267,7 @@ struct DatabaseHealthView: View {
                  + "columns are left NULL by the importer on purpose and are "
                  + "listed as approved differences — ADR-0003 §12.65.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -2203,6 +2301,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private func planVersionSection(_ db: Sub4Database) -> some View {
         Section {
+            if isExpanded("plan-versions") {
             if let c = planCensus {
                 LabeledContent("Stored", value: c.line)
                     .font(.caption)
@@ -2257,11 +2356,15 @@ struct DatabaseHealthView: View {
             } else {
                 HStack { ProgressView(); Text("Counting versions…").font(.caption) }
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "The plan's versions",
+                                        key: "plan-versions",
+                                        expanded: $expanded,
                                         lines: { planCensus?.diagnosticLines ?? ["Plan versions: not counted"] },
                                         shared: $shared)
         } footer: {
+            if isExpanded("plan-versions") {
             Text("A stored version is a full copy of one plan. Four of them is "
                  + "not four copies of the same thing: every revision writes "
                  + "one, and the older ones are what a note or a proposal "
@@ -2278,11 +2381,13 @@ struct DatabaseHealthView: View {
                  + "carries survives in its twin.")
                 .font(.caption2)
         }
+        }
     }
 
     @ViewBuilder
     private var planReadBackSection: some View {
         Section {
+            if isExpanded("readback-plan") {
             if let load = planLoad {
                 LabeledContent("The read", value: load.line)
                     .font(.caption)
@@ -2477,11 +2582,15 @@ struct DatabaseHealthView: View {
                                value: PlanRoundTrip.approvedNote)
                     .font(.caption2).foregroundStyle(Color.dim)
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Read-back · the plan",
+                                        key: "readback-plan",
+                                        expanded: $expanded,
                                         lines: { planReadBackLines },
                                         shared: $shared)
         } footer: {
+            if isExpanded("readback-plan") {
             Text("The bundled plan, decomposed across six tables on import and "
                  + "reassembled here. Unlike every other read-back this one "
                  + "cannot be testing for drift — plan.json is read-only at "
@@ -2501,6 +2610,7 @@ struct DatabaseHealthView: View {
                  + "means a screen draws wrong, the one above means a training "
                  + "figure is wrong. §12.70.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -2550,6 +2660,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private func weatherGearReadBackSection(_ db: Sub4Database) -> some View {
         Section {
+            if isExpanded("readback-weather-gear") {
             // PATCH 374. First in the section, like `Import and verify`: the
             // action, then the numbers that justify it.
             if restoringWeather {
@@ -2675,11 +2786,15 @@ struct DatabaseHealthView: View {
                                    .joined(separator: ", "))
                     .font(.caption2).foregroundStyle(Color.dim)
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Read-back · weather and gear",
+                                        key: "readback-weather-gear",
+                                        expanded: $expanded,
                                         lines: { weatherGearTrip?.diagnosticLines ?? ["Weather and gear read-back: \(weatherGearLoad?.line ?? "not read")"] },
                                         shared: $shared)
         } footer: {
+            if isExpanded("readback-weather-gear") {
             Text("The two caches of fetched source data. Weather is the largest "
                  + "table in the database and is drawn on every activity "
                  + "screen; gear is eleven rows that outlive the source they "
@@ -2701,6 +2816,7 @@ struct DatabaseHealthView: View {
                  + "no column, and gear.retiredUTC is a column nothing writes — "
                  + "ADR-0003 §12.67 and §12.68.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -2808,6 +2924,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private var reviewReadBackSection: some View {
         Section {
+            if isExpanded("readback-reviews") {
             // PATCH 353 — §12.98. FIRST IN THE SECTION, because it changes
             // what every count below it means: six of the six reviews compared
             // are rehearsals, and a reader who does not know that reads this
@@ -2984,17 +3101,22 @@ struct DatabaseHealthView: View {
                                    .joined(separator: ", "))
                     .font(.caption2).foregroundStyle(Color.dim)
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Read-back · reviews",
+                                        key: "readback-reviews",
+                                        expanded: $expanded,
                                         lines: { reviewTrip?.diagnosticLines ?? ["Review read-back: \(reviewLoad?.line ?? "not read")"] },
                                         shared: $shared)
         } footer: {
+            if isExpanded("readback-reviews") {
             // HOISTED TO A CONSTANT — patch 327a, same reason `diagnosticLines`
             // stopped being one array literal. A footer built from eleven `+`
             // concatenations is one expression, and this file already carries
             // the largest `body` in the project.
             Text(Self.reviewFooter)
                 .font(.caption2)
+        }
         }
     }
 
@@ -3204,6 +3326,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private var legacySection: some View {
         Section {
+            if isExpanded("app-files") {
             if surveying {
                 HStack { ProgressView(); Text("Reading…").font(.caption) }
             } else {
@@ -3236,17 +3359,22 @@ struct DatabaseHealthView: View {
                     }
                 }
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "The app's own files",
+                                        key: "app-files",
+                                        expanded: $expanded,
                                         lines: { storeFileLines },
                                         shared: $shared)
         } footer: {
+            if isExpanded("app-files") {
             Text("Reads every file the app has written and classifies it: "
                  + "readable, missing, interrupted part way, or holding a "
                  + "record that is filed under one name and claims another. "
                  + "Nothing is changed and nothing is held back — this patch "
                  + "only looks.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -3493,6 +3621,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private func writeThroughSection(_ db: Sub4Database) -> some View {
         Section {
+            if isExpanded("write-through") {
             if writeThrough.isRunning {
                 HStack { ProgressView(); Text("Writing through…").font(.caption) }
             } else {
@@ -3523,11 +3652,15 @@ struct DatabaseHealthView: View {
                 Text(why).font(.caption2).foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Write-through",
+                                        key: "write-through",
+                                        expanded: $expanded,
                                         lines: { writeThrough.diagnosticLines },
                                         shared: $shared)
         } footer: {
+            if isExpanded("write-through") {
             Text("Runs the import above on its own when the app goes to the "
                  + "background. It costs about a third of a second and copies "
                  + "everything, so a missed run is picked up by the next one "
@@ -3540,6 +3673,7 @@ struct DatabaseHealthView: View {
                  + "durable record is the import ledger below: after a "
                  + "write-through it is that run.")
                 .font(.caption2)
+        }
         }
     }
 
@@ -3559,6 +3693,7 @@ struct DatabaseHealthView: View {
     @ViewBuilder
     private var ledgerSection: some View {
         Section {
+            if isExpanded("ledger") {
             if let recoveryFailure = Sub4Launch.shared.ledgerRecoveryFailure {
                 Text("Interrupted-run recovery failed: \(recoveryFailure)")
                     .font(.caption2).foregroundStyle(.red)
@@ -3627,11 +3762,15 @@ struct DatabaseHealthView: View {
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
         } header: {
             DiagnosticSectionHeader(title: "Import ledger",
+                                        key: "ledger",
+                                        expanded: $expanded,
                                         lines: { ledgerLines },
                                         shared: $shared)
         } footer: {
+            if isExpanded("ledger") {
             // "One row per import" is what this said until 311, and it
             // is the sentence the migration's own body still carries. It
             // stopped being true the day the write-through landed.
@@ -3644,6 +3783,7 @@ struct DatabaseHealthView: View {
                  + "newest 200 successful automatic runs and 20 automatic "
                  + "interruptions. Runs you started, failures, verified runs and "
                  + "older rows whose trigger was never recorded are kept.")
+        }
         }
     }
 

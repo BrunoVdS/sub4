@@ -632,6 +632,63 @@ def the_state_documents_name_the_current_patch():
     counted(rule, read, 3, "state declarations read")
 
 
+# --------------------------------------------------------------------------
+# RULE 7 — patch 393, §12.137
+# --------------------------------------------------------------------------
+
+def every_collapsible_section_matches_its_header():
+    """**A KEY IS A JOIN BY NAME BETWEEN TWO PLACES NO TEST CAN REACH.**
+
+    393 made the Database screen's twenty-two sections collapsible. A section's
+    HEADER declares `key: "traces"` and its content and footer ask
+    `isExpanded("traces")`, and both live inside SwiftUI view bodies — so no
+    assertion in the suite can see either one. §12.136.6 already recorded that
+    limitation for the export; this rule is what closes it for the collapse,
+    because the failure is silent in a way the export's is not.
+
+    THREE FAILURES, AND EACH LOOKS LIKE NOTHING ON THE DEVICE:
+
+      · a content key with no header — the section can never be opened, and
+        renders as a title that ignores taps
+      · a header key nothing checks — the chevron turns and nothing happens
+      · two headers sharing a key — two sections open and close together, which
+        reads as a SwiftUI bug rather than a typo
+
+    §12.118.8's bar is whether a permanent rule pays rent. This one does: the
+    call sites are copy-pasted by construction, the keys are string literals,
+    and the whole class is invisible to the compiler and to the suite.
+    """
+    rule = "collapsible sections match their headers"
+
+    headers, content = {}, {}
+    for f in app_sources():
+        body = strip_comments(f.read_text())
+        for m in re.finditer(r'DiagnosticSectionHeader\((?:.|\n)*?key:\s*"([^"]+)"',
+                             body):
+            headers.setdefault(m.group(1), []).append(f.name)
+        for m in re.finditer(r'isExpanded\("([^"]+)"\)', body):
+            content.setdefault(m.group(1), []).append(f.name)
+
+    if not counted(rule, len(headers), 20, "sections with a collapse key"):
+        return
+    counted(rule, sum(len(v) for v in content.values()), 40,
+            "content and footer blocks keyed")
+
+    for key, files in sorted(headers.items()):
+        if len(files) > 1:
+            fail(rule, f'two headers share the key "{key}" ({", ".join(files)}). '
+                       "They will open and close together, which reads as a "
+                       "SwiftUI bug rather than a typo. §12.137")
+        if key not in content:
+            fail(rule, f'the header "{key}" is checked by nothing. Its chevron '
+                       "turns and no rows appear or disappear. §12.137")
+    for key in sorted(content):
+        if key not in headers:
+            fail(rule, f'"{key}" is checked by a section body and declared by no '
+                       "header, so that section can never be opened — it draws "
+                       "a title that ignores taps. §12.137")
+
+
 RULES = [
     every_store_that_records_a_read_refuses_a_write,
     every_removal_counter_is_in_the_total,
@@ -639,6 +696,7 @@ RULES = [
     minutes_are_never_accumulated,
     pinned_counts_match_the_source,
     the_state_documents_name_the_current_patch,
+    every_collapsible_section_matches_its_header,
 ]
 
 for r in RULES:

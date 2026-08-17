@@ -64,6 +64,13 @@ struct ShadowParitySections: View {
     /// `.sheet(item:)` on this screen and these two headers write into it.
     @Binding var shared: ShareItem?
 
+    /// Which sections are open, owned by `DatabaseHealthView` — patch 393. The
+    /// two sections here are part of that screen and collapse with the rest of
+    /// it, so the set is one set rather than two that can disagree.
+    @Binding var expanded: Set<String>
+
+    private func isExpanded(_ key: String) -> Bool { expanded.contains(key) }
+
     /// D6c — patch 312, moved off `@State` at 313.
     ///
     /// OBSERVED RATHER THAN OWNED. The result used to live in the screen, so
@@ -92,18 +99,24 @@ struct ShadowParitySections: View {
     @ViewBuilder
     private var paritySection: some View {
         Section {
+            if isExpanded("shadow-parity") {
             controlRows
             listRows
             volumeRows
             loadRows
             detailRows
             matchRows
+        }
         } header: {
             DiagnosticSectionHeader(title: "Shadow parity",
+                                        key: "shadow-parity",
+                                        expanded: $expanded,
                                     lines: { parity.last.diagnosticLines },
                                     shared: $shared)
         } footer: {
+            if isExpanded("shadow-parity") {
             Text(Self.parityFooter).font(.caption2)
+        }
         }
     }
 
@@ -643,16 +656,22 @@ struct ShadowParitySections: View {
     private var summaryParitySection: some View {
         if let s = parity.last.summaries {
             Section {
+            if isExpanded("shadow-parity-summaries") {
                 summaryWeekRows(s)
                 summaryDayAndVolumeRows(s)
                 summaryContextRows(s)
-            } header: {
+            }
+        } header: {
                 DiagnosticSectionHeader(title: "Shadow parity · tab summaries",
+                                        key: "shadow-parity-summaries",
+                                        expanded: $expanded,
                                         lines: { parity.last.diagnosticLines },
                                         shared: $shared)
             } footer: {
+            if isExpanded("shadow-parity-summaries") {
                 Text(Self.summaryFooter).font(.caption2)
             }
+        }
         } else if case .ran = parity.last {
             Section {
                 LabeledContent("Compared",

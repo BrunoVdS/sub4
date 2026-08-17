@@ -8962,6 +8962,93 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.137 Twenty-two sections that open and close — patch 393
+
+The other half of the request, and the risky half: `DatabaseHealthView` is where
+§12.76 has been paid three times.
+
+### 12.137.1 The mechanism was chosen to REDUCE the risk, not to accept it
+
+`Section(isExpanded:)` is the obvious answer on iOS 17+, and it was rejected.
+**A `@ViewBuilder` closure is evaluated to build the view value whether or not
+the section is drawn**, so the native collapse hides rows without saving the
+body evaluation — and body evaluation is precisely what `EXC_BAD_ACCESS` inside
+`___chkstk_darwin` was.
+
+The shape used instead is `if isExpanded(key) { … }` inside the section's own
+content and footer. A collapsed section's rows are **not evaluated at all**, so
+this patch makes the screen's worst-case body smaller rather than larger. It
+also depends on no list style and no OS version.
+
+§12.76's own sentence is why this mattered enough to argue about: *when a size
+fix makes the crash EARLIER, the size was not the size you thought it was.*
+
+### 12.137.2 The footers collapse too, and without that the patch does nothing
+
+Twenty-two sections carry twenty-two footers, several of them three paragraphs
+long. Collapsing only the rows would have left the explanatory prose behind and
+**the screen would have got barely shorter** — a feature that looks implemented
+and does not work, which is the shape §12.69 is about. Both blocks are wrapped:
+44 in total.
+
+### 12.137.3 The key is not the title
+
+One title is interpolated — `Rows — \(counts.count) tables`. Keying the
+expansion on the displayed text would have closed that section the moment a
+table count moved, and nobody would have connected the two.
+
+So `DiagnosticSectionHeader.key` is a separate stored property **with no
+default**. §12.95.4: *a default argument is a call site that carries a value the
+caller never writes*, and `key = title` would have been exactly that trap with
+nothing at the call site to show it.
+
+### 12.137.4 Collapsed by default, and the state dies with the sheet
+
+Both Bruno's call, 17 August. `@State private var expanded: Set<String> = []`
+— empty is collapsed, and the sheet opens as an index of headers every time.
+
+**A plain `@State` on this screen needs saying out loud**, because §12.57 is
+this screen's own history: a result that evaporated on Done, and the roll-up
+exists to stop it. The distinction is that what evaporates here is a VIEW
+PREFERENCE, not an answer. Nothing computed is lost by closing the sheet; only
+which headers were open.
+
+### 12.137.5 RULE 7, because a key is a join by name that no test can reach
+
+A header declares `key: "traces"`; its content and footer ask
+`isExpanded("traces")`. Both live inside SwiftUI view bodies, so **no assertion
+in the suite can see either**. §12.136.6 recorded that limitation for the export
+and accepted it; the collapse cannot be accepted the same way, because its
+failures are silent in a way the export's are not:
+
+| defect | what the device shows |
+|---|---|
+| content key with no header | a title that ignores taps |
+| header key nothing checks | a chevron that turns and changes nothing |
+| two headers sharing a key | two sections opening together — reads as a SwiftUI bug |
+
+RULE 7 derives both sets from the source and matches them. §12.118.8's bar is
+whether a permanent rule pays rent: these call sites are copy-pasted by
+construction, the keys are string literals, and the whole class is invisible to
+the compiler and to the suite. It pays.
+
+**Negative control**: `isExpanded("traces")` was changed to `"tracez"` and the
+rule failed with the sentence naming the consequence — *that section can never
+be opened*. 22 keys and 44 blocks matched on the restored tree.
+
+### 12.137.6 What the device has to answer, and it is one question
+
+**Does the tab still open.** Everything else about this patch is visible in the
+first second: twenty-two collapsed headers, a chevron on each, the verdict row
+still expanded above them because it is the one section with no header and
+never had one.
+
+If the tab does not open, the answer is not to make the sections smaller —
+§12.76's whole lesson — it is that the `if` did not do what this section claims
+and `Section(isExpanded:)` gets tried instead.
+
+---
+
 ## 12.136 Every section hands over its own numbers — patch 392
 
 ### 12.136.8 The first export contradicted a figure I had typed — patch 392a

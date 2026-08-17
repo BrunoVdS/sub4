@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 392a (2026-08-17).** §5.3 is the 390 device run, Compare and
+**Current at patch 393 (2026-08-17).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and
 §5.4a are the verifier's and the roll-up's accountings, both derived; §5.5's
 first bullet is the last read-back still comparing the database with itself.
@@ -366,10 +366,10 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 392, 2026-08-17
+## 5. State — patch 393, 2026-08-17
 
 **THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Everything below is
-current at 392; §5.3 is what the device said at 390, and §5.4 is the accounting
+current at 393; §5.3 is what the device said at 390, and §5.4 is the accounting
 that has now been wrong twice and corrected twice. Anything older
 than this section is history and lives in ADR §12; if a number here disagrees
 with the code, the code wins and this section is the defect.
@@ -507,25 +507,24 @@ a fallback, which turns the row red. §12.133, §12.134.
 - **Five authored stores have no restore path** — `notes.json`, the match
   decisions, `moves.json`, `commutes.json`, `proposals.json`. 372 stopped the
   mechanism destroying them; weather got a restore at 374. **Largest open risk.**
-- **`newest removal` names the trigger and the count, not the family** (369),
-  and **`canReconcile` tests readable, not correct** (§12.120.3).
-- **Import is not a repair path for the activities** (§12.126.5) — it feeds
-  `Sub4Import` from the hydrated store. `resetCache` and a re-sync are.
+- **`newest removal` names the trigger, not the family** (369); **`canReconcile`
+  tests readable, not correct** (§12.120.3); and **Import is not a repair path
+  for the activities** (§12.126.5) — `resetCache` and a re-sync are.
 - **`LoadParity`'s app side is `LoadStore`**, so slice 3 cannot be rescued
   without comparing something no screen shows (§12.125.4). **B4 deepens it.**
 - **`ReadBacks.athlete` IS THE LAST READ-BACK COMPARING THE DATABASE WITH
   ITSELF.** It reads `ConstantsStore.shared.c`, `AthleteStore.shared.ftp` and
   `.hrZones`, all **hydrated since 346** — 27 comparisons that could not have
-  disagreed, printed as agreement for forty-four patches. 343 wrote this rule for
+  disagreed, printed as agreement for forty-four patches. 343 wrote the rule for
   the plan in that very file; B1 applied it to the plan and not to the athlete
   beside it. 389 made it visible; 390 fixed the other two and B3's overdue
   `ReadBacks.activities` with them.
   **ITS OWN PATCH, AND IT CARRIES MORE THAN ONE ROW.** It needs
   `AthleteStore(directory:)` and `ConstantsStore(directory:)` — the two stores
-  `UNPROTECTED_STORE_CEILING` counts, so it pairs with the drop — and it closes
-  **516 rows** nothing else checks: `athlete_profile` (1) and `resting_month`
-  (15) have no verifier comparison at all, and `activity_gear_reference` (500) is
-  reached only through `ActivityRoundTrip`'s `gearId` `LEFT JOIN`.
+  `UNPROTECTED_STORE_CEILING` counts — and it closes **516 rows** nothing else
+  checks: `athlete_profile` (1) and `resting_month` (15) have no verifier
+  comparison, and `activity_gear_reference` (500) is reached only through
+  `ActivityRoundTrip`'s `gearId` `LEFT JOIN`.
 - **`ReadBacks.knownActivityIDs` is B5's**, under 381's general rule; and
   **`DetailStore` is invisible to RULE 1**, which `mayWrite` (390) covers.
 - **The pre-activation snapshot is still `2026-08-10-084723`** (340); 384
@@ -535,9 +534,8 @@ a fallback, which turns the row red. §12.133, §12.134.
   `AthleteConstants`, both re-fetchable. The ceiling is 2 and may only go down.
 - **`content_revision` is reserved and unoccupied** (334): per-activity hashes
   so a re-sync can skip unchanged rows. The last import of 694 took 0.33 s.
-- **Dates:** first real monthly review **24 August 2026**; GitHub Actions resets
-  **1 September 2026**; Japan **7–12 September**, the first time
-  `DayKey.key(_:in:)` runs outside Europe/Brussels — exercise it before flying.
+- **Dates:** first monthly review **24 Aug 2026**; Actions resets **1 Sep**;
+  Japan **7–12 Sep** — `DayKey.key(_:in:)`'s first run outside Europe/Brussels.
 
 ### 5.6 Next, in order
 
@@ -545,21 +543,23 @@ a fallback, which turns the row red. §12.133, §12.134.
    `provesSomething` requires all nine read-backs to have compared something,
    and `Review trail` reads *nothing on either side* until **24 August 2026**.
    The gate is therefore **eight of nine agree, zero differ, zero could not
-   look, and the one abstention is the review trail** — named, not waved
-   through. `provesSomething` is the right property and is not being weakened;
-   what was wrong was this list asking for something the calendar forbids. B7 is
-   blocked on the same fact. **AND ONE OF THE EIGHT IS NOT EVIDENCE** — §5.4a
-   counts it, §5.5 names it.
-2. **THE DATABASE SCREEN, 391–393**, interleaved into B4 at Bruno's request.
-   **391 and 392 are done.** 391 was the one that mattered: three read-backs and
-   the write-through put nothing in the paste, so the only way to read which
-   field differed was a screenshot (§12.135). 392 gives all twenty-two section
-   headers a share control handing over that section's own lines — the same
-   property the paste appends, so the two cannot drift (§12.136). **393** makes
-   the sections collapsible, and it is the risky one: `DatabaseHealthView` is
-   where §12.76 has been paid three times, so it lands alone. **It needs two
-   answers first — collapsed by default, and does the state survive closing the
-   sheet.**
+   look, and the abstention is the review trail** — named, not waved through.
+   `provesSomething` is the right property and is not weakened; what was wrong
+   was this list asking for something the calendar forbids. B7 is blocked on the
+   same fact. **AND ONE OF THE EIGHT IS NOT EVIDENCE** — §5.4a counts it, §5.5
+   names it.
+2. **THE DATABASE SCREEN, 391–393**, interleaved into B4 at Bruno's request,
+   **all three done**. 391 was the one that mattered: three read-backs and the
+   write-through put nothing in the paste, so the only way to read which field
+   differed was a screenshot (§12.135). 392 gave all twenty-two headers a share
+   control handing over that section's own lines (§12.136). **393 collapses
+   them, closed by default, state dying with the sheet** — with
+   `if isExpanded(key)` rather than `Section(isExpanded:)`, so a closed
+   section's rows are NOT EVALUATED and this screen's worst-case body gets
+   smaller rather than larger. Footers collapse too, or it would barely shrink.
+   **RULE 7 matches every header key against every content key** — both live in
+   SwiftUI bodies where no test reaches them (§12.137). **393 needs one device
+   answer: does the tab open.**
 3. **B4 — details and traces: 388, 389, 390 done; 394, 395 to go.**
    **`docs/D7-B4-GROUNDWORK.md`** is the plan. The residual stopped counting as
    evidence, the roll-up counts its own, and Compare's slice 4 plus three
