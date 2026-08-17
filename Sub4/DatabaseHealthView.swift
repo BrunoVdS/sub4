@@ -1200,6 +1200,20 @@ struct DatabaseHealthView: View {
       + "fact: a read that failed is a question nobody answered, and an empty "
       + "comparison is an answer that proves nothing. Zero compared to zero "
       + "agrees perfectly.\n\n"
+      // PATCH 389a — THE SUMMARY GREW A FIFTH TERM AND THIS SENTENCE DID NOT.
+      // 389 added `2 read a store the database feeds` to the line above and
+      // left the paragraph below it enumerating four, so the screen printed
+      // five terms and explained four. §12.128's own shape — a document beside
+      // a number that does not describe it — in the patch whose whole subject
+      // was a count nobody could read.
+      + "THE FIFTH NUMBER IS NOT A FIFTH STATE. It counts how many rows "
+      + "compared the database against something the database itself feeds. "
+      + "Such a row still agreed, or differed, or could not look — the count "
+      + "cuts across the four rather than joining them, and it is what tells "
+      + "\"eight agreed\" from \"eight agreed, and two of them could not have "
+      + "disagreed\". Each row says which it is: read the files itself, "
+      + "self-referential, or taking a store nothing feeds yet — and the third "
+      + "is the one that turns into the second the day its slice flips.\n\n"
       + "Only a difference or a failed read turns this red. An empty "
       + "comparison is counted on its own and left dim, because a row that is "
       + "permanently red is a row that stops being read — and because whether "
@@ -1208,10 +1222,15 @@ struct DatabaseHealthView: View {
       + "The result survives this sheet being closed and reaches the "
       + "diagnostics paste, which the nine sections below could never do — "
       + "their reports lived and died with the screen. ADR-0003 §12.80.\n\n"
-      + "The three activity read-backs are the slow part: 674 activities, "
-      + "674 details, and roughly 1.5 million sample comparisons across the "
-      + "recordings. During a backfill they will legitimately report less "
-      + "than the store holds — check Traces still to fetch first."
+      // PATCH 389a — 674 WAS TWENTY SHORT AND HAD BEEN SINCE 333. The device
+      // holds 694 of each. The sample figure is COMPARISONS and this sentence
+      // has always said so correctly; §5.6 and B4's groundwork read it as a row
+      // count, which it is not — `recording_sample` holds 199,848.
+      + "The three activity read-backs are the slow part: 694 activities, "
+      + "694 details, and roughly 1.6 million sample comparisons — eight "
+      + "series over 199,848 stored samples. During a backfill they will "
+      + "legitimately report less than the store holds — check Traces still to "
+      + "fetch first."
 
     // MARK: - What Strava has not sent yet — patch 331
 

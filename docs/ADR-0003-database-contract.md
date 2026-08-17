@@ -9144,7 +9144,35 @@ other four terms must be **byte-identical to 388's**: `8 of 9 agree · 0 differ 
 This patch changes what the roll-up SAYS about its rows, not what any of them
 compared.
 
-### 12.133.11 After 389
+### 12.133.11 The screen printed five terms and explained four — patch 389a
+
+Found on the device screenshot within the hour, and it is this patch's own
+subject turned back on it.
+
+389 added `2 read a store the database feeds` to the roll-up's summary and left
+the footer below it opening **"FOUR STATES, NOT TWO"** and enumerating four. A
+reader counts five terms and reads an explanation of four. §12.128's exact shape
+— a document beside a number that does not describe it — inside the patch whose
+whole purpose was a count nobody could read.
+
+**The four are still right**, which is why this is a missing sentence rather
+than a wrong one: the fifth is not a `Verdict`, it cuts across them. Nothing on
+the screen said so. The footer now says it, and names the three marks a row can
+carry — including that the third turns into the second the day its slice flips.
+
+**And a stale count beside it, since 333:** *"674 activities, 674 details"*. The
+device holds 694 of each. The same sentence's *"roughly 1.5 million sample
+comparisons"* was **correct all along** — it says comparisons — and is the line
+§5.6 and B4's groundwork misread as a row count (§12.133 and the groundwork's
+§4.1 both carry the correction). It now states both figures: ~1.6 M comparisons
+over 199,848 stored samples.
+
+**No test pins this string and none is added.** It is prose on one screen with
+no assertion downstream; the guard that would matter is the one this patch is
+about — a term added to a summary without the sentence under it moving — and
+that is a reviewer's job, recorded here rather than automated on §12.118.8's bar.
+
+### 12.133.12 After 389
 
 390 gives `ReadBacks.activities`, `.details` and `.recordings` their own reads —
 at which point that 2 becomes 1, and the 1 is the athlete, which needs
