@@ -84,6 +84,60 @@ final class DetailStore {
     private let failedKey = "detail.failed"
     private let noStreamsKey = "detail.noStreams"
 
+    /// **WHETHER THIS INSTANCE MAY WRITE ANYTHING AT ALL — patch 390.**
+    ///
+    /// `init(directory:)` below gives this store a second root so a comparison
+    /// can read the files without asking the store it is checking. Every write
+    /// this class can perform is destructive from a second root:
+    ///
+    ///   · `save()` writes `<root>/details/<id>.json` — harmless in itself, but
+    ///     it also RETIRES the monoliths, which means deleting them.
+    ///   · `saveSkips()` writes the SHARED `detail.failed` and
+    ///     `detail.noStreams` keys, and a seam starts with both sets empty — so
+    ///     one write would replace the device's own with nothing. That is
+    ///     §12.125.5's defect exactly, one store over, and 381 fixed the same
+    ///     shape in `ActivityStore` with the same kind of flag.
+    ///
+    /// A flag rather than a subclass or a separate reader, for 364's reason:
+    /// one decoder, one set of rules, two roots. And set at the initialiser
+    /// rather than read from somewhere else, so the instance that owns the
+    /// files is the only instance that may touch them.
+    private let mayWrite: Bool
+
+    /// **WHAT THE LAST DIRECTORY READ FOUND, AND WHAT IT COULD NOT DECODE.**
+    ///
+    /// `load()` has skipped an undecodable file with `continue` since 169 and
+    /// said so nowhere. That is fine as BEHAVIOUR — `refreshQueue` re-queues
+    /// whatever is missing, which is what makes the cache self-healing — and it
+    /// is not fine as a COMPARISON: a file that would not decode reads as
+    /// `detailsOnlyInDatabase`, which sends a reader to look for rows the
+    /// importer wrote in error. §12.15, in the one place it would be most
+    /// expensive.
+    private(set) var tally = FileTally()
+
+    nonisolated struct FileTally: Equatable, Sendable {
+        var detailFiles = 0
+        var detailFilesUnreadable = 0
+        var streamFiles = 0
+        var streamFilesUnreadable = 0
+
+        var isClean: Bool {
+            detailFilesUnreadable == 0 && streamFilesUnreadable == 0
+        }
+
+        /// UNCONDITIONAL, and it says the denominators — §12.54.3. A bare zero
+        /// cannot be told from a directory nobody looked in.
+        var line: String {
+            guard !isClean else {
+                return "\(detailFiles) detail files and \(streamFiles) trace "
+                     + "files, all readable"
+            }
+            return "\(detailFilesUnreadable) of \(detailFiles) detail files and "
+                 + "\(streamFilesUnreadable) of \(streamFiles) trace files "
+                 + "could not be decoded"
+        }
+    }
+
     /// Bumped whenever the stored stream shape changes, so old caches are
     /// rebuilt instead of silently missing a series.
     ///   1 → distance, heart rate, speed, altitude, grade
@@ -103,6 +157,51 @@ final class DetailStore {
     /// session has no distance axis at all.
     private let minStreamDistance: Double = 500
 
+    /// **THE SEAM, FOR A COMPARISON THAT MUST NOT ASK THE STORE IT IS CHECKING
+    /// — patch 390.** `ActivityStore(directory:)` at 378, `NotesStore`,
+    /// `CommuteStore`, `PlanMoveStore` and `Weather` before it, and `Matcher`'s
+    /// `init(defaults:)`. Sixth of its kind and by far the most dangerous,
+    /// because `DetailStore.init` does four things the others do not.
+    ///
+    /// **WHAT THIS DELIBERATELY DOES NOT DO, AND THE FIRST ONE WOULD HAVE COST
+    /// THE ATHLETE 17 MB OF TRACES:**
+    ///
+    /// 1. **IT DOES NOT RUN THE SCHEMA-VERSION PURGE.** The singleton's
+    ///    initialiser ends with `if UserDefaults.standard.integer(forKey:
+    ///    schemaKey) != schemaVersion { streams = [:]; removeItem(at:
+    ///    streamsDir) … }`. That key is SHARED and the directory would be the
+    ///    real one. A seam that inherited it would delete 668 trace files the
+    ///    first time somebody bumped `schemaVersion` — §12.125.5's shape with a
+    ///    directory removal instead of a blob write, and this is the patch that
+    ///    gives those files a second reader, so this is the patch that must
+    ///    refuse it.
+    /// 2. **It does not read or write `detail.failed` / `detail.noStreams`.**
+    ///    Both sets stay empty here; `mayWrite` is what makes that safe.
+    /// 3. **It does not create the directories and does not protect them.** A
+    ///    missing directory is an ANSWER — `files(in:)` returns `[]` and the
+    ///    tally says zero — and creating one would make an unreachable
+    ///    container look like an empty history. §12.15.
+    /// 4. **It does not read the retired monoliths and cannot retire them.** It
+    ///    calls `loadFromDirectories()`, not `load()`; the difference is a
+    ///    write.
+    ///
+    /// It also records nothing to `StoreReadJournal`, for `Weather`'s and
+    /// `ActivityStore`'s reason: a second instance reporting into the shared
+    /// journal leaks into whatever runs next, and `canReconcile` reads that
+    /// journal to decide whether rows may be deleted.
+    init(directory: URL) {
+        detailsDir       = directory.appendingPathComponent("details",
+                                                            isDirectory: true)
+        streamsDir       = directory.appendingPathComponent("streams",
+                                                            isDirectory: true)
+        // ASSIGNED BECAUSE THEY ARE `let`, AND READ BY NOTHING ON THIS PATH.
+        // `loadFromDirectories()` does not look at them and `save` cannot run.
+        legacyDetailURL  = directory.appendingPathComponent("details.json")
+        legacyStreamsURL = directory.appendingPathComponent("streams.json")
+        mayWrite = false
+        tally = loadFromDirectories()
+    }
+
     private init() {
         let dir = (try? FileManager.default.url(for: .applicationSupportDirectory,
                                                 in: .userDomainMask,
@@ -112,6 +211,8 @@ final class DetailStore {
         streamsDir       = dir.appendingPathComponent("streams", isDirectory: true)
         legacyDetailURL  = dir.appendingPathComponent("details.json")
         legacyStreamsURL = dir.appendingPathComponent("streams.json")
+        // THE ONE INSTANCE THAT OWNS THESE FILES. See `mayWrite`.
+        mayWrite = true
         try? FileManager.default.createDirectory(at: detailsDir,
                                                  withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: streamsDir,
@@ -434,23 +535,42 @@ final class DetailStore {
             migrating = true
         }
 
-        for url in files(in: detailsDir) {
-            guard let d = try? Data(contentsOf: url),
-                  let v = try? JSONDecoder().decode(ActivityDetail.self, from: d)
-            else { continue }
-            details[id(of: url)] = v
-        }
-        for url in files(in: streamsDir) {
-            guard let d = try? Data(contentsOf: url),
-                  let v = try? JSONDecoder().decode(ActivityStreams.self, from: d)
-            else { continue }
-            streams[id(of: url)] = v
-        }
+        tally = loadFromDirectories()
 
         // Write-through, then retire the monoliths — INSIDE the write task, so
         // a kill between scheduling and completion leaves the legacy files for
         // the next launch rather than losing the history to a race.
         if migrating { save(retiring: [legacyDetailURL, legacyStreamsURL]) }
+    }
+
+    /// **THE PER-FILE READ, AND NOTHING ELSE — patch 390.**
+    ///
+    /// Extracted from `load()` so the seam has a path with no write on it. It is
+    /// §12.43's rule and not a copy: `load()` calls this, `init(directory:)`
+    /// calls this, and neither has its own decoder. One decoder, one set of
+    /// rules, two roots — 364.
+    ///
+    /// It COUNTS what it could not decode rather than only skipping it. The
+    /// skip is the right behaviour and stays; what was missing is anybody being
+    /// able to say it happened. See `tally`.
+    @discardableResult
+    private func loadFromDirectories() -> FileTally {
+        var t = FileTally()
+        for url in files(in: detailsDir) {
+            t.detailFiles += 1
+            guard let d = try? Data(contentsOf: url),
+                  let v = try? JSONDecoder().decode(ActivityDetail.self, from: d)
+            else { t.detailFilesUnreadable += 1; continue }
+            details[id(of: url)] = v
+        }
+        for url in files(in: streamsDir) {
+            t.streamFiles += 1
+            guard let d = try? Data(contentsOf: url),
+                  let v = try? JSONDecoder().decode(ActivityStreams.self, from: d)
+            else { t.streamFilesUnreadable += 1; continue }
+            streams[id(of: url)] = v
+        }
+        return t
     }
 
     private func files(in dir: URL) -> [URL] {
@@ -479,6 +599,9 @@ final class DetailStore {
     }
 
     private func save(retiring legacy: [URL] = []) {
+        // PATCH 390 — THE SEAM MAY NOT WRITE, AND THIS IS WHERE THAT IS
+        // ENFORCED rather than trusted to callers. See `mayWrite`.
+        guard mayWrite else { return }
         guard !dirtyDetails.isEmpty || !dirtyStreams.isEmpty || !legacy.isEmpty
         else { return }
 
@@ -533,11 +656,24 @@ final class DetailStore {
     }
 
     private func saveSkips() {
+        // PATCH 390. THE KEYS ARE SHARED AND A SEAM STARTS WITH BOTH SETS
+        // EMPTY, so one write from a second root would replace the device's own
+        // "stop asking" lists with nothing — and `noStreams` is never retried,
+        // so those two activities would be asked for again for ever while the
+        // three refused ones came back. §12.125.5, one store over.
+        guard mayWrite else { return }
         UserDefaults.standard.set(Array(failed), forKey: failedKey)
         UserDefaults.standard.set(Array(noStreams), forKey: noStreamsKey)
     }
 
     func resetCache() {
+        // PATCH 390 — **THE WORST ONE, AND IT IS `public`.** This removes
+        // `details/` and `streams/` outright. From the seam's root that is the
+        // athlete's 694 details and 668 traces, 19 MB, with no restore path —
+        // and unlike `save` it is reachable from outside this file
+        // (`ActivityStore.resetCache` calls it). A comparison instance must not
+        // be able to do it even by mistake. See `mayWrite`.
+        guard mayWrite else { return }
         details = [:]
         streams = [:]
         pending = []

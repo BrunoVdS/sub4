@@ -522,9 +522,28 @@ final class ShadowParity {
     ///
     /// Nothing is swapped, unlike the load slice: both sides are whole details,
     /// and the only thing that differs between them is where they came from.
+    /// PATCH 390 — **THE APP SIDE IS READ FROM THE FILES, NOT FROM THE STORE**,
+    /// and this line has to change BEFORE 392 rather than after it. 381's
+    /// argument, one slice later.
+    ///
+    /// 392 hydrates `DetailStore` from the database. `app` would then be the
+    /// same 694 details as `database`, slice 4 would agree perfectly, and the
+    /// screen would print `no differences` about a comparison that had stopped
+    /// being one. Nothing in the suite could notice: both sides agreeing is
+    /// what a pass looks like.
+    ///
+    /// THE FALLBACK IS NOT A SILENT ONE. If the files cannot be read the store
+    /// is used and `appSideWasReadCleanly` goes false, which `isHealthy`
+    /// refuses to call a pass — because the fallback is exactly the state this
+    /// patch exists to remove.
     private func detailReport(_ database: [ActivityDetail]?) -> DetailParity.Report? {
         guard let database else { return nil }
-        return DetailParity.compare(app: Array(DetailStore.shared.details.values),
-                                    database: database)
+        let own = DetailSource.read()
+        let mine = own.isTrustworthy ? Array(own.details.values)
+                                     : Array(DetailStore.shared.details.values)
+        var report = DetailParity.compare(app: mine, database: database)
+        report.appSideCameFrom = own.line
+        report.appSideWasReadCleanly = own.isTrustworthy
+        return report
     }
 }

@@ -80,15 +80,42 @@ nonisolated enum ReadBackSource: Equatable, Sendable {
     /// `VerificationCheck.reads` carries, and the same resolution.
     case liveStores([ExpectationOrigin])
 
+    /// **THE READ-BACK TRIED ITS OWN READ AND COULD NOT — patch 390.**
+    ///
+    /// A third case rather than a fourth tuple member on three functions, and
+    /// rather than folding it into `liveStores`, because it has to do two things
+    /// at once: classify like `liveStores` (it really did compare the store), and
+    /// **refuse to be a pass** (§12.125.3's teeth — zero differences over an app
+    /// side that could not be read is not agreement).
+    ///
+    /// It is the only case that answers `appSideWasReadCleanly` false, so one
+    /// guard in `ReadBackRollUp.line` covers every row without any call site
+    /// remembering to ask.
+    case fellBackToStores(why: String, [ExpectationOrigin])
+
     /// True when any field this row's app side is built from is one the build
     /// feeds from the database — so the row is the database agreeing with
     /// itself, however many thousand fields it compared.
     func isSelfReferential(given sources: ExpectationSources) -> Bool {
         switch self {
         case .ownRead: false
-        case .liveStores(let origins):
+        case .liveStores(let origins), .fellBackToStores(_, let origins):
             origins.contains { sources.isFedByTheDatabase($0.field) }
         }
+    }
+
+    /// False ONLY on the fallback. `liveStores` is a deliberate choice of side,
+    /// not a failure — `Weather and gear` and `Review trail` read the stores on
+    /// purpose and read them perfectly well.
+    var appSideWasReadCleanly: Bool {
+        if case .fellBackToStores = self { return false }
+        return true
+    }
+
+    /// The sentence for a row that could not read its own side. Nil otherwise.
+    var readFailure: String? {
+        if case .fellBackToStores(let why, _) = self { return why }
+        return nil
     }
 
     /// **THREE STATES, NOT TWO, AND THE THIRD IS THE TRIPWIRE** — §12.15.
@@ -105,6 +132,11 @@ nonisolated enum ReadBackSource: Equatable, Sendable {
         switch self {
         case .ownRead(let how):
             return " · own read: \(how)"
+        // PATCH 390 — FIRST, AND IN CAPITALS, because it is the one state on
+        // this screen that means a comparison lost its independence rather than
+        // never having had it. Whether the fields are fed is beside the point.
+        case .fellBackToStores(let why, _):
+            return " · COULD NOT READ ITS OWN SIDE: \(why)"
         case .liveStores(let origins):
             let fed = origins.filter { sources.isFedByTheDatabase($0.field) }
             guard !fed.isEmpty else {
@@ -376,6 +408,18 @@ final class ReadBackRollUp {
                      trustworthy: Bool,
                      reads: ReadBackSource,
                      _ whyNot: @autoclosure () -> String) -> Line {
+        // **THE APP SIDE IS THE SECOND WAY A ROW CAN FAIL TO LOOK — patch 390.**
+        //
+        // `trustworthy` has always been about the DATABASE read. Three rows now
+        // read the files themselves, and a row whose own side could not be read
+        // compared the store instead — zero differences over that is not
+        // agreement (§12.125.3). Asked here rather than at each call site, so no
+        // future read-back can forget: `appSideWasReadCleanly` is true for every
+        // source except the fallback.
+        if let why = reads.readFailure {
+            return .init(name: name, compared: 0, unexplained: 0,
+                         couldNotLook: why, reads: reads)
+        }
         guard trustworthy, let compared, let unexplained else {
             return .init(name: name, compared: 0, unexplained: 0,
                          couldNotLook: whyNot(), reads: reads)

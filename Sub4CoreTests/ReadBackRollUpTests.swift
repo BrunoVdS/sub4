@@ -249,6 +249,69 @@ struct ReadBackRollUpTests {
         #expect(o.selfReferentialCount == 1)
     }
 
+    // MARK: The fallback — patch 390, §12.134
+
+    /// **A ROW THAT COULD NOT READ ITS OWN SIDE DID NOT LOOK, WHATEVER NUMBERS
+    /// CAME BACK.** `trustworthy` has always been about the DATABASE read; from
+    /// 390 three rows read the files themselves, and comparing the store instead
+    /// is §12.125.3's fallback — zero differences over it is not agreement.
+    ///
+    /// Asked inside `line(_:)` rather than at nine call sites, so no future
+    /// read-back can forget.
+    @Test("A row that fell back to the stores could not look")
+    func aFallbackIsNotAgreement() {
+        let l = ReadBackRollUp.line(
+            "Details", 694, 0,
+            trustworthy: true,
+            reads: .fellBackToStores(why: "the files could not be decoded",
+                                     [.from(.details)]),
+            "unused")
+
+        #expect(l.verdict == .couldNotLook,
+                "the database read succeeded and the app side did not")
+        #expect(l.isFault)
+        #expect(l.compared == 0, "a number over a fallback is not a number")
+        #expect(l.value == "the files could not be decoded",
+                "the source's own sentence, not the database load's")
+    }
+
+    /// It is still classified, because it really did compare the store — so the
+    /// fifth count sees it and a build that feeds the field marks it.
+    @Test("A fallback is classified by what it actually compared")
+    func aFallbackIsStillClassified() {
+        let src = ReadBackSource.fellBackToStores(why: "unreadable",
+                                                 [.from(.details)])
+        #expect(!src.appSideWasReadCleanly)
+        #expect(src.readFailure == "unreadable")
+        #expect(src.isSelfReferential(
+            given: ExpectationSources(fedByTheDatabase: [.details])),
+                "after B4 a fallback is the database against itself")
+        #expect(!src.isSelfReferential(given: .allFromFiles),
+                "and before it, it is the store — real, if not independent")
+    }
+
+    /// The mark leads with the failure rather than with the classification,
+    /// because losing independence and never having had it are different facts
+    /// and only one of them is a fault.
+    @Test("The fallback mark leads with the failure")
+    func theFallbackMarkLeadsWithTheFailure() {
+        let m = ReadBackSource.fellBackToStores(why: "unreadable",
+                                                [.from(.details)])
+            .mark(given: ExpectationSources(fedByTheDatabase: [.details]))
+        #expect(m == " · COULD NOT READ ITS OWN SIDE: unreadable")
+    }
+
+    /// The two clean cases are unaffected — `liveStores` is a deliberate choice
+    /// of side, not a failure. `Weather and gear` and `Review trail` read the
+    /// stores on purpose and read them perfectly well.
+    @Test("Choosing the stores on purpose is not a failed read")
+    func choosingTheStoresIsNotAFailure() {
+        #expect(ReadBackSource.liveStores([.from(.reviews)]).appSideWasReadCleanly)
+        #expect(ReadBackSource.liveStores([.from(.reviews)]).readFailure == nil)
+        #expect(ReadBackSource.ownRead("x").appSideWasReadCleanly)
+        #expect(ReadBackSource.ownRead("x").readFailure == nil)
+    }
+
     // MARK: The paste
 
     @Test func everyLineReachesThePaste() {

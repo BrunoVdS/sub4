@@ -371,42 +371,57 @@ enum ReadBacks {
 
     /// Patch 289. 674 activities, nineteen named fields each.
     ///
-    /// **SELF-REFERENTIAL SINCE 382, AND NOTHING SAID SO UNTIL 389.** 381 gave
+    /// **SELF-REFERENTIAL FROM 382 TO 390, AND B3's OVERDUE DEBT.** 381 gave
     /// `ShadowParity` its own read of `activities.json` through
-    /// `ActivitySource.read()` and this function was not touched, so the row has
-    /// compared the hydrated store against the rows it was hydrated from for six
-    /// patches — 694 fields, drawn exactly like a row that could disagree.
-    /// §12.129's shape in the roll-up rather than the verifier.
+    /// `ActivitySource.read()` and did not touch this function, so this row
+    /// compared the hydrated store against the rows it was hydrated from for
+    /// eight patches — 694 activities × nineteen fields, drawn exactly like a
+    /// row that could disagree. 389 printed the fact; this fixes it.
     ///
-    /// **The fix is one line and it is 390's, not this patch's.**
-    /// `ActivitySource.read()` already exists; swapping it in here changes a
-    /// number on the device, and 389 exists to make that number visible BEFORE
-    /// anything moves it. 381-before-382, one screen over.
+    /// **THE SOURCE FOLLOWS WHAT WAS ACTUALLY READ, INCLUDING ON THE
+    /// FALLBACK.** If `activities.json` cannot be read the store is compared,
+    /// and the row says `self-referential` rather than `own read` — so the
+    /// fifth count goes back up and the fallback is impossible to miss. That is
+    /// 389's machinery doing the shouting instead of a new field.
     static func activities(_ db: Sub4Database)
     async -> (load: ActivityLoad, report: ActivityRoundTrip.Report?,
               source: ReadBackSource) {
-        let store = ActivityStore.shared.activities
+        let own = ActivitySource.read()
+        let store = own.isTrustworthy ? own.activities
+                                      : ActivityStore.shared.activities
         let load = ActivityRepository.all(db)
         return (load, load.activities.map {
             ActivityRoundTrip.compare(store: store, database: $0)
-        }, .liveStores([.from(.activities, "nineteen fields each")]))
+        }, own.isTrustworthy
+            ? .ownRead(own.line)
+            : .fellBackToStores(why: own.line,
+                                [.from(.activities, "nineteen fields each")]))
     }
 
     /// Patch 291. 674 details, and every split, lap and best effort inside
     /// them.
     ///
-    /// **REAL EVIDENCE TODAY AND NOT AFTER B4 FLIPS** — patch 389. `DetailStore`
-    /// serves its files, so this row can still disagree; the day `.details`
-    /// joins `hydratedFamilies` it cannot, and the declaration below is what
-    /// makes the count move on that day without anybody remembering to.
+    /// **ITS OWN READ SINCE 390**, under the rule 381 made general and §12.126.3
+    /// restated: a read-back gets its own read in the slice that hydrates its
+    /// own store. B4 hydrates the details, so B4 does this.
+    ///
+    /// TODAY IT CHANGES NO NUMBER — `DetailStore` still serves these files, so
+    /// the store and the files hold the same 694 — which is exactly what makes
+    /// this half checkable on its own. 381's sentence, one store over.
     static func details(_ db: Sub4Database)
     async -> (load: DetailLoad, report: DetailRoundTrip.Report?,
               source: ReadBackSource) {
-        let store = Array(DetailStore.shared.details.values)
+        let own = DetailSource.read()
+        let store = own.isTrustworthy ? Array(own.details.values)
+                                      : Array(DetailStore.shared.details.values)
         let load = ActivityDetailRepository.all(db)
         return (load, load.details.map {
             DetailRoundTrip.compare(store: store, database: $0)
-        }, .liveStores([.from(.details, "every split, lap and best effort")]))
+        }, own.isTrustworthy
+            ? .ownRead(own.line)
+            : .fellBackToStores(why: own.line,
+                                [.from(.details,
+                                       "every split, lap and best effort")]))
     }
 
     /// Patch 294. THE ONLY ONE THAT WALKS SAMPLES — roughly 1.5 million
@@ -420,15 +435,33 @@ enum ReadBacks {
     /// 1.5 M, which is an order of magnitude wrong in the direction that makes
     /// B4's launch-cost question look worse than it is.
     ///
-    /// Same standing as `details` above: evidence until `.traces` flips.
+    /// **ITS OWN READ SINCE 390**, for `details` above's reason and with more at
+    /// stake: this is the comparison that walks every sample, so after 392 it
+    /// would be 199,848 rows of the database agreeing with itself.
+    ///
+    /// The read is the SAME one `details` makes — `DetailSource.read()` returns
+    /// both dictionaries out of one `DetailStore(directory:)`, because they come
+    /// out of one store and reading the container twice would be two answers to
+    /// one question. Each read-back calls it for its own half; the roll-up runs
+    /// them in sequence, so that is two constructions per roll-up and 19 MB of
+    /// JSON decoded twice. **Named rather than optimised away**: caching it
+    /// would mean a value that outlives the press, and §12.57 is what that
+    /// costs. If it becomes slow enough to matter, the fix is one read passed to
+    /// both, not a cache.
     ///
     /// No separate load type: the report carries the read's own outcome,
     /// because the id read failing means everything under it is unknown rather
     /// than zero. §12.15.
     static func recordings(_ db: Sub4Database)
     async -> (report: RecordingRoundTrip.Report, source: ReadBackSource) {
-        let store = Array(DetailStore.shared.streams.values)
+        let own = DetailSource.read()
+        let store = own.isTrustworthy ? Array(own.streams.values)
+                                      : Array(DetailStore.shared.streams.values)
         return (await RecordingRoundTrip.compareOffMain(db, store: store),
-                .liveStores([.from(.traces, "every sample in every series")]))
+                own.isTrustworthy
+                    ? .ownRead(own.line)
+                    : .fellBackToStores(why: own.line,
+                                        [.from(.traces,
+                                               "every sample in every series")]))
     }
 }

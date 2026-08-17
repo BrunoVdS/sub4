@@ -8962,6 +8962,160 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.134 The detail comparisons keep their own read — patch 390
+
+D7 slice B4. §12.125 one slice later, and it lands BEFORE the flip for §12.125's
+own reason.
+
+### 12.134.1 What the flip would have emptied, in numbers
+
+Three comparisons take their app side from `DetailStore.shared`:
+
+| site | what it compares | after 392 |
+|---|---|---|
+| `ShadowParity.detailReport` — Compare's slice 4 | 694 details, 8,129 splits, 1,144 reps | both sides the same rows |
+| `ReadBacks.details` | 694 details, every split, lap and best effort | same |
+| `ReadBacks.recordings` | 668 traces, **199,848 samples** | same |
+
+389 measured the consequence: those two read-back rows are 1,362 of 3,080 field
+comparisons, and with `Activities` and `Athlete` already self-referential the
+roll-up would have gone from 2 rows to 4 and from 23% to 68% of its agreement
+being the database agreeing with itself — while the summary went on reading
+`8 of 9 agree · 0 differ`.
+
+Slice 4 is worse than a count, because Compare has no fifth column: it prints
+*no differences* and nothing anywhere would say the comparison had stopped being
+one.
+
+### 12.134.2 The seam, and the four things it refuses
+
+`DetailStore(directory:)` is the sixth seam of its kind — `NotesStore`,
+`CommuteStore`, `PlanMoveStore`, `Weather`, `Matcher(defaults:)`,
+`ActivityStore(directory:)` at 378 — and **by far the most dangerous, because
+`DetailStore.init` does four things the others do not:**
+
+1. **The schema-version purge.** `if UserDefaults.standard.integer(forKey:
+   schemaKey) != schemaVersion { streams = [:]; removeItem(at: streamsDir) … }`.
+   The key is SHARED and the directory would be the real one, so a seam that
+   inherited it would delete **668 trace files, 17.2 MB**, the first time
+   anybody bumped `schemaVersion`. It is refused by construction: the purge is
+   in `private init()` and `init(directory:)` is a separate initialiser with no
+   path to it.
+2. **`detail.failed` and `detail.noStreams`.** Shared `UserDefaults` keys, and a
+   seam starts with both sets empty — one write would replace the device's own
+   "stop asking" lists with nothing. `noStreams` is never retried, so the two
+   activities that legitimately have no trace would be asked for again for ever
+   while the three refused ones came back. §12.125.5 one store over.
+3. **Creating and protecting the directories.** The seam does neither. **An
+   absent directory is an ANSWER** — §12.15 — and creating one empty would make
+   an unreachable container look like a history the athlete never recorded.
+4. **`save(retiring:)`.** `load()` retires the monoliths, which means deleting
+   them. The seam calls `loadFromDirectories()` instead; the difference is a
+   write.
+
+`loadFromDirectories()` is extracted rather than copied — 364's rule, one
+decoder, one set of rules, two roots. `load()` calls it and so does the seam.
+
+### 12.134.3 `mayWrite`, and `resetCache` is the one that mattered
+
+381 gave `ActivityStore` `recordsRejections` for one narrow write. This store
+needs the general form, because **three of its writes are destructive from a
+second root and one of them is `internal`.**
+
+`resetCache()` removes `details/` and `streams/` outright. Anything in the module
+can call it and `ActivityStore.resetCache` does. `mayWrite` is checked there, in
+`save(retiring:)` and in `saveSkips()` — at the write, not at the caller, so a
+future caller cannot forget.
+
+**The negative control found something about the TEST rather than the code.**
+With the guard removed, `theSeamCannotDestroyTheFiles` failed — but only on its
+last two assertions. The two that check the directories still exist **passed on
+the broken tree**, because `resetCache` deletes each directory and immediately
+recreates it. A test that had stopped at "the folder is still there" would have
+passed over a wipe of 19 MB. §12.69 inside the test written for §12.69, and the
+comment above those assertions now says so.
+
+### 12.134.4 An undecodable file is counted, and that is new
+
+`loadFromDirectories` has skipped a file that would not decode with `continue`
+since 169. **The skip is right** — `refreshQueue` re-queues whatever is missing,
+which is what makes the cache self-healing and granular. **The silence was not.**
+
+For the store it means a refetch nobody was told about. For a comparison it is
+worse: a detail the app could not read appears as `detailsOnlyInDatabase`, which
+reads as *the importer wrote a row the app never had* — the opposite of what
+happened, and §12.15 in the place it costs most.
+
+`DetailStore.FileTally` counts both directories and both failures.
+`DetailSource.Read.isTrustworthy` requires it clean, so an undecodable file costs
+the comparison its independence rather than quietly shrinking one side. And the
+tally is **printed** — `Detail and trace files: 694 detail files and 668 trace
+files, all readable` — because a number computed and not printed is §12.77.5.
+
+### 12.134.5 Three states, and the fallback shouts twice
+
+`DetailSource.Read` separates an unreachable container, a clean read of nothing,
+and a directory whose files will not decode. On the third the store is compared
+instead, and that fallback is refused in two independent places:
+
+- **Compare's slice 4** — `appSideWasReadCleanly` gates `isHealthy`, so the row
+  goes red. 381's clause and §12.125.3's teeth, one comparison over.
+- **The roll-up** — `ReadBackSource.fellBackToStores` is a third case, and
+  `ReadBackRollUp.line` turns it into `couldNotLook` **before** it looks at
+  `trustworthy`. Zero differences over a fallback is not agreement.
+
+**The third case rather than a fourth tuple member on three functions**, because
+it has to do two things at once: classify like `liveStores` (it really did
+compare the store, so after 392 it is self-referential and the fifth count sees
+it) and refuse to be a pass. Asked once inside `line(_:)`, so no future read-back
+can forget — `appSideWasReadCleanly` is true for every source except this one.
+
+`liveStores` is untouched and stays clean: `Weather and gear` and `Review trail`
+read the stores **on purpose**, and read them perfectly well. Conflating a
+deliberate choice of side with a failed read would have made two honest rows look
+broken.
+
+### 12.134.6 B3's debt, paid here
+
+`ReadBacks.activities` has read `ActivityStore.shared.activities` since 334a.
+381 gave `ShadowParity` `ActivitySource.read()` and did not touch this function,
+so the row compared the hydrated store against the rows it was hydrated from for
+**eight patches**. 389 printed the fact; this fixes it, and it is one line
+because the seam already existed.
+
+**`ReadBacks.athlete` is NOT fixed here and that is deliberate.** It needs
+`AthleteStore(directory:)` and `ConstantsStore(directory:)`, which are the two
+stores `UNPROTECTED_STORE_CEILING` still counts, and it also closes the 516 rows
+in `athlete_profile`, `resting_month` and `activity_gear_reference` that no
+verifier comparison touches. That is its own patch, and mixing it into B4 would
+put two unrelated seams in one diff.
+
+### 12.134.7 The read happens twice per roll-up, and it is named
+
+`ReadBacks.details` and `.recordings` each call `DetailSource.read()`, so a
+roll-up constructs `DetailStore(directory:)` twice and decodes 19.1 MB of JSON
+twice. **Named rather than optimised away**: caching it would mean a value that
+outlives the press, and §12.57 is exactly what that costs. If it becomes slow
+enough to matter the fix is one read passed to both, not a cache.
+
+### 12.134.8 The suite
+
+1,633 before, **1,647 after**, 150 suites — `DetailIndependenceTests` is new and
+built to `ActivityIndependenceTests`' shape on purpose. Fourteen arrived; none
+went. The device's numbers must not move: this patch changes where three
+comparisons READ, not what they hold, and today the store and the files hold the
+same 694 details and 668 traces.
+
+### 12.134.9 What a device can confirm
+
+The roll-up's fifth count falls **2 → 1**, the survivor being `Athlete`;
+`Activities`, `Details` and `Recordings` change their marks to `own read`; slice
+4 gains two lines at the top of its block; and **every other figure on both
+screens is identical to 389a** — the twenty-four in B4's groundwork §3.1 most of
+all.
+
+---
+
 ## 12.133 The roll-up says how much of its agreement is evidence — patch 389
 
 D7 slice B4, before its seams. §12.99's accounting existed on the verifier and

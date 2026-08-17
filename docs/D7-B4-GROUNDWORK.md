@@ -6,7 +6,7 @@
 | **Amended** | patch 389, against the device paste of 388 |
 | **Authority for this stage** | `docs/ADR-0003-database-contract.md` §12 |
 | **Current state** | `CLAUDE.md` §5 — this document is a plan, not state |
-| **Status** | 388 and 389 committed; 390–392 described here. |
+| **Status** | 388, 389 and 390 committed; 391 and 392 described here. |
 
 **THE LADDER GREW BY ONE AT 389 AND THE NUMBERS MOVED.** 389 was going to be
 the seams; the 388 device run showed two roll-up rows that were already the
@@ -101,7 +101,7 @@ stores*. The third mark — *from the stores, not fed yet* — is the tripwire f
 It lands before the seams because 390 moves that number, and a number that moves
 before anybody has seen it hold still is a number nobody can check.
 
-## 3. Patch 390 — Compare and the read-backs get their own reads
+## 3. Patch 390 — Compare and the read-backs get their own reads — DONE
 
 ### 3.1 `DetailParity` is 381's situation exactly
 
@@ -146,7 +146,15 @@ agreed, day distances 0 of 332, week figures 0 of 284, history bands 0 of 12,
 curve points 0 of 413, fitness 34 vs 34, fatigue 40 vs 40, plan matching 518
 days · 252 sessions · adherence 15 of 207 both sides · 7 overrides applied.
 
-### 3.2 The seam is NOT `ActivityStore`'s eleven lines
+### 3.2 The seam is NOT `ActivityStore`'s eleven lines — BUILT AT 390
+
+**Built, and `mayWrite` is what enforces all four refusals** — checked at the
+write rather than at the caller. `resetCache()` turned out to be the one that
+mattered: it is `internal`, `ActivityStore.resetCache` calls it, and it removes
+both directories outright. ADR §12.134.3 carries the negative control, which
+found a defect in the TEST rather than the code — the two assertions about the
+directories still existing passed on the broken tree, because `resetCache`
+deletes each one and immediately recreates it.
 
 `ActivityStore.init(directory:)` is 378's seam and it is small because the store
 is small. `DetailStore.init` does four things that must not happen on a second

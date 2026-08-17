@@ -85,6 +85,83 @@
 
 import Foundation
 
+/// The detail and trace files, read WITHOUT asking the store that serves them —
+/// patch 390, D7 slice B4. `ActivitySource` at 381 is the direct precedent and
+/// §12.126.3 made its rule general: **a read-back gets its own read in the slice
+/// that hydrates its own store.**
+///
+/// **THE ORDER IS THE POINT, AND IT IS 381's ARGUMENT VERBATIM.** 392 hydrates
+/// `DetailStore` from the database. Three comparisons take their app side from
+/// that store — Compare's slice 4, the Details read-back and the Recordings
+/// read-back — and all three would become the database agreeing with itself:
+/// 694 details, 668 traces and 199,848 samples, guaranteed to agree, printing
+/// *no differences*. Nothing in the suite could see it, because both sides
+/// agreeing is what a pass looks like.
+///
+/// **IT IS NOT A SECOND DECODER**, which is 364's rule.
+/// `DetailStore(directory:)` is the seam 390 added: it reads the same per-file
+/// JSON with the same `JSONDecoder`, through `loadFromDirectories()`, which is
+/// the function the singleton also calls. What it does NOT inherit is every
+/// write in that class — see `DetailStore.mayWrite`, and the schema purge it
+/// refuses.
+///
+/// **IT ANSWERS IN THREE STATES.** A container the app cannot reach, a device
+/// that has never synced, and a directory whose files will not decode all
+/// produce a small number, and §12.15 is that those are different facts.
+///
+/// LIVES IN THIS FILE rather than its own, deliberately — a new Swift file is
+/// invisible to the app target until Xcode is quit and reopened (CLAUDE.md §3),
+/// and `ActivitySource` sits in `ActivityParity.swift` for the same reason.
+@MainActor
+enum DetailSource {
+
+    struct Read {
+        /// Keyed by activity id, exactly as the store holds them.
+        let details: [String: ActivityDetail]
+        let streams: [String: ActivityStreams]
+        /// What the directories held and what would not decode.
+        let tally: DetailStore.FileTally
+        /// Nil container. Distinct from an empty directory: one says the app
+        /// cannot look, the other says there is nothing there. §12.15.
+        let directoryFound: Bool
+
+        /// **AN UNDECODABLE FILE COSTS THE READ ITS INDEPENDENCE, NOT ITS
+        /// HONESTY.** The store skips such a file and re-queues it, which is
+        /// right. A comparison cannot: a detail the app could not read shows up
+        /// as `detailsOnlyInDatabase`, which reads as *the importer wrote a row
+        /// the app never had* — the opposite of what happened.
+        var isTrustworthy: Bool { directoryFound && tally.isClean }
+
+        /// Printed unconditionally, and it is the sentence every count under it
+        /// means. A comparison that does not say where its own side came from
+        /// cannot be checked by anybody who was not holding the phone.
+        var line: String {
+            guard directoryFound else {
+                return "Application Support is unreachable, so the app side "
+                     + "was not read at all"
+            }
+            guard tally.isClean else {
+                return "the detail and trace files were read and \(tally.line) "
+                     + "— the app's own store was compared instead"
+            }
+            return "details/ and streams/, read directly — \(tally.line)"
+        }
+    }
+
+    /// `AppSupportItem.container` and not a tenth copy of the
+    /// `applicationSupportDirectory` incantation — 356a's correction, and its
+    /// own doc's reason: *nil is a real answer*.
+    static func read() -> Read {
+        guard let dir = AppSupportItem.container else {
+            return Read(details: [:], streams: [:],
+                        tally: DetailStore.FileTally(), directoryFound: false)
+        }
+        let store = DetailStore(directory: dir)
+        return Read(details: store.details, streams: store.streams,
+                    tally: store.tally, directoryFound: true)
+    }
+}
+
 @MainActor
 enum DetailParity {
 
@@ -155,6 +232,26 @@ enum DetailParity {
     // MARK: The report
 
     struct Report: Equatable {
+
+        // MARK: Where the app side came from — patch 390
+
+        /// **A `var` WITH A DEFAULT, SET BY THE CALLER — 381's shape exactly.**
+        /// `compare` is handed two lists and cannot know where either came from;
+        /// `ShadowParity` reads the files and then says so on the report.
+        var appSideCameFrom = "DetailStore.shared"
+
+        /// False when the files could not be read and the store was compared
+        /// instead. It is not a difference — it is the comparison losing its
+        /// independence, which `isHealthy` refuses to call a pass.
+        ///
+        /// **DEFAULT `true`, FOLLOWING `ActivityParity` RATHER THAN
+        /// `liveStoreIsSettled`.** §12.125.8 argued three states for that one
+        /// because it asks a question a test genuinely cannot answer. This asks
+        /// whether the list the caller handed over was read cleanly, and a
+        /// caller that built its own list read it as cleanly as it likes — so
+        /// `true` is the honest default and every existing `DetailParityTests`
+        /// fixture keeps meaning what it meant.
+        var appSideWasReadCleanly = true
 
         // Denominators — groundwork §2.1 case 2.
 
@@ -254,7 +351,15 @@ enum DetailParity {
             detailsCompared > 0 && paceFiguresAnswered > 0
         }
 
-        var isHealthy: Bool { lookedAtSomething && unexplained == 0 }
+        /// **AND IT ASKS WHERE ITS OWN SIDE CAME FROM — patch 390.** Zero
+        /// differences over an app side that could not be read is not a pass:
+        /// the fallback compares the database against whatever was to hand, and
+        /// after 392 that is the database. 381 gave `ActivityParity` this same
+        /// clause and §12.125.3 called it the one with teeth. §12.69 — a check
+        /// that cannot fail has not been tested.
+        var isHealthy: Bool {
+            lookedAtSomething && unexplained == 0 && appSideWasReadCleanly
+        }
 
         var summary: String {
             guard lookedAtSomething else {
@@ -286,6 +391,11 @@ enum DetailParity {
             var lines = [
                 "Detail parity: \(detailsCompared) details, "
                 + "\(paceFiguresAnswered) figures answered",
+                // PATCH 390 — AT THE TOP, and it is the sentence every number
+                // below it means. 381's two lines, one comparison over.
+                "  the app side came from: \(appSideCameFrom)",
+                "  the app side was read cleanly: "
+                + "\(appSideWasReadCleanly ? "yes" : "NO")",
                 "  held from the app: \(heldFromTheApp)",
                 "  tolerance: \(toleranceLabel)",
                 "  details in the app: \(appDetails)",

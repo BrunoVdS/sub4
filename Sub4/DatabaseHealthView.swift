@@ -3788,6 +3788,20 @@ struct DatabaseHealthView: View {
         // place the roster's numbers appear when they are all zero, which is
         // what makes "0 collapsed" evidence rather than an absence.
         lines.append(contentsOf: ActivityStore.shared.loadDiagnosticLines)
+        // PATCH 390 — THE STORE'S OWN FILE TALLY, WHICH IT HAS ALWAYS HAD AND
+        // NEVER SAID.
+        //
+        // `loadFromDirectories` has skipped an undecodable file with `continue`
+        // since 169. The skip is right — `refreshQueue` re-queues whatever is
+        // missing, which is what makes the cache self-healing — and the SILENCE
+        // was not: a detail the store could not decode is a detail the athlete
+        // will refetch, and nothing anywhere said it had happened.
+        //
+        // The tally is computed either way now, because the seam needs it. A
+        // number computed and not printed is §12.77.5, so it is printed. Counts
+        // only, both denominators — §12.54.3.
+        lines.append("Detail and trace files: "
+                     + DetailStore.shared.tally.line)
         // PATCH 331. UNCONDITIONAL, and counts only — no ids, so §12.7's
         // promise about this paste is untouched. It is here because the paste
         // is what somebody reads LATER, and "the details were still coming
