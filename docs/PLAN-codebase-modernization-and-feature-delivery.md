@@ -10,7 +10,7 @@
 | **Persistence authority** | `docs/ADR-0003-database-contract.md` |
 | **Source-transition authority** | `docs/ADR-0002-strava-retirement.md` and `docs/PLAN-cutover-v2.md` |
 
-> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 394.**
+> **CURRENT STATE IS NOT IN THIS DOCUMENT — patch 395.**
 >
 > It was written against patch 334 and its opening stages describe work that has
 > since shipped: D6c closed at 330, and D7's B0, B1, B2 and B3 landed at 342,
@@ -22,7 +22,7 @@
 > the restructure and feature delivery. Where the two disagree about the present,
 > §5 wins; where they disagree about the sequence, this document does.
 >
-> **Progress against this plan, at 394.** Stage A's database-shadow work is
+> **Progress against this plan, at 395.** Stage A's database-shadow work is
 > closed. D7 has run B0 through B3 and the app reads the plan, the athlete, the
 > authored data and all 694 activities from SQLite on every launch, with a
 > verified migration run over that data. 385 through 388 are not slices: they
@@ -44,12 +44,19 @@
 > way for the screen to say so. 391 through 393a were the Database screen,
 > interleaved at Bruno's request.
 >
-> **394 built the machinery and switched it off: nine families are read and
-> seven are fed, and that gap is the slice** (§12.138). It also takes the
-> measurement B4's plan called its one open question — what reading 668 traces
-> and 199,848 samples costs in front of first paint — on the launch that reads
-> them and feeds nothing from them. **395 is the flip and waits on that number
-> from the phone.** §5.6 of `CLAUDE.md` carries the order.
+> **394 built the machinery, switched it off, and took the measurement B4's
+> plan called its one open question** — what reading 668 traces and 199,848
+> samples costs in front of first paint. The device said **3.963 s, 94% of it
+> the traces**, and that answer killed the design rather than confirming it
+> (§12.139).
+>
+> **395 is the correction, and it is what a measurement is for.** Both families
+> left the launch bootstrap — `fieldCount` back to 7, the launch back to
+> 0.038 s — and `DetailStore` now reads for itself when it is constructed,
+> which is after the first frame rather than in front of it. **396 is the flip**
+> and waits on the other half of the comparison: nobody has ever measured what
+> the 1,362 files cost, so 3.730 s is only a regression if the files are
+> faster. §5.6 of `CLAUDE.md` carries the order.
 
 ## 1. Outcome
 

@@ -696,9 +696,19 @@ def every_collapsible_section_matches_its_header():
 # this codebase that must not use any of them.
 PERSISTENCE_VERBS = ["dirty", "save(", "write(to:", "removeItem", "set("]
 
-# THE COUNT MAY GO UP AND MUST NOT GO DOWN SILENTLY. Nine stores hydrate at
-# 394. A tenth arriving without this rule seeing it is exactly the gap.
-HYDRATING_STORES = 9
+# THE COUNT MAY GO UP AND MUST NOT GO DOWN SILENTLY. A tenth store arriving
+# without this rule seeing it is exactly the gap this number closes.
+#
+#   394: 9.  `DetailStore.hydrate` existed and fed the store from the launch.
+#   395: 8.  It was removed. B4's measurement said the two largest families do
+#            not belong in the launch bootstrap at all, so the store reads for
+#            itself at construction and there is nothing to hand it. A method
+#            written in anticipation is not a feature — `ProposalStore.remove`
+#            waited 45 patches for a caller. §12.139.
+#
+# THE RULE CAUGHT THIS REMOVAL, which is the half that is easy to get wrong: a
+# floor that only checks "at least N" reads a deletion as a pass.
+HYDRATING_STORES = 8
 
 
 def no_hydration_writes():

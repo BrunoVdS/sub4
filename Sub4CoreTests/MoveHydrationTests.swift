@@ -116,7 +116,7 @@ struct MoveHydrationTests {
     /// became a family everywhere else and never here, so it never had to.
     @Test("The family count includes it")
     func theFamilyCountIncludesIt() {
-        #expect(DatabaseBootstrap.fieldCount == 9)
+        #expect(DatabaseBootstrap.fieldCount == 7)
         // `PersistenceAuthority`, NOT `PersistenceMode` — patch 377b.
         // `HydrationPlanner.decide` calls
         // `PersistenceAuthority.hydrates(.authored)`, which 377's own

@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 394 (2026-08-17).** §5.3 is the 390 device run, Compare and
+**Current at patch 395 (2026-08-17).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself.
@@ -366,13 +366,13 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 394, 2026-08-17
+## 5. State — patch 395, 2026-08-17
 
 **THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Everything below is
-current at 394; §5.3 is what the device said at 390 and **394 has not been on
-the phone yet**; §5.4 is the accounting that has been wrong twice and corrected
-twice. Anything older is history and lives in ADR §12; if a number here
-disagrees with the code, the code wins and this section is the defect.
+current at 395; §5.3 is what the device said at 390 and **394's one number**;
+§5.4 is the accounting that has been wrong twice and corrected twice. Anything
+older is history and lives in ADR §12; if a number here disagrees with the
+code, the code wins and this section is the defect.
 
 ### 5.1 Where the ladder is
 
@@ -384,7 +384,7 @@ disagrees with the code, the code wins and this section is the defect.
 | **D7 B1** — the plan, the athlete, the constants | done, 344–346 |
 | **D7 B2** — notes, commutes, match decisions, plan moves | done, 355–358 and 377 |
 | **D7 B3** — the activities | **done, 379–383** |
-| **D7 B4** — details, traces | **388–390, 394 done; 395 is the flip** — `D7-B4-GROUNDWORK.md` |
+| **D7 B4** — details, traces | **388–390, 394, 395 done; 396 is the flip** — `D7-B4-GROUNDWORK.md` |
 | D7 B5 — weather, gear | not started |
 | D7 B6 — derived metrics | not started |
 | D7 B7 — reviews | not started, and blocked until a real review exists |
@@ -404,10 +404,12 @@ screen looks wrong:
   reviews (B7), the sync cursor, work queue and rejection receipts (B8, all
   `UserDefaults`). `AthleteStore` is half-and-half and says so.
 
-**394 READS NINE FAMILIES AND FEEDS SEVEN.** Details and traces are read on
-every launch, offered to `DetailStore`, and refused — `hydratedFamilies` does
-not name them until 395. **That gap is the slice**, and it is what makes 395's
-failures attributable to 395.
+**THE LAUNCH READS SEVEN AND 394 IS WHY IT IS NOT NINE.** 394 put the details
+and the traces in the bootstrap and measured it: **3.963 s in front of first
+paint, 3.730 s of it the traces.** 395 took them back out — the launch is
+0.038 s and `DetailStore` reads for itself when it is built, timing what that
+costs. `hydratedFamilies` is still the switch and the store now consults it.
+§12.139.
 
 **Every JSON store is still written and still complete.** That is what makes a
 slice reversible by deleting one family from `hydratedFamilies`, and it is why
@@ -427,21 +429,16 @@ unexplained differences.**
 - Activity parity 694 · 332 days · order 0 of 694 · **live store settled: yes**;
   volume 332/284/12 zero; match 518 days · adherence 15 of 207 both sides; summary
   4 weeks · 27 vs 27 days.
-- **Load parity 413 days · fitness 33 vs 33 · fatigue 40 vs 40.** Fitness read
+- **Load parity 413 days · fitness 33 vs 33 · fatigue 40 vs 40.** It read
   34 vs 34 forty minutes earlier; **both sides moved together, which is what the
-  comparison is for.** The LEVEL depends on what that slice lists as `held from
-  the app: … and Apple Health`, memory-only and loaded on demand. Not a finding.
-- **`runs ever verified: 17`**, newest `verified · patch 388 · 12 independent`.
-  **Verify unpressed since 388**; `SemanticVerifier.swift` untouched since, so
-  that line is settled by diff.
+  comparison is for.** Apple Health is memory-only and on demand. Not a finding.
+- **`runs ever verified: 18`** — 394's paste; newest `verified · patch 392 ·
+  22 comparisons, all agreed · 12 independent`.
 - **Tables**: `activity_detail 694`, `activity_split 8206`, `recording 668`,
   **`recording_sample 199848`**, `weather 603`. **`Traces still to fetch: 0`**;
   26 of 694 have none (24 under 500 m, 2 empty, **0 unexplained**).
 - **`Detail and trace files: 694 … 668 …, all readable`** — 390's line; the seam
   read that 19.1 MB twice with every file still there.
-
-**The count reached 12 by two corrections** — 384 printed 14 (§12.129), 385 made
-it 13, 388 made it 12. §12.128–§12.134.
 
 **What that does and does not prove.** It proves the app derives the same
 answers from either side for everything the slices cover. It does not prove a
@@ -476,7 +473,7 @@ cursor on `UserDefaults` until B8, `AthleteStore` is `.partial(fromDatabase:
 "zones and FTP", fromFiles: "gear")`. `theWholeMapIsPinned` holds every
 comparison's field, COMPLETE rather than a subset. §12.130–§12.132.
 
-**`runs ever verified: 17`, the newest at patch 388**, over data the database
+**`runs ever verified: 18`, the newest at patch 392**, over data the database
 feeds, with 12 comparisons that could still have disagreed. D7's exit criterion
 is met and the recount does not threaten it.
 
@@ -559,18 +556,21 @@ a fallback, which turns the row red. §12.133, §12.134.
    section's rows are NOT EVALUATED and §12.76's worst case got smaller rather
    than larger. **RULE 7 joins every header key to every content key**, both
    invisible to the suite (§12.137).
-3. **B4 — details and traces: 388–390 and 394 done; 395 IS THE FLIP.**
-   **`docs/D7-B4-GROUNDWORK.md`** is the plan. Compare's slice 4 and three
-   read-backs read the files for themselves through a `DetailStore(directory:)`
-   seam that refuses every write (§5.4, §5.4a, §12.134). **394 built the
-   machinery switched off**: nine families read, seven fed, and RULE 5 blocks
-   the flip until it is taken as a decision (§12.138).
-   **THE OPEN QUESTION IS THE LAUNCH COST AND ONLY THE PHONE CAN ANSWER IT.**
-   The bootstrap is awaited before `.ready`; lazy per-activity reads are ruled
-   out because `LoadStore` keys on `streamCount` and walks every trace. The read
-   is **199,848 sample rows** — not the 1.5 M this file used to say, which was
-   `ReadBacks.recordings`' COMPARISON count. 394 prints `Bootstrap read:` with
-   the two new families timed apart from the seven. **395 waits on that line.**
+3. **B4 — 388–390, 394, 395 done; 396 IS THE FLIP, AND THE DESIGN CHANGED.**
+   **`docs/D7-B4-GROUNDWORK.md`** is the plan and §12.139 is the correction to
+   it. Compare's slice 4 and three read-backs read the files for themselves
+   through a `DetailStore(directory:)` seam that refuses every write (§5.4,
+   §5.4a, §12.134). **394 measured the launch and the answer killed its own
+   design**: 3.963 s before first paint, 94% of it 668 recordings over 199,848
+   sample rows. **395 moved both families out of the bootstrap and into
+   `DetailStore`'s own construction** — the one store in this ladder that is
+   NOT built with `ContentView`, so feeding it from the launch would have
+   decoded 19.1 MB of files and thrown them away for rows read second.
+   **THE OPEN QUESTION IS NOW THE OTHER SIDE OF THE SAME SEAM.** Nobody has ever
+   measured what the 1,362 files cost, so 3.730 s is only a regression if the
+   files are faster. 395 prints `Detail store built:` with its source. **396
+   waits on that line**, and the seam must stay on the files whatever the
+   singleton does.
 4. **B5 — weather and gear**, including `ReadBacks.knownActivityIDs` and the
    `WeatherGearRoundTrip` read-back's own read. **Gear is the half of
    `AthleteStore` B1 did not take**, so the verifier's `gear` comparison is

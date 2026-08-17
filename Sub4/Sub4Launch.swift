@@ -330,8 +330,7 @@ final class Sub4Launch {
             return outcome
         case .hydrate(let plan, let constants, let zones, let ftp,
                       let authored, let decisions, let storedMoves,
-                      let storedActivities, let storedDetails,
-                      let storedTraces):
+                      let storedActivities):
             PlanStore.shared.hydrate(from: plan)
             // BEFORE `applyMoves`, NOT AFTER. The plan is corrected FROM this
             // store, so a store hydrated afterwards would be right and the
@@ -385,29 +384,27 @@ final class Sub4Launch {
                 ActivityStore.shared.hydrate(from: storedActivities)
                 what += ", the activities"
             }
-            // PATCH 394 — THE MACHINERY, AND IT IS UNREACHABLE UNTIL 395.
+            // **THE DETAILS AND THE TRACES ARE NOT HYDRATED FROM HERE, AND
+            // 394 IS WHY — patch 395, §12.139.**
             //
-            // Both are nil in this build because `hydratedFamilies` names
-            // neither. Written now so the flip is one line somewhere else,
-            // which is what made 346's four failures and 382's three
-            // attributable. §12.103.
+            // 394 put them in the bootstrap and measured it: **3.963 s before
+            // `.ready`, of which 3.730 s was 668 recordings over 199,848
+            // sample rows.** Taking them out again returns this launch to
+            // 0.038 s.
             //
-            // **ONE CALL FOR BOTH, because they are one store.** Handing over
-            // half would leave the split tables showing rows and the heart-rate
-            // profiles showing files, with nothing on screen saying which —
-            // `hydratablePlan`'s argument, and `DetailStore` is the only store
-            // in this ladder that serves two families.
+            // The cost was never the read; it was WHERE the read was. Every
+            // other store in this ladder is constructed while `ContentView`'s
+            // stored properties initialise, so hydrating it here costs the
+            // launch nothing it was not already spending. `DetailStore` is the
+            // one that is NOT — nothing in this file touches it, and its first
+            // caller is `LoadStore.recomputeIfNeeded` inside a `.task`, after
+            // the first frame. Hydrating it from here would have CONSTRUCTED
+            // it: 1,362 files and 19.1 MB decoded, then thrown away and
+            // replaced by rows read a second time.
             //
-            // **TOUCHING `DetailStore.shared` IS WHAT CONSTRUCTS IT**, and from
-            // 395 that happens HERE, before `.ready`: its own `init` decodes
-            // 1,362 files and 19.1 MB, and this replaces the result. File
-            // first, rows over it, in the one main-actor step with no
-            // suspension in it. §12.138 measures what that costs.
-            if storedDetails != nil || storedTraces != nil {
-                DetailStore.shared.hydrate(details: storedDetails,
-                                           streams: storedTraces)
-                what += ", the details and the traces"
-            }
+            // So this store reads for itself, at the moment it is built, and
+            // 396 changes which source it reads. `hydratedFamilies` is still
+            // the switch; `DetailStore.init` is what now consults it.
             return .hydrated(what)
         }
     }

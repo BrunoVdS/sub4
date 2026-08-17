@@ -108,9 +108,7 @@ struct ActivityHydrationTests {
                              zones: [.init(index: 1, min: 0, max: 115)]),
             authored: .noneWritten, decisions: .noneRecorded,
             moves: .loaded(moves: [], skipped: 0),
-            activities: .loaded(activities: list, skipped: 0),
-                                     details: .loaded(details: [], skipped: 0),
-                                     traces: .loaded(recordings: [], skipped: 0))
+            activities: .loaded(activities: list, skipped: 0))
     }
 
     // MARK: THE ONE THAT IS THE PATCH
@@ -135,7 +133,7 @@ struct ActivityHydrationTests {
 
         switch HydrationPlanner.decide(mode: .shadow("B3 — a test"),
                                        bootstrap: b) {
-        case .hydrate(_, _, _, _, _, _, _, let storedActivities, _, _):
+        case .hydrate(_, _, _, _, _, _, _, let storedActivities):
             #expect(!isNil(storedActivities),
                     "the payload travels once the family is fed")
             #expect(storedActivities?.count == 1)
@@ -155,7 +153,7 @@ struct ActivityHydrationTests {
 
         switch HydrationPlanner.decide(mode: .shadow("B3 — a test"),
                                        bootstrap: b) {
-        case .hydrate(_, _, _, _, _, _, _, let storedActivities, _, _):
+        case .hydrate(_, _, _, _, _, _, _, let storedActivities):
             #expect(isNil(storedActivities),
                     "the build wants the family and the table holds nothing")
         case .leaveOnFiles:
@@ -171,7 +169,7 @@ struct ActivityHydrationTests {
     /// than deleting it is what makes the change visible in a diff.
     @Test("382 moves both counts")
     func theCountsMoved() {
-        #expect(DatabaseBootstrap.fieldCount == 9,
+        #expect(DatabaseBootstrap.fieldCount == 7,
                 "the bootstrap gained no family — 379 did that")
         #expect(PersistenceAuthority.Family.allCases.count == 9)
         #expect(PersistenceAuthority.hydratedFamilies.count == 7)
@@ -210,9 +208,7 @@ struct ActivityHydrationTests {
                 athlete: .missing, authored: .noneWritten,
                 decisions: .noneRecorded,
                 moves: .loaded(moves: [], skipped: 0),
-                activities: bad,
-                                     details: .loaded(details: [], skipped: 0),
-                                     traces: .loaded(recordings: [], skipped: 0))
+                activities: bad)
             #expect(isNil(b.hydratableActivities),
                     "nil rather than [] — a failed read is not an empty one")
         }

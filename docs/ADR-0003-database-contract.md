@@ -8962,6 +8962,121 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.139 The measurement changed the design — patch 395, D7 slice B4
+
+**394 asked what the launch cost and the device answered 3.963 s.** The flip it
+was written to enable does not happen. This section is what the number bought.
+
+```
+Bootstrap read: 3.963 s — 0.038 s the other seven, 0.195 s the details, 3.730 s the traces
+```
+
+**The traces are 94% of it.** Seven families cost 0.038 s; 668 recordings over
+199,848 sample rows cost ninety-eight times that, in front of first paint.
+
+### 12.139.1 The cost was never the read. It was where the read was
+
+The app has always paid for these traces. `DetailStore`'s `init` decodes 1,362
+files and 19.1 MB and has done since patch 169. Nobody has ever measured it,
+which is its own finding, and 395 fixes that — but the point is that 394 did not
+ADD a cost, it MOVED one.
+
+**And it moved it to the worst available place.** `Sub4Launch`'s own header says
+every store's `init` fires while `ContentView`'s stored properties initialise,
+before the first frame — so for the seven families, hydrating from the launch
+costs nothing that was not already being spent. **`DetailStore` is the one store
+in this ladder that is not in that set.** `ContentView` holds `StravaAuth` and
+`ActivityStore`; nothing in the launch path names `DetailStore`, and its first
+caller is `LoadStore.recomputeIfNeeded` inside a `.task` — after the first frame.
+
+So 395's flip would have been strictly worse than doing nothing: `hydrate` would
+have TOUCHED `DetailStore.shared`, which CONSTRUCTS it, which decodes 19.1 MB —
+and then thrown that away and replaced it with 3.7 s of rows read second. **The
+launch would have read the same data twice, from both sides, before the athlete
+saw anything.** That comment was written into `Sub4Launch` at 394 and the
+arithmetic on it was not done until the device produced the first number.
+
+### 12.139.2 Reading less is not available
+
+The obvious escape is to read summaries instead of samples. It does not survive
+contact with `LoadEngine`: `streamTrimp` walks the raw heart-rate array and
+`streamHistogram` bins it, so a `GROUP BY` would be the TRIMP rule reimplemented
+in SQL — §12.43, a second copy of a derivation in a second language, and the one
+copy that could not be tested against the other. Lazy per-activity reads are
+ruled out by the same engine from the other end: `LoadStore` keys its recompute
+on `streamCount` and walks every trace, so 668 separate queries would be the
+same work in a worse place.
+
+### 12.139.3 What 395 actually does
+
+`activity_detail` and `recording` leave `DatabaseBootstrap` entirely.
+`fieldCount` returns to **7**, `diagnosticLineCount` to **13**, `hydratable*`
+and `DetailStore.hydrate` are deleted, and `HydrationPlanner.Instruction` loses
+two arguments. `BootstrapTiming` keeps `total` and loses the split, because
+there is nothing left to split.
+
+**`DetailStore` reads for itself, at the moment it is built, and times it.**
+`hydratedFamilies` is still the switch — 396 still changes one line — but the
+store consults it instead of the launch. That is a real divergence from the
+ladder's shape and it is justified by exactly one fact: this is the only
+lazily-constructed store in it, so feeding it eagerly is the one case where
+hydration costs strictly more than leaving it alone.
+
+`detailsServedFrom` and `tracesServedFrom` stop being constants. 394 argued they
+could be, because a constant about what this BUILD does is not §12.127.5's
+mistake. That stopped being true the moment the store decides for itself: a
+constant would say `.files` on a launch where the database was shut and the
+store fell back. `init` assigns them from what it managed to read.
+
+### 12.139.4 The number 395 exists to produce
+
+`DetailStoreTiming` carries the duration, **its source**, and both counts. The
+source is part of the value rather than appended by a caller, because 3.7 s from
+rows argues for a different fix from 3.7 s from files and a bare duration cannot
+say which.
+
+**Nobody has ever measured the file side**, so 396 cannot be argued for or
+against yet: 3.730 s is only a regression if the files are faster, and it is an
+improvement if they are not. One launch on 395 settles it. The read is a
+synchronous main-actor decode either way — a freeze inside a `.task` after the
+first frame, not a background fill — so what is being compared is two freezes,
+and the shorter one wins unless both are bad enough to force a third design.
+
+### 12.139.5 Two rules caught their own patch
+
+**RULE 5 named all eight `fieldCount` pins before xcodebuild started**, which is
+the second time in two patches (§12.138.6 records the first, in the opposite
+direction). A pin that reports before the simulator boots is worth more than one
+that reports two minutes in.
+
+**RULE 8 caught its own floor dropping.** `HYDRATING_STORES` went 9 → 8 when
+`DetailStore.hydrate` was deleted, and the rule failed rather than passing on
+eight — which is the half of a floor check that is easy to get wrong, because
+"at least N" reads a deletion as a pass. The constant was lowered with the
+argument beside it. A method written in anticipation is not a feature;
+`ProposalStore.remove` waited 45 patches for a caller, and this one lasted one.
+
+### 12.139.6 The seam had no timing and a test found it
+
+`theSeamAlwaysReadsFiles` failed on `constructionTiming.details == 0`:
+`init(directory:)` called `loadFromDirectories()` directly and never filled the
+timing in. **The seam is not a lesser instance** — Compare's slice 4 and two
+read-backs build one on every press, decoding the same 19.1 MB — so a timing
+only the singleton filled would have reported `0.000 s` for the one read a user
+can trigger on demand. §12.54.2 wearing a number, which is the shape §12.15
+keeps finding. Both initialisers time their read now.
+
+### 12.139.7 What 396 is
+
+One line in `hydratedFamilies`, and `DetailStore.init` reading rows instead of
+files. It waits on 395's file baseline from the device. **The seam must stay on
+the files whatever the singleton does** — if it followed, Compare's slice 4 and
+two read-backs would become the database against itself, which is the exact
+defect 390 was written to prevent. `theSeamAlwaysReadsFiles` is written now, one
+patch before it can fail.
+
+---
+
 ## 12.138 Nine families read, seven fed — patch 394, D7 slice B4
 
 **394 changes nothing the app does, and that is the entire specification.**
@@ -8987,11 +9102,18 @@ families were 1,200 plan rows and 694 activities. B4 adds 694 details with their
 splits, laps and best efforts, and **668 recordings over 199,848 sample rows** —
 by a wide margin the largest read this app makes.
 
-**The estimate available before this patch was wrong in a way worth recording.**
-It was `668 × DatabaseBenchmark.Budget.readMillisecondsPerRecording` = 3.3 s —
-a budget CEILING asserted at the ten-thousand-activity design target, read as a
-prediction for this database. §12.136.8 is the last time a figure in this area
-was computed instead of read, and that one reached a device footer.
+**The estimate available before this patch was 3.3 s, and the device says
+3.730 s — CORRECTED HERE, patch 395.** This section originally called that
+estimate "wrong in a way worth recording". It was not wrong; it was
+UNJUSTIFIED, which is a different fault and a milder one. `668 ×
+DatabaseBenchmark.Budget.readMillisecondsPerRecording` is a budget CEILING
+asserted at the ten-thousand-activity design target, and using a ceiling as a
+prediction remains the wrong method — but the ceiling landed within 12% and it
+landed on the LOW side. **So the real finding is the one the estimate hid: at
+5.58 ms per recording the read is 12% OVER the app's own budget**, and the
+Benchmark section says so if anybody presses it. A method criticism is not a
+number criticism, and writing one as though it were the other is how a correct
+figure gets thrown away.
 
 So `BootstrapTiming` carries three numbers and the paste prints them
 unconditionally on every launch, including the fast ones — a launch too quick

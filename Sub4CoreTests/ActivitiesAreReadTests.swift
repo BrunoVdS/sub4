@@ -83,7 +83,7 @@ struct ActivitiesAreReadTests {
         let db = try Sub4Database.inMemory()
         let b = DatabaseBootstrapReader.read(db)
 
-        #expect(DatabaseBootstrap.fieldCount == 9)
+        #expect(DatabaseBootstrap.fieldCount == 7)
         #expect(DatabaseBootstrap.diagnosticLineCount
                 == DatabaseBootstrap.fieldCount + 6,
                 "derived, so only the family term moves")
@@ -119,9 +119,7 @@ struct ActivitiesAreReadTests {
             plan: .unavailable, extras: .unavailable, athlete: .unavailable,
             authored: .unavailable, decisions: .unavailable,
             moves: .unavailable,
-            activities: .failed("no such table: activity"),
-                                     details: .loaded(details: [], skipped: 0),
-                                     traces: .loaded(recordings: [], skipped: 0))
+            activities: .failed("no such table: activity"))
         #expect(!b.wasReadCleanly)
         #expect(b.firstFault?.contains("plan") == true,
                 "field order — the plan failed first and is what gets named")
@@ -131,9 +129,7 @@ struct ActivitiesAreReadTests {
             extras: .noActiveVersion(versionsPresent: 0),
             athlete: .missing, authored: .noneWritten,
             decisions: .noneRecorded, moves: .loaded(moves: [], skipped: 0),
-            activities: .failed("no such table: activity"),
-                                     details: .loaded(details: [], skipped: 0),
-                                     traces: .loaded(recordings: [], skipped: 0))
+            activities: .failed("no such table: activity"))
         #expect(!onlyActivities.wasReadCleanly,
                 "the seventh family can fail the whole verdict on its own")
         #expect(onlyActivities.firstFault?.contains("activities") == true)
@@ -166,9 +162,7 @@ struct ActivitiesAreReadTests {
                              zones: [.init(index: 1, min: 0, max: 115)]),
             authored: .noneWritten, decisions: .noneRecorded,
             moves: .loaded(moves: [], skipped: 0),
-            activities: .loaded(activities: [], skipped: 0),
-                                     details: .loaded(details: [], skipped: 0),
-                                     traces: .loaded(recordings: [], skipped: 0))
+            activities: .loaded(activities: [], skipped: 0))
 
         #expect(planned.canHydrate,
                 "the plan, its trimmings and the athlete are all here")

@@ -3864,11 +3864,14 @@ struct DatabaseHealthView: View {
         // every launch, including the fast ones, or a slow one cannot be told
         // from a line nobody wired in.
         l.append(Sub4Launch.shared.bootstrapTiming.line)
-        l.append(DetailStore.hydrationLine(
-            details: DetailStore.shared.detailsServedFrom == .database
-                ? DetailStore.shared.details.count : nil,
-            traces: DetailStore.shared.tracesServedFrom == .database
-                ? DetailStore.shared.streams.count : nil))
+        // PATCH 395 — WHAT BUILDING `DetailStore` COST, AND FROM WHICH SIDE.
+        // §12.139: the launch line above no longer carries these two families,
+        // so this is the only place the app says what its largest read costs.
+        // Reading this property is what CONSTRUCTS the store if the Database
+        // screen is the first thing to touch it — which is honest, because the
+        // figure then describes this screen's own read rather than somebody
+        // else's.
+        l.append(DetailStore.shared.constructionTiming.line)
         l.append("Plan store reads: \(PlanStore.shared.servedFrom.line)")
         l.append("Athlete store reads: \(AthleteStore.shared.servedFrom.line)")
         l.append("Constants store reads: \(ConstantsStore.shared.servedFrom.line)")

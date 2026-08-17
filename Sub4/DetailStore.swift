@@ -21,6 +21,40 @@
 import Foundation
 import Observation
 
+/// **WHAT IT COST TO BUILD `DetailStore`, AND FROM WHICH SIDE — patch 395.**
+///
+/// §12.139. B4's whole question turned out to be *where* the two largest
+/// families are read, not whether they can be. 394 measured the database side
+/// inside the launch bootstrap and the answer killed that design: 3.963 s in
+/// front of first paint, 94% of it the traces.
+///
+/// This is the same measurement taken at the place the read actually belongs —
+/// the store's own construction — so the two sides can be compared as like for
+/// like. **`source` is part of the value**, because a duration with no source
+/// is a number nobody can act on: 3.7 s from rows argues for a different fix
+/// from 3.7 s from files.
+nonisolated struct DetailStoreTiming: Equatable, Sendable {
+    var source: StoreSource = .files
+    var seconds: Double = 0
+    var details = 0
+    var traces = 0
+
+    /// UNCONDITIONAL — §12.54.2. A store built instantly must still print, or a
+    /// slow build cannot be told from a line nobody wired in.
+    var line: String {
+        // THE DURATION IS FORMATTED AND THE REST IS INTERPOLATED. `%@` takes
+        // an `NSString`; handing it a Swift `String` relies on a bridge that
+        // is not guaranteed and prints garbage when it does not happen.
+        String(format: "Detail store built: %.3f s", seconds)
+            + " from \(source.line) — \(details) details, \(traces) traces"
+    }
+
+    static func seconds(_ d: Duration) -> Double {
+        Double(d.components.seconds) + Double(d.components.attoseconds) * 1e-18
+    }
+}
+
+
 @Observable
 final class DetailStore {
 
@@ -104,86 +138,41 @@ final class DetailStore {
     /// files is the only instance that may touch them.
     private let mayWrite: Bool
 
-    // MARK: Hydration — D7 slice B4, patch 394
+    // MARK: Where this store's two families come from — D7 slice B4
 
     /// Where the details this store is serving came from — patch 394.
     ///
-    /// **TWO PROPERTIES, NOT ONE, AND CONSTANTS RATHER THAN DERIVED.**
-    /// §12.130.1's finding: `ActivityStore` serves the activities from rows and
-    /// the receipts and the cursor from `UserDefaults`, so one answer per store
-    /// is right for one field of three. This store serves THREE things —
-    /// details, traces, and `workItems`, which is `failed` + `noStreams` on
-    /// `UserDefaults` until **B8**.
+    /// **TWO PROPERTIES, NOT ONE.** §12.130.1's finding: `ActivityStore` serves
+    /// the activities from rows and the receipts and the cursor from
+    /// `UserDefaults`, so one answer per store is right for one field of three.
+    /// This store serves THREE things — details, traces, and `workItems`, which
+    /// is `failed` + `noStreams` on `UserDefaults` until **B8**.
     ///
-    /// They are constants for `ActivityStore.receiptsServedFrom`'s reason,
-    /// which is the point: B8 moves `workItems` while these two stay, so
-    /// deriving any of the three from a single `servedFrom` is precisely the
-    /// mistake §12.130.1 records. 395 changes these two lines, here, beside the
-    /// store that owns them.
-    ///
-    /// `.files` in this build. `hydrate` is what moves them and nothing calls
-    /// it until `hydratedFamilies` names the families.
+    /// **SET BY `init`, NOT DECLARED BY THE BUILD — and 395 is the patch that
+    /// makes that difference real.** 394 had them as constants, which was
+    /// right while the launch decided and this store was told. It does not
+    /// survive the store deciding for itself: a constant would say `.files` on
+    /// a launch where the database was shut and the store fell back, and
+    /// §12.127.5 is exactly that mistake. `readFromDatabase` assigns them from
+    /// what it actually managed to read.
     private(set) var detailsServedFrom: StoreSource = .files
     private(set) var tracesServedFrom: StoreSource = .files
 
-    /// Replaces the details and the traces with the stored ones — D7 slice B4.
+    /// **WHAT BUILDING THIS STORE COST, AND WHY IT IS MEASURED HERE.**
     ///
-    /// **IT MARKS NOTHING DIRTY, AND THAT IS THE WHOLE SAFETY OF THIS SLICE.**
-    /// `save()` writes exactly `dirtyDetails` and `dirtyStreams` — one file per
-    /// id, and only the ids that landed since the last write. So as long as
-    /// hydration does not touch those sets, **694 detail files and 668 trace
-    /// files cannot be overwritten by rows**, and `details/` and `streams/`
-    /// stay the complete legacy copy that makes taking `.details` and `.traces`
-    /// back out of `hydratedFamilies` a rollback rather than a data loss.
+    /// §12.139. 394 measured the database side of this — 0.195 s for 694
+    /// details and **3.730 s for 668 recordings over 199,848 sample rows** —
+    /// and nothing has ever measured the side the app has actually been using
+    /// since patch 169: 1,362 files and 19.1 MB, decoded synchronously on the
+    /// main actor.
     ///
-    /// That is `NotesStore.hydrate`'s rule — *hydration must never write* — and
-    /// it is sharper here, because the reconstruction is LOSSY in two named
-    /// ways (§12.38.4): `RecordingRepository.series` reads a NULL as zero and
-    /// rebuilds every optional stream at `distanceM.count`. A hydration that
-    /// marked its ids dirty would write those reconstructions over the
-    /// athlete's real traces on the next drain. `hydrateMarksNothingDirty` is
-    /// the test.
-    ///
-    /// **HALF IS PERMITTED HERE AND NOWHERE ELSE IN THIS LADDER.** The plan and
-    /// the athlete are all-or-nothing because half a plan blanks a screen while
-    /// every other figure stays right. Details and traces share no invariant —
-    /// a split table and a heart-rate profile are drawn from different rows by
-    /// different views — and the two families flip together in 395 but can be
-    /// reverted apart. Each side is `nil` for the two distinct reasons §12.92
-    /// keeps separate, and the caller has already resolved both.
-    ///
-    /// **IT DOES NOT SETTLE, unlike `ActivityStore.hydrate`.** There is no
-    /// roster rule for details: `ActivityRoster` filters and dedups activities,
-    /// and the exclusions that matter here were applied by the IMPORTER at the
-    /// door (§12.42.2), so the rows are already the set the app would keep.
-    func hydrate(details storedDetails: [ActivityDetail]?,
-                 streams storedStreams: [ActivityStreams]?) {
-        if let storedDetails {
-            details = Dictionary(storedDetails.map { ($0.activityId, $0) },
-                                 uniquingKeysWith: { a, _ in a })
-            detailsServedFrom = .database
-        }
-        if let storedStreams {
-            streams = Dictionary(storedStreams.map { ($0.activityId, $0) },
-                                 uniquingKeysWith: { a, _ in a })
-            tracesServedFrom = .database
-        }
-        // `dirtyDetails` and `dirtyStreams` ARE NOT TOUCHED. See the doc above;
-        // this line is a comment rather than code on purpose, because the
-        // absence is the mechanism.
-    }
-
-    /// One line, always sayable, in both states — `ActivityStore.hydrationLine`'s
-    /// shape and its reason. Pure, so a test can drive it.
-    nonisolated static func hydrationLine(details: Int?, traces: Int?) -> String {
-        guard details != nil || traces != nil else {
-            return "Details and traces hydrated: no — the store is serving its "
-                 + "own files"
-        }
-        return "Details and traces hydrated: "
-            + "\(details.map(String.init) ?? "no") details, "
-            + "\(traces.map(String.init) ?? "no") traces from the database"
-    }
+    /// **IT IS A FREEZE EITHER WAY AND THAT IS THE POINT OF MEASURING IT
+    /// HERE.** This store is the only one in the ladder that is NOT built while
+    /// `ContentView`'s stored properties initialise; its first caller is
+    /// `LoadStore.recomputeIfNeeded` inside a `.task`, so the cost lands after
+    /// the first frame — visible, and blocking. 396 cannot be argued for
+    /// against 3.730 s alone; it needs the number this replaces.
+    private(set) var constructionTiming = DetailStoreTiming()
 
     /// **WHAT THE LAST DIRECTORY READ FOUND, AND WHAT IT COULD NOT DECODE.**
     ///
@@ -280,7 +269,23 @@ final class DetailStore {
         legacyDetailURL  = directory.appendingPathComponent("details.json")
         legacyStreamsURL = directory.appendingPathComponent("streams.json")
         mayWrite = false
-        tally = loadFromDirectories()
+        // PATCH 395 — TIMED HERE TOO, AND THE TEST IS WHAT FOUND THIS MISSING.
+        //
+        // The seam is not a lesser instance: Compare's slice 4 and two
+        // read-backs build one on every press, and it decodes the same 1,362
+        // files and 19.1 MB the singleton does. A timing that only the
+        // singleton filled in would report `0.000 s` for the one read a user
+        // can actually trigger on demand — §12.54.2 wearing a number, which is
+        // the shape §12.15 keeps finding.
+        let clock = ContinuousClock()
+        var read = FileTally()
+        let elapsed = clock.measure { read = loadFromDirectories() }
+        tally = read
+        constructionTiming = DetailStoreTiming(
+            source: .files,
+            seconds: DetailStoreTiming.seconds(elapsed),
+            details: details.count,
+            traces: streams.count)
     }
 
     private init() {
@@ -306,7 +311,14 @@ final class DetailStore {
         FileProtection.protect(directory: streamsDir)
         failed     = Set(UserDefaults.standard.stringArray(forKey: failedKey) ?? [])
         noStreams  = Set(UserDefaults.standard.stringArray(forKey: noStreamsKey) ?? [])
-        load()
+        // PATCH 395 — TIMED, AND UNCONDITIONALLY. See `constructionTiming`.
+        let clock = ContinuousClock()
+        let elapsed = clock.measure { load() }
+        constructionTiming = DetailStoreTiming(
+            source: .files,
+            seconds: DetailStoreTiming.seconds(elapsed),
+            details: details.count,
+            traces: streams.count)
 
         // Streams cached before latlng existed have no map position. Drop them
         // and let the queue refill — 60 activities, two drains. Details are

@@ -153,8 +153,6 @@ nonisolated struct DatabaseBootstrap: Sendable {
     /// normally take `ids` then `streams` one at a time — the load engine
     /// cannot, because `LoadStore.currentSignature` keys on `streamCount` and
     /// `recompute` walks every trace for TRIMP. §12.138.
-    let details: DetailLoad
-    let traces: RecordingLoad
 
     /// THE NUMBER A TEST HOLDS — see `AppStores.fieldCount` and its comment.
     ///
@@ -162,7 +160,7 @@ nonisolated struct DatabaseBootstrap: Sendable {
     /// family a thing somebody has to acknowledge, which is the half that can
     /// be checked cheaply. Three at B1: the plan, its trimmings, and the
     /// athlete.
-    static let fieldCount = 9
+    static let fieldCount = 7
 
     // MARK: The two verdicts
 
@@ -175,7 +173,6 @@ nonisolated struct DatabaseBootstrap: Sendable {
         plan.wasReadCleanly && extras.wasReadCleanly && athlete.wasReadCleanly
             && authored.wasReadCleanly && decisions.wasReadCleanly
             && moves.wasReadCleanly && activities.wasReadCleanly
-            && details.wasReadCleanly && traces.wasReadCleanly
     }
 
     /// Does every family hold something to hydrate a store from.
@@ -226,8 +223,6 @@ nonisolated struct DatabaseBootstrap: Sendable {
         }
         // PATCH 394. LAST, in field order, which is `firstFault`'s own rule and
         // the paste's order.
-        if !details.wasReadCleanly { return "the details — \(details.line)" }
-        if !traces.wasReadCleanly { return "the traces — \(traces.line)" }
         return nil
     }
 
@@ -356,36 +351,14 @@ nonisolated struct DatabaseBootstrap: Sendable {
         return a
     }
 
-    /// The stored details, or nil — patch 394, D7 slice B4.
-    ///
-    /// **NIL WHEN EMPTY, AND IT IS `hydratableActivities`' RULE FOR A SHARPER
-    /// REASON.** A clean read of an empty `activity_detail` is a device whose
-    /// Strava backfill has not run — and that backfill is **rate-limited to 30
-    /// activities per drain against 100 requests per 15 minutes and 1,000 a
-    /// day**, so a full one spans roughly two days. Hydrating from an empty
-    /// table there would replace a store holding 694 details with nothing, and
-    /// the athlete would watch every split table on every activity go blank
-    /// until he noticed.
-    ///
-    /// They are re-fetchable, and §12.122.1 is why that is not the answer:
-    /// nothing re-fetches on its own, and two days of empty screens is what it
-    /// would cost.
-    var hydratableDetails: [ActivityDetail]? {
-        guard case .loaded(let d, _) = details, details.holdsContent
-        else { return nil }
-        return d
-    }
-
-    /// The stored traces, or nil — same rule, and the one with 17.2 MB behind
-    /// it. An empty `recording` table with a store holding 668 traces is the
-    /// backfill mid-flight; hydrating there would empty every heart-rate
-    /// profile and every map on the phone, and take the load engine's
-    /// `streamCount` to zero with them.
-    var hydratableTraces: [ActivityStreams]? {
-        guard case .loaded(let r, _) = traces, traces.holdsContent
-        else { return nil }
-        return r
-    }
+    // **THE TWO HYDRATABLES THAT WERE HERE MOVED INTO `DetailStore` — 395.**
+    //
+    // Their rule did not change and is not lost: a clean read of an empty
+    // `activity_detail` or `recording` is a device whose Strava backfill has
+    // not run, that backfill is rate-limited to roughly two days for a full
+    // one, and serving from an empty table there would blank every split table
+    // and every heart-rate profile until the athlete noticed. What changed is
+    // WHO ASKS. §12.139.
 
     // MARK: The paste
 
@@ -425,14 +398,7 @@ nonisolated struct DatabaseBootstrap: Sendable {
                  // written by the athlete, and an empty one is a device
                  // between its first launch and its first sync rather than a
                  // store keeping a file nobody may blank. §12.123.
-                 "  activities: \(activities.line)",
-                 // PATCH 394. NOT under the authored families, for
-                 // `.activities`' reason one slice on: details and traces are
-                 // FETCHED from a rate-limited backfill, not written by the
-                 // athlete, and an empty one is a device that has not finished
-                 // syncing rather than a store keeping a file nobody may blank.
-                 "  details: \(details.line)",
-                 "  traces: \(traces.line)"]
+                 "  activities: \(activities.line)"]
         l.append("  every read succeeded: \(wasReadCleanly ? "yes" : "no")")
         l.append("  first fault: \(firstFault ?? "none")")
         l.append("  every family holds data: \(canHydrate ? "yes" : "no")")
@@ -451,40 +417,29 @@ nonisolated struct DatabaseBootstrap: Sendable {
     static let diagnosticLineCount = fieldCount + 6
 }
 
-/// **WHAT THE BOOTSTRAP COST, AND B4 IS THE PATCH THAT HAD TO ASK** — patch
-/// 394, §12.138.
+/// **WHAT THE BOOTSTRAP COST — patch 394, and 395 is what the answer bought.**
 ///
 /// `DatabaseBootstrapReader.read` is awaited BEFORE `.ready` (§12.92.6, and the
-/// ordering is a defect fix that must not be undone), so every millisecond it
-/// takes is a millisecond in front of first paint. Seven families were 1,200
-/// plan rows and 694 activities. B4 adds 694 details with their splits, laps and
-/// best efforts — and **668 recordings over 199,848 sample rows**, which is by a
-/// wide margin the largest read this app makes.
+/// ordering is itself a defect fix that must not be undone), so every
+/// millisecond it takes is a millisecond in front of first paint.
 ///
-/// **SO IT IS MEASURED RATHER THAN ARGUED ABOUT.** The estimate before this
-/// patch was `668 × DatabaseBenchmark.Budget.readMillisecondsPerRecording`,
-/// which is 3.3 s — a budget CEILING asserted at the ten-thousand-activity
-/// design target, not a prediction for this database, and §12.136.8 is what
-/// happens when a figure is computed instead of read.
+/// **394 PUT THE TWO LARGEST FAMILIES IN HERE AND MEASURED THEM: 3.963 s, of
+/// which 3.730 s was 668 recordings over 199,848 sample rows.** 395 took them
+/// back out — see §12.139 — and this struct lost the two fields that split
+/// them out, because there is nothing left to split: **0.038 s, seven
+/// families.** The measurement is why the design changed, which is what 394
+/// was for.
 ///
-/// The two families are timed apart from the seven, because "the bootstrap got
-/// slower" and "the traces are the reason" are different findings and only one
-/// of them names a fix.
+/// It stays, and it stays UNCONDITIONAL. The number that made the case is the
+/// number that will show the case reopening, and a launch too quick to notice
+/// must still print or a slow one cannot be told from a line nobody wired in
+/// (§12.54.2).
 nonisolated struct BootstrapTiming: Equatable, Sendable {
     var total: Double = 0
-    var details: Double = 0
-    var traces: Double = 0
 
-    /// The seven families B4 did not add. Derived rather than timed separately:
-    /// one subtraction cannot drift from the two it is taken from.
-    var theOtherSeven: Double { max(0, total - details - traces) }
-
-    /// UNCONDITIONAL — §12.54.2. A launch where the read was instant must still
-    /// print the number, or a slow one cannot be told from a missing line.
     var line: String {
-        String(format: "Bootstrap read: %.3f s — %.3f s the other seven, "
-                      + "%.3f s the details, %.3f s the traces",
-               total, theOtherSeven, details, traces)
+        String(format: "Bootstrap read: %.3f s — %d families",
+               total, DatabaseBootstrap.fieldCount)
     }
 }
 
@@ -514,9 +469,9 @@ nonisolated enum DatabaseBootstrapReader {
         let clock = ContinuousClock()
         var timing = BootstrapTiming()
 
-        // ORDER IS THE PASTE'S ORDER AND NOT AN OPTIMISATION. Each read is
-        // measured where it happens; nothing is reordered to make a number
-        // look better, and nothing is run concurrently — this is one detached
+        // ORDER IS THE PASTE'S ORDER AND NOT AN OPTIMISATION. Nothing is
+        // reordered to make a number look better, and nothing is run
+        // concurrently — this is one detached
         // task by design (§12.9c), and a concurrent version would be a change
         // to what is being measured rather than a faster version of it.
         var plan: PlanLoad = .unavailable
@@ -526,8 +481,6 @@ nonisolated enum DatabaseBootstrapReader {
         var decisions: MatchDecisionLoad = .unavailable
         var moves: PlanMoveLoad = .unavailable
         var activities: ActivityLoad = .unavailable
-        var details: DetailLoad = .unavailable
-        var traces: RecordingLoad = .unavailable
 
         // THE READS ARE INSIDE THE CLOCK AND THE ASSEMBLY IS NOT. Building the
         // struct is nine stores of an existing value; timing it would add
@@ -545,21 +498,12 @@ nonisolated enum DatabaseBootstrapReader {
             // makes that authoritative for order, where `startLocal` is
             // authoritative for which training day a session belongs to.
             activities = ActivityRepository.all(db)
-
-            timing.details = seconds(clock.measure {
-                details = ActivityDetailRepository.all(db)
-            })
-            // THE BIG ONE. 668 recordings, 199,848 sample rows.
-            timing.traces = seconds(clock.measure {
-                traces = RecordingRepository.all(db)
-            })
         }
         timing.total = seconds(elapsed)
 
         return (DatabaseBootstrap(plan: plan, extras: extras, athlete: athlete,
                                   authored: authored, decisions: decisions,
-                                  moves: moves, activities: activities,
-                                  details: details, traces: traces),
+                                  moves: moves, activities: activities),
                 timing)
     }
 
@@ -656,13 +600,7 @@ nonisolated enum HydrationPlanner {
                      // reasons: this build does not feed the family (381 is
                      // the line), or the table read cleanly and holds nothing.
                      // The plan and the athlete are still all-or-nothing.
-                     activities: [Activity]?,
-                     // PATCH 394 — the fifth and sixth optional families, nil
-                     // in this build for the same two distinct reasons: this
-                     // build does not feed them (395 is the line), or the
-                     // tables read cleanly and hold nothing.
-                     details: [ActivityDetail]?,
-                     traces: [ActivityStreams]?)
+                     activities: [Activity]?)
     }
 
     /// ORDER MATTERS AND IT IS THE POINT.
@@ -709,15 +647,7 @@ nonisolated enum HydrationPlanner {
                 // opposite places, and one combined check would collapse them
                 // into one nil.
                 activities: PersistenceAuthority.hydrates(.activities)
-                    ? bootstrap.hydratableActivities : nil,
-                // PATCH 394. FALSE IN THIS BUILD, AND THAT IS THE PATCH —
-                // `hydratedFamilies` does not name either until 395, so the
-                // machinery below is complete and unreachable. The two
-                // conditions stay separate for 357's reason.
-                details: PersistenceAuthority.hydrates(.details)
-                    ? bootstrap.hydratableDetails : nil,
-                traces: PersistenceAuthority.hydrates(.traces)
-                    ? bootstrap.hydratableTraces : nil)
+                    ? bootstrap.hydratableActivities : nil)
         }
         return .leaveOnFiles(
             .nothingStored(bootstrap.firstEmpty ?? "a family this build does not name"))
