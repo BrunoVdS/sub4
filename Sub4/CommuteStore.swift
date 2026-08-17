@@ -208,10 +208,13 @@ final class CommuteStore {
     @discardableResult
     func restore(from load: AuthoredLoad, now: Date = Date()) throws
     -> StoreRestore.Receipt {
-        guard case .loaded(let notes, let commutes, _) = load else {
+        // BOUND ONCE, AS WHAT IT IS. The first draft bound both halves and
+        // used one — a templated `notes` this store has no business touching,
+        // and `eachStoreTakesItsOwnHalf` is the test that says so. The compiler
+        // said it too; neither `test.sh` nor `preflight.sh` reads warnings.
+        guard case .loaded(_, let stored, _) = load else {
             throw AuthoredRestoreFault.databaseUnreadable(load.line)
         }
-        let stored = commutes
         // Nothing to restore is not a repair. Returning early means an empty
         // database cannot move a readable file aside or write over anything —
         // and the counts still tell the two cases apart, because "added 0,

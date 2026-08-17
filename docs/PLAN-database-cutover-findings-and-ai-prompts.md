@@ -67,9 +67,84 @@ Implementation rules:
 - Make the smallest attributable change. Add a negative-control test that fails
   before the fix and passes after it.
 - Run focused tests, scripts/check-invariants.py, then ./scripts/test.sh.
+- Decide explicitly whether this task needs a manual device-test campaign under
+  the contract below. If it does, write the campaign before declaring the task
+  complete. If it does not, state which automated evidence makes it unnecessary.
 - Report files changed, test evidence, remaining risks and any required device
   validation. Do not call a slice complete from unit tests alone.
 ~~~
+
+### Manual test campaign contract
+
+Every prompt below carries a task-specific campaign clause. Apply this complete
+contract whenever that clause says a campaign is required, or whenever the
+implementation touches a behavior the simulator cannot prove:
+
+- real activity, route, recording, HealthKit or Keychain data;
+- file-protection attributes, background execution or process termination;
+- UI rendering, navigation, orientation, accessibility or interaction latency;
+- actual database/file/UserDefaults counts or cross-store reconciliation;
+- backup, snapshot, export, restore, deletion, disconnect or fail-closed flows.
+
+The AI must **build the campaign when the need becomes known**. It may not defer
+the design to “manual QA later” or ask Bruno to “check that it works.” Put the
+campaign in the task's groundwork/ADR section, or create a bounded
+`docs/DEVICE-CAMPAIGN-<task>.md` when there is no suitable task document.
+
+Every campaign must contain:
+
+1. **Question and risk.** State exactly what automated tests cannot prove and
+   what failure the campaign is designed to reveal.
+2. **Build and data identity.** Record app patch, commit, configuration
+   (Debug/Release), device model, iOS version, timezone, database schema,
+   snapshot ID and migration-run/dataset fingerprint when available.
+3. **Safety preconditions.** Name the protected snapshot/export required before
+   the test, what may be mutated, what must not be deleted, and the rollback
+   procedure. Never use the only copy of authored data for a destructive test.
+4. **Exact navigation.** Give tap-by-tap directions using the labels in the
+   current SwiftUI source: starting tab, row, disclosure section, button,
+   destination screen and any activity/session that must be selected.
+5. **Independent expected result.** For every value or state, name where the
+   expectation comes from. Do not derive the expected answer from the same
+   database-fed store that supplies the screen being tested.
+6. **App evidence source.** Name the exact screen/section/diagnostic line from
+   which Bruno reads the observed result. If the needed line does not exist,
+   the implementation task must add a redacted diagnostic before asking for the
+   campaign.
+7. **Pass/fail table.** Use:
+
+   `step | action | observed in app | expected from | pass condition | evidence`
+
+   State numeric tolerances, legitimate-empty behavior and every failure state.
+8. **Evidence capture.** Name screenshots, copied diagnostic blocks, exported
+   files or timestamps to retain. Redact tokens, keys, precise private
+   coordinates and free-text notes unless their exact content is the subject.
+9. **Cleanup and rollback.** Restore temporary files/settings, reconnect only
+   when the task explicitly permits it, and verify the app returns to the
+   pre-campaign counts/state.
+10. **Uncovered cases.** Record anything not exercised. A partial campaign is
+    evidence for its rows only, never for the whole slice.
+
+Preferred independent derivation sources inside the app:
+
+- **Settings → Database:** store-source lines, table census, read-backs,
+  comparison sections, trace coverage, write-through result, migration ledger,
+  snapshot/receipt information and copied diagnostics.
+- **Today / Week / Plan:** planned session identity, scheduled day, completion,
+  explicit match and authored note/RPE state.
+- **Activities and activity detail:** canonical activity identity, summary
+  fields, weather, gear, route, profile, splits, laps and no-trace behavior.
+- **Progress:** volume, load, zones, PMC/fitness and monotony derived from the
+  accepted input snapshot.
+- **Settings → Health coverage:** Health/app overlap, Health-only/app-only
+  sessions, summary-only coverage, route and quantity availability.
+- **Settings → Data controls / lifecycle previews:** export, deletion,
+  disconnect and retained/removed categories.
+
+When two app screens both read the same hydrated store, they are not independent
+sources. Derive the expectation from a direct legacy-file read, repository query,
+snapshot/audit report, HealthKit coverage result or separately captured
+pre-flip baseline, and state which one was used.
 
 ---
 
@@ -124,6 +199,13 @@ Add or update an invariant only if it can cheaply prevent a second tracked
 source duplicate without hard-coding this one filename.
 
 Run the full suite. Present the exact diff and ask before committing or pushing.
+
+Manual-campaign decision: normally no device campaign is needed for deleting an
+unreferenced duplicate. If target membership or runtime loading remains
+ambiguous, build a short launch campaign: derive the expected compiled path from
+the Xcode build log, then confirm Settings → Database shows the intended app
+patch and opens without a duplicate-symbol or missing-store failure. Record why
+that evidence is sufficient; do not invent a data campaign for a mechanical fix.
 ~~~
 
 ---
@@ -246,6 +328,14 @@ Restore must not trigger DatabaseWriteThrough.
 Extend the Database screen with one receipt per store and clear partial-failure
 reporting. Add focused tests for every store, then run the full suite. Do not
 start database-first mutations or reconciliation changes in this patch.
+
+Manual campaign required because restore changes real authored files. Build it
+before completion. In Settings → Database → authored read-back, derive the
+expected per-store database counts from the repository/read-back lines, press
+the restore control, read each receipt, then verify the corresponding note,
+commute, match or move on Today/Week/activity detail. Relaunch and verify it
+persists. Include unreadable-source handling only with a protected disposable
+fixture or backup—never corrupt the only authored file on the phone.
 ~~~
 
 ### AI prompt 1B — establish the database-first mutation pattern
@@ -277,6 +367,13 @@ Add negative controls for:
 
 Implement NotesStore only, document the reusable pattern, and stop. Do not migrate
 commutes, moves, match decisions or reviews in the same patch.
+
+Manual campaign required for observable save ordering. Create a disposable test
+note from Today or Week, record its session UID/day, and derive the expected DB
+row from Settings → Database → authored read-back rather than from the hydrated
+NotesStore alone. Verify save, edit, relaunch and delete. Include a test-build
+failure injection for DB-commit failure and JSON-mirror failure, and specify the
+exact alert/diagnostic line expected for each. Restore the original note state.
 ~~~
 
 ### AI prompt 1C — family-scoped reconciliation and removal evidence
@@ -301,6 +398,13 @@ retention and tests.
 Do not edit an applied migration. Do not combine this with database-first store
 rewrites. Run upgrade tests from a populated pre-migration database and the full
 suite.
+
+Manual campaign required only after family-scoped reconciliation is wired to a
+real control. Use protected disposable records. Derive the pre/post counts from
+Settings → Database read-backs and the family-level removal ledger. Delete one
+record in the chosen family, run its reconciliation, and prove every unrelated
+family count is unchanged. Capture the ledger row naming the exact family.
+Never use the first real review as disposable test data.
 ~~~
 
 ---
@@ -352,6 +456,14 @@ UNPROTECTED_STORE_CEILING only after both are covered.
 
 Do not change the chosen protection class or reset user data. Run all tests and
 provide the exact on-device inspection steps.
+
+Manual campaign mandatory on a physical locked device. The expected protection
+class comes from FileProtection's declared mapping; the observed value must come
+from the new FileManager attribute read-back shown in Settings → Database, not
+from a fixed label. Cover the database, snapshots, details/streams directories,
+authored files and preferences export. Include before-first-unlock/after-unlock
+behavior where safe, and record “no attribute” and inspection-failure rendering
+using a test fixture rather than weakening real user files.
 ~~~
 
 ---
@@ -421,6 +533,14 @@ and prove the row turns red.
 
 Do not change hydration, B5 gear behavior or load parity in this patch. Run the
 full suite and state the remaining B3/B4 evidence closeouts.
+
+Manual campaign required for the B3/B4 closeout even if the athlete read-back
+patch itself is test-covered. Derive athlete/profile expectations from the new
+direct athlete.json/constants.json read-back. For zero traces, select an ID
+classified in Settings → Database → trace coverage as answered-empty, then open
+Activities → activity detail and exercise route/profile/HR panels. For timing,
+use a Release build and the “Detail store built” diagnostic while recording
+first interaction latency. Keep each evidence source independent and name it.
 ~~~
 
 ---
@@ -481,6 +601,13 @@ list the tests that would change.
 Stop and ask Bruno to select the contract. After the decision, implement the
 smallest shared-domain change so picker and resolver cannot disagree. Replace,
 do not merely delete, the current defect test. Run the full suite.
+
+After Bruno selects and the behavior is implemented, a manual campaign is
+required. Start from Today or Week, open the session's match picker and choose a
+known ineligible activity shown in Activities for that day. Derive eligibility
+from the activity discipline and Activity.isPlanEligible contract; observe the
+picker explanation, session completion, extras placement, adherence and Progress
+load. Clear the override and prove every screen returns to its baseline.
 ~~~
 
 ---
@@ -547,6 +674,13 @@ Write docs/D7-B5-GROUNDWORK.md with negative controls, focused tests, device
 screens, performance expectations, rollback and acceptance evidence. Update the
 authoritative ADR only with accepted decisions. Stop before implementation and
 present the decisions Bruno must approve.
+
+The groundwork must include the future B5 manual campaign in full. Derive the
+expected weather and gear inventory from an independent athlete.json/weather.json
+read or the B5 read-back, then name the exact Settings gear rows, activity-detail
+gear/weather cards and Database comparison lines to inspect. Include an active
+shoe, retired shoe, bike, unknown gear reference, missing weather and one normal
+weather reading. Specify file-removal rehearsal, relaunch and rollback steps.
 ~~~
 
 ---
@@ -605,6 +739,13 @@ trace, no HR, RPE edit, commute toggle, match override and plan move fixtures.
 
 Write bounded groundwork and stop before the hydration flip. Run the full suite
 if any audit tests or instrumentation are added.
+
+The groundwork must build the B6 manual campaign. Capture an independent
+pre-flip baseline for Today, Week and Progress: matching, volume, zones, load,
+PMC/fitness and monotony. State exactly which app card supplies each observed
+number and which file-side parity/baseline report supplies its expectation.
+Include same-count edits (RPE change, commute toggle, match override, plan move)
+to prove revision invalidation, then restore each edit and confirm the baseline.
 ~~~
 
 ---
@@ -659,6 +800,13 @@ Add negative controls for partial graph failure, duplicate timestamps, duplicate
 record keys, invalid plan-session references, delete/relaunch and source purge.
 Flip reads only after independent parity on the real record and explicit device
 acceptance.
+
+Manual campaign mandatory once a real review exists. Derive the expected graph
+from Settings → Database → Review trail read-back and the repository's redacted
+counts/identity, then inspect Today's review entry and review-history detail for
+window, verdict, summary, changes and watch items. Test relaunch and a protected
+export/restore path. Do not expose evidence prose in screenshots and do not call
+an external model merely to manufacture campaign data.
 ~~~
 
 ---
@@ -723,6 +871,13 @@ checkpoint.
 
 Implement only the additive rejection-field tranche if it is independently
 reviewable. Do not flip cursor or queue authority in the same patch.
+
+The B8 groundwork must include a physical-device background/termination
+campaign. Derive expected activity, cursor, queue and rejection state from
+Settings → Database table/read-back/ledger lines. Specify Xcode steps for
+backgrounding, force termination before/after commit, foreground catch-up and
+retry exhaustion. For every kill point, state the expected cursor/anchor and row
+count. Add diagnostics first if the app cannot currently expose those facts.
 ~~~
 
 ---
@@ -799,6 +954,13 @@ and verification. Do not claim snapshotID alone provides this.
 
 Do not modify phone data or require secrets. Provide the exact final on-device
 capture/import/verify/export runbook, but stop before B9 activation.
+
+Manual evidence campaign mandatory and part of the deliverable. Give exact
+Settings → Database taps for protected snapshot, Import and verify, copy
+diagnostics and export. Then give the Xcode Devices and Simulators steps for
+downloading the post-verification xcappdata package. Derive expected snapshot
+hash/fingerprint/run ID from the app lines, and expected field/count parity from
+the standalone audit report. Name every file retained and the pass/fail rule.
 ~~~
 
 ---
@@ -862,6 +1024,14 @@ Then wire the single transactional activation path and mirror ordering.
 Produce a B10 acceptance table for every principal screen and failure state.
 Require explicit user approval and a fresh device package before the final flip.
 Never disconnect Strava in this task.
+
+The complete B10 manual campaign is mandatory before activation can be accepted.
+It must be a screen-by-screen table covering Today, Week, Plan, Progress,
+Activities/list/detail/route/charts/splits, weather, gear, notes/RPE, matching,
+Review, Settings, Database and background refresh. Derive expectations from the
+accepted pre-flip baseline and independent audit—not from the hydrated screens.
+Include runtime JSON moved aside, corrupt/missing DB recovery, save/relaunch,
+export/restore and rollback. Record exact evidence filenames and uncovered cases.
 ~~~
 
 ---
@@ -936,6 +1106,14 @@ kill-before/after-commit test design and dedup candidate rules.
 Write bounded C0/C0.1 groundwork and stop for schema/field-priority approval.
 Do not call Strava endpoints unnecessarily, change credentials, purge rows or
 claim Health is active.
+
+The groundwork must build the Stage-C physical-device campaign. Derive coverage
+from Settings → Health coverage, canonical/table state from Settings → Database,
+and rendered results from Activities and activity detail. Specify a newly
+recorded Health workout, an update, a deletion, route/no-route cases and the
+expected anchored checkpoint after each committed batch. The later disconnected
+rehearsal must prove a fresh workout reaches summaries, route/charts and Progress
+with Strava unavailable; do not run that destructive/revocation step in C0/C0.1.
 ~~~
 
 ---
@@ -1006,6 +1184,14 @@ oldest version.
 
 Do not remove or purge user data in the groundwork patch. Produce the ordered
 deletion plan, rollback limits, tests and device acceptance campaign first.
+
+The D8 groundwork must include the final manual campaign. Derive the expected
+remaining filesystem/preferences inventory from the executable legacy inventory
+and an xcappdata export, then verify normal screens, authored save/relaunch,
+SQLite export/restore and supported-old-version upgrade. Settings → Database must
+show SQLite authority with no legacy fallback; Xcode's downloaded container
+provides independent proof that retired runtime files/keys are absent. Include
+rollback limits and never delete the only supported upgrade fixture.
 ~~~
 
 ---
