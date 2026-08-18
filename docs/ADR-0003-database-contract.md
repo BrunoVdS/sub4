@@ -9033,7 +9033,41 @@ than beside it. A rule and not a test, for RULE 8's reason: the call is one line
 in a method whose only caller is a SwiftUI button, and a test that drove it
 would fire a real import.
 
-### 12.149.5 What this does not fix
+### 12.149.5 The device confirmed both halves — 18 August, 04:00
+
+**The defect, from the ledger.** `authored` runs stood at **47** in the patch-396
+export on 17 August at 14:43 and at **57** by 04:02 the next morning. Five of
+those ten are the restore presses §12.149 predicted — two on 401, notes and
+commutes; three on 404, with moves. The rest are ordinary authored saves.
+
+**The fix, from two exports either side of one press:**
+
+```
+before   authored: 57 · Import ledger: 257 rows · Last import 02:01:54Z
+after    authored: 57 · Import ledger: 257 rows · Last import 02:01:54Z
+```
+
+**Byte-identical. No run of any kind was opened.** A restore is silent.
+
+### 12.149.6 The ledger cannot say what caused a run, and that made it ambiguous
+
+The first export alone could not settle it. An authored run had fired at
+02:01:54Z — 04:01:54 local, between the 04:00 build and the 04:02 export — and
+**`DatabaseWriteThrough.record(outcome:reason:)` uses the reason ONLY on
+failure.** A successful authored run keeps its trigger and nothing about what
+caused it, so the row could equally have been a restore press or
+`AthleteStore.save` catching up an athlete cache after a launch-time sync.
+
+The second export resolved it by elimination — three presses would have shown
+`authored: 60` — but that is inference, not evidence. **The ledger says *an
+authored run happened* and cannot say *because of what*,** which is §12.15's
+shape in the one table that records what touched the database.
+
+Worth closing, and adjacent to topic 1C's removal attribution: that section
+needs to say WHICH FAMILY lost rows, and this needs to say WHICH CHANGE opened
+the run. Same missing column, two questions.
+
+### 12.149.7 What this does not fix
 
 **The blast radius itself is topic 1C's**, not this patch's. An `.authored`
 trigger still permits reconciliation across every family, and `canReconcile`

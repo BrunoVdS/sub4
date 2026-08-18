@@ -511,25 +511,26 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
 > defect as a test, so the day it is fixed the test inverts.
 
 - **ONE authored store still has no restore path.** 400 and 404 gave the three
-  FILES one, **confirmed on the device at 404: added 0 · already held 5/1/2** —
-  the first run of the singleton path any test can reach (§12.148.4). **405
-  stopped them announcing**: `save()` fired a reconciling import, so a repair
-  arrived carrying permission to delete (§12.149).
+  FILES one, **confirmed on device: added 0 · already held 5/1/2**, the first
+  run of the singleton path any test reaches (§12.148.4). **405 stopped them
+  announcing** — `save()` fired a reconciling import, so a repair arrived
+  carrying permission to delete (§12.149).
   **The match decisions are next and are not a file** — a `Data` value in
   `UserDefaults` needing its own lossless set-aside. **`proposals.json` is
   B7's**; zero-versus-zero proves nothing. §12.144, §12.148.
 - **SLICE 3 IS SELF-REFERENTIAL AND SAYS SO SINCE 399.** Both varied inputs —
-  activities (381), traces (398) — are the database's on both sides, so its 413
-  days and 7211 buckets prove `LoadSeries` is deterministic, not that the
-  migration carried the data. **Marked, not rescued**: the rescue is an app side
-  built from the files through the seams, which changes what the slice MEANS.
-  §12.125.4's "no screen shows it" expired when 378 and 390 built them. §12.143.
-- **`newest removal` names the trigger, not the family**; **`canReconcile` tests
-  readable, not correct**; **Import is not a repair path** (§12.126.5).
+  activities (381), traces (398) — are the database's on both sides, so it proves
+  `LoadSeries` is deterministic, not that the migration carried the data.
+  **Marked, not rescued**: the rescue changes what the slice MEANS, and
+  §12.125.4's "no screen shows it" expired when 378 and 390 built the seams.
+- **`newest removal` names the trigger, not the family**, and **a successful
+  authored run does not record what caused it** (§12.149.6); **`canReconcile`
+  tests readable, not correct**; **Import is not a repair path** (§12.126.5).
 - **RULE 8 no longer covers `DetailStore`** (§12.142.3); **391 swept the
   read-backs and not the restore receipts** — RULE 11 (§12.146). **AN
   `.authored` TRIGGER STILL PERMITS RECONCILIATION ACROSS EVERY FAMILY** — 405
-  stopped restores pulling it, not the trigger being dangerous. Topic 1C.
+  stopped restores pulling it (**confirmed on device: ledger byte-identical
+  either side of a press**), not the trigger being dangerous. Topic 1C.
 - **`ReadBacks.athlete` IS THE LAST READ-BACK COMPARING THE DATABASE WITH
   ITSELF.** It reads `ConstantsStore.shared.c`, `AthleteStore.shared.ftp` and
   `.hrZones`, all **hydrated since 346** — 27 comparisons that could not have
@@ -539,10 +540,9 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   checks: `athlete_profile` (1), `resting_month` (15),
   `activity_gear_reference` (500). **`knownActivityIDs` is B5's**;
   **`DetailStore` is invisible to RULE 1**, `mayWrite` covers it.
-- **The pre-activation snapshot is still `2026-08-10-084723`** (340); B9 moves
-  it. **`manual.html` is a hundred patches stale** (284). **Two stores remain
-  unprotected** by §12.116's guard — `AthleteStore`, `AthleteConstants`,
-  ceiling 2. **`content_revision` is reserved and unoccupied** (334).
+- **Snapshot still `2026-08-10-084723`** (340), B9 moves it; **`manual.html` a
+  hundred patches stale** (284); **two stores unprotected** by §12.116 —
+  `AthleteStore`, `AthleteConstants`; **`content_revision` unoccupied** (334).
 - **Dates:** first review **24 Aug**; Actions resets **1 Sep**; Japan **7–12
   Sep** — `DayKey.key(_:in:)`'s first run outside Europe/Brussels.
 
