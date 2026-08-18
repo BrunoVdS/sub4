@@ -9187,6 +9187,14 @@ cannot see one sitting in a file nothing has touched. Worth knowing before
 trusting it as a whole-tree guarantee; a clean-build variant would close it and
 costs minutes per run, which is why it is recorded rather than done.
 
+**MEASURED AT 408 RATHER THAN LEFT AS A WORRY.** `xcodebuild clean` followed by
+a full `build-for-testing` of both targets emits **zero** warnings from `Sub4/`
+and `Sub4CoreTests/`. The limitation is real and the backlog it could have
+hidden is empty: two warnings surfaced this way — a redundant `#require`
+predating the gate, and an unused binding left by 395's tuple narrowing — and
+there is no third. The incremental gate is a complete guarantee TODAY, and stops
+being one the moment it is trusted without a clean build behind it.
+
 ### 12.150.5 The upgrade test caught the reader before the device could
 
 `MigrationLedger.all` selects `cause`, so a database that stops before this

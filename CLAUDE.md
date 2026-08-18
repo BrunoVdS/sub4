@@ -524,7 +524,7 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
 - **`newest removal` names the trigger, not the family** (1C's other half);
   **`canReconcile` tests readable, not correct**; **Import is not a repair path**.
   **403's gate reads a BUILD LOG**, so an incremental build hides warnings in
-  files nothing touched (§12.150.4).
+  untouched files — **a clean build at 408 found zero** (§12.150.4).
 - **RULE 8 no longer covers `DetailStore`** (§12.142.3); **391 swept the
   read-backs and not the restore receipts** — RULE 11 (§12.146). **AN
   `.authored` TRIGGER STILL PERMITS RECONCILIATION ACROSS EVERY FAMILY** — 405
