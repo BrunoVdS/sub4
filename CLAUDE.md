@@ -519,17 +519,16 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
 - **SLICE 3 IS SELF-REFERENTIAL AND SAYS SO SINCE 399.** Both varied inputs —
   activities (381), traces (398) — are the database's on both sides, so it proves
   `LoadSeries` is deterministic, not that the migration carried the data.
-  **Marked, not rescued**: the rescue changes what the slice MEANS, and
-  §12.125.4's "no screen shows it" expired when 378 and 390 built the seams.
+  **Marked, not rescued**; §12.125.4's "no screen shows it" expired at 378/390.
 - **`newest removal` names the trigger, not the family** (1C's other half);
-  **`canReconcile` tests readable, not correct**; **Import is not a repair path**.
-  **403's gate reads a BUILD LOG**, so an incremental build hides warnings in
-  untouched files — **a clean build at 408 found zero** (§12.150.4).
-- **RULE 8 no longer covers `DetailStore`** (§12.142.3); **391 swept the
-  read-backs and not the restore receipts** — RULE 11 (§12.146). **AN
-  `.authored` TRIGGER STILL PERMITS RECONCILIATION ACROSS EVERY FAMILY** — 405
-  stopped restores pulling it (**confirmed on device: ledger byte-identical
-  either side of a press**), not the trigger being dangerous. Topic 1C.
+  **`canReconcile` tests readable, not correct**; **Import is not a repair
+  path**. **403's gate reads a BUILD LOG** — a clean build at 408 found zero
+  (§12.150.4).
+- **RULE 8 no longer covers `DetailStore`**; **391 swept the read-backs and not
+  the restore receipts** — RULE 11. **AN `.authored` TRIGGER STILL PERMITS
+  RECONCILIATION ACROSS EVERY FAMILY** — 405 stopped restores pulling it
+  (**device: ledger byte-identical either side of a press**), not the trigger
+  being dangerous. Topic 1C.
 - **`ReadBacks.athlete` IS THE LAST READ-BACK COMPARING THE DATABASE WITH
   ITSELF.** It reads `ConstantsStore.shared.c`, `AthleteStore.shared.ftp` and
   `.hrZones`, all **hydrated since 346** — 27 comparisons that could not have
@@ -538,8 +537,7 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   `UNPROTECTED_STORE_CEILING` pair — and closes **516 rows** nothing else checks:
   `athlete_profile` (1), `resting_month` (15), `activity_gear_reference` (500).
   **`knownActivityIDs` is B5's**; **`DetailStore` is invisible to RULE 1**.
-- **Snapshot still `2026-08-10-084723`** (340); **`manual.html` stale**; **two
-  stores unprotected** by §12.116; **`content_revision` unoccupied** (334).
+- **Snapshot `2026-08-10-084723`** (340); **`manual.html` stale**; **two stores unprotected** by §12.116; **`content_revision` unoccupied** (334).
 - **Dates:** first review **24 Aug**; Actions resets **1 Sep**; Japan **7–12 Sep**, `DayKey.key(_:in:)`'s first run outside Europe/Brussels.
 
 ### 5.6 Next, in order
@@ -557,23 +555,25 @@ run happened. §12.135–§12.150.
 1. **THE ROLL-UP GATE IS 8 OF 9 UNTIL 24 AUGUST.** `provesSomething` wants all
    nine read-backs to have compared something, and `Review trail` reads nothing
    on either side until **24 August 2026**. The gate is **eight of nine agree,
-   zero differ, zero could not look, and the abstention is the review trail** —
-   named, not waved through; B7 blocked on it too. **AND ONE OF THE EIGHT IS NOT
-   EVIDENCE** — §5.4a counts it, §5.5 names it.
-2. **THE FOUR-STORE DEVICE CAMPAIGN, in one session.** The restore path itself
-   is done (§5.5); what is owed is the campaign under the plan's contract, with
-   three of its rows already discharged by the 404 export.
+   zero differ, zero could not look, abstention named** — B7 blocked on it too.
+   **AND ONE OF THE EIGHT IS NOT EVIDENCE** — §5.4a counts it, §5.5 names it.
+2. **1A CLOSES WHEN `docs/DEVICE-CAMPAIGN-1A.md` HAS BEEN RUN.** The restore
+   path is built (§5.5); the campaign is now written to the contract, which it
+   was not while 400–407 landed. **Its §10 is the part to read**: every device
+   run reads `added 0`, proving the control is safe, reaches the disk and
+   announces nothing — **not that it repairs**. No route exists to make the file
+   and the database disagree safely, since deleting a note removes it from both,
+   so that half is the suite's and a device fixture is worth building before B9.
 3. **1B — DATABASE-FIRST MUTATIONS, NOTES ONLY.** A note save is file-first, so
    a termination before the fire-and-forget import commits leaves SQLite older
-   than the file and the next launch can publish the old value. **408 built the
-   narrow single-note write** — one transaction, the importer's own mapping, no
-   whole-world import (§12.152). **409 inverts the order** and needs a device
-   campaign for observable save ordering. Then family by family; 1C's
-   reconciliation scope and removal attribution come after.
+   than the file and the next launch publishes the old value. **408 built the
+   narrow write** — one transaction, the importer's own mapping, no whole-world
+   import (§12.152). **409 inverts the order** and needs its own campaign. Then
+   family by family; 1C's reconciliation scope and removal attribution follow.
 4. **FILE PROTECTION.** `protect` swallows its failure with `try?`, the screen
    prints `Until first unlock` as a literal, and a simulator cannot check it —
-   a security property applied silently, reported by a constant that cannot
-   fail. The screen must read the attribute back.
+   applied silently, reported by a constant that cannot fail. The screen must
+   read the attribute back.
 5. **Then Bruno's list**, then **B5 — weather and gear**, with
    `knownActivityIDs` and `WeatherGearRoundTrip`'s own read. **Gear is the half
    of `AthleteStore` B1 did not take** — its comparison is still evidence.
