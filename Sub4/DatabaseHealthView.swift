@@ -2700,7 +2700,7 @@ struct DatabaseHealthView: View {
                     .font(.caption).foregroundStyle(Color.dim)
                 if let aside = r.setAside {
                     Text("The unreadable file was kept as "
-                         + aside.lastPathComponent)
+                         + aside)
                         .font(.caption2).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -2882,7 +2882,7 @@ struct DatabaseHealthView: View {
         if restoringAuthored {
             HStack { ProgressView(); Text("Restoring…").font(.caption) }
         } else {
-            Button("Restore notes, commutes and moves from the database") {
+            Button("Restore the authored stores from the database") {
                 runAuthoredRestore()
             }
             .font(.caption)
@@ -2906,7 +2906,7 @@ struct DatabaseHealthView: View {
             LabeledContent("Restored", value: r.line)
                 .font(.caption).foregroundStyle(Color.dim)
             if let aside = r.setAside {
-                Text("The unreadable file was kept as \(aside.lastPathComponent)")
+                Text("The unreadable bytes were kept as \(aside)")
                     .font(.caption2).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -2960,6 +2960,18 @@ struct DatabaseHealthView: View {
         } else {
             authoredRestoreFailures.append(
                 .init(store: "moves.json", why: "the read has not run yet"))
+        }
+        // THE FIFTH, AND THE ONE THAT IS NOT A FILE — patch 407. Its load comes
+        // from `MatchDecisionRepository` through `decisionLoad`, the read this
+        // section already shows two rows below, so the receipt and the count on
+        // screen describe the same read.
+        if let decisions = decisionLoad {
+            attempt("match decisions") {
+                try Matcher.shared.restore(from: decisions)
+            }
+        } else {
+            authoredRestoreFailures.append(
+                .init(store: "match decisions", why: "the read has not run yet"))
         }
         restoringAuthored = false
     }

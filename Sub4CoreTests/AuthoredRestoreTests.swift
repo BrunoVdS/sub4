@@ -165,7 +165,7 @@ struct AuthoredRestoreTests {
 
         // THE ORIGINAL BYTES SURVIVE, UNCHANGED. They are the only copy of
         // whatever that file held, and somebody may be able to read them.
-        #expect(try Data(contentsOf: aside) == corrupt)
+        #expect(try Data(contentsOf: dir.appendingPathComponent(aside)) == corrupt)
         // AND THE RESTORE REACHED THE DISK, which it could not have done if the
         // guard had merely been skipped.
         #expect(NotesStore(directory: dir).notes.count == 1)
@@ -335,6 +335,131 @@ struct AuthoredRestoreTests {
         #expect(store.moves.count == 1)
     }
 
+
+    // MARK: The fifth store, and the one that is not a file — patch 407
+
+    /// A throwaway suite, so nothing here touches the athlete's preferences.
+    private func defaults() -> UserDefaults {
+        let suite = "authored-restore-\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: suite)!
+        d.removePersistentDomain(forName: suite)
+        return d
+    }
+
+    private func decision(_ uid: String, activity: String?) -> MatchDecision {
+        MatchDecision(sessionUid: uid, activityId: activity,
+                      decided: Date(timeIntervalSince1970: 1_755_000_000),
+                      dateIsKnown: true)
+    }
+
+    private func matcher(_ d: UserDefaults,
+                         holding: [MatchDecision]) throws -> Matcher {
+        let list = holding.sorted { $0.sessionUid < $1.sessionUid }
+        d.set(try JSONEncoder.sub4.encode(list), forKey: Matcher.decisionsKey)
+        return Matcher(defaults: d)
+    }
+
+    /// The same additive rule as the three files, in a different medium.
+    @Test("A match decision missing from the preference is added")
+    func aMissingDecisionIsAdded() throws {
+        let d = defaults()
+        let m = try matcher(d, holding: [decision("wk-01-mon", activity: "111")])
+
+        let r = try m.restore(from: .loaded(decisions: [
+            decision("wk-01-mon", activity: "111"),
+            decision("wk-02-tue", activity: "222")], skipped: 0))
+        #expect(r.store == "match decisions")
+        #expect(r.added == 1)
+        #expect(r.alreadyHeld == 1)
+        #expect(r.setAside == nil, "the blob decoded, so nothing was preserved")
+        #expect(Matcher(defaults: d).decisions.count == 2,
+                "a repair that did not reach the preference is gone next launch")
+    }
+
+    /// The store's judgement wins. A decision re-made since the import must not
+    /// revert to the activity the row remembers.
+    @Test("A decision re-made since the import is not reverted")
+    func aReMadeDecisionIsNotReverted() throws {
+        let d = defaults()
+        let m = try matcher(d, holding: [decision("wk-01-mon", activity: "999")])
+
+        _ = try m.restore(from: .loaded(
+            decisions: [decision("wk-01-mon", activity: "111")], skipped: 0))
+        #expect(m.decisions["wk-01-mon"]?.activityId == "999",
+                "the database overruled a judgement the athlete had changed")
+    }
+
+    /// **THE PATH NO FILE STORE CAN REACH ON A DEVICE.** Corrupting the only
+    /// copy of `notes.json` on a phone is not something a campaign may do, so
+    /// that row stays uncovered there. A preference suite costs nothing.
+    @Test("Undecodable bytes are copied aside before they are replaced")
+    func undecodableBytesAreCopiedAside() throws {
+        let d = defaults()
+        let rubbish = Data("not a decisions blob".utf8)
+        d.set(rubbish, forKey: Matcher.decisionsKey)
+
+        let m = Matcher(defaults: d)
+        #expect(!m.lastLoad.isTrustworthy, "the blob does not decode")
+
+        let r = try m.restore(from: .loaded(
+            decisions: [decision("wk-01-mon", activity: "111")], skipped: 0))
+        let aside = try #require(r.setAside, "the unreadable bytes were not kept")
+        #expect(r.added == 1)
+        #expect(aside.hasPrefix(Matcher.decisionsKey + ".unreadable-"))
+        #expect(d.data(forKey: aside) == rubbish,
+                "the preserved copy is not the blob that could not be read")
+        #expect(Matcher(defaults: d).decisions.count == 1,
+                "and the restore reached the preference")
+    }
+
+    /// §12.371's finding, in this medium: a store whose blob was unreadable
+    /// stays unwritable for the session unless the verdict moves with the
+    /// bytes — so the one action offered for fixing it would fix nothing.
+    @Test("The verdict moves with the preserved bytes")
+    func theVerdictMovesWithThePreservedBytes() throws {
+        let d = defaults()
+        d.set(Data("not a decisions blob".utf8), forKey: Matcher.decisionsKey)
+        let m = Matcher(defaults: d)
+
+        _ = try m.restore(from: .loaded(
+            decisions: [decision("wk-01-mon", activity: "111")], skipped: 0))
+        #expect(m.lastLoad.isTrustworthy,
+                "every later write this session would refuse")
+    }
+
+    /// Two restores in one second are two taps, and the second aside must not
+    /// land on the first — `StoreRestore.asideURL`'s rule in this medium.
+    @Test("A second aside in the same second does not collide")
+    func asideKeysDoNotCollide() {
+        let d = defaults()
+        let now = Date(timeIntervalSince1970: 1_755_000_000)
+        let first = Matcher.asideKey(now: now, in: d)
+        d.set(Data("x".utf8), forKey: first)
+        let second = Matcher.asideKey(now: now, in: d)
+        #expect(first != second)
+        #expect(second.contains("unreadable-"))
+    }
+
+    /// An empty table touches nothing, and a failed read is a different answer
+    /// — the same two refusals the files make, in a store that cannot throw
+    /// from its write.
+    @Test("An empty table touches nothing and a failed read says why")
+    func theTwoRefusals() throws {
+        let d = defaults()
+        d.set(Data("not a decisions blob".utf8), forKey: Matcher.decisionsKey)
+        let m = Matcher(defaults: d)
+
+        let r = try m.restore(from: .loaded(decisions: [], skipped: 0))
+        #expect(r.added == 0 && r.alreadyHeld == 0)
+        #expect(r.setAside == nil, "an empty database must not touch the bytes")
+        #expect(d.data(forKey: Matcher.decisionsKey) != nil,
+                "the unreadable blob is still where it was")
+
+        #expect(throws: AuthoredRestoreFault.self) {
+            try m.restore(from: .failed("disk I/O error"))
+        }
+    }
+
     // MARK: The receipt
 
     /// **THE DEFECT THE DEVICE PROVED — patch 402, §12.146.**
@@ -354,19 +479,22 @@ struct AuthoredRestoreTests {
         let ran = StoreRestore.lines(
             [.nothingStored("moves.json"),
              StoreRestore.Receipt(store: "notes.json", added: 2, alreadyHeld: 3,
-                                  setAside: URL(fileURLWithPath: "/tmp/aside"))],
+                                  setAside: "notes.json.unreadable-20260819-060000")],
             failures: [], subject: "Authored")
         #expect(ran.count == 3, "a heading and one line per store")
         #expect(ran[0] == "Authored restore:")
         #expect(ran[1].contains("moves.json") && ran[1].contains("added 0"))
         #expect(ran[2].contains("notes.json") && ran[2].contains("added 2"))
-        #expect(ran[2].contains("unreadable file set aside"))
+        #expect(ran[2].contains("unreadable bytes kept as"))
 
         // §12.7 — THE PASTE CARRIES NOTHING OF THE ATHLETE'S. Store names,
         // counts and an aside FILENAME. A receipt cannot carry a note's text or
         // an activity's identity because it never holds one.
-        #expect(!ran.joined().contains("/tmp/aside"),
-                "an absolute container path is not something this paste may carry")
+        // AND IT CANNOT CARRY A PATH AT ALL SINCE 407 — the field is a NAME.
+        // A test that a path does not appear was the weaker guarantee; a type
+        // that cannot hold one is the stronger. §12.151.
+        #expect(!ran.joined().contains("/"),
+                "a container path is not something this paste may carry")
     }
 
     /// **A FAILURE IS NOT A RECEIPT WITH ZEROS — patch 404, §12.148.**
@@ -413,10 +541,10 @@ struct AuthoredRestoreTests {
 
         let moved = StoreRestore.Receipt(store: "notes.json", added: 3,
                                          alreadyHeld: 1,
-                                         setAside: URL(fileURLWithPath: "/tmp/x"))
+                                         setAside: "notes.json.unreadable-20260819")
         #expect(moved.line.contains("notes.json"))
         #expect(moved.line.contains("added 3"))
-        #expect(moved.line.contains("unreadable file set aside"),
+        #expect(moved.line.contains("unreadable bytes kept as"),
                 "the reader must learn a file was moved without being told twice")
     }
 }

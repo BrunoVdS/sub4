@@ -69,10 +69,20 @@ nonisolated enum StoreRestore {
         let store: String
         let added: Int
         let alreadyHeld: Int
-        /// Where an unreadable file was moved to. Nil is the ordinary case and
-        /// NOT a failure — it means the file read cleanly and nothing had to be
-        /// preserved.
-        let setAside: URL?
+        /// **WHAT THE UNREADABLE BYTES WERE KEPT AS — a NAME, patch 407.**
+        ///
+        /// Nil is the ordinary case and NOT a failure: the source read cleanly
+        /// and nothing had to be preserved.
+        ///
+        /// It was a `URL` until the match decisions arrived, which are a `Data`
+        /// value in `UserDefaults` and have no path. The URL was only ever read
+        /// for its last component anyway — the view printed
+        /// `aside.lastPathComponent` and a test asserted the container path must
+        /// not reach the paste. A name covers a file and a preference key,
+        /// says the same thing to a reader, and **cannot carry an absolute
+        /// container path at all**, which is a better guarantee than a test
+        /// that checks one does not. §12.7.
+        let setAside: String?
 
         /// Nothing in the database for this store. Named, because the caller
         /// must not have to build a zero receipt itself and get the store name
@@ -86,7 +96,7 @@ nonisolated enum StoreRestore {
         /// act on, and this control restores several stores at once.
         var line: String {
             var s = "\(store): added \(added), already held \(alreadyHeld)"
-            if setAside != nil { s += ", unreadable file set aside" }
+            if let setAside { s += ", unreadable bytes kept as \(setAside)" }
             return s
         }
     }
@@ -170,12 +180,12 @@ nonisolated enum StoreRestore {
     /// exactly where the write is about to land, which is the defect with an
     /// extra step. §12.20.
     static func setAsideIfUnreadable(at file: URL, trustworthy: Bool,
-                                     now: Date) throws -> URL? {
+                                     now: Date) throws -> String? {
         guard !trustworthy, FileManager.default.fileExists(atPath: file.path)
         else { return nil }
         let destination = asideURL(for: file, now: now)
         try FileManager.default.moveItem(at: file, to: destination)
-        return destination
+        return destination.lastPathComponent
     }
 
     /// `notes.json.unreadable-20260817-084500`, and a suffix if that exists.
@@ -210,10 +220,18 @@ nonisolated enum AuthoredRestoreFault: Error, Equatable {
     /// send a reader to different places. §12.15.
     case databaseUnreadable(String)
 
+    /// **THE PREFERENCE STORE'S OWN FAILURE — patch 407.** `UserDefaults.set`
+    /// reports nothing, so the only way to know undecodable bytes survived
+    /// being copied aside is to read them back. This is what a caller is told
+    /// when they did not, and when it is thrown NOTHING has been written.
+    case couldNotPreserve(String)
+
     var line: String {
         switch self {
         case .databaseUnreadable(let why):
             "The stored records could not be read, so nothing was restored — \(why)"
+        case .couldNotPreserve(let why):
+            "Nothing was restored — \(why)"
         }
     }
 }

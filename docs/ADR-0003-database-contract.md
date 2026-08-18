@@ -8962,6 +8962,82 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.151 The last authored store, and it is not a file — patch 407
+
+The match decisions join the restore contract. **Five of five now have a way
+back**, and §5.5's longest-standing entry — *"five authored stores have no
+restore path, largest open risk"* — closes with `proposals.json` named as B7's
+rather than silently dropped.
+
+### 12.151.1 Every part that touches the medium is different
+
+`StoreRestore.setAsideIfUnreadable` MOVES A FILE. Pointing it at a
+`UserDefaults` key would be a file solution wearing the name of a general one —
+§12.43's mistake in the direction that looks like coverage rather than an
+obvious gap. So the undecodable bytes go to a **second preference key**: same
+medium, no directory to invent, and a test's `UserDefaults(suiteName:)` gets its
+own aside without touching the athlete's.
+
+**COPIED AND READ BACK, THEN OVERWRITTEN.** A file is MOVED because a move is
+atomic and leaves nothing at the destination. `UserDefaults` has no move, so the
+order carries the safety: the aside is written and **read back** before the
+original is replaced, and a failure to preserve stops the restore rather than
+losing what it was protecting. `UserDefaults.set` reports nothing — §12.19's
+disclosed gap — so reading it back is the only way to know.
+
+**`write()` RETURNS FALSE AND NEVER THROWS**, for the same reason. This restore
+cannot use `do/catch` like the three file stores; it checks the Bool, rolls
+memory back itself, and throws `couldNotPreserve` — because a caller who asked
+for a repair must not be told that nothing happened.
+
+### 12.151.2 The receipt carries a name, not a URL
+
+`Receipt.setAside` was a `URL?` and a preference key has no path.
+
+The URL was only ever read for its last component — the view printed
+`aside.lastPathComponent`, and a test asserted the container path must not reach
+the paste. **A name covers a file and a preference key, and cannot carry an
+absolute path at all**, which is a better guarantee than a test that checks one
+does not. The test now asserts no `/` appears anywhere in the lines. §12.7.
+
+### 12.151.3 RULE 12 caught the fifth store, exactly as written
+
+The rule said, in its own constant: *"the number is here so a fifth store
+arrives UNDER this rule rather than beside it."* It failed this patch at five
+against an expected four, before it could be committed.
+
+And its second half needed widening for the same reason the restore did.
+`Matcher.write()` returns `Bool`; counting only `private func write() throws`
+would have left **the one store the rule most needed to cover** uncounted — a
+guard that stops applying at the exact point the medium changes. Both shapes are
+counted now.
+
+### 12.151.4 The path no file store can reach on a device
+
+Corrupting the only copy of `notes.json` on the athlete's phone is not something
+a campaign may do, so that row stays **uncovered on device** for the three files
+and is carried by the suite alone.
+
+A preference suite costs nothing. `undecodableBytesAreCopiedAside` plants
+rubbish, restores, and proves the original bytes are recoverable under their
+aside key — the whole unreadable-source contract, exercised end to end, in the
+one store where it is cheap. Its control writes an empty aside and the test
+names it.
+
+### 12.151.5 What the campaign now covers
+
+Four stores through one control, one press, one export. The receipts read
+`notes.json`, `commutes.json`, `moves.json` and `match decisions`, each with its
+own counts, each derived from the read-back's own `in the database` line — which
+comes from the repositories while the receipts come from the stores.
+
+`proposals.json` stays deferred to B7: `ReviewRepository` returns proposals only
+inside a review load, the table holds zero rows, and a zero-versus-zero restore
+proves nothing about reconstructing a graph of reviews, evidence, changes and
+watch items.
+
+---
+
 ## 12.150 Why a run happened — patch 406
 
 At 04:02 on 18 August the ledger reported an authored run from four minutes

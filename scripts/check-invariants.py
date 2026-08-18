@@ -918,9 +918,11 @@ def every_restore_receipt_reaches_a_paste():
 # announcement. A restore writes through `write()` and stays silent.
 RESTORE_MUST_NOT = ["noteAuthoredChange", "try save()"]
 
-# Four restores at 405: weather, notes, commutes, moves. The match decisions
-# make five and must arrive under this rule, not beside it.
-RESTORING_STORES = 4
+# Five restores at 407: weather, notes, commutes, moves and the match
+# decisions. The rule said the fifth "must arrive under this rule, not beside
+# it" and it did — 407 failed here before it could be committed, which is the
+# whole reason the number is written down rather than inferred.
+RESTORING_STORES = 5
 
 
 def no_restore_announces() -> None:
@@ -978,17 +980,21 @@ def no_restore_announces() -> None:
     silent = 0
     for f in app_sources():
         body = strip_comments(f.read_text())
-        if "private func write() throws" not in body:
+        if not re.search(r"private func write\(\)(?: throws)? ", body):
             continue
         silent += 1
-        calls = body.count("try write()")
+        # `try write()` in the file stores, bare `write()` in `Matcher`, whose
+        # write RETURNS FALSE and never throws because `UserDefaults.set` has
+        # nothing to report (§12.19). Counting only the throwing shape would
+        # have left the one store this rule most needed to cover uncounted.
+        calls = len(re.findall(r"(?:try )?write\(\)", body)) - 1
         if calls != 2:
             fail(rule, f"{f.name} calls `write()` {calls} times and should call "
                        "it twice — once from `save()`, once from `restore()`. A "
                        "third caller is a mutation that no longer announces, so "
                        "the database stops being caught up and nothing says so. "
                        "§12.149")
-    counted(rule, silent, 3, "stores with a silent write path")
+    counted(rule, silent, 4, "stores with a silent write path")
     if seen > RESTORING_STORES:
         fail(rule, f"{seen} restores exist and this rule expects "
                    f"{RESTORING_STORES}. Raise RESTORING_STORES — the number is "

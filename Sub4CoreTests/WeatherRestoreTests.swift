@@ -170,8 +170,11 @@ struct WeatherRestoreTests {
         let result = try store.restore(from: fromDatabase([reading("a"), reading("b")]))
 
         #expect(result.added == 2)
+        // A NAME, NOT A PATH — patch 407, §12.151. The receipt reaches the
+        // paste, and a name cannot carry a container path at all.
         let aside = try #require(result.setAside, "the unreadable file was not kept")
-        #expect(FileManager.default.fileExists(atPath: aside.path))
+        #expect(FileManager.default
+            .fileExists(atPath: dir.appendingPathComponent(aside).path))
         #expect(try asideFiles(in: dir).count == 1)
     }
 
@@ -184,7 +187,7 @@ struct WeatherRestoreTests {
         let result = try store.restore(from: fromDatabase([reading("a")]))
 
         let aside = try #require(result.setAside)
-        #expect(try Data(contentsOf: aside) == before,
+        #expect(try Data(contentsOf: dir.appendingPathComponent(aside)) == before,
                 "the preserved copy is not the file that could not be read")
     }
 

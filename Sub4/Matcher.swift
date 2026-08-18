@@ -446,14 +446,132 @@ final class Matcher {
         // §12.19's disclosed gap. The mutators roll memory back instead, so
         // the tick does not stick, and the reason is on the Database screen
         // under "Unreadable stores".
-        guard lastLoad.isTrustworthy else { return false }
-
-        let list = decisions.values.sorted { $0.sessionUid < $1.sessionUid }
-        guard let data = try? JSONEncoder.sub4.encode(list) else { return false }
-        defaults.set(data, forKey: Self.decisionsKey)
+        guard write() else { return false }
+        // ANNOUNCED HERE AND NOT IN `write()` — patch 407, RULE 12. A restore
+        // puts back rows that CAME FROM the database, and `.authored` sets
+        // `reconcile`, so a repair would arrive carrying permission to delete.
         // The other half of the pair `DatabaseWriteThrough`'s header names as
         // impossible to fetch again. Patch 348, §12.94.
         DatabaseWriteThrough.shared.noteAuthoredChange("a match decision was saved")
+        return true
+    }
+
+
+    // MARK: - Restore — patch 407, §12.151
+
+    /// **PUTS BACK WHAT THE PREFERENCE LOST, FROM THE DATABASE.**
+    ///
+    /// The last of the five authored stores, and **the only one that is not a
+    /// file.** The contract is `StoreRestore`'s and the merge is shared; what
+    /// is genuinely different is every part that touches the medium.
+    ///
+    /// **`StoreRestore.setAsideIfUnreadable` MOVES A FILE and is not used
+    /// here.** Pointing it at a preference key would be a file solution wearing
+    /// the name of a general one — §12.43's mistake in the direction that looks
+    /// like coverage rather than an obvious gap. Undecodable bytes are copied to
+    /// a SECOND PREFERENCE KEY instead: same medium, no directory to invent, and
+    /// a test's `UserDefaults(suiteName:)` gets its own aside without touching
+    /// the athlete's.
+    ///
+    /// **THE BYTES ARE COPIED, NOT MOVED, AND THEN OVERWRITTEN.** A file is
+    /// moved because a move is atomic and leaves nothing at the destination for
+    /// the next write to hit. `UserDefaults` has no move; copy-then-overwrite is
+    /// the nearest equivalent, and the order matters — the aside is written and
+    /// read back BEFORE the original is replaced, so a failure to preserve stops
+    /// the restore rather than losing what it was protecting.
+    ///
+    /// **`write()` RETURNS FALSE AND NEVER THROWS** — §12.19's disclosed gap,
+    /// because `UserDefaults.set` has nothing to report. So this cannot use
+    /// `do/catch` like the file stores; it checks the Bool and rolls memory back
+    /// itself, and reports the refusal as a thrown error because a caller that
+    /// asked for a repair must not be told nothing happened.
+    ///
+    /// - Throws: `AuthoredRestoreFault.databaseUnreadable` when the load
+    ///   produced nothing, and `.couldNotPreserve` when the undecodable bytes
+    ///   could not be kept — in which case nothing has been written.
+    @discardableResult
+    func restore(from load: MatchDecisionLoad, now: Date = Date()) throws
+    -> StoreRestore.Receipt {
+        guard case .loaded(let stored, _) = load else {
+            throw AuthoredRestoreFault.databaseUnreadable(load.line)
+        }
+        // Nothing to restore is not a repair — the file stores' rule, and the
+        // counts still tell the two cases apart.
+        guard !stored.isEmpty else { return .nothingStored("match decisions") }
+
+        var setAside: String?
+        if !lastLoad.isTrustworthy,
+           let original = defaults.data(forKey: Self.decisionsKey) {
+            let key = Self.asideKey(now: now)
+            defaults.set(original, forKey: key)
+            // READ BACK BEFORE OVERWRITING. `UserDefaults.set` reports nothing,
+            // so the only way to know the bytes survived is to ask for them —
+            // and asking after the original is gone would be asking too late.
+            guard defaults.data(forKey: key) == original else {
+                throw AuthoredRestoreFault
+                    .couldNotPreserve("the unreadable decisions could not be copied aside")
+            }
+            setAside = key
+            // The verdict moves with the bytes, or `write()` refuses for the
+            // rest of the session and the one action offered for fixing this
+            // store fixes nothing until the next launch.
+            lastLoad = .absent
+        }
+
+        let before = decisions
+        let m = StoreRestore.merge(stored, into: decisions)
+        decisions = m.merged
+        guard write() else {
+            // §12.17, and there is no error to catch — `write()` returns false.
+            // The aside STAYS: it is the only copy of bytes nobody could read.
+            decisions = before
+            throw AuthoredRestoreFault
+                .couldNotPreserve("the decisions could not be written back")
+        }
+        return StoreRestore.Receipt(store: "match decisions", added: m.added,
+                                    alreadyHeld: m.alreadyHeld,
+                                    setAside: setAside)
+    }
+
+    /// `match.decisions.unreadable-20260819-060000`, and a suffix if taken.
+    ///
+    /// `StoreRestore.asideURL`'s naming, in the medium this store lives in. Two
+    /// restores in the same second are two taps.
+    nonisolated static func asideKey(now: Date,
+                                     in defaults: UserDefaults = .standard) -> String {
+        let stamp = asideStamp.string(from: now)
+        var candidate = "\(decisionsKey).unreadable-\(stamp)"
+        var n = 2
+        while defaults.object(forKey: candidate) != nil {
+            candidate = "\(decisionsKey).unreadable-\(stamp)-\(n)"
+            n += 1
+        }
+        return candidate
+    }
+
+    private nonisolated static let asideStamp: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    /// The blob in the preference, and nothing else — patch 407.
+    ///
+    /// **RETURNS `false`, NEVER THROWS**, unlike the file stores' `write()`.
+    /// That is not a style choice: `UserDefaults.set` has no failure to
+    /// surface, which is §12.19's disclosed gap and the reason this store has
+    /// no write journal. A caller that must know rolls memory back on `false`.
+    ///
+    /// THE GUARD IS HERE, for the file stores' reason at 405: refusing to
+    /// overwrite a blob nobody could read is as true of a restore as of a
+    /// mutation, and what the restore skips is the ANNOUNCEMENT.
+    private func write() -> Bool {
+        guard lastLoad.isTrustworthy else { return false }
+        let list = decisions.values.sorted { $0.sessionUid < $1.sessionUid }
+        guard let data = try? JSONEncoder.sub4.encode(list) else { return false }
+        defaults.set(data, forKey: Self.decisionsKey)
         return true
     }
 
