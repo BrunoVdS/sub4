@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 407 (2026-08-18).** §5.3 is the 390 device run, Compare and
+**Current at patch 408 (2026-08-18).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself.
@@ -372,9 +372,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 407, 2026-08-18
+## 5. State — patch 408, 2026-08-18
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 407; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 408; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -512,14 +512,10 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
 
 - **THE AUTHORED RESTORE PATH IS COMPLETE — §5.5's longest entry closes.** All
   four stores have a way back, **confirmed on device for three: added 0 ·
-  already held 5/1/2** (§12.148.4). 405 stopped them announcing — `save()` fired
-  a reconciling import, so a repair arrived carrying permission to delete
-  (§12.149). 407 added the match decisions, the one that is a `UserDefaults`
-  blob rather than a file (§12.151). **`proposals.json` is B7's**;
-  zero-versus-zero proves nothing.
-  **The match decisions are next and are not a file** — a `Data` value in
-  `UserDefaults` needing its own lossless set-aside. **`proposals.json` is
-  B7's**; zero-versus-zero proves nothing. §12.144, §12.148.
+  already held 5/1/2** (§12.148.4). 405 stopped them announcing, so a repair no
+  longer arrives carrying permission to delete (§12.149); 407 added the match
+  decisions, a `UserDefaults` blob rather than a file (§12.151).
+  **`proposals.json` is B7's** — zero-versus-zero proves nothing.
 - **SLICE 3 IS SELF-REFERENTIAL AND SAYS SO SINCE 399.** Both varied inputs —
   activities (381), traces (398) — are the database's on both sides, so it proves
   `LoadSeries` is deterministic, not that the migration carried the data.
@@ -538,11 +534,10 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   ITSELF.** It reads `ConstantsStore.shared.c`, `AthleteStore.shared.ftp` and
   `.hrZones`, all **hydrated since 346** — 27 comparisons that could not have
   disagreed, printed as agreement for forty-four patches. **ITS OWN PATCH**: it
-  needs `AthleteStore(directory:)` and `ConstantsStore(directory:)` — the two
-  `UNPROTECTED_STORE_CEILING` counts — and closes **516 rows** nothing else
-  checks: `athlete_profile` (1), `resting_month` (15),
-  `activity_gear_reference` (500). **`knownActivityIDs` is B5's**;
-  **`DetailStore` is invisible to RULE 1**, `mayWrite` covers it.
+  needs `AthleteStore(directory:)` and `ConstantsStore(directory:)` — the
+  `UNPROTECTED_STORE_CEILING` pair — and closes **516 rows** nothing else checks:
+  `athlete_profile` (1), `resting_month` (15), `activity_gear_reference` (500).
+  **`knownActivityIDs` is B5's**; **`DetailStore` is invisible to RULE 1**.
 - **Snapshot still `2026-08-10-084723`** (340); **`manual.html` stale**; **two
   stores unprotected** by §12.116; **`content_revision` unoccupied** (334).
 - **Dates:** first review **24 Aug**; Actions resets **1 Sep**; Japan **7–12 Sep**, `DayKey.key(_:in:)`'s first run outside Europe/Brussels.
@@ -560,26 +555,32 @@ nothing (RULE 10); **403** makes both gates read warnings; **406** records why a
 run happened. §12.135–§12.150.
 
 1. **THE ROLL-UP GATE IS 8 OF 9 UNTIL 24 AUGUST.** `provesSomething` wants all
-   nine read-backs to have compared something, and `Review trail` reads
-   *nothing on either side* until **24 August 2026**. The gate is **eight of
-   nine agree, zero differ, zero could not look, and the abstention is the
-   review trail** — named, not waved through; B7 blocked on it too. **AND ONE OF
-   THE EIGHT IS NOT EVIDENCE** — §5.4a counts it, §5.5 names it.
+   nine read-backs to have compared something, and `Review trail` reads nothing
+   on either side until **24 August 2026**. The gate is **eight of nine agree,
+   zero differ, zero could not look, and the abstention is the review trail** —
+   named, not waved through; B7 blocked on it too. **AND ONE OF THE EIGHT IS NOT
+   EVIDENCE** — §5.4a counts it, §5.5 names it.
 2. **THE FOUR-STORE DEVICE CAMPAIGN, in one session.** The restore path itself
    is done (§5.5); what is owed is the campaign under the plan's contract, with
    three of its rows already discharged by the 404 export.
-3. **FILE PROTECTION.** `protect` swallows its failure with `try?`, the screen
-   prints `Until first unlock` as a literal, and `FileProtectionTests` says a
-   simulator cannot check it — a security property applied silently and reported
-   by a constant that cannot fail. The screen must read the attribute back.
-4. **Then Bruno's list**, then **B5 — weather and gear**, with
-   `ReadBacks.knownActivityIDs` and `WeatherGearRoundTrip`'s own read. **Gear is
-   the half of `AthleteStore` B1 did not take** — its `gear` comparison is still
-   evidence; do not reclassify it first.
-5. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
+3. **1B — DATABASE-FIRST MUTATIONS, NOTES ONLY.** A note save is file-first, so
+   a termination before the fire-and-forget import commits leaves SQLite older
+   than the file and the next launch can publish the old value. **408 built the
+   narrow single-note write** — one transaction, the importer's own mapping, no
+   whole-world import (§12.152). **409 inverts the order** and needs a device
+   campaign for observable save ordering. Then family by family; 1C's
+   reconciliation scope and removal attribution come after.
+4. **FILE PROTECTION.** `protect` swallows its failure with `try?`, the screen
+   prints `Until first unlock` as a literal, and a simulator cannot check it —
+   a security property applied silently, reported by a constant that cannot
+   fail. The screen must read the attribute back.
+5. **Then Bruno's list**, then **B5 — weather and gear**, with
+   `knownActivityIDs` and `WeatherGearRoundTrip`'s own read. **Gear is the half
+   of `AthleteStore` B1 did not take** — its comparison is still evidence.
+6. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed
    recovery screen `RootView` lacks.
-6. **D8** — stabilise one release window, then remove the JSON writers.
+7. **D8** — stabilise one release window, then remove the JSON writers.
 
 **B4's cost:** `Detail store built: 0.872 / 0.930 s` from the database in Debug,
 against 0.443 s of files in Debug and 3.925 s before 397. A Release reading is

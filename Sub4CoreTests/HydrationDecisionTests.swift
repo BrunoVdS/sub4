@@ -118,7 +118,7 @@ struct HydrationDecisionTests {
                                         bootstrap: whole())
         guard case .hydrate(let plan, let constants, let zones, let ftp,
                             let authored, let decisions,
-                            let storedMoves, let storedActivities) = i else {
+                            _, let storedActivities) = i else {
             Issue.record("every family loaded, so the stores must be fed")
             return
         }

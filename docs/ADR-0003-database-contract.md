@@ -8962,6 +8962,86 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.152 One note, one transaction — patch 408, plan topic 1B
+
+A note save is file-first today: memory, then `notes.json`, then a
+fire-and-forget whole-world import. **A termination before that import commits
+leaves SQLite older than the file**, and the next launch can publish the old
+value from a database-hydrated store.
+
+The plan's mutation contract is the other order — SQLite commits before
+observable success, and the JSON mirror follows. **408 builds the write and
+changes no order.** `NotesStore` is untouched; 409 inverts it. That is
+381-before-382: when the flip is the only thing in its patch, anything that
+breaks on flip day is attributable to it.
+
+### 12.152.1 It calls the importer's mapping rather than copying it
+
+`Sub4Import.importNotes` owns note→row: which columns move, that
+`planVersionID` and `activityID` stay NULL because resolving a note to an
+activity is a MATCHING decision (§12.7.1), and that each note gets its own
+savepoint. A second mapping would be §12.43's defect in the most expensive
+place — two ways to write the athlete's own words, agreeing on the columns
+somebody remembered.
+
+So the single-note write hands `importNotes` **an array of one**. The array is
+the interface; the loop inside is already per-note.
+
+`theNarrowWriteMatchesTheImporter` writes the same note both ways into two
+databases and compares every field. Its control gives `upsert` its own INSERT
+that forgets `feel`, and the test names it.
+
+**No whole-world import.** 1B's requirement in as many words: recording one
+sentence must not re-read 694 activities and 199,848 samples.
+
+### 12.152.2 A narrow write meets an imported database, and only that
+
+`user_note.accountID` references `account`, so a bare migrated database refuses
+every note. That is correct: a single-note write is not the thing that should be
+establishing who the athlete is. The fixture imports first, which is the only
+state this write ever meets on a device.
+
+Found by accident — the first draft used a bare database and every note came
+back refused, which looked like a fixture mistake. It became the control below.
+
+### 12.152.3 A refusal is not a throw, and the first two controls missed it
+
+`importNotes` catches per note and records a refusal on the report rather than
+letting it escape. A caller checking only for a thrown error reads *refused* as
+*written*, which is exactly what 1B exists to stop — so `upsert` checks
+`report.refusals` before answering.
+
+**Deleting that check passed the entire suite. Twice.**
+
+The foreign-key case proves `upsert` reports a refusal, but not through that
+branch: a missing account fires when the OUTER transaction commits, so it
+reaches `upsert`'s own `catch` and the report is never consulted. Both paths
+produce `.refused`, so the test could not tell them apart.
+
+`user_note.rpe` carries `CHECK (rpe IS NULL OR (rpe >= 1 AND rpe <= 10))`, which
+fires on the STATEMENT. `importNotes` catches it, records the refusal and
+returns normally — nothing throws, `notesImported` stays zero, and without the
+check `upsert` answers `.wrote(inserted: false)` for a note the database
+refused. The control now produces exactly that.
+
+**§12.69's rule, and it took three attempts to satisfy honestly**: a guard that
+cannot fail has not been tested, and a control that passes for the right reason
+through the wrong path is a control that has not run.
+
+### 12.152.4 What 409 does
+
+`NotesStore.save` and `remove` invert: validate, commit SQLite, publish
+observable state, then update the JSON mirror, and report a mirror failure
+diagnostically without rolling back a committed database edit. Its negative
+controls are the plan's four — commit failure before publication, cancellation
+between commit and mirror, mirror failure after commit, and create/edit/delete
+across a relaunch.
+
+It needs a device campaign for observable save ordering, which is why it is its
+own patch rather than the second half of this one.
+
+---
+
 ## 12.151 The last authored store, and it is not a file — patch 407
 
 The match decisions join the restore contract. **Five of five now have a way

@@ -1012,3 +1012,102 @@ nonisolated enum AuthoredRepository {
          ORDER BY al.externalID
         """
 }
+
+// MARK: - The narrow write — patch 408, ADR-0003 §12.152
+
+/// What a single-record write did.
+///
+/// **COUNTS AND A REASON, NOT A `Bool`.** §12.15: "the database refused it" and
+/// "there was no database" send a caller to different places, and a mutation
+/// that reports only success or failure cannot tell the athlete which.
+nonisolated enum NoteWrite: Equatable, Sendable {
+    /// The row is committed. `inserted` false means it updated one.
+    case wrote(inserted: Bool)
+    /// The transaction refused. Carries what SQLite said, and NOTHING is
+    /// committed — the caller still holds the only copy of the edit.
+    case refused(String)
+    /// There is no database to write to. Not a failure of this edit: the
+    /// launch gate has its own condition and its own screen.
+    case noDatabase
+
+    var committed: Bool {
+        if case .wrote = self { return true }
+        return false
+    }
+
+    /// One line, always sayable — §12.54.2.
+    var line: String {
+        switch self {
+        case .wrote(let inserted): inserted ? "written" : "updated"
+        case .refused(let why):    "REFUSED — \(why)"
+        case .noDatabase:          "the database is not open"
+        }
+    }
+}
+
+/// One note, one transaction — patch 408, §12.152.
+///
+/// **IT CALLS THE IMPORTER'S MAPPING RATHER THAN COPYING IT.** `importNotes`
+/// owns note→row: which columns move, that `planVersionID` and `activityID`
+/// stay NULL because resolving a note to an activity is a MATCHING decision
+/// (§12.7.1), and that each row gets its own savepoint. A second mapping here
+/// would be §12.43's defect in the one place it is most expensive — two ways
+/// to write the athlete's own words, disagreeing about which columns matter.
+///
+/// So the single-note write hands `importNotes` an array of one. The array is
+/// the interface; the loop inside it is already per-note.
+///
+/// **NO WHOLE-WORLD IMPORT.** The plan's 1B requirement in as many words: a
+/// note mutation must not re-read and re-write 694 activities and 199,848
+/// samples to record one sentence.
+nonisolated enum NoteRepository {
+
+    static func upsert(_ note: NotesStore.Note, in db: Sub4Database?,
+                       now: Date = Date()) -> NoteWrite {
+        guard let db else { return .noDatabase }
+        do {
+            var report = Sub4Import.Report()
+            let stamp = Sub4Import.iso8601(now)
+            try db.queue.write { d in
+                try Sub4Import.importNotes(d, notes: [note], now: stamp,
+                                           into: &report)
+            }
+            // A REFUSAL INSIDE THE SAVEPOINT IS NOT A THROW. `importNotes`
+            // catches per note and records a refusal, so a caller that only
+            // checked for a thrown error would read "refused" as "written" —
+            // which is the failure this whole patch is about.
+            if let refusal = report.refusals.first {
+                return .refused(refusal.reason)
+            }
+            return .wrote(inserted: report.notesImported > 0)
+        } catch {
+            return .refused(String(describing: error))
+        }
+    }
+
+    /// Removes one note by the session it belongs to.
+    ///
+    /// **NOT `removeMissing`.** That deletes every key absent from a set and is
+    /// the reconciliation pass's shape; pointing it at one note would mean
+    /// handing it every OTHER note as the keep-set, so a caller with a stale
+    /// list would delete the difference. A targeted delete duplicates no
+    /// mapping — there is nothing to map, only a key.
+    ///
+    /// Deleting a note that is not there is `.wrote(inserted: false)` and not a
+    /// refusal: the caller asked for it to be gone and it is gone. §12.15's
+    /// distinction applies to reasons, not to work that was already done.
+    static func delete(noteFor sessionUid: String, in db: Sub4Database?) -> NoteWrite {
+        guard let db else { return .noDatabase }
+        do {
+            try db.queue.write { d in
+                try d.execute(sql: """
+                    DELETE FROM user_note
+                    WHERE accountID = ? AND planSessionUID = ?
+                    """, arguments: [Sub4Import.accountID, sessionUid])
+            }
+            return .wrote(inserted: false)
+        } catch {
+            return .refused(String(describing: error))
+        }
+    }
+}
