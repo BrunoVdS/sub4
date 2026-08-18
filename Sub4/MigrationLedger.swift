@@ -179,6 +179,19 @@ nonisolated struct MigrationRun: Identifiable, Hashable, Sendable {
     let triggeredBy: MigrationRunTrigger?
     let note: String?
 
+    /// **WHY THIS RUN HAPPENED — patch 406, §12.150.**
+    ///
+    /// Nil for every row written before the column existed, and for any caller
+    /// with no answer. NOT the same field as `note`: verification and
+    /// activation own that one, and a second meaning in it would make every
+    /// reader ask which kind of row it had before it could read the value.
+    ///
+    /// A KIND of change — "a session note was saved" — never a note's text or a
+    /// session uid. The strings are literals at their call sites and
+    /// `causeIsAConstantSentence` keeps them so, which is what makes §12.7 hold
+    /// for a column that reaches the paste.
+    let cause: String?
+
     /// Never nil, so the screen has a row it can always draw. §12.54.2: a field
     /// that vanishes when it has nothing to say is indistinguishable from a
     /// field nobody wired in.
@@ -197,6 +210,16 @@ nonisolated struct MigrationRun: Identifiable, Hashable, Sendable {
                      triggeredBy?.rawValue ?? "trigger not recorded",
                      "patch \(appVersion)"]
         if let snapshotID { parts.append("snapshot \(snapshotID)") }
+        // PATCH 406 — WHY, BESIDE WHAT. §12.150: on 18 August the ledger said an
+        // authored run had fired four minutes earlier and could not say what
+        // caused it, and the answer decided whether patch 405 had worked.
+        //
+        // CONDITIONAL, unlike `triggerLabel` above it, and the difference is
+        // real: every row HAS a trigger, so a missing one is a caller that
+        // forgot. Rows written before this column exist in their hundreds, and
+        // printing "cause not recorded" against all of them would be noise
+        // rather than a finding. The census below says how many are unrecorded.
+        if let cause, !cause.isEmpty { parts.append("because \(cause)") }
         if let note, !note.isEmpty { parts.append(note) }
         return parts.joined(separator: " · ")
     }
@@ -486,16 +509,23 @@ nonisolated enum MigrationLedger {
                      appVersion: String,
                      snapshotID: String?,
                      trigger: MigrationRunTrigger? = nil,
+                     // PATCH 406 — WHY THIS RUN HAPPENED, §12.150. `nil` is
+                     // "not recorded", which is what 257 existing rows hold and
+                     // what the column stores as NULL. NOT §12.95.4's trap: that
+                     // is about a default supplying a REAL value nobody typed,
+                     // and this default supplies an absence.
+                     cause: String? = nil,
                      now: String) throws -> String {
         let id = UUID().uuidString
         try db.queue.write { d in
             try d.execute(sql: """
                 INSERT INTO migration_run
                   (id, startedUTC, finishedUTC, state, snapshotID, appVersion,
-                   triggeredBy, note)
-                VALUES (?, ?, NULL, ?, ?, ?, ?, NULL)
+                   triggeredBy, note, cause)
+                VALUES (?, ?, NULL, ?, ?, ?, ?, NULL, ?)
                 """, arguments: [id, now, MigrationRunState.running.rawValue,
-                                 snapshotID, appVersion, trigger?.rawValue])
+                                 snapshotID, appVersion, trigger?.rawValue,
+                                 cause])
             try pruneInside(d, keeping: keepAutomaticRuns,
                             keepingInterrupted: keepAutomaticInterruptedRuns)
         }
@@ -616,7 +646,8 @@ nonisolated enum MigrationLedger {
         try db.queue.read { d in
             try Row.fetchAll(d, sql: """
                 SELECT sequence, id, startedUTC, finishedUTC, recoveredUTC,
-                       state, snapshotID, appVersion, triggeredBy, note
+                       state, snapshotID, appVersion, triggeredBy, note,
+                       cause
                   FROM migration_run
                  ORDER BY sequence DESC
                  LIMIT ?
@@ -680,7 +711,8 @@ nonisolated enum MigrationLedger {
         try db.queue.read { d in
             try Row.fetchAll(d, sql: """
                 SELECT sequence, id, startedUTC, finishedUTC, recoveredUTC,
-                       state, snapshotID, appVersion, triggeredBy, note
+                       state, snapshotID, appVersion, triggeredBy, note,
+                       cause
                   FROM migration_run
                  WHERE state = ?
                  ORDER BY sequence DESC
@@ -806,7 +838,8 @@ nonisolated enum MigrationLedger {
                             appVersion: version,
                             triggeredBy: (r["triggeredBy"] as String?)
                                 .flatMap { MigrationRunTrigger(rawValue: $0) },
-                            note: r["note"] as String?)
+                            note: r["note"] as String?,
+                            cause: r["cause"] as String?)
     }
 }
 

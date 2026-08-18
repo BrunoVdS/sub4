@@ -110,7 +110,7 @@ struct WriteThroughDeleteTests {
         #expect(before == 2)
 
         let out = DatabaseWriteThrough.writeThrough(
-            db, stores: afterADelete(), appVersion: "test", trigger: .authored)
+            db, stores: afterADelete(), appVersion: "test", trigger: .authored, cause: "a test")
 
         let r = try #require(report(out))
         #expect(r.reconciled.isRunning, "the athlete's own save may delete")
@@ -128,7 +128,7 @@ struct WriteThroughDeleteTests {
                                              .backgroundRefresh] {
             let db = try seeded()
             let out = DatabaseWriteThrough.writeThrough(
-                db, stores: afterADelete(), appVersion: "test", trigger: trigger)
+                db, stores: afterADelete(), appVersion: "test", trigger: trigger, cause: "a test")
 
             let r = try #require(report(out))
             #expect(!r.reconciled.isRunning,
@@ -153,7 +153,7 @@ struct WriteThroughDeleteTests {
         s.reconcile = .skipped("a store could not be read")
 
         let out = DatabaseWriteThrough.writeThrough(
-            db, stores: s, appVersion: "test", trigger: .authored)
+            db, stores: s, appVersion: "test", trigger: .authored, cause: "a test")
 
         let r = try #require(report(out))
         #expect(!r.reconciled.isRunning)
@@ -175,9 +175,9 @@ struct WriteThroughDeleteTests {
 
         let byTrigger = DatabaseWriteThrough.writeThrough(
             db, stores: afterADelete(), appVersion: "test",
-            trigger: .backgrounded)
+            trigger: .backgrounded, cause: "a test")
         let byGate = DatabaseWriteThrough.writeThrough(
-            db, stores: unread, appVersion: "test", trigger: .authored)
+            db, stores: unread, appVersion: "test", trigger: .authored, cause: "a test")
 
         let a = try #require(report(byTrigger))
         let b = try #require(report(byGate))
@@ -199,7 +199,7 @@ struct WriteThroughDeleteTests {
         s.reconcile = .run
 
         let out = DatabaseWriteThrough.writeThrough(
-            db, stores: s, appVersion: "test", trigger: .authored)
+            db, stores: s, appVersion: "test", trigger: .authored, cause: "a test")
 
         let r = try #require(report(out))
         #expect(r.reconciled.isRunning)
@@ -232,7 +232,7 @@ struct WriteThroughDeleteTests {
         s.notes = [a]
         s.reconcile = .run
         let out = DatabaseWriteThrough.writeThrough(
-            db, stores: s, appVersion: "test", trigger: .authored)
+            db, stores: s, appVersion: "test", trigger: .authored, cause: "a test")
 
         let r = try #require(report(out))
         #expect(r.notesRemoved == 1)

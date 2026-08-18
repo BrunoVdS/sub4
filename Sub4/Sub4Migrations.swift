@@ -58,7 +58,8 @@ nonisolated enum Sub4Migrations {
                                 planContent, activityDetail, migrationRun,
                                 runTrigger, confidenceScale, reviewRecordKey,
                                 interruptedRun, runRecovered,
-                                authoredTrigger, rowsRemoved]
+                                authoredTrigger, rowsRemoved,
+                                runCause]
 
     static var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()
@@ -80,6 +81,7 @@ nonisolated enum Sub4Migrations {
         registerRunRecovered(&m)    // Sub4Migrations+RunRecovered.swift
         registerAuthoredTrigger(&m) // Sub4Migrations+AuthoredTrigger.swift
         registerRowsRemoved(&m)   // Sub4Migrations+RowsRemoved.swift
+        registerRunCause(&m)      // Sub4Migrations+RunCause.swift
         return m
     }
 

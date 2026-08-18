@@ -53,7 +53,7 @@ struct DatabaseWriteThroughTests {
 
         let outcome = DatabaseWriteThrough.writeThrough(db, stores: asked,
                                                         appVersion: "302-test",
-                                                        trigger: .backgrounded)
+                                                        trigger: .backgrounded, cause: "a test")
         guard case .wrote(let report, _) = outcome else {
             Issue.record("expected a write, got \(outcome)"); return
         }
@@ -70,7 +70,7 @@ struct DatabaseWriteThroughTests {
         let db = try Sub4Database.inMemory()
         let outcome = DatabaseWriteThrough.writeThrough(db, stores: stores([ride()]),
                                                         appVersion: "302-test",
-                                                        trigger: .backgrounded)
+                                                        trigger: .backgrounded, cause: "a test")
         guard case .wrote(let report, let at) = outcome else {
             Issue.record("expected a write, got \(outcome)"); return
         }
@@ -90,10 +90,10 @@ struct DatabaseWriteThroughTests {
         let db = try Sub4Database.inMemory()
         let s = stores([ride()])
         _ = DatabaseWriteThrough.writeThrough(db, stores: s, appVersion: "302-test",
-                                              trigger: .backgrounded)
+                                              trigger: .backgrounded, cause: "a test")
         let second = DatabaseWriteThrough.writeThrough(db, stores: s,
                                                        appVersion: "302-test",
-                                                       trigger: .foregrounded)
+                                                       trigger: .foregrounded, cause: "a test")
 
         guard case .wrote(let report, _) = second else {
             Issue.record("expected a write, got \(second)"); return
@@ -108,7 +108,7 @@ struct DatabaseWriteThroughTests {
         let db = try Sub4Database.inMemory()
         let outcome = DatabaseWriteThrough.writeThrough(db, stores: AppStores(),
                                                         appVersion: "302-test",
-                                                        trigger: .backgrounded)
+                                                        trigger: .backgrounded, cause: "a test")
         guard case .wrote(let report, _) = outcome else {
             Issue.record("expected a write, got \(outcome)"); return
         }
@@ -159,7 +159,7 @@ struct DatabaseWriteThroughTests {
         _ = DatabaseWriteThrough.writeThrough(db, stores: stores([ride()]),
                                               appVersion: "303-test",
                                               snapshotID: "2026-08-05-202320",
-                                              trigger: .backgrounded)
+                                              trigger: .backgrounded, cause: "a test")
         let run = try #require(try MigrationLedger.latest(db))
         #expect(run.snapshotID == "2026-08-05-202320")
         #expect(run.appVersion == "303-test")
@@ -173,7 +173,7 @@ struct DatabaseWriteThroughTests {
         let db = try Sub4Database.inMemory()
         _ = DatabaseWriteThrough.writeThrough(db, stores: stores([ride()]),
                                               appVersion: "303-test",
-                                              trigger: .backgrounded)
+                                              trigger: .backgrounded, cause: "a test")
         let run = try #require(try MigrationLedger.latest(db))
         #expect(run.snapshotID == nil)
     }
@@ -190,7 +190,7 @@ struct DatabaseWriteThroughTests {
         let db = try Sub4Database.inMemory()
         _ = DatabaseWriteThrough.writeThrough(db, stores: stores([ride()]),
                                               appVersion: "311-test",
-                                              trigger: .foregrounded)
+                                              trigger: .foregrounded, cause: "a test")
         let run = try #require(try MigrationLedger.latest(db))
         #expect(run.triggeredBy == .foregrounded)
         #expect(run.triggerLabel == "coming back to the app")
@@ -203,9 +203,9 @@ struct DatabaseWriteThroughTests {
         let db = try Sub4Database.inMemory()
         let s = stores([ride()])
         _ = DatabaseWriteThrough.writeThrough(db, stores: s, appVersion: "303-test",
-                                              trigger: .backgrounded)
+                                              trigger: .backgrounded, cause: "a test")
         _ = DatabaseWriteThrough.writeThrough(db, stores: s, appVersion: "303-test",
-                                              trigger: .foregrounded)
+                                              trigger: .foregrounded, cause: "a test")
         #expect(try MigrationLedger.all(db).count == 2)
     }
 }

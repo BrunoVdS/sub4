@@ -94,7 +94,7 @@ struct AppStoresTests {
         s.streams = [stream()]
 
         let r = try Sub4Import.run(into: db, stores: s, appVersion: "301-test",
-                                   trigger: .manual)
+                                   trigger: .manual, cause: "a test")
         #expect(r.activitiesSeen == 1)
         #expect(r.activitiesInserted == 1)
         #expect(r.refusals.isEmpty)
@@ -117,14 +117,14 @@ struct AppStoresTests {
         var asked = AppStores()
         asked.activities = [ride()]
         asked.reconcile = .run
-        #expect(try Sub4Import.run(into: db, stores: asked, trigger: .manual)
+        #expect(try Sub4Import.run(into: db, stores: asked, trigger: .manual, cause: "a test")
                     .reconciled == .run)
 
         let other = try Sub4Database.inMemory()
         var declined = AppStores()
         declined.activities = [ride()]
         declined.reconcile = .skipped("a store could not be read")
-        #expect(try Sub4Import.run(into: other, stores: declined, trigger: .manual)
+        #expect(try Sub4Import.run(into: other, stores: declined, trigger: .manual, cause: "a test")
                     .reconciled == .skipped("a store could not be read"))
     }
 
@@ -136,7 +136,7 @@ struct AppStoresTests {
         let db = try Sub4Database.inMemory()
         var s = AppStores()
         s.activities = [ride()]
-        _ = try Sub4Import.run(into: db, stores: s, trigger: .manual)
+        _ = try Sub4Import.run(into: db, stores: s, trigger: .manual, cause: "a test")
 
         let report = SemanticVerifier.attempt(db, stores: s)
         #expect(!report.checks.isEmpty, "it looked at something")
@@ -152,7 +152,7 @@ struct AppStoresTests {
         var s = AppStores()
         s.activities = [ride()]
         _ = try Sub4Import.run(into: db, stores: s, appVersion: "311-test",
-                               trigger: .backgroundRefresh)
+                               trigger: .backgroundRefresh, cause: "a test")
         let run = try #require(try MigrationLedger.latest(db))
         #expect(run.triggeredBy == .backgroundRefresh)
     }

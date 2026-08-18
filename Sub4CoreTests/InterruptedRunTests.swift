@@ -279,6 +279,12 @@ struct InterruptedRunTests {
         var migrator = DatabaseMigrator()
         Sub4Migrations.registerInterruptedRun(&migrator)
         Sub4Migrations.registerRunRecovered(&migrator)
+        // PATCH 406. `MigrationLedger.all` selects `cause` now, so a database
+        // that stops before this migration cannot be read at all — which a real
+        // upgrade never does, and which this test deliberately models.
+        // Registering it keeps the test about the five-state table's upgrade
+        // rather than about a column the reader needs. §12.150.
+        Sub4Migrations.registerRunCause(&migrator)
         try migrator.migrate(queue)
         let upgraded = Sub4Database(queue: queue, location: .inMemory)
         let rows = try MigrationLedger.all(upgraded, limit: 20)
@@ -293,6 +299,10 @@ struct InterruptedRunTests {
             #expect(row.note == "note-\(n)")
             #expect(row.triggeredBy == .backgrounded)
             #expect(row.recoveredUTC == nil)
+            // NULL, NOT "". These rows were written before anything recorded a
+            // cause; an empty string would say "recorded, and it was nothing".
+            // §12.54.2, the distinction `rowsRemoved` drew at 369.
+            #expect(row.cause == nil, "a row that predates the column claims nothing")
         }
         #expect(rows.last?.state == .running)
 

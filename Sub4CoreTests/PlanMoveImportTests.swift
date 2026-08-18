@@ -318,7 +318,11 @@ struct PlanMoveImportTests {
         let db = try Sub4Database.inMemory()
         // Seed a plan so `plan_session` has uids to be known by, then move one
         // of them. The importer's orphan check reads the table, not the store.
-        let plan = try #require(PlanStore.decodeBundle().plan)
+        // NOT `#require` — `decodeBundle().plan` is not optional, and the
+        // macro says so. Surfaced at 406 when an unrelated edit forced this
+        // file to recompile: 403's gate reads a BUILD LOG, and an incremental
+        // build only logs the files it rebuilt. §12.150.4.
+        let plan = PlanStore.decodeBundle().plan
         let uid = try #require(plan.sessions.first?.uid)
         _ = try Sub4Import.run(into: db, activities: [], shoes: [], plan: plan)
 

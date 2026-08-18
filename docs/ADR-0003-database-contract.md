@@ -8962,6 +8962,90 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.150 Why a run happened — patch 406
+
+At 04:02 on 18 August the ledger reported an authored run from four minutes
+earlier and could not say what caused it. **The question decided whether patch
+405 had worked**: that row could equally have been a restore press proving the
+fix had failed, or `AthleteStore.save` catching up an athlete cache after a
+launch-time sync. Two exports either side of a press settled it by elimination —
+three presses would have shown three more rows — but elimination is inference,
+and the table that records what touched the database should not need any.
+
+**The sentence existed the whole time.** `noteAuthoredChange("a session note was
+saved")` writes it, `run(reason:)` carried it, and `record(outcome:reason:)`
+used it on FAILURE only. Every run that WORKED became anonymous — §12.15, in the
+one table whose subject is what happened.
+
+### 12.150.1 A column, and not the one that was free
+
+`migration_run` gains `cause TEXT`, nullable, by `ALTER TABLE` — the argument
+`2026-08-18-rows-removed` made at 369 and it has not changed: a nullable column
+altering no constraint needs no rebuild, and `sequence` is `AUTOINCREMENT` and
+load-bearing, since `runsSinceVerified` derives from it precisely so a retention
+prune cannot flatter the number.
+
+**NULL, not `''`.** 257 rows exist that never recorded a cause. An empty string
+would say *recorded, and it was nothing*; NULL says *not recorded*. §12.54.2,
+and `populatedFiveStateTableUpgradesWithoutLosingAField` now asserts it on rows
+that predate the column.
+
+**NOT the `note` column**, which verification and activation own. A second
+meaning in it would make every reader establish which kind of row it had before
+it could read the value.
+
+### 12.150.2 Required where there is an answer, defaulted where there is not
+
+`AppStores.run(into:stores:…)` already made this exact argument for `trigger`,
+in its own doc: required on the convenience overload so *"the two call sites
+that DO have one cannot forget it"*, defaulted on the granular signature for the
+fifty test call sites that have none. `cause` follows it.
+
+That is not §12.95.4's trap. Its lesson is about a default supplying a REAL
+value nobody typed — `PlanStore = .shared`, read by five call sites that did not
+know. Here the default supplies an ABSENCE, and the absence is what the column
+stores and what every pre-existing row holds.
+
+### 12.150.3 It may name a kind of change and never a record
+
+The cause reaches the paste, and §12.7 promises that carries no session names,
+places or dates from the athlete's history. **That holds only while every cause
+is a literal written at its call site.** `"a note on \(session.uid) was saved"`
+compiles, reads naturally, and puts a session uid in a diagnostics file.
+
+`causeIsAConstantSentence` reads the source of every announcer and refuses an
+interpolation. Its negative control writes one and the test names it.
+
+### 12.150.4 403's gate reads a build log, and an incremental build is partial
+
+Fixing this surfaced a warning in `PlanMoveImportTests` — a redundant `#require`
+on a non-optional — that **had been there before 403's gate was written.**
+
+The gate passed at 403, 404 and 405 because those patches touched few files, and
+**an incremental build only logs warnings for the files it actually rebuilt.**
+Editing `AppStores.swift` here forced everything importing it to recompile, and
+the warning appeared.
+
+So the gate catches warnings a patch INTRODUCES, which is most of its value, and
+cannot see one sitting in a file nothing has touched. Worth knowing before
+trusting it as a whole-tree guarantee; a clean-build variant would close it and
+costs minutes per run, which is why it is recorded rather than done.
+
+### 12.150.5 The upgrade test caught the reader before the device could
+
+`MigrationLedger.all` selects `cause`, so a database that stops before this
+migration cannot be read at all. `populatedFiveStateTableUpgradesWithoutLosingAField`
+builds a five-state table by hand, runs a PARTIAL migrator, and reads —
+which is exactly that state, and it failed immediately.
+
+A real upgrade runs every migration before anything reads, so the test registers
+this one too and keeps its subject. The failure was the test doing its job: the
+plan asks for upgrade tests from a populated pre-migration database precisely
+because a reader that outruns its schema is invisible until a device is old
+enough to prove it.
+
+---
+
 ## 12.149 A repair that arrived carrying permission to delete — patch 405
 
 **Patches 400 and 404 built restores that called `save()`, and `save()`

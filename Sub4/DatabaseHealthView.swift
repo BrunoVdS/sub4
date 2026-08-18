@@ -1503,7 +1503,12 @@ struct DatabaseHealthView: View {
                     // which snapshot of its inputs was taken first, or records
                     // that none was.
                     snapshotID: snapshot?.id,
-                    trigger: .manual)
+                    trigger: .manual,
+                    // PATCH 406 — THE OTHER CALLER THAT HAS AN ANSWER. A KIND
+                    // of change, never a record: §12.7 holds because this is a
+                    // literal in the source, and `causeIsAConstantSentence`
+                    // keeps every one of them so.
+                    cause: "Import and verify was pressed")
                 lastImport.record(report, trigger: .manual, atUTC: at)
                 await recheck(db)
                 await reloadLedger(db)

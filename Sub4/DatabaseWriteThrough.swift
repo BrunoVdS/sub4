@@ -239,7 +239,7 @@ final class DatabaseWriteThrough {
                 // main actor that called it.
                 Self.writeThrough(db, stores: stores, appVersion: version,
                                   snapshotID: LegacySnapshot.latest()?.id,
-                                  trigger: trigger)
+                                  trigger: trigger, cause: reason)
             }.value
             last = outcome
             runs += 1
@@ -280,7 +280,16 @@ final class DatabaseWriteThrough {
                                          stores: AppStores,
                                          appVersion: String,
                                          snapshotID: String? = nil,
-                                         trigger: MigrationRunTrigger) -> Outcome {
+                                         trigger: MigrationRunTrigger,
+                                         // PATCH 406 — THE SENTENCE THIS TYPE
+                                         // ALREADY HAD AND THREW AWAY. §12.150:
+                                         // `noteAuthoredChange` writes it,
+                                         // `run(reason:)` carried it, and
+                                         // `record` used it on FAILURE only —
+                                         // so every run that worked was
+                                         // anonymous in the one table that
+                                         // records what touched the database.
+                                         cause: String) -> Outcome {
         var s = stores
         // PATCH 360 — THE RULE SPLIT, AND B2 IS WHY.
         //
@@ -325,7 +334,8 @@ final class DatabaseWriteThrough {
             return .wrote(try Sub4Import.run(into: db, stores: s,
                                              appVersion: appVersion,
                                              snapshotID: snapshotID,
-                                             trigger: trigger), atUTC: at)
+                                             trigger: trigger,
+                                             cause: cause), atUTC: at)
         } catch {
             return .failed(String(describing: error), atUTC: at)
         }

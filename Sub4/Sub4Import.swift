@@ -529,7 +529,8 @@ nonisolated enum Sub4Import {
                     // A nil is stored as NULL and reads back as "not recorded",
                     // which is what the 45 rows written before this patch
                     // honestly are.
-                    trigger: MigrationRunTrigger? = nil) throws -> Report {
+                    trigger: MigrationRunTrigger? = nil,
+                    cause: String? = nil) throws -> Report {
 
         let clock = ContinuousClock()
         var report = Report()
@@ -543,7 +544,8 @@ nonisolated enum Sub4Import {
         // was recording, leaving the run reading `running` for ever.
         let runID = try MigrationLedger.open(db, appVersion: appVersion,
                                              snapshotID: snapshotID,
-                                             trigger: trigger, now: now)
+                                             trigger: trigger, cause: cause,
+                                             now: now)
         report.runID = runID
 
         do {

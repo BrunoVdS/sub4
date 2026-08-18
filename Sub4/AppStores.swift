@@ -201,7 +201,14 @@ extension Sub4Import {
                                 stores s: AppStores,
                                 appVersion: String = "unknown",
                                 snapshotID: String? = nil,
-                                trigger: MigrationRunTrigger) throws -> Report {
+                                trigger: MigrationRunTrigger,
+                                // PATCH 406 — REQUIRED HERE FOR `trigger`'s
+                                // REASON, stated three lines above: the two
+                                // call sites that have an answer cannot forget
+                                // it, while the granular signature below keeps
+                                // its default for the fifty test call sites
+                                // that have none. §12.150.
+                                cause: String) throws -> Report {
         try run(into: db,
                 activities: s.activities,
                 shoes: s.gear,
@@ -223,7 +230,8 @@ extension Sub4Import {
                 details: s.details,
                 appVersion: appVersion,
                 snapshotID: snapshotID,
-                trigger: trigger)
+                trigger: trigger,
+                cause: cause)
     }
 }
 

@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 405 (2026-08-17).** §5.3 is the 390 device run, Compare and
+**Current at patch 406 (2026-08-18).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself.
@@ -372,9 +372,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 405, 2026-08-17
+## 5. State — patch 406, 2026-08-18
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 405; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 406; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -523,9 +523,10 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   `LoadSeries` is deterministic, not that the migration carried the data.
   **Marked, not rescued**: the rescue changes what the slice MEANS, and
   §12.125.4's "no screen shows it" expired when 378 and 390 built the seams.
-- **`newest removal` names the trigger, not the family**, and **a successful
-  authored run does not record what caused it** (§12.149.6); **`canReconcile`
-  tests readable, not correct**; **Import is not a repair path** (§12.126.5).
+- **`newest removal` names the trigger, not the family** (1C's other half);
+  **`canReconcile` tests readable, not correct**; **Import is not a repair path**.
+  **403's gate reads a BUILD LOG**, so an incremental build hides warnings in
+  files nothing touched (§12.150.4).
 - **RULE 8 no longer covers `DetailStore`** (§12.142.3); **391 swept the
   read-backs and not the restore receipts** — RULE 11 (§12.146). **AN
   `.authored` TRIGGER STILL PERMITS RECONCILIATION ACROSS EVERY FAMILY** — 405
@@ -540,22 +541,21 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   checks: `athlete_profile` (1), `resting_month` (15),
   `activity_gear_reference` (500). **`knownActivityIDs` is B5's**;
   **`DetailStore` is invisible to RULE 1**, `mayWrite` covers it.
-- **Snapshot still `2026-08-10-084723`** (340), B9 moves it; **`manual.html` a
-  hundred patches stale** (284); **two stores unprotected** by §12.116 —
-  `AthleteStore`, `AthleteConstants`; **`content_revision` unoccupied** (334).
-- **Dates:** first review **24 Aug**; Actions resets **1 Sep**; Japan **7–12
-  Sep** — `DayKey.key(_:in:)`'s first run outside Europe/Brussels.
+- **Snapshot still `2026-08-10-084723`** (340); **`manual.html` stale**; **two
+  stores unprotected** by §12.116; **`content_revision` unoccupied** (334).
+- **Dates:** first review **24 Aug**; Actions resets **1 Sep**; Japan **7–12 Sep**, `DayKey.key(_:in:)`'s first run outside Europe/Brussels.
 
 ### 5.6 Next, in order
 
 **Done and now history — the arguments are in ADR §12, not here.** The Database
-screen 391–393a (§12.135–§12.137, RULE 7). **B4, 388–398** (§12.139–§12.142):
-394 measured 3.963 s before first paint and the answer killed its own design;
-395 moved both families into `DetailStore`'s construction; 397 made the read one
-cursor and one pass; 398 flipped. **396** replaced `#if DEBUG` in `ReleaseGates`
-with how the build was signed (§12.140, RULE 9). **399** marks slice 3
-(§12.143); **400** starts the restore path (§12.144); **401** removes a source
-file compiled by nothing (§12.145, RULE 10).
+screen 391–393a (RULE 7). **B4, 388–398**: 394 measured 3.963 s before first
+paint and the answer killed its own design; 395 moved both families into
+`DetailStore`'s construction; 397 made the read one cursor and one pass; 398
+flipped. **396** replaced `#if DEBUG` with how the build was signed (RULE 9).
+**399** marks slice 3; **400/402/404** build the authored restore path and
+**405** stops it announcing (RULES 11–12); **401** removes a source compiled by
+nothing (RULE 10); **403** makes both gates read warnings; **406** records why a
+run happened. §12.135–§12.150.
 
 1. **THE ROLL-UP GATE IS 8 OF 9 UNTIL 24 AUGUST.** `provesSomething` wants all
    nine read-backs to have compared something, and `Review trail` reads
