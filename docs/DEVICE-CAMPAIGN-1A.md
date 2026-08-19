@@ -1,3 +1,17 @@
+> # SUPERSEDED — do not run this one
+>
+> **`docs/DEVICE-CAMPAIGN-1A-RESTORE.md` replaces this document, at patch
+> 409a.** Running the 409 campaign on 19 August showed three things this
+> version gets wrong or could not have known: which section a given line
+> actually appears in, that opening a share sheet backgrounds the app, and that
+> the read-back's `Only in the app` / `Only in the database` rows are the
+> sharpest instrument on the screen — they are what turns `added 0` from a
+> reading into evidence.
+>
+> Kept only as history: it is the campaign that existed while 400–407 landed.
+> **Delete it once the replacement has been run.** §12.128.1 — a stale document
+> is the one nobody names.
+
 # Device campaign — topic 1A, the authored restore path
 
 | | |

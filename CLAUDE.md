@@ -6,11 +6,12 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 409a (2026-08-19).** §5.3 is the 390 device run, Compare and
+**Current at patch 410 (2026-08-19).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
-comparing the database with itself. **409's campaign RAN on 19 August and
-passed sixteen of sixteen** — §5.3a. **1A's is still unrun**; §5.6 item 2.
+comparing the database with itself. **BOTH device campaigns ran on 19 August** —
+409's sixteen of sixteen and 1A's twelve of twelve; §5.3a. **1A closes**, and
+its run found a blind file tally that is B4's, not 1A's — §5.5.
 
 **§5 IS THIS PROJECT'S ONLY STATEMENT OF CURRENT STATE.** Every other document
 either points at it or is dated history. That rule exists because the opposite
@@ -373,9 +374,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 409a, 2026-08-19
+## 5. State — patch 410, 2026-08-19
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 409a; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 410; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -419,6 +420,16 @@ still the switch and the store is what consults it. §12.139, §12.142.
 slice reversible by deleting one family from `hydratedFamilies`, and why
 hydration must never write — RULE 8 checks all eight `hydrate` bodies, because
 no assertion in the suite can reach it.
+
+**AND SINCE 410 THAT CLAIM IS MEASURED RATHER THAN ASSERTED.** `Detail and
+trace files:` counts the directories on the hydrated path — a listing, never a
+decode, so 394's 3.963 s does not come back — and says which of *decoded*,
+*counted* or *nobody looked* produced the number. From **398 to 410 it read
+`0 … all readable`** over files nobody had opened. **Device, 19 August: 698
+detail files and 671 trace files, matching `activity_detail` and `recording`
+exactly** — the mirror is complete and B4 is genuinely reversible. Cost:
+`Detail store built: 1.127 s` against 409a's own 0.997 and 1.214 without it.
+§12.155.
 
 **AND SINCE 409 ONE STORE WRITES THE OTHER WAY ROUND.** `NotesStore` commits to
 SQLite before it publishes and writes `notes.json` as a mirror afterwards. A
@@ -510,6 +521,21 @@ because the census makes a shrinking ledger look alarming. §12.153.10.
 the phone, a termination inside the transaction, and the other three authored
 stores.
 
+**AND 1A RAN THE SAME EVENING — TWELVE OF TWELVE, 22:23–22:28.**
+`docs/DEVICE-CAMPAIGN-1A-RESTORE.md`. Receipts `notes.json 0/7`,
+`commutes.json 0/1`, `moves.json 0/2`, `match decisions 0/8`.
+**Two pairs of exports are byte-identical on purpose** — the **Import ledger**
+either side of the press (`authored: 45` both times) and the census — while the
+read-back pair differs by **exactly five lines**, the receipt and nothing else.
+That closes §12.146 (the receipts reach the paste; at 401 they did not) and
+**§12.149** (the restore does not announce, so a repair does not arrive carrying
+permission to reconcile). `Notes reaching the database` read `no note written
+since this launch` on both sides — **the restore does not commit either**, a
+check that could not exist before 409a. **`added 0` now has its precondition**:
+`only in the database` was 0 for all four before the press, so it is the correct
+answer — but a control that repairs and one that no-ops still read alike, and
+that half stays the suite's until a device fixture exists. §12.154.
+
 ### 5.4 The verifier's accounting, derived end to end, and in THREE buckets
 
 **22 comparisons — 7 independent, 14 reading a store the database feeds, 1
@@ -566,8 +592,9 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
 > defect as a test, so the day it is fixed the test inverts.
 
 - **THE AUTHORED RESTORE PATH IS COMPLETE — §5.5's longest entry closes.** All
-  four stores have a way back, **confirmed on device for three: added 0 ·
-  already held 5/1/2** (§12.148.4). 405 stopped them announcing, so a repair no
+  four stores have a way back, and **1A's campaign confirmed all four on 19
+  August: added 0 · already held 7/1/2/8**, with the ledger byte-identical
+  either side of the press (§12.154). 405 stopped them announcing, so a repair no
   longer arrives carrying permission to delete (§12.149); 407 added the match
   decisions, a `UserDefaults` blob rather than a file (§12.151).
   **`proposals.json` is B7's** — zero-versus-zero proves nothing.
@@ -612,13 +639,10 @@ run happened. §12.135–§12.150.
    on either side until **24 August 2026**. The gate is **eight of nine agree,
    zero differ, zero could not look, abstention named** — B7 blocked on it too.
    **AND ONE OF THE EIGHT IS NOT EVIDENCE** — §5.4a counts it, §5.5 names it.
-2. **1A CLOSES WHEN `docs/DEVICE-CAMPAIGN-1A.md` HAS BEEN RUN.** The restore
-   path is built (§5.5); the campaign is now written to the contract, which it
-   was not while 400–407 landed. **Its §10 is the part to read**: every device
-   run reads `added 0`, proving the control is safe, reaches the disk and
-   announces nothing — **not that it repairs**. No route exists to make the file
-   and the database disagree safely, since deleting a note removes it from both,
-   so that half is the suite's and a device fixture is worth building before B9.
+2. **NEXT IS THE INVERSION, FAMILY BY FAMILY** — the commutes, the match
+   decisions, the plan moves, each the shape 409 gave the notes and each
+   meeting RULE 13 on its first draft. Then **1C** — reconciliation scope and
+   durable per-family removal accounting.
 3. **1B IS DONE — BUILT, AND PROVEN ON THE PHONE.** A note save commits to
    SQLite **before** the editor closes, and `remove` with it — 408 the narrow
    write, **409 the order**, **409a the diagnostic** (§12.152, §12.153).
@@ -699,6 +723,14 @@ Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
   tripwire over a join, write down which way it points, and say what watches the
   other way.** Here nothing did. §12.129, and 386 is the patch that stops
   declaring the classification and derives it.
+- **WHEN A FLIP MOVES A STORE OFF A SOURCE, ASK WHAT STILL REPORTS ON THE
+  SOURCE IT LEFT.** 398 moved `DetailStore` to the database; nothing asked what
+  was still counting the files, so `Detail and trace files:` printed
+  `0 … all readable` for twelve patches over 694 files nobody had opened. **Four
+  instances in two days** — 409a's vacuous `yes`, this, and §12.77.5's two
+  counters — all one shape: *a value that stopped being computed, printed as
+  though it were*. Cheap to ask at every remaining flip, and B5, B7 and B8 are
+  all owed it. §12.155.
 - **A number a device prints is not a number a device verified.** `14 independent`
   was rendered, stored in the ledger and pasted into a diagnostics file, and it was
   wrong — because every one of those steps read the same list. Printing is not

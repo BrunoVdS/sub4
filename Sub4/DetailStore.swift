@@ -227,25 +227,69 @@ final class DetailStore {
     private(set) var tally = FileTally()
 
     nonisolated struct FileTally: Equatable, Sendable {
+
+        /// **HOW HARD THIS TALLY LOOKED — patch 410, §12.155.**
+        ///
+        /// The comment on `line` below has said *"a bare zero cannot be told
+        /// from a directory nobody looked in"* since it was written, and from
+        /// **398 to 410 this struct could not tell them apart** — because a
+        /// count and a verdict were the only things in it, and "nobody looked"
+        /// is neither. 398 flipped B4 to the database, `fill()` stopped calling
+        /// `loadFromDirectories`, the tally kept its default, and the paste
+        /// printed `0 detail files and 0 trace files, all readable` over 694
+        /// files nobody had opened.
+        ///
+        /// A count with no depth beside it is §12.54.2 with a number on it, and
+        /// this is the **fourth** instance in two days — 409a's vacuous `yes`
+        /// and §12.77.5's two counters are the same shape. The generalisation
+        /// worth keeping: **when a flip moves a store off a source, ask what
+        /// still reports on the source it left.**
+        enum Depth: Equatable, Sendable {
+            /// Every file was opened and decoded, so `…Unreadable` means
+            /// something. Only `loadFromDirectories` produces this.
+            case decoded
+            /// The directories were listed and nothing was opened. The counts
+            /// are real; **readability is unknown and must not be claimed.**
+            case counted
+            /// Nothing looked. The default, so a tally nobody filled says so
+            /// rather than reading as an empty directory.
+            case notLookedAt
+        }
+
+        var depth: Depth = .notLookedAt
         var detailFiles = 0
         var detailFilesUnreadable = 0
         var streamFiles = 0
         var streamFilesUnreadable = 0
 
+        /// **ONLY A DECODED READ CAN BE CLEAN.** `counted` has zero unreadables
+        /// because nothing was opened, not because everything parsed — and
+        /// `notLookedAt` has zero of everything. Answering `true` for either is
+        /// the defect this patch exists to close, one level down.
         var isClean: Bool {
-            detailFilesUnreadable == 0 && streamFilesUnreadable == 0
+            depth == .decoded
+                && detailFilesUnreadable == 0 && streamFilesUnreadable == 0
         }
 
         /// UNCONDITIONAL, and it says the denominators — §12.54.3. A bare zero
         /// cannot be told from a directory nobody looked in.
         var line: String {
-            guard !isClean else {
+            switch depth {
+            case .notLookedAt:
+                return "not counted — nothing has read the directories this launch"
+            case .counted:
                 return "\(detailFiles) detail files and \(streamFiles) trace "
-                     + "files, all readable"
+                     + "files, counted but not opened — the store was served "
+                     + "from the database"
+            case .decoded:
+                guard !isClean else {
+                    return "\(detailFiles) detail files and \(streamFiles) trace "
+                         + "files, all readable"
+                }
+                return "\(detailFilesUnreadable) of \(detailFiles) detail files and "
+                     + "\(streamFilesUnreadable) of \(streamFiles) trace files "
+                     + "could not be decoded"
             }
-            return "\(detailFilesUnreadable) of \(detailFiles) detail files and "
-                 + "\(streamFilesUnreadable) of \(streamFiles) trace files "
-                 + "could not be decoded"
         }
     }
 
@@ -388,6 +432,23 @@ final class DetailStore {
                                  uniquingKeysWith: { a, _ in a })
             tracesServedFrom = .database
         }
+        // **THE COUNT THAT MAKES THE ROLLBACK BELOW CHECKABLE — patch 410,
+        // §12.155.** The paragraph underneath argues that 694 detail files and
+        // 668 trace files survive a flip and make it reversible. From 398 to
+        // 410 the only unconditional line reporting on those files read
+        // `0 … all readable`, so the claim had nothing watching it.
+        //
+        // A LISTING, NOT A READ. `files(in:)` is one `contentsOfDirectory` per
+        // directory and opens nothing; the 3.963 s that 394 measured and 397
+        // removed was DECODING 1,362 files, and none of that comes back. The
+        // cost lands inside `constructionTiming` below, so if it is ever more
+        // than noise the device says so without a new line to read.
+        //
+        // GUARDED on the depth rather than on `take.needsFiles`, because
+        // `load()` has already produced a DECODED tally in that case and
+        // overwriting it with a count would throw away the readability verdict.
+        if tally.depth == .notLookedAt { tally = countFiles() }
+
         // `dirtyDetails` AND `dirtyStreams` ARE NOT TOUCHED, and the absence is
         // the mechanism. `save()` writes exactly those two sets, so as long as
         // nothing here adds to them, 694 detail files and 668 trace files
@@ -759,7 +820,7 @@ final class DetailStore {
     /// able to say it happened. See `tally`.
     @discardableResult
     private func loadFromDirectories() -> FileTally {
-        var t = FileTally()
+        var t = FileTally(depth: .decoded)
         for url in files(in: detailsDir) {
             t.detailFiles += 1
             guard let d = try? Data(contentsOf: url),
@@ -775,6 +836,18 @@ final class DetailStore {
             streams[id(of: url)] = v
         }
         return t
+    }
+
+    /// The directories listed and nothing opened — patch 410.
+    ///
+    /// Separate from `loadFromDirectories` on purpose. That one decodes, which
+    /// is what earns the word *readable*; this one only answers **are the files
+    /// still there**, which is the question `hydratedFamilies` being reversible
+    /// rests on. Collapsing them would mean either a lie or 3.9 seconds.
+    private func countFiles() -> FileTally {
+        FileTally(depth: .counted,
+                  detailFiles: files(in: detailsDir).count,
+                  streamFiles: files(in: streamsDir).count)
     }
 
     private func files(in dir: URL) -> [URL] {

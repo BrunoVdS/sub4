@@ -8962,6 +8962,208 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.155 The file tally learns how hard it looked — patch 410
+
+`Detail and trace files: 0 detail files and 0 trace files, all readable`, over
+694 detail files and 668 trace files nobody had opened. Found by running 1A's
+campaign and reading a line that was not 1A's (§12.154.3).
+
+### 12.155.1 A count and a verdict cannot express "nobody looked"
+
+`FileTally` held four numbers and derived `isClean` from two of them. 398
+flipped B4 to the database, `fill()` stopped calling `loadFromDirectories`, and
+the struct kept its default — four zeros, `isClean == true`, and a sentence
+claiming every file parsed.
+
+**The comment above `line` had said the right thing since it was written:**
+*"UNCONDITIONAL, and it says the denominators — §12.54.3. A bare zero cannot be
+told from a directory nobody looked in."* The rule was written down, and a flip
+in a **different file** stopped honouring it. That is the part worth keeping:
+**a diagnostic's correctness is a property of its callers, and a comment cannot
+enforce it.**
+
+`Depth` is the third state — `.decoded`, `.counted`, `.notLookedAt`, defaulting
+to the last so an unfilled tally says so. `isClean` now requires `.decoded`,
+because zero unreadables means *nothing was opened*, not *everything parsed*.
+
+### 12.155.2 It is a listing, not a read, and that distinction is 397's
+
+The obvious fix — call `loadFromDirectories` on the hydrated path — would
+reintroduce exactly what 394 measured at **3.963 s before first paint** and 395
+and 397 spent two patches removing. That cost is DECODING 1,362 files.
+
+**The question the line has to answer is narrower than the one it was answering:
+are the files still there.** That is `contentsOfDirectory` twice and opens
+nothing. So `countFiles()` is a separate function from `loadFromDirectories()`
+on purpose — collapsing them would mean either a lie or 3.9 seconds — and the
+cost lands inside `constructionTiming`, so the device reports it without a new
+line to read.
+
+**And the count is what the rollback argument rests on.** The paragraph directly
+below the new call argues that not touching `dirtyDetails`/`dirtyStreams` is
+what makes removing `.details` and `.traces` from `hydratedFamilies` a rollback
+rather than a data loss. From 398 to 410 the only unconditional line reporting
+on those files read `0 … all readable`, so **the claim had nothing watching
+it** — and §5.2 rests every slice's reversibility on the same claim.
+
+### 12.155.3 The blast radius was one line, and the first write-up said otherwise
+
+Worth recording because the correction came from tracing consumers rather than
+from assuming. `DetailParity.read()` builds its **own** `DetailStore(directory:)`
+— a seam that really walks and decodes — so slice 4's figures were always
+honest and `tally.isClean` there guards a sentence over a populated tally.
+**Nothing gated on the blind value; `DatabaseHealthView` was its only reader.**
+
+So the defect was never "the app cannot tell whether the files are there". It
+was **the unconditional line is blind and the accurate one is behind a Compare
+press** — §12.77.5 underneath §12.15. Smaller, and still worth a patch, because
+the line that is always there is the one somebody reads.
+
+### 12.155.5 The device, 19 August 22:53 — and the answer is the reassuring one
+
+```
+Detail and trace files: 698 detail files and 671 trace files,
+counted but not opened — the store was served from the database
+```
+
+**The files match the rows exactly** — `activity_detail: 698`, `recording: 671`.
+At 398 it was 694 and 668; four activities arrived since, and all four got a
+detail file and three of them a trace, the fourth being one of the 26 with none.
+**The file writers kept working straight through the flip.**
+
+**THAT TURNS §5.2's CLAIM FROM AN ASSERTION INTO A MEASUREMENT.** *"Every JSON
+store is still written and still complete — that is what makes a slice
+reversible"* has been the ladder's safety argument since B4 landed, and the
+"still complete" half had nothing behind it for twelve patches. Taking
+`.details` and `.traces` out of `hydratedFamilies` would lose nothing, and now
+somebody can see that without pressing anything.
+
+**And the cost argument holds.** `Detail store built: 1.127 s`, against 409a's
+own two readings of **0.997 s** and **1.214 s** taken WITHOUT the listing. The
+new figure sits between them, so the two `contentsOfDirectory` calls are inside
+the run-to-run noise of the same measurement. §12.155.2 predicted that from the
+difference between listing and decoding; the device agrees rather than the
+argument merely sounding right.
+
+**No campaign was needed and none was written.** A display line with two
+controls behind it, no data path, and no gate reading it (§12.155.3) — the
+honest verification is one reading compared against one census, which is what
+this is. Stating that explicitly because the contract requires the decision
+either way.
+
+### 12.155.4 Four instances in two days, and the generalisation
+
+409a's vacuous `yes`, this, and §12.77.5's two counters are one shape: **a value
+that stopped being computed, or was never computed, printed as though it were.**
+
+**When a flip moves a store off a source, ask what still reports on the source
+it left.** 398 moved `DetailStore` off the files and nobody asked what was still
+counting them. The same question is owed at every remaining flip — B5's weather
+and gear, B7's reviews, B8's cursor and queue — and it is cheap to ask.
+
+**Three test fixtures had to state what they had been inheriting.**
+`DetailStore.FileTally()` meant "a decoded read" in three tests purely by
+default, which is §12.85.7 — a value a fixture derives rather than states — and
+they now say `.decoded` out loud. One of them, *"a device before its first
+backfill has no files, cleanly"*, is a **real read finding nothing**: a fact the
+struct could not distinguish from its opposite until this patch.
+
+---
+
+## 12.154 1A ran — 19 August 2026, twelve of twelve, and one finding that is not 1A's
+
+`docs/DEVICE-CAMPAIGN-1A-RESTORE.md` executed on 409a. **Topic 1A closes.**
+Receipts: `notes.json 0/7`, `commutes.json 0/1`, `moves.json 0/2`,
+`match decisions 0/8`.
+
+### 12.154.1 The two things it was written to prove, both proved by a diff
+
+**§12.146 — THE RECEIPTS REACH THE PASTE.** At 401 two exports either side of a
+press were byte-identical, because the receipt lived in `@State` and rendered as
+a row: the paste could not tell a restore that ran from a button nobody pressed.
+RULE 11 exists for that. On device the pair now differs by **exactly five
+lines** — `Authored restore:` and its four receipts — and by nothing else.
+
+**§12.149 — THE RESTORE DOES NOT ANNOUNCE.** The **Import ledger** exports
+either side of the press are **byte-identical**: `authored: 45` both times,
+`257 rows`, the same `Last import` timestamp, `runs that removed rows: 2`,
+`newest removal` unmoved. 405 stopped the restore announcing; this is the device
+saying so at the granularity of a character. It matters because an `.authored`
+trigger still permits reconciliation across every family — topic 1C — so a
+repair that announced would arrive carrying permission to delete.
+
+**And a third, which only exists because of 409a.** `Notes reaching the
+database` read `no note written since this launch` on **both** sides. A restore
+must not commit — the rows came *from* the database, so writing them back is the
+loop §12.144 forbids. `NotesStore.restore` calls `write()`, never `save()` and
+never the commit, and the line is what says so out loud. The check did not exist
+when the 408 campaign was written and could not have: the line was two-valued
+then, and would have read `yes` in both places.
+
+### 12.154.2 `added 0` finally has its precondition, and it still is not proof
+
+§12.148.4 recorded `added 0` on every device run and could not say whether that
+was the control working or the control doing nothing. **Row 2 settles half of
+it**: `only in the database` read `0` for all four stores *before* the press, so
+`added 0` is the **correct** answer and the run proves the control is a no-op
+exactly when it should be.
+
+**The other half is still open and 1A does not close it.** A control that
+repairs and a control that no-ops read identically here, and **no route exists
+to make the file and the database disagree safely on a phone** — deleting a note
+removes it from both, and 409 making notes database-first narrows that further.
+The repair half stays the suite's until a disposable device fixture exists,
+which is worth building before B9.
+
+### 12.154.3 THE FINDING: a file tally that has been blind since 398
+
+`The app's own files` reads **`Detail and trace files: 0 detail files and 0
+trace files, all readable`**.
+
+**The files are not gone.** `DetailStore.save(retiring:)` still writes them and
+the mirror is intact. **Nobody counted them.** `fill()`'s database branch —
+taken on every launch since 398 flipped B4 — never touches `tally`, so it holds
+its default `FileTally()` and the line prints zeros with a clean verdict
+attached.
+
+**"all readable" over a read that never happened** is §12.15 in its plainest
+form, and the zeros are §12.54.2: a count that cannot distinguish *none there*
+from *nobody looked*. It is the same shape as 409a's vacuous `yes` and as
+§12.77.5's counters behind a `@State` precondition — **the third instance in two
+days**, which is worth noticing as a pattern rather than three coincidences.
+**When a flip moves a store off a source, ask what still reports on the source
+it left.**
+
+**ITS BLAST RADIUS IS ONE LINE, AND THE FIRST WRITE-UP OF THIS OVERSTATED IT.**
+The claim was that the app can no longer say whether B4's 694 details and 668
+traces are on disk. **It can.** `DetailParity.read()` builds its OWN
+`DetailStore(directory:)` — a seam that really walks the directories — so
+Shadow parity's slice 4 still counts them honestly and prints
+*"details/ and streams/, read directly — …"*. `tally.isClean` there guards a
+SENTENCE, not a comparison, and it is reading the seam's populated tally rather
+than the singleton's empty one. Nothing gates on the blind value.
+
+**So the defect is narrower and still real: the UNCONDITIONAL line is blind and
+the accurate one is behind a button.** `DatabaseHealthView`'s
+`Detail and trace files:` is the only consumer of `DetailStore.shared.tally`,
+prints on every export, and says zeros; slice 4's honest count only exists once
+somebody presses **Compare the derived lists**. That is §12.77.5 —
+*a computed diagnostic behind a `@State` precondition is not a diagnostic* —
+sitting underneath §12.15's *"all readable" over a read that never happened*.
+The information is not lost; the line that is always there is the wrong one.
+
+**The fix is a decision, not a one-liner.** "Count them too" would reintroduce
+the directory read that 394–397 spent three patches removing — 3.963 s before
+first paint down to a 0.021 s launch — and `FileTally` claims READABILITY,
+which needs decoding, not just listing. So either a cheap count with the
+readability claim dropped from the wording, or an explicit
+`not counted — served from the database` pointing at **Survey the app's files**,
+which already walks every file on demand. **Not folded into 409a** — it is
+`DetailStore`'s, not `NotesStore`'s, and 1A's campaign is not the place to
+change B4's diagnostics.
+
+---
+
 ## 12.153 The order inverts — patch 409, plan topic 1B
 
 408 built the narrow write and changed no order; this is the flip. A note save

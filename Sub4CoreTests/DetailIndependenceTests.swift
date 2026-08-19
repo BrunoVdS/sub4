@@ -211,8 +211,12 @@ struct DetailIndependenceTests {
         #expect(!lost.isTrustworthy, "the read was not performed at all")
         #expect(lost.line.contains("unreachable"))
 
+        // `.decoded` STATED, not inherited — patch 410. This fixture means "a
+        // read happened and found nothing", which is a different fact from
+        // "nobody looked", and until 410 the default could not tell them apart.
+        // §12.85.7: a value a fixture derives rather than states.
         let fresh = DetailSource.Read(details: [:], streams: [:],
-                                      tally: DetailStore.FileTally(),
+                                      tally: DetailStore.FileTally(depth: .decoded),
                                       directoryFound: true)
         #expect(fresh.isTrustworthy,
                 "a device before its first backfill has no files, cleanly")
@@ -224,7 +228,7 @@ struct DetailIndependenceTests {
     /// side is not the file's contents.
     @Test("An undecodable file is not a clean read")
     func undecodableIsNotClean() {
-        var t = DetailStore.FileTally()
+        var t = DetailStore.FileTally(depth: .decoded)
         t.detailFiles = 4
         t.detailFilesUnreadable = 1
         let bad = DetailSource.Read(details: [:], streams: [:], tally: t,
@@ -242,7 +246,7 @@ struct DetailIndependenceTests {
     /// side that was fine.
     @Test("One half failing does not blind the other")
     func oneHalfFailingDoesNotBlindTheOther() {
-        var t = DetailStore.FileTally()
+        var t = DetailStore.FileTally(depth: .decoded)
         t.detailFiles = 694
         t.detailFilesUnreadable = 3
         t.streamFiles = 668
@@ -256,7 +260,7 @@ struct DetailIndependenceTests {
 
         // AND THE OTHER WAY ROUND, because a property that is only ever asked
         // about one half could be the wrong half and nothing would say so.
-        var u = DetailStore.FileTally()
+        var u = DetailStore.FileTally(depth: .decoded)
         u.detailFiles = 694
         u.streamFiles = 668
         u.streamFilesUnreadable = 2
@@ -321,5 +325,36 @@ struct DetailIndependenceTests {
         let r = DetailParity.compare(app: [], database: [])
         #expect(r.appSideCameFrom == "DetailStore.shared")
         #expect(r.appSideWasReadCleanly)
+    }
+
+    // MARK: The tally's own depth — patch 410
+
+    @Test("A tally nobody filled does not claim the files are readable")
+    func anUnfilledTallyClaimsNothing() {
+        // **THE DEFECT, AS A TEST.** From 398 to 410 this read
+        // `0 detail files and 0 trace files, all readable` — a clean verdict
+        // over a read that never happened, printed unconditionally in the
+        // paste on every launch that hydrated from the database. §12.15.
+        let untouched = DetailStore.FileTally()
+        #expect(!untouched.isClean,
+                "nothing was opened, so nothing can be called readable")
+        #expect(!untouched.line.contains("all readable"))
+        #expect(untouched.line.contains("not counted"))
+    }
+
+    @Test("A counted tally reports the files without claiming they parse")
+    func aCountedTallySaysWhatItKnows() {
+        // The hydrated path: the directories were listed, nothing was opened.
+        // The COUNT is the thing `hydratedFamilies` being reversible rests on,
+        // and it must survive without dragging a readability claim behind it.
+        var counted = DetailStore.FileTally(depth: .counted)
+        counted.detailFiles = 694
+        counted.streamFiles = 668
+
+        #expect(!counted.isClean, "zero unreadable because zero were opened")
+        #expect(counted.line.contains("694"))
+        #expect(counted.line.contains("668"))
+        #expect(!counted.line.contains("all readable"))
+        #expect(counted.line.contains("not opened"))
     }
 }
