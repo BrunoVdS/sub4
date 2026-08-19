@@ -8962,6 +8962,277 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.153 The order inverts — patch 409, plan topic 1B
+
+408 built the narrow write and changed no order; this is the flip. A note save
+was **memory → `notes.json` → a fire-and-forget whole-world import**, and it is
+now **validate → commit → publish → mirror**:
+
+```swift
+let committed = try commitToDatabase(candidate)   // 2. the authority
+let previous = notes[session.uid]                 // 3. publish
+notes[session.uid] = candidate
+try mirror(previous: previous, subject: session.uid,
+           committed: committed)                  // 4. the JSON copy
+```
+
+`remove` inverts identically, and it is the direction that matters more —
+see §12.153.5.
+
+### 12.153.1 The seam reached into the app's own database, and two old tests said so
+
+The first version resolved the database as `Sub4Launch.shared.database` at the
+write. Two existing tests failed — `aFailedSaveRollsBack` and *"A failed edit
+leaves the PREVIOUS note intact"* — and my first reading was that the rollback
+logic was wrong. It was not. **The commit had succeeded**, so the rollback
+correctly declined to fire, and the reason it succeeded is that
+`DatabaseBootstrapTests` and `ImporterSeedTests` call `Sub4Launch.shared.begin()`
+— which opens the real database **for every test that runs after them**.
+
+So a store built through `init(directory:)` into a temporary folder was writing
+notes into the app's own database. `NotesStore(directory:)` exists precisely so
+a test can write somewhere harmless; 409 made it reach past its own directory
+and mutate the thing the seam was built to avoid.
+
+**Two tests written for a different purpose, four patches earlier, caught a
+cross-process data leak.** That is the second time in five patches a guard has
+caught what a green suite of seventeen hundred did not — 405's backwards patch
+was RULE 12's. The lesson is not about databases: **a test that fails for a
+reason you did not predict is reporting something, and the first move is to find
+out what, not to make it pass.**
+
+### 12.153.2 An inert seam fixed the leak and made the patch untestable
+
+The obvious repair was a `Bool` — `isPrimary`, true for the singleton, false for
+every seam — so a seam has no database and the file stays authoritative. It
+worked, the suite went green, and it was wrong for a quieter reason: **the four
+controls 1B owes had nowhere to run.** A `Bool` can express *not the app's*; it
+cannot express *this one instead*. §12.69: a guard that cannot fail has not been
+tested, and neither has a contract nothing can exercise.
+
+`NoteDatabase` is the shape that works — `.theLaunchs`, `.none`, `.given(db)` —
+resolved **at the write** rather than at `init`, because whether the launch has
+finished opening by the time `ContentView` constructs its stores is `RootView`'s
+branch ordering, and a store should not depend on it.
+
+**And `.given` arrived as a second initialiser, not a default argument.**
+`database: Sub4Database? = nil` was one line and would have made twenty-six
+existing call sites carry a value none of them writes — §12.95.4, whose instance
+cost 350a four patches of a green suite. Two initialisers put the intent in each
+call site's own text, and a grep for the second enumerates every store in the
+suite that commits.
+
+### 12.153.3 I widened a rule to fit my code, and the code did not need it
+
+RULE 12 fires when a store calls `write()` more than twice — `save()` announces,
+`restore()` does not, so a third caller is a mutation that has stopped telling
+the database anything. The first 409 had a mirror calling `write()` directly, the
+rule fired at three, and **I edited the rule's premise**: a store that commits
+directly, I argued, has earned a mirror that does not announce.
+
+The argument is sound. It was also unnecessary — the mirror calls `save()`, the
+announcement is unchanged, the count is two, and 409 now claims only what it
+changed. **A guard edited to admit the code it guards has stopped being a
+guard**, and this one had already caught a patch shipped backwards at 405.
+
+Keeping the announcement is the smaller change on its own terms, too. Dropping
+`noteAuthoredChange` would be defensible — the rows are already written, so the
+import it triggers rewrites what is there — and it would silently change which
+families a reconciliation may touch, which is **topic 1C's subject and not this
+patch's**.
+
+### 12.153.4 A shut database is not a refusal, and the paste has to say so
+
+The gate may not have opened and the app must still take a note before B9, so
+`.noDatabase` falls back to the file rather than refusing. That is correct and
+it is **invisible** — and before 409, file-only was the ordinary path, so a
+store that quietly stopped reaching the database looks exactly like one that
+never had to. §12.54.2 in the one family that cannot be fetched again.
+
+`Notes reaching the database: yes` therefore prints unconditionally in **The
+app's own files**, immediately after the write journal's lines. It says nothing
+about a note — whether a commit happened is not a session, a place or a date
+(§12.7).
+
+A refusal *is* thrown, as a `StoreWriteError`, because that is what
+`NoteEditorView.commit` catches — it keeps the editor open and its first action
+is **Copy the text**. Raw SQLite text in front of somebody names nothing, so the
+store says what refused and the reason carries what SQLite said.
+
+### 12.153.5 The delete is the worst direction, which is why it is in this patch
+
+A note save arriving late is a durability gap. **A delete arriving late is a
+wrong answer that undoes the athlete.** The old order removed the note from
+memory and the file and let the import carry the deletion to SQLite whenever it
+next ran; after B2's flip the launch hydrates from the database, so a
+termination in that window brings the deleted note **back** onto a list that had
+been cleared.
+
+Control 5 pins it, and it is the control that discriminates hardest: with the
+file made unwritable between two mutations, the old order throws from the mirror
+and never reaches the `DELETE` — the row survives by being one statement further
+down. The new order deletes first, so the deletion stands and the mirror failure
+is recorded.
+
+### 12.153.6 One of the five controls does not discriminate, and it says so
+
+Sabotaged back to file-first, controls 1, 2, 3 and 5 fail and **control 4 —
+the create/edit/delete round trip — passes.** The old order still committed,
+just afterwards, so inside a single process the round trip is identical.
+
+It is not a vacuous test: it fails if a delete stops reaching the rows, or if an
+edit writes a second one. It is a statement about the **round trip**, not about
+**when the commit happens**, and its own doc comment now says so. §12.69 does
+not let a control's coverage be inferred from its name — and the only way to
+find this out was to run the sabotage and read which tests survived it.
+
+### 12.153.7 RULE 13, and it caught something while being written
+
+The rollback tests that found the leak were not looking for it, and the same
+first draft is waiting in the commutes, the match decisions and the plan moves.
+So the reachability property is now mechanical: **a file declaring
+`init(directory:)` may not read `Sub4Launch.shared` from anything a seam can
+run.** Allowed instead are `private init()`, a member whose every call site is
+inside `private init()`, and a nested type — because a value the INITIALISER
+chose is unreachable from a seam that chose a different one.
+
+It reports 9 seam-bearing stores and 2 mediated references, and it was broken on
+purpose in both directions before being kept (§12.69): 409's exact defect
+reinstated in `NotesStore.commitToDatabase`, and `DetailStore.fill()` given a
+second caller in `init(directory:)`. Both fail with the member named.
+
+**And writing it corrected something I had told Bruno.** I had said no other
+store reaches the singleton — from a `grep … | head`, which is an enumeration
+with a silent cap on it and is a lesson this project has already paid for twice.
+Uncapped, `DetailStore` has two references. It is safe, but only because
+`fill()` happens to be called from one place; nothing was holding that. **The
+rule now is.**
+
+### 12.153.10 THE DEVICE RAN IT — 19 August 2026, 21:44–21:59, SIXTEEN OF SIXTEEN
+
+`docs/DEVICE-CAMPAIGN-409.md` executed on 409a against the real database — 698
+activities, 51 tables, 220,837 rows. **Every row passed.** The subject was a
+session with no note (**Strength B · core only, 7 August**); `N = 7`.
+
+**THE THREE THAT ARE THE CAMPAIGN:**
+
+- **Row 4 — `user_note` = 8 after a force-quit taken immediately on Save.** A
+  raw `COUNT(*)`, so the least deniable reading available on the phone. The
+  commit happened before the editor closed; the window 1B names is shut.
+- **Row 12 — `Notes reaching the database: yes`,** read after an in-launch edit.
+  **Risk 1 is closed by direct observation** rather than by the argument about
+  `RootView`'s branch ordering. The database is open when `NotesStore` writes.
+- **Row 14 — the card reads `Add a note` after deleting and relaunching.** No
+  resurrection. This is the direction `remove` was inverted for and the one
+  that would have been a wrong answer on screen rather than a durability gap.
+
+**THE READ-BACK AGREED AT EVERY CHECKPOINT**, and its app side is `notes.json`
+read directly, so these are the file and the database, not one store twice:
+7 vs 7 → **8 vs 8** → 8 vs 8 after the edit → **7 vs 7** after the delete, with
+`only in the app`, `only in the database` and `fields that differ` at zero
+throughout and `carrying an RPE` tracking 7→8→7. `note fields compared` went
+35 → 40 → 35, which is the fifth field of the eighth note appearing and leaving.
+
+**409a'S DIAGNOSTIC WAS HONEST IN ALL THREE STATES**, which is the whole reason
+it was rebuilt: `no note written since this launch` before anything (row 2,
+proving it is not stuck), `no note written since this launch` again after the
+relaunch (row 10, proving it is per-launch), and `yes` after the edit (row 12).
+Under 409's `Bool` all three would have read `yes`.
+
+**AND THE EDIT COVERED WHAT NOTHING ELSE REACHES.** Row 13: the note was edited
+in a LATER launch than the one that created it, so `previous` came from
+hydration rather than from memory written the same session. Every control in
+the suite creates and edits inside one process. `fields that differ: 0` over 40
+fields is what says the new text reached both sides.
+
+**ONE NUMBER MOVED THAT LOOKS WRONG AND IS NOT.** `migration_run` read 257 →
+256 → 257 across the three census exports. A ledger count going DOWN is worth
+stopping on; this one is `MigrationLedger.prune` doing its job —
+`keepAutomaticRuns = 200`, `keepAutomaticInterruptedRuns = 20`, plus what is
+never pruned. Each launch inserts a run and trims to the cap, and the campaign's
+two force-quits made two interrupted runs. Steady-state churn at a ceiling, ±1.
+**Recorded here because the census makes it look like data loss and it is not.**
+
+**WHAT IT DOES NOT PROVE**, unchanged from the campaign's §8: a refusal from the
+real database (the editor clamps RPE to 1–10, so that path is the suite's
+control 1), a mirror failure on the phone (controls 3 and 5), a termination
+*inside* the SQLite transaction (GRDB's, taken on trust), and anything at all
+about the commutes, the match decisions or the plan moves — 1B is notes only.
+
+### 12.153.9 The campaign found the defect before the phone did — 409a
+
+Writing `DEVICE-CAMPAIGN-409.md` meant asking, for each figure, *what would this
+read if the thing it watches were broken*. For `Notes reaching the database` the
+answer was: **the same thing it reads when everything is fine.**
+
+`databaseMissedAWrite` was a `Bool` on a stored property, so it was `false` on
+every fresh launch — and `false` printed as `yes`. The campaign reads that line
+at step 8, **after a force-quit and relaunch**, where no note has been written
+in that process. The row could not fail. It would have been run, passed, and
+gone into this document as evidence that a note reached SQLite.
+
+§12.15, and the fifteenth instance: *could not be checked* is not the same as
+*checked and fine*, and a two-valued flag has nowhere to put the difference.
+§12.54.2's cousin too — a `yes` nobody could distinguish from a vacuous `yes` is
+a row that reads as agreement whatever happened.
+
+`NoteCommit` has three cases, `.noneThisLaunch` is the initial one, and **the
+store owns the sentence** rather than the view — the vacuous "yes" was written
+as a ternary in `DatabaseHealthView`, and a two-valued source cannot carry a
+third answer no matter which side of the boundary the words live on (§12.43).
+
+**Three consequences for the campaign, and they made it better:**
+
+- It reads the line at **three** moments instead of one — before anything is
+  written (expect `no note written since this launch`, which is what proves the
+  line is not stuck), after the relaunch (expect the same, because per-launch is
+  the contract), and after an in-launch edit (expect `yes`).
+- **Every export now happens after the force-quit**, because opening a share
+  sheet backgrounds the app and would let the write-through import cover for a
+  commit that never happened. That was true before 409a and the document did not
+  say it.
+- The in-launch edit needed to see `yes` is **an edit of a note that came back
+  from the database** — which no control in the suite reaches, since they all
+  create and edit inside one process. A gap the campaign had listed as uncovered
+  is now covered by the step added to close a different problem.
+
+**The general form is worth keeping.** Writing the manual campaign was not
+paperwork after the patch; it was the first thing to ask what each figure would
+say when wrong, and it found a diagnostic that could not fail. That is the same
+question §12.69 asks of a guard, applied to a row on a screen.
+
+### 12.153.8 Why this one needs a device campaign
+
+`docs/DEVICE-CAMPAIGN-409.md`, and the reason is narrow enough to state in a
+sentence: **the suite hands every store a database by construction, so it cannot
+tell whether the phone has one open at the moment `NotesStore` writes.** If
+`Sub4Launch.shared.database` is nil there, every save behaves exactly as it did
+at 408 and nothing looks wrong anywhere. `Notes reaching the database` is the
+line that answers it, and row 1 of the campaign's table stops the run if it
+reads `NO`.
+
+The campaign's other half is the force-quit between the save and anything else —
+the window 1B is about — and its instrument is `Read-back · authored`, which
+since 356 reads `notes.json` **directly** rather than through the hydrated
+store. The note card is not evidence: it reads `NotesStore.shared`, so after a
+relaunch it and the rows are the same reader twice.
+
+**Its `Notes` rows turn out to name the failure directions exactly**, which was
+not designed for this and is the reason the campaign is short. `In each side`
+prints `notes.json vs user_note`; `Only in the app` above zero is the file
+holding a note the database refused — **the pre-409 signature**; `Only in the
+database` above zero is the opposite and is 409's *designed* behaviour when the
+mirror cannot land. A campaign that had only counted rows could not have told
+those two apart.
+
+One location correction worth recording: **`Notes reaching the database` is not
+a row on the screen.** It is a line in the export from the ⬆︎ beside *The app's
+own files*, because that section's body draws the legacy survey and the journals
+reach the paste only. Naming a screen row that does not exist is a mistake this
+project has made twice, and the campaign says so in as many words.
+
+---
+
 ## 12.152 One note, one transaction — patch 408, plan topic 1B
 
 A note save is file-first today: memory, then `notes.json`, then a

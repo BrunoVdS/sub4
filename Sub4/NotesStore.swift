@@ -144,12 +144,59 @@ final class NotesStore {
     private(set) var servedFrom: StoreSource = .files
 
     private let fileURL: URL
+
+    /// **WHICH DATABASE A SAVE COMMITS TO — patch 409, §12.153.**
+    ///
+    /// 409 makes a save commit to SQLite BEFORE it publishes, so every instance
+    /// must answer "commit where?". The obvious answer — read
+    /// `Sub4Launch.shared.database` at the write — is wrong twice over, and the
+    /// first way cost two failing tests:
+    ///
+    ///   · **THAT SINGLETON IS PROCESS-WIDE, AND THE SEAM IS NOT.**
+    ///     `DatabaseBootstrapTests` and `ImporterSeedTests` both call
+    ///     `Sub4Launch.shared.begin()`, which opens the real database for every
+    ///     test that runs after them. A store built through `init(directory:)`
+    ///     into a temporary folder would reach straight past that folder and
+    ///     write the athlete's notes into the app's own database. The first
+    ///     version of 409 did exactly this, and `aFailedSaveRollsBack` caught
+    ///     it: the commit had succeeded, so the rollback correctly declined.
+    ///   · **AND A SEAM THAT CANNOT HOLD A DATABASE CANNOT TEST ONE.** Making
+    ///     the seam inert fixed the leak and made the new path unreachable from
+    ///     the suite — the four controls this patch owes have nowhere to run.
+    ///     A `Bool` could express *not the app's*; it could not express *this
+    ///     one instead*. §12.69: a guard that cannot fail has not been tested.
+    ///
+    /// So three states, and `.given` is the one the controls use.
+    private enum NoteDatabase {
+        /// The app's. Resolved AT THE WRITE, never at `init` — `NotesStore`
+        /// is constructed with `ContentView`, and whether the launch has
+        /// finished opening by then is `RootView`'s branch ordering, which is
+        /// not a thing a store should depend on.
+        case theLaunchs
+        /// A seam with no database. The file is authoritative and the pre-409
+        /// contract holds unchanged — which is what `init(directory:)`'s
+        /// twenty-six existing call sites already assume.
+        case none
+        /// A seam with its own, for the negative controls.
+        case given(Sub4Database)
+
+        @MainActor var live: Sub4Database? {
+            switch self {
+            case .theLaunchs:    Sub4Launch.shared.database
+            case .none:          nil
+            case .given(let db): db
+            }
+        }
+    }
+
+    private let database: NoteDatabase
     private let schemaKey = "notes.schema"
     private let schemaVersion = 1
 
     // MARK: Init
 
     private init() {
+        database = .theLaunchs
         let dir = (try? FileManager.default.url(for: .applicationSupportDirectory,
                                                 in: .userDomainMask,
                                                 appropriateFor: nil, create: true))
@@ -187,6 +234,22 @@ final class NotesStore {
     /// shared `UserDefaults` key, and a test instance has no business touching
     /// the real one.
     init(directory: URL) {
+        // SEE `NoteDatabase`. A seam does not reach the launch's database.
+        database = .none
+        fileURL = directory.appendingPathComponent("notes.json")
+        load()
+    }
+
+    /// A seam that commits, for the four controls 1B owes — patch 409.
+    ///
+    /// **A SECOND INITIALISER RATHER THAN A DEFAULT ARGUMENT.** `database:
+    /// Sub4Database? = nil` would have been one line and would have made
+    /// twenty-six existing call sites carry a value none of them writes —
+    /// §12.95.4, whose instance cost patch 350a four patches of a green suite.
+    /// Two initialisers put each call site's intent in its own text, and a grep
+    /// for this one enumerates every store in the suite that commits.
+    init(directory: URL, database: Sub4Database) {
+        self.database = .given(database)
         fileURL = directory.appendingPathComponent("notes.json")
         load()
     }
@@ -244,28 +307,185 @@ final class NotesStore {
             return nil
         }
 
+        // ── 2. THE AUTHORITATIVE COMMIT, BEFORE ANYTHING IS PUBLISHED ──
+        //
+        // PATCH 409, §12.153. This was file-first: memory, then `notes.json`,
+        // then a fire-and-forget whole-world import. A termination before that
+        // import committed left SQLite older than the file, and the next launch
+        // published the old value from a database-hydrated store — which is
+        // B2's flip turning a durability gap into a WRONG ANSWER on screen.
+        let committed = try commitToDatabase(candidate)
+
+        // ── 3. PUBLISH ──
         let previous = notes[session.uid]
         notes[session.uid] = candidate
-        do {
-            try save()
-        } catch {
-            if let previous { notes[session.uid] = previous }
-            else { notes.removeValue(forKey: session.uid) }
-            throw error
-        }
+
+        // ── 4. THE MIRROR, AND IT MAY NOT UNDO STEP 2 ──
+        //
+        // The edit is committed. Telling the athlete it failed because the
+        // JSON copy did not land would be a lie in the direction that loses
+        // work — the sheet would stay open over a note that is already saved,
+        // and "Copy the text" would be advice about nothing. So a mirror
+        // failure is RECORDED and not thrown; `StoreWriteJournal` is what the
+        // Database screen reads for "Unsaved stores", and the next import
+        // rewrites the file from rows.
+        try mirror(previous: previous, subject: session.uid,
+                   committed: committed)
         return candidate
     }
 
-    func remove(session: Session) throws {
-        guard let previous = notes.removeValue(forKey: session.uid) else { return }
+    /// Step 2, and the only step that may refuse the athlete's edit.
+    ///
+    /// **A REFUSAL IS A `StoreWriteError` BECAUSE THAT IS WHAT THE SHEET
+    /// CATCHES.** `NoteEditorView.commit` keeps the editor open on one, and its
+    /// first action is *Copy the text* — "this sheet may hold the only copy of
+    /// something the athlete wrote". A raw `SQLite error 19: FOREIGN KEY
+    /// constraint failed` in front of somebody is not identifying the unsaved
+    /// subject, so the store name says what refused and the reason carries what
+    /// SQLite said, in that order.
+    ///
+    /// **NO DATABASE IS NOT A REFUSAL — patch 409's one open decision.** The
+    /// gate may not have opened, and until B9 the app must work without it.
+    /// Refusing would mean a shut database destroys the ability to write a note
+    /// at all, which is worse than a mirror that is briefly ahead of the rows:
+    /// the file is still written, the next import catches the database up, and
+    /// **the gap is visible** rather than assumed — `lastNoteCommit` reaches
+    /// the paste, because a store that quietly stopped reaching the database is
+    /// §12.54.2 in the family that cannot be fetched again.
+    @discardableResult
+    private func commitToDatabase(_ note: Note) throws -> Bool {
+        switch NoteRepository.upsert(note, in: database.live) {
+        case .wrote:
+            lastNoteCommit = .reached
+            return true
+        case .noDatabase:
+            lastNoteCommit = .missed
+            return false
+        case .refused(let why):
+            throw StoreWriteError(store: "the database", stage: .writing,
+                                  reason: why)
+        }
+    }
+
+    /// Step 4, and **whether a failure here is fatal depends on step 2.**
+    ///
+    /// **COMMITTED: memory stands and the failure is recorded.** §12.17 says
+    /// the screens must not show what the disk does not hold — and the
+    /// authoritative disk is SQLite, which holds it. Throwing would keep the
+    /// editor open over a note that is already saved, and its first action is
+    /// *Copy the text*: advice about nothing, in the direction that loses work.
+    ///
+    /// **NOT COMMITTED: the file is the only store, so the old rule stands
+    /// unchanged.** Two existing tests caught this — the first version of 409
+    /// never rolled back, so a failed write with no database open would have
+    /// left the note **in memory and on no disk at all**. That is not
+    /// database-first, it is nowhere-first. Before B9 a shut database is an
+    /// ordinary state and the file is authoritative in it.
+    ///
+    /// **IT CALLS `save()`, SO THE ANNOUNCEMENT IS UNCHANGED.** 409 claims one
+    /// thing — that the authoritative commit happens BEFORE the athlete is told
+    /// the edit landed — and nothing about the write-through. Dropping
+    /// `noteAuthoredChange` here would be defensible (the rows are already
+    /// written, so the import it triggers rewrites what is there) and it would
+    /// also silently change which families a reconciliation may touch, which is
+    /// topic 1C's subject and not this patch's. Smallest attributable change.
+    ///
+    /// It is also why RULE 12 did not have to move. The first version of this
+    /// called `write()`, the rule fired at three callers, and I widened the
+    /// rule's premise to admit the third — changing a guard to fit the code it
+    /// guards. The code did not need it.
+    private func mirror(previous: Note?, subject: String,
+                        committed: Bool) throws {
         do {
             try save()
         } catch {
-            // A delete that did not reach the disk is not a delete. Putting it
-            // back is what stops the note reappearing at the next launch as if
-            // the app had changed its mind.
-            notes[session.uid] = previous
-            throw error
+            guard committed else {
+                if let previous { notes[subject] = previous }
+                else { notes.removeValue(forKey: subject) }
+                throw error
+            }
+            StoreWriteJournal.shared.attempt("notes.json") { throw error }
+        }
+    }
+
+    /// **DID THE LAST NOTE REACH THE DATABASE — patch 409, THREE STATES SINCE
+    /// 409a, §12.153.9.**
+    ///
+    /// It was a `Bool`, `databaseMissedAWrite`, and the campaign written to
+    /// exercise it found the defect before the phone did. **The flag is a
+    /// stored property reset on every launch**, so `false` — printed as
+    /// *"Notes reaching the database: yes"* — was ALSO what a launch said when
+    /// nothing had been saved yet. And the campaign reads that line after a
+    /// force-quit and relaunch, where nothing has been. **The row could only
+    /// ever pass.**
+    ///
+    /// §12.15, in the shape this project keeps rediscovering: a diagnostic that
+    /// cannot say why it has no answer will be read as having one. *Could not
+    /// be checked* is not the same as *checked and fine*, and a `Bool` has
+    /// nowhere to put the difference.
+    enum NoteCommit: Equatable, Sendable {
+        /// No note has been saved or deleted in this launch. **Not a fault**,
+        /// and the only honest thing to say before the athlete writes anything.
+        case noneThisLaunch
+        /// The last one committed to SQLite before it was published.
+        case reached
+        /// The last one went to the file with no database open. A real state
+        /// before B9 — `commitToDatabase` explains why it is not a refusal —
+        /// and one the paste has to be able to say out loud, because a store
+        /// that silently stopped reaching the database looks identical to one
+        /// that never had to. §12.54.2.
+        case missed
+
+        /// One line, always sayable, and it never mentions a note — §12.7.
+        var line: String {
+            switch self {
+            case .noneThisLaunch:
+                "Notes reaching the database: no note written since this launch"
+            case .reached:
+                "Notes reaching the database: yes"
+            case .missed:
+                "Notes reaching the database: NO — the last one went to the file only"
+            }
+        }
+    }
+
+    private(set) var lastNoteCommit: NoteCommit = .noneThisLaunch
+
+    /// **DELETE, INVERTED THE SAME WAY — patch 409.**
+    ///
+    /// A delete has the identical failure and it is the worse direction: the
+    /// old order removed the note from memory and the file, then let the import
+    /// carry the deletion to SQLite whenever it next ran. A termination in that
+    /// window left the row in the database and the note gone from the file —
+    /// and after B2's flip the next launch HYDRATES FROM THE DATABASE, so the
+    /// note the athlete deleted comes back. A deletion that undoes itself is
+    /// the loudest possible version of this defect, which is why `remove` is in
+    /// this patch and not a later one.
+    func remove(session: Session) throws {
+        guard let previous = notes[session.uid] else { return }
+        let committed = try deleteFromDatabase(session.uid)
+        notes.removeValue(forKey: session.uid)
+        // A delete that did not reach the disk is not a delete — but which disk
+        // is authoritative is exactly what `committed` answers. `mirror` puts
+        // the note back only when nothing else holds the deletion.
+        try mirror(previous: previous, subject: session.uid,
+                   committed: committed)
+    }
+
+    /// `commitToDatabase`'s other half. Same three outcomes, same reasoning —
+    /// see it for why `.noDatabase` is not a refusal.
+    @discardableResult
+    private func deleteFromDatabase(_ sessionUid: String) throws -> Bool {
+        switch NoteRepository.delete(noteFor: sessionUid, in: database.live) {
+        case .wrote:
+            lastNoteCommit = .reached
+            return true
+        case .noDatabase:
+            lastNoteCommit = .missed
+            return false
+        case .refused(let why):
+            throw StoreWriteError(store: "the database", stage: .writing,
+                                  reason: why)
         }
     }
 

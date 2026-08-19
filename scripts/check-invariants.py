@@ -988,12 +988,30 @@ def no_restore_announces() -> None:
         # nothing to report (§12.19). Counting only the throwing shape would
         # have left the one store this rule most needed to cover uncounted.
         calls = len(re.findall(r"(?:try )?write\(\)", body)) - 1
+
+        # **THE PREMISE HELD AT 409, AND THE ATTEMPT TO MOVE IT WAS THE
+        # DEFECT — §12.153.**
+        #
+        # Two callers is right because `save()` announces and `restore()` does
+        # not, so a third caller is a mutation that has stopped telling the
+        # database anything. 409 made `NotesStore` database-first and this rule
+        # fired at three, and my first response was to widen the premise: a
+        # store that commits directly, I argued, has earned a mirror that does
+        # not announce.
+        #
+        # The argument was sound and the code did not need it. 409's mirror
+        # calls `save()`, so the announcement is unchanged, the count is two,
+        # and the patch claims only what it changed — the ORDER of the commit.
+        # **A guard edited to admit the code it guards has stopped being a
+        # guard**, and this one had already caught a backwards patch at 405 that
+        # a green suite of 1,700 tests did not. §12.69.
         if calls != 2:
             fail(rule, f"{f.name} calls `write()` {calls} times and should call "
-                       "it twice — once from `save()`, once from `restore()`. A "
-                       "third caller is a mutation that no longer announces, so "
-                       "the database stops being caught up and nothing says so. "
-                       "§12.149")
+                       "it twice — from `save()` and `restore()`. A third "
+                       "caller is a mutation that does not announce, so the "
+                       "database stops being caught up and nothing says so. "
+                       "If a store becomes database-first, its mirror still "
+                       "goes through `save()`. §12.149, §12.153")
     counted(rule, silent, 4, "stores with a silent write path")
     if seen > RESTORING_STORES:
         fail(rule, f"{seen} restores exist and this rule expects "
@@ -1002,7 +1020,161 @@ def no_restore_announces() -> None:
                    "beside it.")
 
 
+# --------------------------------------------------------------------------
+# RULE 13 — patch 409, §12.153.1
+# --------------------------------------------------------------------------
+
+# The seam-bearing stores. A file declaring `init(directory:)` offers callers
+# an instance rooted somewhere other than the app's own container — which is
+# what the tests, and three read-backs, are built on.
+#
+# The floor is 9 at 409. It goes UP as stores gain seams, never quietly down.
+SEAM_STORE_FLOOR = 8
+
+
+def braced_span(text, header, start=0):
+    """`braced`, but returning positions rather than the substring — this rule
+    has to ask WHERE something is, not only what it says."""
+    i = text.find(header, start)
+    if i < 0:
+        return None
+    j = text.find("{", i)
+    if j < 0:
+        return None
+    depth, k = 0, j
+    while k < len(text):
+        if text[k] == "{":
+            depth += 1
+        elif text[k] == "}":
+            depth -= 1
+            if depth == 0:
+                return (i, k + 1)
+        k += 1
+    return None
+
+
+def _members(text):
+    """Every member declaration and its braced span, at any indent.
+
+    Deliberately crude — it wants the ENCLOSING declaration of a line, and for
+    that a slightly generous match is safer than a precise one that misses a
+    modifier nobody thought of."""
+    out = []
+    for m in re.finditer(r"^[ \t]*(?:@\w+\s+)*"
+                         r"(?:(?:private|fileprivate|internal|public|nonisolated"
+                         r"|static|final|@discardableResult|override|mutating)\s+)*"
+                         r"(func|var|init|subscript)\s+([A-Za-z_]\w*)?",
+                         text, re.M):
+        span = braced_span(text, text[m.start():m.end()], m.start())
+        if span and span[0] == m.start():
+            out.append((m.group(2) or "init", m.start(), span[1]))
+    return out
+
+
+def a_seam_never_reaches_the_launchs_database():
+    """**A STORE WITH A SEAM MUST NOT READ `Sub4Launch.shared` FROM ANYTHING A
+    SEAM CAN CALL — patch 409, §12.153.1.**
+
+    `init(directory:)` exists so an instance can be rooted somewhere harmless.
+    409 made `NotesStore` commit to SQLite and resolved the database as
+    `Sub4Launch.shared.database` **at the write** — so a store pointed at a
+    temporary folder reached straight past it and wrote the athlete's notes
+    into the app's own database. `DatabaseBootstrapTests` and
+    `ImporterSeedTests` call `Sub4Launch.shared.begin()`, which opens that
+    database for every test that runs after them, so the seam was not merely
+    able to leak: it was leaking on every run.
+
+    Two existing rollback tests caught it, for a reason neither was written
+    for. **That is luck, and this rule is what replaces it** — the same first
+    draft is waiting in the commutes, the match decisions and the plan moves,
+    each of which 1B and 1C convert next.
+
+    WHAT COUNTS AS SAFE, AND WHY IT IS A REACHABILITY QUESTION
+    ----------------------------------------------------------
+    Not "does the file mention the singleton" — `DetailStore` does, legally.
+    Its `fill()` reads `Sub4Launch.shared.database` and is called from exactly
+    one place, `private init()`, which no seam ever runs. The reference is
+    unreachable from an instance a test can build, and that is the whole
+    property. So a mention is allowed when it sits in:
+
+      · **`private init()`** — the singleton's own construction, by definition
+        not something a seam executes;
+      · **a member whose every call site is inside `private init()`** —
+        `DetailStore.fill()`, and the rule verifies the call sites rather than
+        taking the author's word for it;
+      · **a nested type** — `NotesStore.NoteDatabase`, whose `.live` reads the
+        singleton only for the case the INITIALISER chose. The seam picks
+        `.none` or `.given`, so the branch is unreachable from it. A value the
+        initialiser selects is the fix shape, and it is the one to copy.
+
+    Anything else is a member an instance can be asked to run, and a seam is an
+    instance.
+
+    ITS LIMIT, STATED: the call-site check is one level deep. A private helper
+    called only from another private helper called only from `private init()`
+    would be reported. That is a false positive this tree does not currently
+    have, and the answer when it appears is to nest the value — not to deepen
+    this."""
+    rule = "a seam never reaches the launch's database"
+    seams, mediated = 0, 0
+    for f in app_sources():
+        raw = f.read_text()
+        if "init(directory:" not in raw:
+            continue
+        seams += 1
+        text = strip_comments(raw)
+        if "Sub4Launch.shared" not in text:
+            continue
+
+        singleton = braced_span(text, "private init()")
+        members = _members(text)
+
+        # The nested types, whose bodies are reached only through a value the
+        # initialiser chose.
+        nested = [braced_span(text, m.group(0), m.start())
+                  for m in re.finditer(r"^[ \t]{4,}(?:private\s+)?(?:nonisolated\s+)?"
+                                       r"(?:enum|struct)\s+\w+", text, re.M)]
+        nested = [n for n in nested if n]
+
+        for hit in re.finditer(r"Sub4Launch\.shared", text):
+            at = hit.start()
+            if singleton and singleton[0] <= at < singleton[1]:
+                mediated += 1
+                continue
+            if any(a <= at < b for a, b in nested):
+                mediated += 1
+                continue
+
+            # The enclosing member, then its call sites.
+            owner = None
+            for name, a, b in members:
+                if a <= at < b and (owner is None or a > owner[1]):
+                    owner = (name, a, b)
+            if owner:
+                name, a, b = owner
+                calls = [c.start() for c in re.finditer(re.escape(name) + r"\s*\(", text)
+                         if not (a <= c.start() < b)]
+                if calls and singleton and all(singleton[0] <= c < singleton[1]
+                                               for c in calls):
+                    mediated += 1
+                    continue
+            where = owner[0] if owner else "the file body"
+            fail(rule,
+                 f"{f.name} reads `Sub4Launch.shared` from `{where}`, which a "
+                 "store built by `init(directory:)` can run. A seam rooted at a "
+                 "temporary folder would reach past it into the app's own "
+                 "database — 409 did exactly that, and two rollback tests "
+                 "caught it by accident. Put the database behind a value the "
+                 "INITIALISER chooses (`NotesStore.NoteDatabase`), or call it "
+                 "only from `private init()` (`DetailStore.fill`). §12.153.1")
+
+    counted(rule, seams, SEAM_STORE_FLOOR, "stores offering a directory seam")
+    REPORT.append(f"  {rule}: {mediated} launch references behind an "
+                  "initialiser's choice")
+
+
 RULES = [
+    a_seam_never_reaches_the_launchs_database,
     every_store_that_records_a_read_refuses_a_write,
     every_removal_counter_is_in_the_total,
     no_expect_message_is_a_concatenation,

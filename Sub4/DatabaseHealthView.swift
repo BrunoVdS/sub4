@@ -4075,10 +4075,37 @@ struct DatabaseHealthView: View {
     /// The survey is separate because it only exists once somebody has run it.
     private var storeFileLines: [String] {
         StoreWriteJournal.shared.diagnosticLines
+        + [Self.noteCommitLine]
         + StoreReadJournal.shared.diagnosticLines
         + ActivityStore.shared.loadDiagnosticLines
         + ["Detail and trace files: \(DetailStore.shared.tally.line)"]
         + (survey.map { [""] + LegacyReader.diagnosticLines($0) } ?? [])
+    }
+
+    /// **DID THE LAST NOTE SAVE REACH THE DATABASE — patch 409, §12.153.**
+    ///
+    /// UNCONDITIONAL, and the "yes" is the whole reason it is here. 409 makes
+    /// a note commit to SQLite before the athlete is told it saved, and a shut
+    /// database is deliberately NOT a refusal — the gate may not have opened
+    /// and the app must still take a note before B9. So the store falls back to
+    /// the file and the next import catches the rows up.
+    ///
+    /// That fallback is correct and it is invisible, which is §12.54.2 in the
+    /// one family that cannot be fetched again: a store that has quietly
+    /// stopped reaching the database looks exactly like one that never had to.
+    /// A line that only appeared on the bad day would be a line nobody could
+    /// tell from a line nobody wired in.
+    ///
+    /// It says NOTHING about a note — §12.7. Whether a commit happened is not
+    /// a session, a place or a date.
+    /// **409a — THE SENTENCE IS THE STORE'S, NOT THIS SCREEN'S.** It was a
+    /// ternary here over a `Bool`, which is how the vacuous "yes" got written:
+    /// a two-valued source cannot carry a third answer, and the view had
+    /// nowhere to put *nothing has been saved yet*. §12.43 — the store owns the
+    /// state, so it owns the words for it.
+    @MainActor
+    private static var noteCommitLine: String {
+        NotesStore.shared.lastNoteCommit.line
     }
 
     /// "Traces still to fetch" — patch 331's block.

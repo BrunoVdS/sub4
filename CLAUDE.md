@@ -6,10 +6,11 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 408 (2026-08-18).** §5.3 is the 390 device run, Compare and
+**Current at patch 409a (2026-08-19).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
-comparing the database with itself.
+comparing the database with itself. **409's campaign RAN on 19 August and
+passed sixteen of sixteen** — §5.3a. **1A's is still unrun**; §5.6 item 2.
 
 **§5 IS THIS PROJECT'S ONLY STATEMENT OF CURRENT STATE.** Every other document
 either points at it or is dated history. That rule exists because the opposite
@@ -372,9 +373,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 408, 2026-08-18
+## 5. State — patch 409a, 2026-08-19
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 408; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 409a; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -419,6 +420,28 @@ slice reversible by deleting one family from `hydratedFamilies`, and why
 hydration must never write — RULE 8 checks all eight `hydrate` bodies, because
 no assertion in the suite can reach it.
 
+**AND SINCE 409 ONE STORE WRITES THE OTHER WAY ROUND.** `NotesStore` commits to
+SQLite before it publishes and writes `notes.json` as a mirror afterwards. A
+shut database is still not a refusal — the file takes it and the next import
+catches up — so **`Notes reaching the database` prints unconditionally** in the
+export from *The app's own files* (a paste line, **not a screen row**). §12.153.
+
+**409a MADE THAT LINE THREE-VALUED, AND WRITING THE CAMPAIGN IS WHAT FOUND IT.**
+It was a `Bool` reset every launch, so `false` — printed `yes` — was ALSO what a
+launch said having written nothing, and the campaign reads it after a
+force-quit. **The row could only ever pass.** `NoteCommit` now has
+`no note written since this launch`, `yes` and `NO`. §12.15's fifteenth
+instance, and the general lesson is that **writing the manual campaign is the
+first thing that asks what each figure says when it is wrong**. §12.153.9.
+
+**RULE 13 is what stops the next store repeating it.** 409's first draft read
+`Sub4Launch.shared.database` at the write, so a store built by `init(directory:)`
+into a temp folder reached past it into the app's own database — two suites call
+`Sub4Launch.shared.begin()`, so it was leaking on every run. **A seam-bearing
+file may now only reach the singleton from `private init()`, from a member called
+solely by it, or from a nested type** — a value the initialiser chose. 9 seams,
+2 mediated. §12.153.1, §12.153.7.
+
 ### 5.3 The evidence, from the device at 398 on 17 August 15:50
 
 **Six slices, zero unexplained differences, ON THE LAUNCH THAT FLIPPED.**
@@ -454,6 +477,38 @@ either side for everything the slices cover — **except slice 3, which since 39
 cannot disagree.** Not a lossless round trip: gear status, rejection and
 match-date metadata, plan source and order and fractional fetch-time precision
 are outside the mapped set — §12.86.
+
+### 5.3a The 409a device run — 19 August 2026, 21:44–21:59
+
+**THE FIRST TIME A MUTATION PATH HAS BEEN DRIVEN BY HAND ON THIS PROJECT.**
+`docs/DEVICE-CAMPAIGN-409.md`, run against 698 activities and 220,837 rows.
+**Sixteen of sixteen.** Subject: *Strength B · core only, 7 August*, a session
+with no note. `N = 7`.
+
+- **`user_note` = 8 after a force-quit taken immediately on Save** — a raw
+  `COUNT(*)`. The commit precedes the editor closing; 1B's window is shut.
+- **`Notes reaching the database: yes`** after an in-launch edit. **The database
+  IS open when `NotesStore` writes** — observed, not argued from `RootView`'s
+  branch ordering.
+- **The card reads `Add a note` after deleting and relaunching.** No
+  resurrection — the direction `remove` was inverted for.
+- Read-back, whose app side is `notes.json` **read directly**: 7 vs 7 → **8 vs
+  8** → 8 vs 8 after the edit → **7 vs 7**, with *only in the app*, *only in the
+  database* and *fields that differ* at zero throughout.
+- **409a's line was honest in all three states** — `no note written since this
+  launch`, the same again after the relaunch, then `yes`. Under 409's `Bool` all
+  three read `yes`.
+- **An edit of a note that came back from the DATABASE** (row 13) — the case no
+  control in the suite reaches, since they all create and edit in one process.
+
+**`migration_run` read 257 → 256 → 257 and that is not data loss.** It is
+`MigrationLedger.prune` at its ceiling — 200 automatic, 20 interrupted, plus
+what is never pruned — with two force-quits adding two interrupted runs. Noted
+because the census makes a shrinking ledger look alarming. §12.153.10.
+
+**Uncovered, unchanged:** a refusal from the real database, a mirror failure on
+the phone, a termination inside the transaction, and the other three authored
+stores.
 
 ### 5.4 The verifier's accounting, derived end to end, and in THREE buckets
 
@@ -564,12 +619,14 @@ run happened. §12.135–§12.150.
    announces nothing — **not that it repairs**. No route exists to make the file
    and the database disagree safely, since deleting a note removes it from both,
    so that half is the suite's and a device fixture is worth building before B9.
-3. **1B — DATABASE-FIRST MUTATIONS, NOTES ONLY.** A note save is file-first, so
-   a termination before the fire-and-forget import commits leaves SQLite older
-   than the file and the next launch publishes the old value. **408 built the
-   narrow write** — one transaction, the importer's own mapping, no whole-world
-   import (§12.152). **409 inverts the order** and needs its own campaign. Then
-   family by family; 1C's reconciliation scope and removal attribution follow.
+3. **1B IS DONE — BUILT, AND PROVEN ON THE PHONE.** A note save commits to
+   SQLite **before** the editor closes, and `remove` with it — 408 the narrow
+   write, **409 the order**, **409a the diagnostic** (§12.152, §12.153).
+   Six controls; **control 4 does not discriminate the order and says so**.
+   **The campaign ran on 19 August and passed sixteen of sixteen** — §5.3a.
+   **RULE 13** stops the next store repeating 409's seam leak. Next is the same
+   inversion **family by family** — the commutes, the match decisions, the plan
+   moves — then 1C's reconciliation scope and removal attribution.
 4. **FILE PROTECTION.** `protect` swallows its failure with `try?`, the screen
    prints `Until first unlock` as a literal, and a simulator cannot check it —
    applied silently, reported by a constant that cannot fail. The screen must
