@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 418 (2026-08-20).** §5.3 is the 390 device run, Compare and
+**Current at patch 419 (2026-08-20).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -394,9 +394,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 418, 2026-08-20
+## 5. State — patch 419, 2026-08-20
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 418; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 419; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -635,23 +635,16 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   RECONCILIATION ACROSS EVERY FAMILY** — 405 stopped restores pulling it
   (**device: ledger byte-identical either side of a press**), not the trigger
   being dangerous. Topic 1C.
-- **`ReadBacks.athlete` IS THE LAST READ-BACK COMPARING THE DATABASE WITH
-  ITSELF.** It reads `ConstantsStore.shared.c`, `AthleteStore.shared.ftp` and
-  `.hrZones`, all **hydrated since 346** — 27 comparisons that could not have
-  disagreed, printed as agreement for forty-four patches. **ITS OWN PATCH**: it
-  needs `AthleteStore(directory:)` and `ConstantsStore(directory:)` — the
-  `UNPROTECTED_STORE_CEILING` pair — and closes **516 rows** nothing else checks:
-  `athlete_profile` (1), `resting_month` (15), `activity_gear_reference` (500).
-  **418 GAVE IT BOTH SEAMS** — `AthleteStore(directory:)` and
-  `ConstantsStore(directory:)` exist now, so what is left is the read-back
-  itself. **`knownActivityIDs` is B5's**; **`DetailStore` is invisible to
-  RULE 1**.
-- **THE WORK QUEUE'S PRUNE HAS NO SOURCE READ TO CHECK.** Its items come from
-  `DetailStore`'s `failed`/`noStreams`, read as `stringArray(forKey:) ?? []` —
-  §12.116's shape, where an absent read becomes "no work" and the prune deletes
-  every row. Nothing journals it, so `ReconcileFamily.workQueue.source` is
-  **nil** and the gate prints that it could not check rather than naming a store
-  that would always say yes. **B8's to close.** §12.161.3.
+- **`ReadBacks.athlete` READS THE FILES SINCE 419 — the last self-referential
+  read-back is closed.** It compared `ConstantsStore.shared.c`,
+  `AthleteStore.shared.ftp` and `.hrZones`, all hydrated since 346: twenty-seven
+  comparisons that could not have disagreed, printed as agreement for
+  seventy-three patches. `athleteSources()` reads `constants.json` and
+  `athlete.json` through 418's seams, and `.ownRead` makes the roll-up derive
+  independence. **What topic 3 still owes is DEVICE evidence, not code**: the
+  zero-length trace UI, a Release `Detail store built`, and interaction
+  behaviour rather than a timestamp. **`knownActivityIDs` is B5's**;
+  **`DetailStore` is invisible to RULE 1**. §12.164.
 - **A DISPOSABLE DEVICE FIXTURE IS NOW ASKED FOR BY THREE PATCHES.** 1A could
   not show the restore REPAIRS, 414 could not show a scoped REMOVAL, 415 cannot
   show a removal recorded and surviving — all for one reason: **409 and 412 made
@@ -841,6 +834,13 @@ Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
   the fixture set the one Date field to nil so the two strategies never met.
   Found by sabotaging the thing it guarded and watching nothing fail.
   **Sabotage the control, not only the code.** §12.163.2.
+- **WHEN THE CHANGE IS "CALL B INSTEAD OF A", THE TESTS ABOUT B PROVE
+  NOTHING.** 419 reverted to the old wiring and the entire suite stayed green:
+  six tests covering every part — the comparison turns red, the seam reads the
+  file, absence is clean, `.ownRead` is independent — and **not one asked the
+  read-back what it does**. §12.129 in a different costume, and 416's "a test
+  can encode a claim the code never made" for the second time in ten patches.
+  **Ask the function, not its ingredients.** §12.164.1.
 - **A number a device prints is not a number a device verified.** `14 independent`
   was rendered, stored in the ledger and pasted into a diagnostics file, and it was
   wrong — because every one of those steps read the same list. Printing is not

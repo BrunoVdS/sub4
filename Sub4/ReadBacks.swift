@@ -107,6 +107,68 @@ enum ReadBacks {
     /// *"Nil is a real answer — every caller must handle it rather than
     /// force-unwrapping and crashing a delete flow."* `directoryFound` is this
     /// read-back handling it.
+    /// **THE ATHLETE'S OWN SIDE, READ FROM THE FILES — patch 419, §12.164.**
+    ///
+    /// `ReadBacks.athlete` compared SQLite against `ConstantsStore.shared.c`,
+    /// `AthleteStore.shared.ftp` and `.hrZones` — **all three hydrated from
+    /// SQLite since B1 (346)**. Twenty-seven comparisons that could not have
+    /// disagreed, printed as agreement for seventy-three patches. §5.5 has
+    /// called it the last read-back comparing the database with itself since
+    /// 399 named the other one.
+    ///
+    /// The same move 343 made on the plan, 356 on the authored files and 364 on
+    /// the moves: read the source directly, through an instance that is not the
+    /// singleton. **418 gave both stores the seam** while bringing them under
+    /// the unclean-read guard, which is why this is a short function.
+    ///
+    /// IT WRITES NOTHING AND JOURNALS NOTHING. `init(directory:)` on both
+    /// stores loads and stops — no `StoreReadJournal`, which is that seam's own
+    /// rule (273's, kept at 356 for a second reason), and no `save()`.
+    struct AthleteSources {
+        let constants: AthleteConstants
+        let ftp: Int?
+        let zones: [AthleteStore.HRZone]
+
+        let constantsLoad: StoreLoad
+        let athleteLoad: StoreLoad
+        let directoryFound: Bool
+
+        var isTrustworthy: Bool {
+            directoryFound && constantsLoad.isTrustworthy
+                && athleteLoad.isTrustworthy
+        }
+
+        /// The sentence the section prints, and the one the roll-up carries as
+        /// this row's provenance. Two file names and their verdicts — §12.7,
+        /// no paths and no athlete figures.
+        var line: String {
+            guard directoryFound else {
+                return "Application Support is unreachable, so the app side was "
+                     + "not read at all"
+            }
+            return "constants.json and athlete.json, read directly"
+        }
+    }
+
+    /// Builds the athlete's file side. See `AthleteSources`.
+    @MainActor
+    static func athleteSources() -> AthleteSources {
+        guard let dir = AppSupportItem.container else {
+            return AthleteSources(constants: AthleteConstants(), ftp: nil,
+                                  zones: [],
+                                  constantsLoad: .absent, athleteLoad: .absent,
+                                  directoryFound: false)
+        }
+        let constants = ConstantsStore(directory: dir)
+        let athlete = AthleteStore(directory: dir)
+        return AthleteSources(constants: constants.c,
+                              ftp: athlete.ftp,
+                              zones: athlete.hrZones,
+                              constantsLoad: constants.lastLoad,
+                              athleteLoad: athlete.lastLoad,
+                              directoryFound: true)
+    }
+
     static func authoredSources() -> AuthoredSources {
         guard let dir = AppSupportItem.container else {
             return AuthoredSources(notes: [], commutes: [], decisions: [],
@@ -169,12 +231,17 @@ enum ReadBacks {
         let load = await Task.detached(priority: .utility) {
             AthleteRepository.load(db)
         }.value
-        return (load, AthleteRoundTrip.compare(store: ConstantsStore.shared.c,
-                                               storeFTP: AthleteStore.shared.ftp,
-                                               storeZones: AthleteStore.shared.hrZones,
-                                               database: load),
-                .liveStores([.from(.zones,
-                                   "the zones, the FTP and the constants beside them")]))
+        // PATCH 419 — THE FILES, NOT THE STORES. See `AthleteSources`: the
+        // three values this used to read have been hydrated from SQLite since
+        // B1, so the comparison was the database against itself.
+        let sources = athleteSources()
+        var report = AthleteRoundTrip.compare(store: sources.constants,
+                                              storeFTP: sources.ftp,
+                                              storeZones: sources.zones,
+                                              database: load)
+        report.appSideCameFrom = sources.line
+        report.appSideWasReadCleanly = sources.isTrustworthy
+        return (load, report, .ownRead(sources.line))
     }
 
     /// Patch 322 — D6c slice 5b. `user_note` and `correction`.

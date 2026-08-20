@@ -21,7 +21,20 @@ import Testing
 import Foundation
 @testable import Sub4
 
-@Suite("The protection attribute, as measured")
+/// **`.serialized`, AND IT IS A DEFECT THIS FILE SHIPPED WITH — patch 419.**
+///
+/// `FileProtection.failureCount` and `lastError` are process-global by design:
+/// one diagnostic for the whole app. Two tests here call `resetFailures()` and
+/// then assert absolutes, and swift-testing runs them **in parallel** — so one
+/// could reset the counter between the other's reset and its assertion. It
+/// passed on the run that shipped 417 and failed on the next unrelated patch,
+/// which is the worst way to find out.
+///
+/// A flaky test is worse than no test: it teaches you to re-run rather than to
+/// look. The trait is the fix; the lesson is that **global mutable state and
+/// parallel tests need saying out loud at the moment you write the first
+/// assertion about it**, not at the moment it first goes red.
+@Suite("The protection attribute, as measured", .serialized)
 struct ProtectionReadBackTests {
 
     private func directory() throws -> URL {

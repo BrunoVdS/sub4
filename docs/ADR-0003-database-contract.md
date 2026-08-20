@@ -8962,6 +8962,77 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.164 The last self-referential read-back — patch 419, plan topic 3
+
+`ReadBacks.athlete` compared SQLite against `ConstantsStore.shared.c`,
+`AthleteStore.shared.ftp` and `.hrZones` — **all three hydrated from SQLite
+since B1 at 346.** Twenty-seven comparisons that could not have disagreed,
+printed as agreement for seventy-three patches. §5.5 has named it since 399
+marked the other one.
+
+The fix is the move 343 made on the plan, 356 on the authored files and 364 on
+the moves: read the source directly, through an instance that is not the
+singleton. **418 gave both stores their seam** while bringing them under the
+unclean-read guard, so `athleteSources()` is fifteen lines.
+
+`ReadBackSource.isSelfReferential` already answers false for `.ownRead`
+whatever the stores serve — 387 made the roll-up DERIVE independence rather
+than be told — so **switching the case is the whole of the behaviour change**,
+and the report gains the same `appSideCameFrom` / `appSideWasReadCleanly` pair
+356 gave the authored one, for the same reason.
+
+### 12.164.1 SABOTAGE FOUND A SUITE THAT PROVED EVERY PART AND NOT THE WHOLE
+
+Reverting `ReadBacks.athlete` to the shared stores and `.liveStores` left **the
+entire suite green.** Six tests: that `compare` turns red on a disagreement,
+that the seam reads `constants.json`, that an unreadable file is not a clean
+read of nothing, that absence is clean, that `.ownRead` is not self-referential,
+that the provenance line carries no path. Every one passes against the reverted
+code, because **not one of them asked the read-back what it does.**
+
+§12.129 in a different costume — a set of tests over the parts of a join says
+nothing about the join — and 416's finding again: a test can encode a claim the
+code never made. `theReadBackReportsItsOwnRead` calls the function and asserts
+the case, and it fails against the revert.
+
+**The general form is worth more than the fix.** When a patch's change is
+"call B instead of A", the tests that matter are not the ones about B.
+
+### 12.164.2 The negative control could not have been written before
+
+Topic 3 asks for *"a negative control where the file and DB differ and prove the
+row turns red"*. Before 419 **no fixture could make them differ**: both sides
+came from the same hydrated store, so the disagreement the control needs was
+unreachable by construction. That is the defect stated as a testing fact rather
+than as an argument, and it is why the row is worth fixing rather than
+re-labelling.
+
+### 12.164.3 A flaky test this session shipped, found by an unrelated patch
+
+417's `ProtectionReadBackTests` asserts absolutes on
+`FileProtection.failureCount` and `lastError` — **process-global by design, one
+diagnostic for the whole app** — and two of its tests call `resetFailures()`.
+swift-testing runs them in parallel, so one could reset the counter between the
+other's reset and its assertion.
+
+It passed on the run that shipped 417 and went red during 419, on a change that
+touches neither. **A flaky test is worse than no test: it teaches you to re-run
+rather than to look.** `.serialized` is the fix; the lesson is that global
+mutable state and parallel tests need saying at the moment the first assertion
+about them is written.
+
+### 12.164.4 What topic 3 still owes
+
+The read-back is item 1 of four in the plan's decomposition. **Items 2–4 are
+device evidence, not code**: the zero-length trace UI state exercised end to
+end, a Release timing for `Detail store built`, and interaction/jank evidence
+rather than a construction timestamp. Load parity stays explicitly classified as
+deterministic-only until B6 can give it an independent file-side input — 399
+marked it and 419 does not change it, which the prompt asks for in as many
+words.
+
+---
+
 ## 12.163 The ceiling reaches zero — patch 418, topic 2 closes
 
 `AthleteStore` and `AthleteConstants` come under §12.116's read-before-write

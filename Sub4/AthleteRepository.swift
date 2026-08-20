@@ -220,6 +220,21 @@ nonisolated enum AthleteRoundTrip {
         var zonesCompared = 0
 
         var differences: [String] = []
+
+        /// **WHERE THE APP SIDE CAME FROM — patch 419, §12.164.**
+        ///
+        /// UNCONDITIONAL and printed FIRST, because it is what every count
+        /// under it means. 356 added the same pair to the authored report for
+        /// the same reason: a read-back that does not say where its own side
+        /// came from cannot be checked by anybody who was not holding the
+        /// phone — and this row said nothing while comparing SQLite with
+        /// SQLite for seventy-three patches.
+        var appSideCameFrom = "the shared stores"
+
+        /// False when the files could not be read. **Not the same as finding
+        /// nothing**: an absent `constants.json` on a new install is a clean
+        /// read of an empty store, and `StoreLoad.absent` is trustworthy.
+        var appSideWasReadCleanly = true
         /// Months the two sides disagree about, named.
         var monthsDiffering: [String] = []
         var zonesDiffering: [Int] = []
