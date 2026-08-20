@@ -217,6 +217,11 @@ struct DatabaseHealthView: View {
     /// the exact shape 306 fixed for the ledger.
     @State private var detailStore = DetailStore.shared
 
+    /// **PATCH 423 — THE WAY IN.** The traceless activities are named and dated
+    /// on this screen and reachable from nowhere else in the app: the Week
+    /// grid starts at 2026-01-01 and both of this device's are 2025. §12.169.
+    @State private var openActivity: Activity?
+
     /// PATCH 332. Nil until the share button writes a file. `ShareItem` is the
     /// wrapper `ShareSheet.swift` owns so that `.sheet(item:)` has something
     /// `Identifiable` without a retroactive conformance on `URL`.
@@ -318,12 +323,21 @@ struct DatabaseHealthView: View {
                     }
                 }
             }
-            // PATCH 332. The only presentation modifier on this screen, and it
-            // is here rather than on the diagnostics Section because a sheet
-            // presented from inside a `List` row is presented from a view the
-            // list is free to recycle.
+            // PATCH 332. Presentation modifiers live here rather than on a
+            // Section, because a sheet presented from inside a `List` row is
+            // presented from a view the list is free to recycle.
             .sheet(item: $shared) { item in
                 ShareSheet(items: [item.url])
+            }
+            // PATCH 423. The same rule, and the same place. `ActivityDetailView`
+            // is a large view and it costs this screen no depth: a `.sheet`
+            // closure is its own view tree, not a child of `body`. §12.76.
+            .sheet(item: $openActivity) { a in
+                // NO `NavigationStack` HERE. `ActivityDetailView` builds its
+                // own at line 202 and carries its own Done button; wrapping it
+                // would draw two navigation bars. Same call shape as
+                // `WeekView` and `TodayView`, which is the point — §12.43.
+                ActivityDetailView(activity: a)
             }
 
         }
@@ -1437,14 +1451,18 @@ struct DatabaseHealthView: View {
             .font(.caption2).foregroundStyle(Color.dim)
         LabeledContent("  asked, nothing there", value: "\(coverage.answeredEmpty)")
             .font(.caption2).foregroundStyle(Color.dim)
-        // PATCH 422 — THE IDS WITH THEIR DAYS, SO THEY CAN BE REACHED.
-        // Unconditional, `none to name` when empty (§12.54.2). The DAY is here
-        // and not in the paste: §12.7 governs what leaves the phone, and
-        // without it a named id is still unreachable — nothing in this app
-        // finds an activity by Strava id. §12.167.
-        Text(Self.named(coverage.answeredEmptyActivities))
-            .font(.caption2).foregroundStyle(Color.dim)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        // PATCH 422 — THE IDS WITH THEIR DAYS. PATCH 423 — AND THEY OPEN.
+        //
+        // 422 gave each id its date so the activity could be found by hand, and
+        // the device answered `2025-07-24` and `2025-11-10`: **the Week tab's
+        // grid starts at 2026-01-01 and cannot reach either**, and the Today
+        // tab reaches 2025-07-01 one day-step at a time — 393 taps. Named,
+        // dated, and still unreachable. §12.169.
+        //
+        // ONE CHILD, not one per activity — the `if`/`else` and the `ForEach`
+        // each count once, so this costs the same depth as the `Text` it
+        // replaced. §12.76.
+        tracelessRows(coverage.answeredEmptyActivities)
         LabeledContent("  the source refused it", value: "\(coverage.refused)")
             .font(.caption2).foregroundStyle(Color.dim)
         // RED WHEN IT IS NOT ZERO — the residual is the whole point of the
@@ -1453,19 +1471,60 @@ struct DatabaseHealthView: View {
         LabeledContent("  unexplained", value: "\(coverage.unexplained)")
             .font(.caption2)
             .foregroundStyle(coverage.isFullyExplained ? Color.dim : Color.red)
-        Text(Self.named(coverage.unexplainedActivities))
-            .font(.caption2)
-            .foregroundStyle(coverage.isFullyExplained ? Color.dim : Color.red)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        tracelessRows(coverage.unexplainedActivities,
+                      red: !coverage.isFullyExplained)
     }
 
-    /// The screen rendering of a bucket: ids with their days, or a sentence
-    /// saying there are none. NEVER an empty string — a line that collapses to
-    /// nothing cannot be told from one nobody wired in.
-    private static func named(_ items: [TracelessActivity]) -> String {
-        items.isEmpty
-            ? "      none to name"
-            : "      " + items.map(\.screenText).joined(separator: ", ")
+    /// A bucket's activities, each one a way in — or the sentence that says
+    /// there are none.
+    ///
+    /// **A BUTTON THAT CANNOT OPEN ANYTHING SAYS SO RATHER THAN DOING
+    /// NOTHING** — §12.15. A dead tap is indistinguishable from a screen that
+    /// has not been wired up.
+    ///
+    /// **AND THE FALLBACK CANNOT FIRE TODAY, WHICH IS WORTH SAYING OUT LOUD**
+    /// (§12.69). `traceCoverage()` classifies `ActivityStore.shared.activities`
+    /// and `resolve` searches the same list, so every named id is in it by
+    /// construction. The state it guards is one refactor away: `answeredEmpty`
+    /// is a `UserDefaults` set that outlives the roster, and printing IT
+    /// instead of walking the activities would name activities the roster
+    /// dropped. `classifyNamesOnlyActivitiesItWasGiven` is what fails on that
+    /// day; this branch is what the screen does when it happens.
+    @ViewBuilder
+    private func tracelessRows(_ items: [TracelessActivity],
+                               red: Bool = false) -> some View {
+        if items.isEmpty {
+            Text("      none to name")
+                .font(.caption2)
+                .foregroundStyle(red ? Color.red : Color.dim)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            ForEach(items, id: \.id) { item in
+                if let a = Self.resolve(item.id) {
+                    Button { openActivity = a } label: {
+                        HStack {
+                            Text("      \(item.screenText)")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(red ? Color.red : Color.dim)
+                    }
+                } else {
+                    Text("      \(item.screenText) — not in the activity list")
+                        .font(.caption2)
+                        .foregroundStyle(red ? Color.red : Color.dim)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+    }
+
+    /// The one lookup. Linear over the roster, which is 699 rows and happens
+    /// when a section is drawn — this is a diagnostic, not a hot path, and a
+    /// second index would be a second thing to keep in step (§12.43).
+    private static func resolve(_ id: String) -> Activity? {
+        ActivityStore.shared.activities.first { $0.id == id }
     }
 
     private static func isLimited(_ until: Date?) -> Bool {

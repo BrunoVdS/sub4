@@ -8,7 +8,7 @@
 | **ADR** | §12.164 (419), §12.165 (420), §12.166 (421), §12.167 (422), §12.142 for what B4 already proved |
 | **Contract** | `docs/PLAN-database-cutover-findings-and-ai-prompts.md`, "Manual test campaign contract" — all ten parts below |
 | **Time** | twenty minutes. **Part 3 needs a Release build from Xcode.** |
-| **State** | **PART 1 PASSED on 20 August at patch 422 — four of four, and the roll-up's self-referential count reached zero. Parts 2 and 3 outstanding.** §10 |
+| **State** | **PART 1 PASSED at 422 — four of four, and the roll-up's self-referential count reached zero. PART 2 rows 3 and 3b PASSED. Rows 3c, 4–7, 7b and part 3 outstanding, on 423.** §10 |
 
 Topic 3 has four decomposition items. **Item 1 is code and is done** (419).
 **Item 4 needs no action** — load parity stays classified deterministic-only
@@ -138,18 +138,19 @@ the **⬆︎** beside the title is the export.
    each activity. **Write down both dates.**
    If it reads `none to name`, this part cannot run today — record that and go
    to part 3.
-4. **Week** tab → navigate to the first of those dates → open that day's
-   activity detail (tap the activity row).
-5. **If the day holds more than one activity, open each of them.** The one under
-   test is the one with **no route map and no heart-rate chart** — which is the
-   property being tested, so it cannot be used to pick the activity in advance.
-   The other identifiers are the distance and the moving time.
+4. **Tap the first `<id> · <date>` entry.** It opens that activity's detail
+   directly — new at 423, and the only way in: this device's two are
+   **`2025-07-24` and `2025-11-10`**, the Week grid starts at 2026-01-01 and
+   cannot reach either, and the Today tab would take 393 day-steps.
+5. If an entry reads `— not in the activity list` instead of opening, record it
+   and say so — that is a real state and it is not supposed to occur today.
 6. **Scroll the whole screen slowly, top to bottom.** Look at, in order:
    **HEART RATE** (the zone distribution), **KILOMETRE SPLITS** (both **Km** and
    **Laps**), **PROFILE** — **all four tabs, HR · Pace · Elev · Grade** — and
    **ROUTE**. Screenshot each panel that draws anything.
 7. **Rotate the phone to landscape** while on the profile panel, wait for it to
-   settle, then rotate back. Then repeat steps 4–7 for the second date.
+   settle, then rotate back. Dismiss the sheet, then **repeat steps 4–7 for the
+   second entry.**
 
 ### Part 3 — the cost, in Release · *steps 8–12*
 
@@ -214,7 +215,8 @@ what a person sees, and no number the app prints can answer it.
 | 1 | 2 | **Read-back roll-up** | the **Athlete** row's mark | `· own read: constants.json and athlete.json, read directly` | `· self-referential: …` | **419 did not land.** Every count in row 2 is the database compared against itself. |
 | 1b | 2 | same | same | as above | `· COULD NOT READ ITS OWN SIDE: …` **(red)** | The seams failed to read the two files on this phone. **Not a 419 regression** — report the reason, it names the file. |
 | 2 | 1 | **Read-back · athlete** | `compared` / `differ` | **27 compared**, `fields`, `months` and `zones that differ` all `0`, `unexplained differences: 0` | any non-zero difference | **A difference here is now real** and was unreachable before 419. Report which field. `approved differences: 1 (version)` is expected and is not a difference. |
-| 3 | 3 | **Traces still to fetch** | `asked, nothing there` | `2`, and beneath it two `<id> · <date>` entries | a count with no dated entries under it | **422 did not land** and part 2 cannot be performed. Check **Source patch** reads 422. |
+| 3 | 3 | **Traces still to fetch** | `asked, nothing there` | `2`, and beneath it two `<id> · <date>` entries | a count with no dated entries under it | **422 did not land** and the activities cannot be identified. |
+| 3c | 4 | **Traces still to fetch** | tapping an entry | the activity's detail opens | nothing happens, or `— not in the activity list` | **423 did not land**, or the roster no longer holds an activity the verdict set still names (§12.169.2). Either way part 2 stops here. |
 | 3b | 3 | same | `unexplained` | `0` | ≥ `1` **(red)** | An activity has no trace for a reason nothing in this app has a name for. Not this campaign's subject — **report it**, with the ids now printed beside it. |
 | 4 | 6 | activity detail | **HEART RATE** | the panel is **absent**, or present with a clear no-data state | an empty chart with axes and no line, or `avg 0 · max 0` | A chart drawn over nothing reads as "your heart rate was zero". |
 | 5 | 6 | activity detail | **PROFILE**, each of HR · Pace · Elev · Grade | absent, or a clear no-data state, **in all four** | empty axes, or a tab drawing a flat line at 0 | `isUsable` is one rule; a zero-length trace must fail it in every tab, **not three of four**. A single bad tab is the finding. |
@@ -330,6 +332,20 @@ slice flips, and says so in words rather than being inferred from a count.
 `1 nothing to compare` is `Review trail`, empty on both sides until the first
 review on **24 August 2026**. It is an abstention and it is named.
 
+### 10.1b Rows 3 and 3b PASSED — 20 August 22:14, patch 422
+
+`asked, nothing there: 2`, and on the screen
+`15225521352 · 2025-07-24, 16415953236 · 2025-11-10`. `unexplained: 0` with
+`none to name` beneath it — the empty bucket says so rather than collapsing.
+
+**The export carries `15225521352, 16415953236` and no dates.** The §12.7 split
+422 built is confirmed on the device: the screen is navigable, the paste is
+clean.
+
+**And the dates broke step 4.** Both are 2025; the Week grid starts at
+2026-01-01 and the Today stepper is 393 taps away. **423 makes each entry a
+button** — §12.169, and row 3c.
+
 ### 10.2a And step 2 was unperformable as first written — 20 August, 22:04
 
 The first attempt at the corrected step returned
@@ -356,8 +372,8 @@ sentence and knows what it means rather than reporting it as a failed read-back.
 
 ### 10.5 Outstanding
 
-**Rows 3, 3b, 4–7, 7b and 8–15.** Part 1 is closed. Run parts 2 and 3 on
-**patch 422**.
+**Rows 3c, 4–7, 7b and 8–15.** Part 1 is closed and part 2 is half done — rows
+3 and 3b passed at 422. Run the rest on **patch 423**.
 
 ---
 

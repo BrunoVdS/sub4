@@ -161,3 +161,45 @@ struct TracelessActivityTests {
                 "a day-ordered list would make two exports of one state differ")
     }
 }
+
+/// **PATCH 423 — THE COUPLING BEHIND THE TAP.**
+///
+/// The Database screen turns each named id into a button by looking the
+/// activity up in `ActivityStore.shared.activities`. That works because
+/// `traceCoverage()` classifies the same list — so a named id is in it by
+/// construction, and the screen's "not in the activity list" branch cannot fire.
+///
+/// **§12.69: a guard that cannot fail has not been tested.** The state is one
+/// refactor away — `answeredEmpty` is a `UserDefaults` set that outlives the
+/// roster, and naming ITS members instead of walking the activities would print
+/// activities the roster dropped. This is the assertion that fails that day.
+@Suite
+struct TracelessActivityCouplingTests {
+
+    private func activity(_ id: String, day: String) -> Activity {
+        Activity(id: id, name: "x", sportType: "Run",
+                 startLocal: "\(day)T09:00:00", distance: 5000,
+                 movingTime: 1800, elapsedTime: 1800,
+                 elevationGain: nil, averageHeartrate: nil, isTrainer: nil)
+    }
+
+    @Test("classify names only activities it was given")
+    func classifyNamesOnlyActivitiesItWasGiven() {
+        // `999` is in the verdict set and NOT in the roster — the exact state a
+        // dropped activity leaves behind in `UserDefaults`.
+        let c = TraceCoverageReport.classify(
+            activities: [activity("111", day: "2025-07-24")],
+            hasTrace: { _ in false },
+            refused: [],
+            answeredEmpty: ["111", "999"],
+            queued: [],
+            minDistance: 500)
+
+        #expect(c.answeredEmpty == 1, "a verdict with no activity was counted")
+        #expect(c.answeredEmptyIDs == ["111"],
+                "an id the roster does not hold was named — the screen would render it as a tap that opens nothing")
+        // And the account still balances over the activities it was handed.
+        #expect(c.total == 1)
+        #expect(c.balances)
+    }
+}

@@ -8962,6 +8962,58 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.169 Named, dated, and still out of reach — patch 423
+
+422 gave each traceless id its date so the activity could be found by hand. **The
+device answered `15225521352 · 2025-07-24` and `16415953236 · 2025-11-10`, and
+neither can be opened.**
+
+- **The Week tab's grid starts at `MatchRules.weekGridDayKey`, `2026-01-01`**,
+  and `index` is clamped at zero. Both activities are 2025. The tab cannot go
+  there at all.
+- **The Today tab reaches back to `cutoffDayKey`, `2025-07-01`** — so both are
+  in range, one **day-step at a time**. From 20 August 2026 to 24 July 2025 is
+  393 taps.
+- The only other list of activities on a day is the **match picker**, which is
+  bound to a session's day and whose rows *write an override*. Not a way to look
+  at something.
+
+**Fifth unperformable step in eight patches, and the fourth in this one
+campaign** — §12.162.5, §12.165, §12.167, the roll-up button, and now this.
+
+### 12.169.1 The screen that names a thing is where the way in belongs
+
+Each entry is a `Button` opening `ActivityDetailView` in a sheet. Not a date
+picker on the Today tab: that would be a permanent change to how the app is
+navigated, argued for by a diagnostic's needs, and this is a diagnostic problem.
+**The screen that can name an activity should be able to show it.**
+
+Costs no depth. The `if`/`else` and the `ForEach` each count as one child, so
+the row budget is what 422's single `Text` spent — and a `.sheet` closure is its
+own view tree rather than a child of `body`, which is the only reason a view the
+size of `ActivityDetailView` can be presented from a screen with §12.76's
+history. **No `NavigationStack` around it**: it builds its own and carries its
+own Done button, so wrapping it would draw two navigation bars. Same call shape
+as `WeekView` and `TodayView` — §12.43.
+
+### 12.169.2 The fallback cannot fire, and the test is why that is safe
+
+An id the roster does not hold renders as `— not in the activity list` rather
+than as a tap that opens nothing (§12.15). **That branch is unreachable today**:
+`traceCoverage()` classifies `ActivityStore.shared.activities` and the lookup
+searches the same list, so every named id is in it by construction. §12.69 says
+a guard that cannot fail has not been tested, so the coupling is what gets the
+test instead.
+
+`classifyNamesOnlyActivitiesItWasGiven` hands `classify` a verdict for `999`
+with no activity `999` in the roster, and asserts it is not named. **That is one
+plausible refactor away from being real**: `answeredEmpty` is a `UserDefaults`
+set that outlives the roster, and printing its members instead of walking the
+activities would name activities the roster dropped — the same shape as
+§12.158's invisible `correction` row.
+
+---
+
 ## 12.168 The fifth number reached zero — device, 20 August 2026, patch 422
 
 **`0 read a store the database feeds.`**

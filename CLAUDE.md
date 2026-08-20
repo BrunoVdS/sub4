@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 422 (2026-08-20).** §5.3 is the 390 device run, Compare and
+**Current at patch 423 (2026-08-20).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -394,9 +394,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 422, 2026-08-20
+## 5. State — patch 423, 2026-08-20
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 422; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 423; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -666,7 +666,10 @@ tripwires, which become self-referential the day their slice flips. §12.168.
   three-valued and with a poisoned-window state (§12.166). **422 made the two
   named ids REACHABLE**: nothing in this app finds an activity by Strava id, so
   the screen now shows the day beside each — §12.7 governs the paste, not the
-  owner's own screen (§12.167). **`knownActivityIDs` is B5's**;
+  owner's own screen (§12.167). **423 made them OPEN** — this device's two are
+  `2025-07-24` and `2025-11-10`, the Week grid starts at 2026-01-01 and cannot
+  reach either, and the Today stepper is 393 taps away, so each entry is a
+  button into the activity's detail (§12.169). **`knownActivityIDs` is B5's**;
   **`DetailStore` is invisible to RULE 1**. §12.164.
 - **A DISPOSABLE DEVICE FIXTURE IS NOW ASKED FOR BY THREE PATCHES.** 1A could
   not show the restore REPAIRS, 414 could not show a scoped REMOVAL, 415 cannot
