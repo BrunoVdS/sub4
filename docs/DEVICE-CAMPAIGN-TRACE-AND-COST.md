@@ -129,52 +129,62 @@ Everything is **Settings → Sync & data → Database health** unless stated.
 Sections are collapsed — **tap the section title to open it**; the **⬆︎** beside
 a title is its export.
 
-### Setup
+### Setup — and the second half of this is what makes the numbers real
 
-1. In Xcode, set the run configuration to **Release**, build and install to the
-   phone.
-2. **Settings → Version.** Confirm **Configuration: Release** and **Source
-   patch: 423**. Screenshot it. If it says `Debug`, go back to step 1 — **part B
-   measures nothing otherwise.**
+1. **Switch the scheme to Release.** In Xcode:
+   **Product → Scheme → Edit Scheme…** (**⌘ <**) → the **Run** action →
+   the **Info** tab → **Build Configuration**: change `Debug` to **`Release`**.
+   Close the sheet.
+2. **⌘R once**, to build and install. Then **stop it in Xcode (⌘.)** as soon as
+   it is on the phone.
+   **DETACH BEFORE YOU MEASURE.** Launching from Xcode attaches the debugger,
+   which adds real start-up cost and lands squarely inside the ten-second window
+   part B measures. Every launch that counts must come from **tapping the icon
+   on the phone**. (Unticking **Debug executable** in the same pane stops Xcode
+   attaching at all, which works equally well.)
+3. **Settings → Version.** Confirm **Configuration: Release** and **Source
+   patch: 424**. Screenshot it. If it says `Debug`, the scheme change did not
+   take — go back to step 1, because **part B measures nothing otherwise**, and
+   that is exactly how the 20 August run was lost.
 
-### Part A — the two activities with no trace · *steps 3–8*
+### Part A — the two activities with no trace · *steps 4–9*
 
-3. **Database health** → tap **Traces still to fetch** → **⬆︎** → share the
+4. **Database health** → tap **Traces still to fetch** → **⬆︎** → share the
    export. On the **screen**, read the line under `asked, nothing there`: it
    should show two `<id> · <date>` entries.
-4. **Tap the first entry** (`15225521352 · 2025-07-24`). The activity's detail
+5. **Tap the first entry** (`15225521352 · 2025-07-24`). The activity's detail
    opens as a sheet. **This is the only way in** — the Week tab's grid starts at
    2026-01-01 and cannot reach 2025, and the Today tab would take 393
    day-steps.
-5. **Scroll the whole screen slowly, top to bottom**, and screenshot it in
+6. **Scroll the whole screen slowly, top to bottom**, and screenshot it in
    overlapping pieces so that **an absent panel is visible as absent**. Look for,
    in this order:
    **the summary card** (distance, moving, pace, climb) · **KILOMETRE SPLITS**,
    both the **Km** and the **Laps** segment · **HEART RATE** with its zone
    distribution · **PROFILE**, and on it **each of the four tabs — HR, Pace,
    Elev, Grade** · **ROUTE** · **BEST EFFORTS** · the footer facts.
-6. **On the PROFILE panel, try to drag across it.** If a panel that has no data
+7. **On the PROFILE panel, try to drag across it.** If a panel that has no data
    still accepts a scrub, say so — that is where a force-unwrap on an empty
    series would fire.
-7. **Rotate the phone to landscape**, wait for it to settle, rotate back.
-8. Dismiss the sheet with **Done**, then **repeat steps 4–7 for the second
+8. **Rotate the phone to landscape**, wait for it to settle, rotate back.
+9. Dismiss the sheet with **Done**, then **repeat steps 5–8 for the second
    entry** (`16415953236 · 2025-11-10`).
 
-### Part B — what it costs, in Release · *steps 9–12*
+### Part B — what it costs, in Release · *steps 10–13*
 
-9. **Force-quit the app** — swipe up from the app switcher. Then relaunch by
+10. **Force-quit the app** — swipe up from the app switcher. Then relaunch by
    **tapping the icon**.
-10. **Wait at least fifteen seconds without leaving the app.** Do not switch
+11. **Wait at least fifteen seconds without leaving the app.** Do not switch
     apps, do not lock the phone, do not pull down on Today. The stall window is
     ten seconds long and a reading taken inside it is a floor, not an answer.
     Waiting on the Today tab without touching it is fine.
-11. **Database health** → **The file** → read the **Launch** row on screen →
+12. **Database health** → **The file** → read the **Launch** row on screen →
     **⬆︎** → share the export.
     **Do the subtraction while you are there** — row 15c. The stall's line now
     ends `beginning N s after our first line`, and `Detail store built` ends the
     same way with its own figure. **Whether the second falls inside the first's
     span is the answer this run exists for.**
-12. **Repeat steps 9–11 once more**, so there are two Release launches. One
+13. **Repeat steps 10–12 once more**, so there are two Release launches. One
     launch is an anecdote.
 
 ---
@@ -215,27 +225,27 @@ the rows were not run.**
 
 | # | after step | where | figure | passes | fails | what the failure means |
 |---|---|---|---|---|---|---|
-| 1 | 2 | Settings → Version | **Configuration** | `Release` | `Debug` | **Part B measures nothing.** This is exactly why part 3 of B34 did not run. |
-| 2 | 3 | Traces still to fetch | `asked, nothing there` | `2`, with two `<id> · <date>` entries under it | a count with nothing under it, or ids with no dates | 422/423 did not land. Check **Source patch** reads 423. |
-| 3 | 3 | Traces still to fetch | `unexplained` | `0`, with `none to name` under it | ≥ 1 **(red)** | An activity has no trace for a reason nothing in this app has a name for. **Not this campaign's subject — report it**, with the ids now printed beside it. |
-| 4 | 4 | Traces still to fetch | tapping an entry | the activity's detail opens | nothing happens | **423 did not land.** Part A stops here. |
-| 4b | 4 | Traces still to fetch | the entry's text | `<id> · <date>` | `— not in the activity list` | The roster no longer holds an activity the verdict set still names (§12.169.2). **A real state and it is not supposed to occur today** — report it and stop. |
-| 5 | 5 | activity detail | **HEART RATE** | the panel is **absent**, or present with a clear no-data state | an empty chart with axes and no line, or `avg 0 · max 0`, or a zone list at all zeros | A chart drawn over nothing reads as "your heart rate was zero". **The worst of the failures, because it looks like data.** |
-| 6 | 5 | activity detail | **PROFILE** — HR, Pace, Elev, Grade | absent, or a clear no-data state, **in all four tabs** | empty axes, or a tab drawing a flat line at 0 | `isUsable` is one rule and four tabs consult it. **Three correct and one wrong is the likeliest defect here** — check all four, do not assume from the first. |
-| 7 | 5 | activity detail | **ROUTE** | **absent** | a map centred on 0,0, on the ocean, or on one point | The classic zero-coordinate failure. |
-| 8 | 5–7 | activity detail | the screen | draws, scrolls, rotates, dismisses | **a crash** | §12.76's runtime stack overflow, or a force-unwrap on an empty series. **Stop. Report the whole screen and what you last touched.** |
-| 9 | 5 | activity detail | **KILOMETRE SPLITS**, Km and Laps | the splits still draw | absent, or empty | Splits come from `activity_split`, a different family. **A missing trace must not take them with it.** |
-| 9b | 5 | activity detail | the summary card | distance, moving, pace and climb all present | any of them blank | The summary comes from `activity`, not from the trace. Same argument as row 9, one table further out. |
-| 10 | 11 | The file export | `Detail store built` | **record the number** | — | The figure §5.6 has owed since B4. Debug has run 0.872–1.233 s. **There is no pass mark — the number is the result.** |
-| 11 | 11 | The file export | `stall window` | `closed — 10.0 s` | `still open — N s` | You read it too early. Wait and export again. **Every stall figure over an open window is a floor, not a maximum.** |
-| 12 | 11 | The file export | `left the app during the window` | `no` | `YES` | The window is poisoned — the gaps include time the app was not scheduled at all, and a "stall" of several seconds is really a trip to the home screen. Relaunch and take it again. |
-| 13 | 11 | The file export | `first free main-thread turn` | **record it** | `not yet — …` | The earliest the app could have answered a touch — what "under two seconds by hand" was reaching for, to three decimals. A `not yet` means the 60 Hz watch never ticked, which is a 421 defect. |
-| 14 | 11 | The file export | `longest main-thread stall` | **record it** | — | **The figure a construction timestamp cannot give.** Close to `Detail store built` → **that read is on the main actor and B4's plan did not hold.** Small while `Detail store built` is large → the read is off the main actor and the cost is invisible to the user, which is the intended outcome. |
-| 15 | 11 | The file export | `before our first line` | **record it** | `could not measure — …` | sysctl refused the process table. The pre-main figure is unavailable on this device; every other row still stands. |
-| 15a | 11 | The file export | `longest main-thread stall … beginning N s` | **record N** | `— no tick ran late` | New at 424. A launch with no stall at all is a legitimate answer and reads differently from one placed at zero (§12.171.2). |
-| 15b | 11 | The file export | `Detail store built … beginning M s` | **record M** | `and nothing recorded when it began` | New at 424. The clock was never started, which on a running app cannot happen — report it as a 424 defect. |
-| **15c** | 11 | **both offsets together** | **is M inside the stall's span?** | **the arithmetic is the answer, not a pass mark** | — | **THE ROW THIS BUILD EXISTS FOR.** The stall runs from N to N + (its duration). If **M falls inside that span**, `DetailStore`'s construction is the stall and §12.170.1's inference is confirmed. If **M falls after it**, the stall is something else and 423's reading was over-read. If **M is far larger than the window** (hundreds of seconds), the store was not built at launch at all — it was built by the Database screen you just opened, and the stall belongs to something that never touched it. |
-| 16 | 12 | both exports | rows 10 and 13–15 | within a few tenths of each other | wildly different | One launch is an anecdote. **A large gap is itself a finding** — say which launch was which. |
+| 1 | 3 | Settings → Version | **Configuration** | `Release` | `Debug` | **Part B measures nothing.** This is exactly why part 3 of B34 did not run. |
+| 2 | 4 | Traces still to fetch | `asked, nothing there` | `2`, with two `<id> · <date>` entries under it | a count with nothing under it, or ids with no dates | 422/423 did not land. Check **Source patch** reads 423. |
+| 3 | 4 | Traces still to fetch | `unexplained` | `0`, with `none to name` under it | ≥ 1 **(red)** | An activity has no trace for a reason nothing in this app has a name for. **Not this campaign's subject — report it**, with the ids now printed beside it. |
+| 4 | 5 | Traces still to fetch | tapping an entry | the activity's detail opens | nothing happens | **423 did not land.** Part A stops here. |
+| 4b | 5 | Traces still to fetch | the entry's text | `<id> · <date>` | `— not in the activity list` | The roster no longer holds an activity the verdict set still names (§12.169.2). **A real state and it is not supposed to occur today** — report it and stop. |
+| 5 | 6 | activity detail | **HEART RATE** | the panel is **absent**, or present with a clear no-data state | an empty chart with axes and no line, or `avg 0 · max 0`, or a zone list at all zeros | A chart drawn over nothing reads as "your heart rate was zero". **The worst of the failures, because it looks like data.** |
+| 6 | 6 | activity detail | **PROFILE** — HR, Pace, Elev, Grade | absent, or a clear no-data state, **in all four tabs** | empty axes, or a tab drawing a flat line at 0 | `isUsable` is one rule and four tabs consult it. **Three correct and one wrong is the likeliest defect here** — check all four, do not assume from the first. |
+| 7 | 6 | activity detail | **ROUTE** | **absent** | a map centred on 0,0, on the ocean, or on one point | The classic zero-coordinate failure. |
+| 8 | 6–8 | activity detail | the screen | draws, scrolls, rotates, dismisses | **a crash** | §12.76's runtime stack overflow, or a force-unwrap on an empty series. **Stop. Report the whole screen and what you last touched.** |
+| 9 | 6 | activity detail | **KILOMETRE SPLITS**, Km and Laps | the splits still draw | absent, or empty | Splits come from `activity_split`, a different family. **A missing trace must not take them with it.** |
+| 9b | 6 | activity detail | the summary card | distance, moving, pace and climb all present | any of them blank | The summary comes from `activity`, not from the trace. Same argument as row 9, one table further out. |
+| 10 | 12 | The file export | `Detail store built` | **record the number** | — | The figure §5.6 has owed since B4. Debug has run 0.872–1.233 s. **There is no pass mark — the number is the result.** |
+| 11 | 12 | The file export | `stall window` | `closed — 10.0 s` | `still open — N s` | You read it too early. Wait and export again. **Every stall figure over an open window is a floor, not a maximum.** |
+| 12 | 12 | The file export | `left the app during the window` | `no` | `YES` | The window is poisoned — the gaps include time the app was not scheduled at all, and a "stall" of several seconds is really a trip to the home screen. Relaunch and take it again. |
+| 13 | 12 | The file export | `first free main-thread turn` | **record it** | `not yet — …` | The earliest the app could have answered a touch — what "under two seconds by hand" was reaching for, to three decimals. A `not yet` means the 60 Hz watch never ticked, which is a 421 defect. |
+| 14 | 12 | The file export | `longest main-thread stall` | **record it** | — | **The figure a construction timestamp cannot give.** Close to `Detail store built` → **that read is on the main actor and B4's plan did not hold.** Small while `Detail store built` is large → the read is off the main actor and the cost is invisible to the user, which is the intended outcome. |
+| 15 | 12 | The file export | `before our first line` | **record it** | `could not measure — …` | sysctl refused the process table. The pre-main figure is unavailable on this device; every other row still stands. |
+| 15a | 12 | The file export | `longest main-thread stall … beginning N s` | **record N** | `— no tick ran late` | New at 424. A launch with no stall at all is a legitimate answer and reads differently from one placed at zero (§12.171.2). |
+| 15b | 12 | The file export | `Detail store built … beginning M s` | **record M** | `and nothing recorded when it began` | New at 424. The clock was never started, which on a running app cannot happen — report it as a 424 defect. |
+| **15c** | 12 | **both offsets together** | **is M inside the stall's span?** | **the arithmetic is the answer, not a pass mark** | — | **THE ROW THIS BUILD EXISTS FOR.** The stall runs from N to N + (its duration). If **M falls inside that span**, `DetailStore`'s construction is the stall and §12.170.1's inference is confirmed. If **M falls after it**, the stall is something else and 423's reading was over-read. If **M is far larger than the window** (hundreds of seconds), the store was not built at launch at all — it was built by the Database screen you just opened, and the stall belongs to something that never touched it. |
+| 16 | 13 | both exports | rows 10 and 13–15 | within a few tenths of each other | wildly different | One launch is an anecdote. **A large gap is itself a finding** — say which launch was which. |
 
 **Rows 1–9b are pass/fail. Rows 10 and 13–15b are measurements with no pass
 mark — write the numbers down. Rows 11, 12 and 16 are what say whether the
@@ -271,8 +281,10 @@ ADR.** What reaches the ADR from rows 5–9b is a sentence describing what drew.
 
 - **Nothing to roll back.** No store was written, no setting changed, no gate
   moved.
-- **Reinstall the Debug build from Xcode** when part B is finished, so the next
-  session's figures stay comparable with the Debug history.
+- **Put the scheme back to Debug** when part B is finished — Product → Scheme →
+  Edit Scheme… → Run → Info → **Build Configuration: Debug** — and reinstall, so
+  the next session's figures stay comparable with the Debug history and nobody
+  later mistakes a Release install for the working build.
 - **Confirm the app came back to where it started**, against what §2 recorded:
   `Rows — 52 tables`, `activity 699`, `Traces still to fetch: 0`,
   `activities with no trace: 27 of 699`, `unexplained: 0`, and the same
