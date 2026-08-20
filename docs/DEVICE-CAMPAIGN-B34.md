@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Task** | Plan topic 3, decomposition items 2 and 3 — "close evidence and behavior gaps left by B1–B4" |
-| **Patches under test** | **419** (the athlete read-back), **420** (the ids), **421** (the launch instrument), and B4 as it has stood since 398 |
-| **Written at** | patch 420, corrected at 421, 20 August 2026 |
+| **Patches under test** | **419** (the athlete read-back), **420** (the ids), **421** (the launch instrument), **422** (the dates), and B4 as it has stood since 398 |
+| **Written at** | patch 420, corrected at 421 and 422, 20 August 2026 |
 | **ADR** | §12.164, §12.165, and §12.142 for what B4 already proved |
 | **Contract** | `docs/PLAN-database-cutover-findings-and-ai-prompts.md`, "Manual test campaign contract" |
 | **Time** | about fifteen minutes, and **one part needs a Release build** |
@@ -45,7 +45,7 @@ until B6, which 399 marked and 419 deliberately did not change.
 | the athlete read-back | section **Read-back · athlete** — rows, and **⬆︎** |
 | **whether it read the files itself** | section **Read-back roll-up** — NOT the section above |
 | the launch, measured | **The file** → row **Launch**, and the six readings in its **⬆︎** |
-| the zero-trace ids | **Traces still to fetch** → **⬆︎** → under `asked, nothing there` |
+| the zero-trace ids | **Traces still to fetch** → the line **under** `asked, nothing there` — **on the screen**, where each id carries its date. The export has the ids only. |
 | the build | **Settings → Version → Configuration** — `Debug` or `Release` |
 | the cost | **The file** → **⬆︎** → `Detail store built` |
 
@@ -79,11 +79,14 @@ perform. Strava ids are the one identifier a paste may carry (§12.7).
 
 ### Part 2 — an activity with no trace
 
-2. **Traces still to fetch** → **⬆︎** → export. Under `asked, nothing there`,
-   **write down one id.** If it says `none to name`, this part cannot run today
-   — record that and skip to part 3.
-3. **Today** or **Week** → navigate to that activity and open its detail.
-   (The id is Strava's; the activity is the one whose figures match.)
+2. **Traces still to fetch** → **⬆︎** → export, then look at the SCREEN. The
+   line under `asked, nothing there` reads `<id> · <date>` for each. **Write
+   down one date.** If it says `none to name`, this part cannot run today —
+   record that and skip to part 3.
+3. **Week** → go to that date → open that day's activity detail. If the day has
+   more than one, the right one is the one with **no** route map and **no**
+   heart-rate chart — which is the thing being tested, so check every activity
+   on the day rather than assuming.
 4. Scroll the whole screen slowly, top to bottom. Look at **HEART RATE**,
    **PROFILE** (all four tabs — HR, Pace, Elev, Grade) and **ROUTE**.
 5. Rotate the phone to landscape on the profile panel, then back.
@@ -110,7 +113,7 @@ perform. Strava ids are the one identifier a paste may carry (§12.7).
 |---|---|---|---|---|---|
 | 1 | 1 | **Read-back · athlete** provenance | names `constants.json and athlete.json, read directly` | says it read the stores | 419 did not land. Every count under it is the database against itself. |
 | 2 | 1 | the comparison | agrees, with a non-zero denominator | differs | **A difference here is now real** and was unreachable before 419. Report the field. |
-| 3 | 2 | `asked, nothing there` | names one or more ids, or `none to name` | a count with nothing under it | 420 did not land. |
+| 3 | 2 | `asked, nothing there` | the screen names each id WITH its date, or `none to name` | ids with no dates | 422 did not land, and the activity cannot be found. |
 | 4 | 4 | **HEART RATE** | absent, or a clear no-data state | an empty chart with axes and no line | A chart drawn over nothing reads as "your heart rate was zero". |
 | 5 | 4 | **PROFILE**, all four tabs | absent, or a clear no-data state | empty axes, or a tab that draws a flat line at 0 | `isUsable` is `distanceM.count >= 8`; a zero-length trace must fail it in every tab, not three of four. |
 | 6 | 4 | **ROUTE** | absent | a map centred on the ocean, or on 0,0 | The classic zero-coordinate failure. |
@@ -161,9 +164,10 @@ what says whether the measurements can be believed.
   `15225521352, 16415953236`. 420 landed.
 - **Rows 4–7 were not exercised.** The activity opened has a full trace — a
   9.44 km run with a heart-rate series, a route and `56:12 traced` — so it is
-  not one of the two. **The ids are named and still not locatable**: nothing in
-  the app finds an activity by Strava id, which is the same unperformable step
-  one level down.
+  not one of the two. **The ids were named and not locatable**: nothing in the
+  app finds an activity by Strava id, which is the same unperformable step one
+  level down. **422 fixed it** — the screen now carries the date beside each id,
+  and step 2 above was rewritten to use it.
 - **Rows 8–15 did not run.** `Configuration` read `Debug`.
 
 Figures recorded in passing at 420, Debug: `Bootstrap read: 0.036 s`,

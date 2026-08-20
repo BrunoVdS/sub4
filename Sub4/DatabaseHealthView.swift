@@ -1437,6 +1437,14 @@ struct DatabaseHealthView: View {
             .font(.caption2).foregroundStyle(Color.dim)
         LabeledContent("  asked, nothing there", value: "\(coverage.answeredEmpty)")
             .font(.caption2).foregroundStyle(Color.dim)
+        // PATCH 422 — THE IDS WITH THEIR DAYS, SO THEY CAN BE REACHED.
+        // Unconditional, `none to name` when empty (§12.54.2). The DAY is here
+        // and not in the paste: §12.7 governs what leaves the phone, and
+        // without it a named id is still unreachable — nothing in this app
+        // finds an activity by Strava id. §12.167.
+        Text(Self.named(coverage.answeredEmptyActivities))
+            .font(.caption2).foregroundStyle(Color.dim)
+            .frame(maxWidth: .infinity, alignment: .leading)
         LabeledContent("  the source refused it", value: "\(coverage.refused)")
             .font(.caption2).foregroundStyle(Color.dim)
         // RED WHEN IT IS NOT ZERO — the residual is the whole point of the
@@ -1445,6 +1453,19 @@ struct DatabaseHealthView: View {
         LabeledContent("  unexplained", value: "\(coverage.unexplained)")
             .font(.caption2)
             .foregroundStyle(coverage.isFullyExplained ? Color.dim : Color.red)
+        Text(Self.named(coverage.unexplainedActivities))
+            .font(.caption2)
+            .foregroundStyle(coverage.isFullyExplained ? Color.dim : Color.red)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The screen rendering of a bucket: ids with their days, or a sentence
+    /// saying there are none. NEVER an empty string — a line that collapses to
+    /// nothing cannot be told from one nobody wired in.
+    private static func named(_ items: [TracelessActivity]) -> String {
+        items.isEmpty
+            ? "      none to name"
+            : "      " + items.map(\.screenText).joined(separator: ", ")
     }
 
     private static func isLimited(_ until: Date?) -> Bool {

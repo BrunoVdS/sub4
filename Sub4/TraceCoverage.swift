@@ -38,6 +38,35 @@
 import Foundation
 
 /// Why each activity does or does not have a recorded trace.
+/// **AN ACTIVITY WITH NO TRACE, AND THE TWO WAYS IT MAY BE NAMED — patch 422.**
+///
+/// 420 gave the buckets their ids so topic 3's campaign could name an activity.
+/// It could not REACH one: nothing in this app finds an activity by Strava id,
+/// so a tester holding `15225521352` still has nowhere to tap. The same
+/// unperformable step one level down — §12.162.5 for the third time.
+///
+/// The date is what makes an id navigable, and **§12.7 is about pastes, not
+/// screens**: a diagnostic file leaving this phone may carry ids and field
+/// names and no dates; the phone's owner reading their own screen is under no
+/// such rule. So the pairing is one value with two renderers, and which one a
+/// caller reaches for is the whole of the distinction.
+nonisolated struct TracelessActivity: Equatable, Sendable, Comparable {
+    let id: String
+    /// `"yyyy-MM-dd"`, from `Activity.dayKey`.
+    let day: String
+
+    /// THE SCREEN. The owner's own phone, and the only rendering that can be
+    /// acted on.
+    var screenText: String { "\(id) · \(day)" }
+
+    /// Sorted by id, not by day — two exports of one state must be
+    /// byte-identical and the id is what the export carries.
+    static func < (a: TracelessActivity, b: TracelessActivity) -> Bool {
+        a.id < b.id
+    }
+}
+
+
 nonisolated struct TraceCoverage: Equatable, Sendable {
 
     var total = 0
@@ -74,12 +103,18 @@ nonisolated struct TraceCoverage: Equatable, Sendable {
     /// exactly like a complete list — §12.72.7's lesson, twice paid for. Both
     /// buckets are single digits on a real device (2 and 0 on 20 August), and
     /// if either ever grows the count beside it says so.
-    var answeredEmptyIDs: [String] = []
+    var answeredEmptyActivities: [TracelessActivity] = []
 
     /// The bucket that means the app has no explanation. Naming these matters
     /// more than the others: a count of unexplained activities is a question,
     /// and the ids are what turns it into an answer.
-    var unexplainedIDs: [String] = []
+    var unexplainedActivities: [TracelessActivity] = []
+
+    /// **WHAT THE PASTE GETS: IDS, NEVER DAYS.** Derived rather than stored, so
+    /// there is no second list to keep in step and no way for a date to reach
+    /// an export by somebody appending to the wrong array. §12.7, §12.167.
+    var answeredEmptyIDs: [String] { answeredEmptyActivities.map(\.id) }
+    var unexplainedIDs: [String] { unexplainedActivities.map(\.id) }
 
     /// None of the above.
     ///
@@ -126,20 +161,22 @@ nonisolated enum TraceCoverageReport {
             else if refused.contains(a.id)    { out.refused += 1 }
             else if answeredEmpty.contains(a.id) {
                 out.answeredEmpty += 1
-                out.answeredEmptyIDs.append(a.id)
+                out.answeredEmptyActivities.append(
+                    TracelessActivity(id: a.id, day: a.dayKey))
             }
             else if a.distance < minDistance  { out.belowThreshold += 1 }
             else if queued.contains(a.id)     { out.queued += 1 }
             else {
                 out.unexplained += 1
-                out.unexplainedIDs.append(a.id)
+                out.unexplainedActivities.append(
+                    TracelessActivity(id: a.id, day: a.dayKey))
             }
         }
         // Sorted so two exports of one state are byte-identical — the diff of
         // a pair either side of an action is this project's best device
         // instrument, and an unstable order would make every pair differ.
-        out.answeredEmptyIDs.sort()
-        out.unexplainedIDs.sort()
+        out.answeredEmptyActivities.sort()
+        out.unexplainedActivities.sort()
         return out
     }
 }

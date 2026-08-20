@@ -8962,6 +8962,44 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.167 A named thing that cannot be reached — patch 422
+
+420 gave the trace buckets their ids so topic 3's campaign could name an
+activity. **The campaign still could not be run.** The tester exported
+`asked, nothing there: 2 — 15225521352, 16415953236`, and then had nowhere to
+tap: **nothing in this app finds an activity by Strava id.** The screens list by
+date. So the step went from *unnamed* to *named and unreachable*, which is the
+same failure with better diagnostics — §12.162.5 for the third time in six
+patches, and the third time it was found by trying to perform the instruction
+rather than by reading it.
+
+**The device run is what proved it.** The activity opened on 20 August was a
+9.44 km run with a full heart-rate series, a route and `56:12 traced` — not one
+of the two, because the two could not be located. Rows 4–7 of the campaign were
+not exercised and the export cannot tell you that; only the screenshots can.
+
+### 12.167.1 The date is the missing half, and §12.7 does not forbid it
+
+§12.7 governs **what leaves the phone**: a paste carries no session names,
+places or dates, and ids and field names are acceptable. It says nothing about
+what the owner reads on their own screen. So the fix is not to weaken the rule
+but to notice it was never the constraint here.
+
+`TracelessActivity` is `id` and `day` with **two renderings**: `screenText`
+gives `15225521352 · 2026-08-12`, and the pasteable lists are `answeredEmptyIDs`
+and `unexplainedIDs` — **computed from the same array, not stored beside it**.
+Two parallel arrays could drift, and a date could reach an export by somebody
+appending to the wrong one; a derived projection cannot. The type is where the
+§12.7 boundary lives, so a future caller has to choose it rather than remember
+it.
+
+Sorted by **id**, not by day, because the export carries ids and two exports of
+one state must stay byte-identical. `sortingIsByID` says so with a fixture whose
+day order is the reverse of its id order — the only shape that fails if somebody
+sorts the pair the intuitive way.
+
+---
+
 ## 12.166 A stopwatch is not an instrument — patch 421, plan topic 3 item 3
 
 Topic 3 asked for *"interaction/jank evidence rather than a construction

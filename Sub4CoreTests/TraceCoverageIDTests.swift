@@ -91,3 +91,73 @@ struct TraceCoverageIDTests {
         #expect(c.total == 5)
     }
 }
+
+/// **PATCH 422 — THE DAY IS ON THE SCREEN AND NOT IN THE PASTE.**
+///
+/// 420 named the ids and left them unreachable: nothing in this app finds an
+/// activity by Strava id, so a tester holding one has nowhere to tap. The day
+/// is what makes it navigable, and §12.7 governs what leaves the phone rather
+/// than what its owner reads. These are the tests that keep the two apart.
+@Suite
+struct TracelessActivityTests {
+
+    private func activity(_ id: String, day: String, distance: Double = 5000) -> Activity {
+        Activity(id: id, name: "x", sportType: "Run",
+                 startLocal: "\(day)T09:00:00", distance: distance,
+                 movingTime: 1800, elapsedTime: 1800,
+                 elevationGain: nil, averageHeartrate: nil, isTrainer: nil)
+    }
+
+    private func coverage(_ activities: [Activity],
+                          answeredEmpty: Set<String>) -> TraceCoverage {
+        TraceCoverageReport.classify(activities: activities,
+                                     hasTrace: { _ in false },
+                                     refused: [],
+                                     answeredEmpty: answeredEmpty,
+                                     queued: [],
+                                     minDistance: 500)
+    }
+
+    @Test("The screen names the day and the paste does not")
+    func theDayIsScreenOnly() {
+        let c = coverage([activity("111", day: "2026-08-12")],
+                         answeredEmpty: ["111"])
+        let onScreen = c.answeredEmptyActivities.map(\.screenText)
+        #expect(onScreen == ["111 · 2026-08-12"])
+        // §12.7. The export may carry the id and must not carry the date.
+        #expect(c.answeredEmptyIDs == ["111"])
+        #expect(!c.answeredEmptyIDs.contains { $0.contains("2026") },
+                "a date reached the pasteable list")
+    }
+
+    /// THE NEGATIVE CONTROL FOR THE PAIRING. Two activities, two days: if the
+    /// ids and the days were parallel arrays they could drift, and this is the
+    /// assertion that would notice.
+    @Test("Each id keeps its own day")
+    func idsKeepTheirOwnDays() {
+        let c = coverage([activity("222", day: "2026-08-02"),
+                          activity("111", day: "2026-08-01")],
+                         answeredEmpty: ["111", "222"])
+        // Sorted by id, so 111 comes first and brings 08-01 with it.
+        #expect(c.answeredEmptyActivities.map(\.screenText)
+                == ["111 · 2026-08-01", "222 · 2026-08-02"])
+    }
+
+    @Test("The unexplained bucket names its days too")
+    func theUnexplainedBucketIsNamedAsWell() {
+        let c = coverage([activity("999", day: "2026-08-20")],
+                         answeredEmpty: [])
+        #expect(c.unexplained == 1)
+        #expect(c.unexplainedActivities.map(\.screenText) == ["999 · 2026-08-20"])
+        #expect(c.unexplainedIDs == ["999"])
+    }
+
+    @Test("Sorting is by id, not by day")
+    func sortingIsByID() {
+        let c = coverage([activity("111", day: "2026-12-31"),
+                          activity("222", day: "2026-01-01")],
+                         answeredEmpty: ["111", "222"])
+        #expect(c.answeredEmptyIDs == ["111", "222"],
+                "a day-ordered list would make two exports of one state differ")
+    }
+}
