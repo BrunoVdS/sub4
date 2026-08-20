@@ -8962,6 +8962,51 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.168 The fifth number reached zero — device, 20 August 2026, patch 422
+
+**`0 read a store the database feeds.`**
+
+The roll-up's fifth number counts the rows that compared the database against
+something the database itself feeds. It has read **1 — `Athlete`** since patch
+390, and topic 3 item 1 existed to make it zero. **It is zero**, on the phone,
+at 22:11 on 20 August, with `8 of 9 agree · 0 differ · 0 could not look ·
+1 nothing to compare` beside it.
+
+`Athlete: 27 compared, no differences · own read: constants.json and
+athlete.json, read directly`.
+
+**This is the reading 419 was built for and the only one that could confirm it.**
+The counts under the athlete section are byte-identical to the ones taken at 420
+before the re-run — twenty-seven comparisons, nothing differing — because
+agreement is what both a real comparison and a vacuous one look like. The
+provenance mark is the whole of the difference, and it lives in the roll-up
+because that is the section that judges independence rather than the one that
+compares.
+
+### 12.168.1 Nothing self-referential is left on that screen
+
+The other two marks are `from the stores: … not fed yet` — `Weather and gear`
+(B5) and `Review trail` (B7). **Neither is self-referential and both will become
+so on the day their slice flips**, which is §12.15's third state doing the work
+it was added for: a row that is independent because nothing has hydrated its
+store *yet* looks identical, in a count, to one that went and read the files.
+The mark says which, in words, so the day B5 lands the change is legible instead
+of silent. §12.133–§12.134.
+
+`1 nothing to compare` is `Review trail`, empty on both sides until the first
+review on **24 August 2026**. The gate `provesSomething` wants all nine to have
+compared something, so **eight of nine with the abstention named is the correct
+passing state** until that date.
+
+### 12.168.2 What it does not close
+
+**It is a read-back, not the verifier.** `SemanticVerifier`'s accounting is a
+different set — 22 comparisons, 7 independent after 398 — and this reading says
+nothing about it. §5.4 and §5.4a have always been two accountings of two
+different things, and only the second reached zero.
+
+---
+
 ## 12.167 A named thing that cannot be reached — patch 422
 
 420 gave the trace buckets their ids so topic 3's campaign could name an

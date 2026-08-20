@@ -601,6 +601,15 @@ read the files itself or took the stores, and only the second consults the
 sources. **FOUR marks** — *own read*, *self-referential*, *from the stores, not
 fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.134.
 
+**AND THE COUNT REACHED ZERO ON THE PHONE — 20 August 22:11, patch 422.**
+`8 of 9 agree · 0 differ · 0 could not look · 1 nothing to compare ·
+**0 read a store the database feeds**`, with `Athlete` reading
+`own read: constants.json and athlete.json, read directly`. It was **1,
+`Athlete`**, from 390 until this reading. **Nothing on that screen compares the
+database with itself any more.** The two remaining non-own-read marks are
+`Weather and gear` and `Review trail`, both *not fed yet* — B5's and B7's
+tripwires, which become self-referential the day their slice flips. §12.168.
+
 ### 5.5 Open, and the first one is Bruno's call
 
 > **THE MATCH PICKER OFFERS ACTIVITIES THE MATCHER WILL REFUSE.** Confirmed on
@@ -641,14 +650,17 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   comparisons that could not have disagreed, printed as agreement for
   seventy-three patches. `athleteSources()` reads `constants.json` and
   `athlete.json` through 418's seams, and `.ownRead` makes the roll-up derive
-  independence. **Topic 3's campaign is written at 420 and unrun** —
+  independence. **CONFIRMED ON THE PHONE at 422** — the roll-up's
+  self-referential count is 0, from 1 since 390 (§12.168). **Topic 3's campaign
+  is written at 420 and PART 1 HAS PASSED, four of four** —
   `docs/DEVICE-CAMPAIGN-B34.md`: the zero-length trace UI, a Release
   `Detail store built`, and interaction behaviour rather than a timestamp.
   420 also made `asked, nothing there` NAME its activities, without which the
-  campaign's central step could not be performed (§12.165). **Parts 1 and 2 ran
-  on 20 August; part 3 did not** — `Configuration` read `Debug`, so the Release
-  figure is still owed, and part 1 pointed at the wrong section: the provenance
-  line renders in **Read-back roll-up**, not **Read-back · athlete** (§12.166.4).
+  campaign's central step could not be performed (§12.165). **Parts 2 and 3 are
+  outstanding** — the two traceless activities were not opened and
+  `Configuration` still read `Debug`, so the Release figure is still owed. Part 1
+  took three attempts to become performable: it pointed at the wrong section
+  (§12.166.4), then omitted that the roll-up is a BUTTON.
   **421 replaced the stopwatch with an instrument** — process start, first view,
   first free main-thread turn and the longest 60 Hz stall over ten seconds,
   three-valued and with a poisoned-window state (§12.166). **422 made the two
@@ -677,11 +689,13 @@ flipped. **396** replaced `#if DEBUG` with how the build was signed (RULE 9).
 nothing (RULE 10); **403** makes both gates read warnings; **406** records why a
 run happened. §12.135–§12.150.
 
-1. **THE ROLL-UP GATE IS 8 OF 9 UNTIL 24 AUGUST.** `provesSomething` wants all
-   nine read-backs to have compared something, and `Review trail` reads nothing
-   on either side until **24 August 2026**. The gate is **eight of nine agree,
-   zero differ, zero could not look, abstention named** — B7 blocked on it too.
-   **AND ONE OF THE EIGHT IS NOT EVIDENCE** — §5.4a counts it, §5.5 names it.
+1. **THE ROLL-UP GATE IS 8 OF 9 UNTIL 24 AUGUST, AND ALL EIGHT ARE NOW
+   EVIDENCE.** `provesSomething` wants all nine read-backs to have compared
+   something, and `Review trail` reads nothing on either side until **24 August
+   2026**. The gate is **eight of nine agree, zero differ, zero could not look,
+   abstention named** — B7 blocked on it too. **The device confirmed it on 20
+   August at 422, with the self-referential count at 0** (§12.168); it read 1
+   from 390 until 419 landed.
 2. **1B IS DONE, ON THE PHONE — TOPIC CLOSED.** All four authored stores commit
    before they publish, and **412's campaign ran on 20 August: twelve of
    twelve** (§12.157.7). `correction` **6 → 5** across a clear and a force-quit

@@ -8,7 +8,7 @@
 | **ADR** | §12.164 (419), §12.165 (420), §12.166 (421), §12.167 (422), §12.142 for what B4 already proved |
 | **Contract** | `docs/PLAN-database-cutover-findings-and-ai-prompts.md`, "Manual test campaign contract" — all ten parts below |
 | **Time** | twenty minutes. **Part 3 needs a Release build from Xcode.** |
-| **State** | **Part 1 ran 20 August at patch 420 — one row was unjudgeable and is re-asked here. Parts 2 and 3 are outstanding.** §10 |
+| **State** | **PART 1 PASSED on 20 August at patch 422 — four of four, and the roll-up's self-referential count reached zero. Parts 2 and 3 outstanding.** §10 |
 
 Topic 3 has four decomposition items. **Item 1 is code and is done** (419).
 **Item 4 needs no action** — load parity stays classified deterministic-only
@@ -302,6 +302,34 @@ and the third instance in six patches (§12.162.5, §12.165, §12.167).
 **422 is the fix**: the screen now carries the date beside each id, while the
 export still carries ids only. Step 3 was rewritten to use it.
 
+### 10.1a Part 1 RE-RUN AND PASSED — 20 August 2026, 22:11, patch 422
+
+**Four of four. Rows 0, 1, 1b and 2.**
+
+| row | reading |
+|---|---|
+| 0 | nine rows, one per read-back — the press worked |
+| **1** | `Athlete: 27 compared, no differences · own read: constants.json and athlete.json, read directly` |
+| 1b | not `COULD NOT READ ITS OWN SIDE` — both files were readable on this phone |
+| 2 | 27 compared · profile fields 7 · resting months 15 · zones 5 · all three `that differ` rows 0 · `unexplained differences: 0` · `approved differences: 1 (version)` |
+
+**AND THE ROLL-UP'S FIFTH NUMBER IS NOW ZERO.**
+`8 of 9 agree · 0 differ · 0 could not look · 1 nothing to compare ·
+**0 read a store the database feeds**`.
+
+That count was **1 — `Athlete`** from patch 390 until this reading, and it is
+the strongest confirmation this campaign can produce: not that the comparison
+agreed, but that **no read-back on this screen is comparing the database with
+itself any more.** §5.4a's derivation did it; nothing declared it.
+
+The other two marks are both correct and neither is self-referential:
+`Weather and gear` and `Review trail` read stores **nothing feeds yet** — B5's
+and B7's tripwire, which becomes the self-referential state on the day each
+slice flips, and says so in words rather than being inferred from a count.
+
+`1 nothing to compare` is `Review trail`, empty on both sides until the first
+review on **24 August 2026**. It is an abstention and it is named.
+
 ### 10.2a And step 2 was unperformable as first written — 20 August, 22:04
 
 The first attempt at the corrected step returned
@@ -328,9 +356,8 @@ sentence and knows what it means rather than reporting it as a failed read-back.
 
 ### 10.5 Outstanding
 
-**Rows 0, 1, 1b, 3, 3b, 4–7, 7b and 8–15.** Run parts 1, 2 and 3 on
-**patch 422**. Row 2 has passed and does not need re-running, though pressing
-`Read everything back` re-runs it anyway at no cost.
+**Rows 3, 3b, 4–7, 7b and 8–15.** Part 1 is closed. Run parts 2 and 3 on
+**patch 422**.
 
 ---
 
