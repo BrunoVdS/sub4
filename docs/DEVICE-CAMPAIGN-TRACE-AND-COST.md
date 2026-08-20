@@ -135,6 +135,16 @@ a title is its export.
    **Product → Scheme → Edit Scheme…** (**⌘ <**) → the **Run** action →
    the **Info** tab → **Build Configuration**: change `Debug` to **`Release`**.
    Close the sheet.
+   **THE SCHEME IS A TRACKED FILE AND IT IS `Shared`.**
+   `Sub4.xcodeproj/xcshareddata/xcschemes/Sub4.xcscheme` shows as modified from
+   here until §9 puts it back. **Do not `git checkout` it, stash it, or
+   otherwise tidy the tree until the last export is taken** — restoring it flips
+   Run silently back to `Debug` and the next build is a Debug build that looks
+   exactly like a Release one until you read the Version screen. That happened
+   on 20 August and cost a run.
+   Confirm it took, from the repository root:
+   `sed -n '43,45p' Sub4.xcodeproj/xcshareddata/xcschemes/Sub4.xcscheme` —
+   under `<LaunchAction` it must read `buildConfiguration = "Release"`.
 2. **⌘R once**, to build and install. Then **stop it in Xcode (⌘.)** as soon as
    it is on the phone.
    **DETACH BEFORE YOU MEASURE.** Launching from Xcode attaches the debugger,
@@ -287,7 +297,7 @@ ADR.** What reaches the ADR from rows 5–9b is a sentence describing what drew.
 
 - **Nothing to roll back.** No store was written, no setting changed, no gate
   moved.
-- **Put the scheme back to Debug** when part B is finished — Product → Scheme →
+- **Put the scheme back to Debug — AFTER the last export and not before** — Product → Scheme →
   Edit Scheme… → Run → Info → **Build Configuration: Debug** — and reinstall, so
   the next session's figures stay comparable with the Debug history and nobody
   later mistakes a Release install for the working build.
