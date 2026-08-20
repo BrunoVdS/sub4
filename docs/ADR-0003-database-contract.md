@@ -9295,6 +9295,41 @@ family that only appears once it has lost something cannot be told from one
 nobody wired in (§12.54.2). It sums over the removal table rather than over
 `migration_run.rowsRemoved`, because the table's runs are the ones that survive.
 
+### 12.160.6 THE DEVICE CONFIRMED IT — 20 August, and named a third ask for one fixture
+
+```
+removed by family, durably: notes 0, match decisions 0, reviews 0,
+                            commute decisions 0, moved sessions 0, work queue items 0
+```
+
+Six families, unconditional, all zero — the correct answer on that device, whose
+only two removals were pruned before 415 existed. `2026-08-20-run-removal` is in
+both `Migrations` and `Expected`; nineteen migrations, fifty-two tables, applied
+to a 39 MB database holding 257 ledger rows. **416's merged vocabulary shows
+through in the sixth entry.**
+
+**WHAT IS STILL UNPROVEN, AND WHY IT KEEPS BEING THE SAME THING.** No run has
+removed anything since 415, so neither the write nor the never-prune rule has
+been exercised outside the suite — and **there is no safe way to force one**,
+because 409 and 412 made authored deletes go straight to the row. The orphan
+state reconciliation exists to clean up is the state the inversion stopped
+producing.
+
+That is now **three patches landing on one wall**:
+
+| patch | what the device could not show | why |
+|---|---|---|
+| 1A | that the restore REPAIRS — only `added 0` | no safe way to make file and database disagree |
+| 414 | a scoped REMOVAL — only the scoped permission | deletes are direct |
+| 415 | a removal recorded and surviving | the same |
+
+Each wrote its own limitation down and each proposed the same remedy: **a
+disposable device fixture** — a record the app treats as real, which can be put
+deliberately out of step with the database so the repair, the removal and the
+ledger row happen for real. 1A §8 asked, 414 asked, and this is the third.
+**When three independent patches ask for the same instrument, it stops being a
+nice-to-have**; it belongs before B9, or the fourth patch rediscovers it.
+
 ### 12.160.5 One reading, not a campaign
 
 **No device campaign.** 1C's prompt asks for one *"only after family-scoped

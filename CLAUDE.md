@@ -652,6 +652,12 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   every row. Nothing journals it, so `ReconcileFamily.workQueue.source` is
   **nil** and the gate prints that it could not check rather than naming a store
   that would always say yes. **B8's to close.** §12.161.3.
+- **A DISPOSABLE DEVICE FIXTURE IS NOW ASKED FOR BY THREE PATCHES.** 1A could
+  not show the restore REPAIRS, 414 could not show a scoped REMOVAL, 415 cannot
+  show a removal recorded and surviving — all for one reason: **409 and 412 made
+  authored deletes go straight to the row**, so the orphan state reconciliation
+  cleans up is the state the inversion stopped producing. Each wrote its own
+  limitation down and proposed the same remedy. **Before B9.** §12.160.6.
 - **Snapshot `2026-08-10-084723`** (340); **`manual.html` stale**; **`content_revision` unoccupied** (334).
 - **Dates:** first review **24 Aug**; Actions resets **1 Sep**; Japan **7–12 Sep**, `DayKey.key(_:in:)`'s first run outside Europe/Brussels.
 
@@ -692,9 +698,9 @@ run happened. §12.135–§12.150.
    removals inside a day. §12.160. **416 brought the work queue inside the
    gate** — it was pruned on every run with no permission, so a report said
    `does not delete` three lines above `rows removed in total: 1`. One
-   vocabulary now, six families. §12.161. **One reading owed**, riding along
-   with the next export — nineteen migrations and `removed by family,
-   durably:`.
+   vocabulary now, six families. §12.161. **Both readings confirmed on device 20 August** —
+   nineteen migrations, fifty-two tables, and `removed by family, durably:` all
+   six at zero (§12.160.6).
 5. **1B's NOTES — BUILT AT 409, PROVEN 19 AUGUST.** A note save commits to
    SQLite **before** the editor closes, and `remove` with it — 408 the narrow
    write, **409 the order**, **409a the diagnostic** (§12.152, §12.153).
