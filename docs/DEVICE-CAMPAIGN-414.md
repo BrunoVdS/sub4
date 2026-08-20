@@ -145,6 +145,57 @@ it deletes less.
 
 ---
 
-## 7. Result
+## 7. RESULT — run 20 August 2026, 08:29–08:50, five of seven; one vacuous, one unexercised
 
-*Not yet run.* Fill in `DEVICE-CAMPAIGN-409.md` §10's shape.
+**Four sentences from four kinds of trigger, where every one used to read
+`yes`.** That is the patch, observed.
+
+| # | figure | reading | verdict |
+|---|---|---|---|
+| 1 | after a note save | **`reconciled: notes`** | pass |
+| 2 | after a commute toggle | **`reconciled: commute decisions`** | pass |
+| 3 | after an athlete constant | **`skipped — the change belongs to no reconcilable family`** | pass |
+| — | an automatic run | `skipped — an automatic write-through does not delete` | unchanged, as designed |
+| 4 | `review` | 0 throughout | **VACUOUS — see below** |
+| 5 | the family that changed | `reconciled: notes` granted; `notes: 8 seen … 0 removed` | pass, but see below |
+| 6 | other families | commutes 3, moves 2, match decisions 9, unmoved | pass |
+| 7 | ledger trigger | every run under test `· authored` | pass |
+
+**413's residual is live and reconciles**: `correction rows: 5 — 3 read as
+commute decisions, 2 as moved sessions, 0 unaccounted`.
+
+### Row 4 is zero against zero, and that proves nothing
+
+`review: 0`. **This device cannot test the review protection**, because there is
+no review to protect until the first one lands on 24 August, and *"zero compared
+to zero agrees perfectly and proves nothing"* is this project's own rule.
+
+The evidence for topic 1C's headline claim is therefore **the suite's**, not the
+phone's: `aNoteTriggerCannotDeleteAReview` seeds a real review row and fails
+against the pre-414 code. Recorded plainly because a green row here would
+otherwise read as confirmation.
+
+### Row 5 proves the decision, not the deletion
+
+`rows removed in total: 0` on every run. The permission was granted to the right
+family each time and **no reconciliation actually removed anything**.
+
+There is a good reason and it is 409's doing: a delete now goes **straight to the
+row**, so an authored record surviving in the database after the store dropped it
+is close to unreachable by hand. The state reconciliation exists to clean up is
+the one the inversion stopped producing.
+
+So the campaign shows the permission is correctly *scoped*; it does not show a
+scoped removal happening. Worth a fixture before B9, alongside 1A §8's.
+
+### And the ledger forgot its own removals
+
+`runs that removed rows: 0` · `newest removal: never — no run has deleted
+anything`. It read **2** and `2026-08-15T15:25:27Z · authored · 1 row` the day
+before. **The retention prune aged out the record of the only two removals this
+database has ever made** — 200 automatic runs is under two days at this rate, and
+166 runs have opened since the last verified one.
+
+That is 415's justification, demonstrated rather than argued. §5.5's *"`newest
+removal` names the trigger, not the family"* understates it: after a day it names
+nothing at all.

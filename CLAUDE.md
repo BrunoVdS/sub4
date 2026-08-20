@@ -679,9 +679,17 @@ run happened. §12.135–§12.150.
    **`review` could previously be pruned only by somebody else's trigger** —
    nothing announces a proposal change — and the athlete stores held permission
    over all five while owning none. `isRunning` is gone so the compiler
-   enumerates every prune. **`docs/DEVICE-CAMPAIGN-414.md` is unrun.**
-   **415 adds `migration_run_removal(runID, family, rows)`**, which is what
-   finally makes `newest removal` name the family. §12.159.
+   enumerates every prune. **The campaign RAN on 20 August**: four sentences
+   from four triggers where all four used to read `yes` — `notes`,
+   `commute decisions`, `skipped — the change belongs to no reconcilable
+   family`, and the automatic skip (§12.159.8). **Two rows carried no weight and
+   say so**: `review` is 0, so the headline protection is the SUITE's evidence;
+   and no reconciliation removed anything, because 409 made that state nearly
+   unreachable by hand.
+   **415 IS NOW URGENT AND THE DEVICE ARGUED IT.** `newest removal: never — no
+   run has deleted anything`, where it read `2` and a dated row the day before:
+   **the ledger's own retention aged out the only two removals this database has
+   ever made** (§12.159.9). `migration_run_removal(runID, family, rows)`.
 5. **1B's NOTES — BUILT AT 409, PROVEN 19 AUGUST.** A note save commits to
    SQLite **before** the editor closes, and `remove` with it — 408 the narrow
    write, **409 the order**, **409a the diagnostic** (§12.152, §12.153).

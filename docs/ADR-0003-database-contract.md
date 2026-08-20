@@ -9049,6 +9049,54 @@ touches the permission that deletes rows, so 381-before-382 says the migration
 travels separately. §5.5's *"`newest removal` names the trigger, not the
 family"* stays open until then.
 
+### 12.159.8 THE DEVICE RAN IT — 20 August 2026, 08:29–08:50
+
+**Four sentences from four kinds of trigger, where every one of them used to
+read `yes`:**
+
+- a note save → **`reconciled: notes`**
+- a commute toggle → **`reconciled: commute decisions`**
+- an athlete constant → **`skipped — the change belongs to no reconcilable
+  family`** (it held permission over all five before 414)
+- an automatic run → `skipped — an automatic write-through does not delete`
+
+Other families unmoved throughout; 413's residual reading `0 unaccounted`.
+
+**TWO ROWS DID NOT CARRY THEIR WEIGHT AND BOTH ARE RECORDED AS SUCH.**
+
+**`review` is 0, so row 4 is zero against zero.** The device cannot test the
+review protection until the first review lands on 24 August, and this project's
+own rule is that zero compared to zero agrees perfectly and proves nothing. The
+evidence for 1C's headline claim is the **suite's** — `aNoteTriggerCannotDelete
+AReview` seeds a real row and fails against the pre-414 code. A green row here
+would otherwise have read as confirmation of the thing the patch is named for.
+
+**And `rows removed in total: 0` on every run.** The permission went to the right
+family each time and no reconciliation removed anything — because **409 made the
+state reconciliation exists to clean up nearly unreachable by hand.** A delete
+now goes straight to the row, so an authored record outliving its store is the
+case the inversion stopped producing. The campaign shows the permission correctly
+scoped; it does not show a scoped removal. A device fixture is owed, alongside
+1A §8's.
+
+### 12.159.9 The ledger forgot its own removals, which is 415's argument made for it
+
+`runs that removed rows: 0` · `newest removal: never — no run has deleted
+anything`. **It read `2` and `2026-08-15T15:25:27Z · authored · 1 row` the day
+before.**
+
+`MigrationLedger` keeps the newest 200 automatic runs, which at this device's
+rate is under two days — 166 runs have opened since the last verified one. So the
+retention prune aged out the record of **the only two removals this database has
+ever made.**
+
+§5.5 has said *"`newest removal` names the trigger, not the family"*. That
+understates it: **after a day it names nothing at all.** A removal recorded only
+as a note on a run that is itself prunable is not durable evidence, which is
+exactly why 1C's prompt asks for `migration_run_removal(runID, family, rows)`
+*"rather than overloading the ledger note"*. The device made the argument before
+the patch did.
+
 ### 12.159.7 The campaign, and what it can and cannot show
 
 `docs/DEVICE-CAMPAIGN-414.md`, required because family-scoped reconciliation is
