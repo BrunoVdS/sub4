@@ -141,6 +141,23 @@ final class ConstantsStore {
         load()
     }
 
+    /// A store rooted somewhere else — patch 418.
+    ///
+    /// **THE GUARD ABOVE COULD NOT BE TESTED WITHOUT ONE.** A failable refusal
+    /// cannot be trusted until something has watched it refuse, and the only
+    /// honest way to make a read unclean is to put unreadable bytes where the
+    /// store looks — which needs an instance that is not the singleton, because
+    /// the singleton reads the athlete's own file.
+    ///
+    /// §5.5 asks for this seam for a second reason: `ReadBacks.athlete` is the
+    /// last read-back comparing the database with itself, and it needs `ConstantsStore(directory:)`
+    /// to read the file directly. That is topic 3's, and this is the half of it
+    /// that 418 needs anyway.
+    init(directory: URL) {
+        fileURL = directory.appendingPathComponent("constants.json")
+        load()
+    }
+
     // MARK: Plausibility
     //
     // Bounds, not guesses. A heart rate of 260 is a sensor artefact and a
@@ -377,11 +394,25 @@ final class ConstantsStore {
 
     // MARK: Persistence
 
+    /// **WHAT THE LAST READ OF `constants.json` FOUND — patch 418, §12.163.**
+    ///
+    /// The second of the two `UNPROTECTED_STORE_CEILING` held since 378. Same
+    /// shape as `AthleteStore`'s and the same consequence: an undecodable file
+    /// left `c` at its defaults, and the next `save()` wrote those defaults
+    /// over it. The defaults here are an ATHLETE'S HR max, resting heart rate
+    /// and FTP — the inputs every zone and every TRIMP is derived from.
+    private(set) var lastLoad: StoreLoad = .absent
+
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode(AthleteConstants.self, from: data)
-        else { return }
-        c = decoded
+        // The bare decoder, matching `save()`'s bare encoder. This file
+        // carries no Date, so unlike `athlete.json` the strategy is not
+        // load-bearing here — but writing one spelling and reading another is
+        // how a format drifts, and `aCleanReadRoundTrips` pins the pair.
+        let (value, outcome) = StoreRead.decode(AthleteConstants.self,
+                                                at: fileURL,
+                                                decoder: JSONDecoder())
+        lastLoad = outcome
+        if let value { c = value }
     }
 
     // MARK: Hydration — D7 slice B1, patch 344
@@ -467,7 +498,13 @@ final class ConstantsStore {
     private func save() {
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        // THE 371 GUARD — patch 418. See `AthleteStore.save` for why it is
+        // thrown inside `attempt` rather than out to the caller.
         StoreWriteJournal.shared.attempt("constants.json") {
+            guard lastLoad.isTrustworthy else {
+                throw StoreWriteError(store: "constants.json", stage: .refused,
+                                      reason: "the store was not read cleanly at launch")
+            }
             try StoreWrite.encode(c, to: fileURL, store: "constants.json",
                                   encoder: enc)
         }

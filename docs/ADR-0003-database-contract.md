@@ -8962,6 +8962,78 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.163 The ceiling reaches zero — patch 418, topic 2 closes
+
+`AthleteStore` and `AthleteConstants` come under §12.116's read-before-write
+contract, and `UNPROTECTED_STORE_CEILING` goes **2 → 0**. It has been 2 since
+378 and it may never rise again: a new file-backed store now arrives UNDER the
+rule rather than beside it.
+
+Both read with `try? Data(contentsOf:)` and `try? JSONDecoder().decode(…)` and
+`else { return }`, so **an undecodable file left memory at its defaults and said
+nothing**, and the next `save()` wrote those defaults over it. For
+`constants.json` the defaults are an athlete's HR max, resting heart rate and
+FTP — the inputs every zone and every TRIMP is derived from.
+
+### 12.163.1 The rule refused to let the fix ship half-done
+
+Fixing `AthleteStore` alone produced
+
+```
+1 unprotected stores remain and the ceiling still reads 2. Lower it in the
+same patch that fixed one, or the next regression has room to hide.
+```
+
+That phrasing is 378's and it earned itself here: the natural stopping point
+after one store is a green run, and the rule turned that into a failure. **A
+ceiling that only goes down is worth more than a boolean**, because the boolean
+has no way to notice progress.
+
+### 12.163.2 THE DECODER WAS A TRAP, AND THE FIRST TEST FOR IT COULD NOT FAIL
+
+`StoreRead.decode` defaults to `JSONDecoder.sub4`, which reads `.iso8601`. Both
+these files are written with a **bare** `JSONEncoder` — `AthleteFile` decodes
+`athlete.json` with `.deferredToDate` on the strength of it — so a bare encoder
+writes a Date as a number.
+
+Passing the default decoder would have made every existing file unreadable, and
+**the new guard would then have correctly refused to overwrite it** — turning a
+protection into a store that can never write again. Silent, total, and
+self-justifying: the more thoroughly it broke, the more correct the refusal
+would have looked.
+
+The round-trip test was written for exactly that, **and the first version passed
+against the wrong decoder** — because the fixture set `fetched: nil`, so the two
+date strategies never met. Found by sabotaging the decoder and watching nothing
+fail. §12.69 in a control written to catch a §12.69.
+
+`constants.json` carries no Date at all, so its decoder is not load-bearing;
+that claim was in the first draft's comment and is now corrected rather than
+left overstating.
+
+### 12.163.3 A guard the suite cannot drive, said out loud
+
+`AthleteStore.save()` has one caller — `refresh()`, which fetches from Strava —
+and every mutable property is `private(set)`. **Nothing synchronous makes this
+store write**, so its refusal branch cannot be exercised from the suite.
+
+What is tested is the precondition (after an unreadable file the store knows its
+read failed) and the identical three lines on `ConstantsStore`, driven end to
+end. The gap is stated in the test file rather than left for a green suite to
+imply — the same admission `ProtectionReadBackTests` makes one patch earlier,
+and for the same reason: **a security-shaped guarantee with an untested branch
+should say which branch.**
+
+### 12.163.4 Two seams that topic 3 also wants
+
+Neither store had `init(directory:)`, so neither could be tested at all. §5.5
+has asked for both since 398 for a different reason — `ReadBacks.athlete` is the
+last read-back comparing the database with itself, and needs them to read the
+files directly. **That is topic 3's, and this is the half of it 418 needed
+anyway.** RULE 13's population goes 8 → 10 and both are clean.
+
+---
+
 ## 12.162 The protection class, measured — patch 417, plan topic 2
 
 `Protection · Until first unlock` was a **string literal**. It was not read from

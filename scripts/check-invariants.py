@@ -131,6 +131,12 @@ def braced(body, header):
 # have not yet been brought under §12.116. It may only ever go DOWN.
 #
 #   378: 3 → 2.  ActivityStore fixed. AthleteStore and AthleteConstants remain.
+#   418: 2 → 0.  Both, in one patch, because the rule refuses to let a fix ship
+#               without the ceiling moving — it fired at "1 unprotected, ceiling
+#               2" the moment the first was done, which is the whole point of
+#               phrasing it that way. **The debt is now zero and this constant
+#               may never rise.** A new file-backed store arrives UNDER this
+#               rule rather than beside it.
 #
 # A CEILING RATHER THAN A FAILURE, deliberately. Failing outright would block
 # `test.sh` on a tree whose exposure predates this rule by two hundred patches,
@@ -138,7 +144,7 @@ def braced(body, header):
 # in a file away from the thing it names, which is the defect this project has
 # now paid for four times. A number that may only be lowered is the smallest
 # thing that keeps the debt visible in every run without stopping the build.
-UNPROTECTED_STORE_CEILING = 2
+UNPROTECTED_STORE_CEILING = 0
 
 
 def every_store_that_records_a_read_refuses_a_write():

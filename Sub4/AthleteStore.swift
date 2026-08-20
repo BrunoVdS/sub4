@@ -261,6 +261,23 @@ final class AthleteStore {
         load()
     }
 
+    /// A store rooted somewhere else — patch 418.
+    ///
+    /// **THE GUARD ABOVE COULD NOT BE TESTED WITHOUT ONE.** A failable refusal
+    /// cannot be trusted until something has watched it refuse, and the only
+    /// honest way to make a read unclean is to put unreadable bytes where the
+    /// store looks — which needs an instance that is not the singleton, because
+    /// the singleton reads the athlete's own file.
+    ///
+    /// §5.5 asks for this seam for a second reason: `ReadBacks.athlete` is the
+    /// last read-back comparing the database with itself, and it needs `AthleteStore(directory:)`
+    /// to read the file directly. That is topic 3's, and this is the half of it
+    /// that 418 needs anyway.
+    init(directory: URL) {
+        fileURL = directory.appendingPathComponent("athlete.json")
+        load()
+    }
+
     // MARK: Zones
 
     /// Zone for a heart rate, or nil if zones haven't been fetched.
@@ -632,9 +649,27 @@ final class AthleteStore {
                               fromFiles: "gear, until slice B5")
     }
 
+    /// **WHAT THE LAST READ OF `athlete.json` FOUND — patch 418, §12.163.**
+    ///
+    /// This store and `AthleteConstants` were the two `UNPROTECTED_STORE_CEILING`
+    /// held since 378. The read was `try? Data(contentsOf:)` and
+    /// `try? JSONDecoder().decode(…)` with `else { return }`, so **a file
+    /// nobody could decode left memory at its defaults and said nothing** — and
+    /// the next `save()` wrote those defaults over it. §12.116's exact shape,
+    /// in the store holding thirteen months of gear.
+    private(set) var lastLoad: StoreLoad = .absent
+
     private func load() {
-        guard let d = try? Data(contentsOf: fileURL),
-              let c = try? JSONDecoder().decode(Cache.self, from: d) else { return }
+        // THE DECODER IS THE BARE ONE, DELIBERATELY. `AthleteFile` decodes this
+        // file with `.deferredToDate` on the strength of `save()` using a bare
+        // `JSONEncoder`, and `StoreRead.decode` defaults to `JSONDecoder.sub4`.
+        // Passing the default here would have made every existing file
+        // unreadable — which the new guard would then have correctly refused to
+        // overwrite, turning a protection into a store that never writes again.
+        let (value, outcome) = StoreRead.decode(Cache.self, at: fileURL,
+                                                decoder: JSONDecoder())
+        lastLoad = outcome
+        guard let c = value else { return }
         // Also on the way OUT of the cache, so a file written before patch 81
         // is corrected without waiting for the next Strava fetch.
         hrZones = Self.separate(c.zones)
@@ -674,7 +709,18 @@ final class AthleteStore {
         // A bare `JSONEncoder`, as it has always been — `AthleteFile` decodes
         // this file with `.deferredToDate` on the strength of it, and changing
         // the encoder here would break thirteen months of files on disk.
+        // **THE 371 GUARD, ON THE LAST TWO STORES WITHOUT IT — patch 418.**
+        //
+        // Thrown INSIDE `attempt`, because this `save()` cannot throw to its
+        // callers — they are Strava refreshes and gear edits, forty of them,
+        // and §12.12.6 is why the journal exists rather than a decision at each
+        // one. The refusal lands in "Unsaved stores" with its reason, which is
+        // where a reader looks, and the file keeps the bytes nobody could read.
         StoreWriteJournal.shared.attempt("athlete.json") {
+            guard lastLoad.isTrustworthy else {
+                throw StoreWriteError(store: "athlete.json", stage: .refused,
+                                      reason: "the store was not read cleanly at launch")
+            }
             try StoreWrite.encode(c, to: fileURL, store: "athlete.json",
                                   encoder: JSONEncoder())
         }

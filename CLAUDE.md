@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 417 (2026-08-20).** §5.3 is the 390 device run, Compare and
+**Current at patch 418 (2026-08-20).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -394,9 +394,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 417, 2026-08-20
+## 5. State — patch 418, 2026-08-20
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 417; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 418; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -642,14 +642,17 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   needs `AthleteStore(directory:)` and `ConstantsStore(directory:)` — the
   `UNPROTECTED_STORE_CEILING` pair — and closes **516 rows** nothing else checks:
   `athlete_profile` (1), `resting_month` (15), `activity_gear_reference` (500).
-  **`knownActivityIDs` is B5's**; **`DetailStore` is invisible to RULE 1**.
+  **418 GAVE IT BOTH SEAMS** — `AthleteStore(directory:)` and
+  `ConstantsStore(directory:)` exist now, so what is left is the read-back
+  itself. **`knownActivityIDs` is B5's**; **`DetailStore` is invisible to
+  RULE 1**.
 - **THE WORK QUEUE'S PRUNE HAS NO SOURCE READ TO CHECK.** Its items come from
   `DetailStore`'s `failed`/`noStreams`, read as `stringArray(forKey:) ?? []` —
   §12.116's shape, where an absent read becomes "no work" and the prune deletes
   every row. Nothing journals it, so `ReconcileFamily.workQueue.source` is
   **nil** and the gate prints that it could not check rather than naming a store
   that would always say yes. **B8's to close.** §12.161.3.
-- **Snapshot `2026-08-10-084723`** (340); **`manual.html` stale**; **two stores unprotected** by §12.116 — 418's; **`content_revision` unoccupied** (334).
+- **Snapshot `2026-08-10-084723`** (340); **`manual.html` stale**; **`content_revision` unoccupied** (334).
 - **Dates:** first review **24 Aug**; Actions resets **1 Sep**; Japan **7–12 Sep**, `DayKey.key(_:in:)`'s first run outside Europe/Brussels.
 
 ### 5.6 Next, in order
@@ -712,8 +715,10 @@ run happened. §12.135–§12.150.
    nothing, so two of the reader's four answers are unreachable in the suite.
    **Running it deleted a step**: there is no reading before first unlock,
    because the app cannot run then.
-   **418**: `AthleteStore` and `AthleteConstants` under the unclean-read guard,
-   `UNPROTECTED_STORE_CEILING` 2 → 0. §12.162.
+   **418 CLOSED THE REST OF TOPIC 2**: `AthleteStore` and `AthleteConstants`
+   are under the unclean-read guard and **`UNPROTECTED_STORE_CEILING` is 0**,
+   from 2 since 378 — it may never rise. Both gained `init(directory:)`, which
+   §5.5 wants for `ReadBacks.athlete` anyway. §12.162, §12.163.
 7. **Then Bruno's list**, then **B5 — weather and gear**, with
    `knownActivityIDs` and `WeatherGearRoundTrip`'s own read. **Gear is the half
    of `AthleteStore` B1 did not take** — its comparison is still evidence.
@@ -824,6 +829,12 @@ Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
   what the protection class guarantees. The tester does it, sees nothing, and
   cannot tell that from a pass. §12.69's shape in the instructions rather than
   the code. §12.162.5.
+- **A CONTROL WRITTEN TO CATCH A §12.69 CAN BE ONE.** 418's round-trip test
+  existed to catch a decoder mismatch that would have made every file on disk
+  unreadable — and its first version passed against the wrong decoder, because
+  the fixture set the one Date field to nil so the two strategies never met.
+  Found by sabotaging the thing it guarded and watching nothing fail.
+  **Sabotage the control, not only the code.** §12.163.2.
 - **A number a device prints is not a number a device verified.** `14 independent`
   was rendered, stored in the ledger and pasted into a diagnostics file, and it was
   wrong — because every one of those steps read the same list. Printing is not
