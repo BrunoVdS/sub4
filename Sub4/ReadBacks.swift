@@ -238,6 +238,10 @@ enum ReadBacks {
             into: &report)
         report.appSideCameFrom = sources.line
         report.appSideWasReadCleanly = sources.isTrustworthy
+        // PATCH 413. The authority for the table the two families share, taken
+        // here because this is the one place that holds the database AND both
+        // readers' results — §12.130.1, ask the thing that owns the answer.
+        report.correctionRowsInDatabase = CorrectionCensus.rows(in: db)
         // THE PROVENANCE IS THE REPORT'S OWN SENTENCE, not a second one written
         // beside it. Two strings describing one read is how they come to say
         // different things — §12.127.5.

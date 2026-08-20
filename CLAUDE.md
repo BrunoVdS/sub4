@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 412 (2026-08-19).** §5.3 is the 390 device run, Compare and
+**Current at patch 413 (2026-08-20).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -394,9 +394,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 412, 2026-08-19
+## 5. State — patch 413, 2026-08-20
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 412; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 413; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -667,10 +667,12 @@ run happened. §12.135–§12.150.
    before they publish, and **412's campaign ran on 20 August: twelve of
    twelve** (§12.157.7). `correction` **6 → 5** across a clear and a force-quit
    is the row that matters — the delete reaches the rows.
-3. **413 — THE RESIDUAL.** A `correction` row was invisible to the read-back for
-   part of the 412 run and became visible again, **with nothing reporting either
-   event** (§12.157.9). The census prints a total and the read-back prints two
-   families; nothing prints the difference. *An account beats a list.* Small.
+3. **413 PRINTS THE RESIDUAL, AND `skipped` COULD NEVER HAVE.** `correction
+   rows: 6 — 3 read as commute decisions, 3 as moved sessions, 0 unaccounted`,
+   unconditional. Taken against **what the readers returned**, not against the
+   kinds — the invisible row had a valid kind and it was `commuteSQL`'s INNER
+   JOIN that dropped it, so a kind-based residual would have read zero.
+   Mechanism proven by test; the 20 August instance still unproven. §12.158.
 4. **1B's NOTES — BUILT AT 409, PROVEN 19 AUGUST.** A note save commits to
    SQLite **before** the editor closes, and `remove` with it — 408 the narrow
    write, **409 the order**, **409a the diagnostic** (§12.152, §12.153).
@@ -759,6 +761,13 @@ Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
   counters — all one shape: *a value that stopped being computed, printed as
   though it were*. Cheap to ask at every remaining flip, and B5, B7 and B8 are
   all owed it. §12.155.
+- **TWO COUNTERS THAT BOTH READ ZERO CAN BE MEASURING DIFFERENT THINGS.**
+  `rows the reader could not read` counts rows that came back and would not
+  decode; it read 0 while a `correction` row was invisible, and it was right to
+  — an INNER JOIN that matches nothing returns nothing to fail at. The
+  diagnostic was not broken and did not need fixing; it could not answer the
+  question somebody asked of it. **When a count reassures you, check what it
+  actually counts.** §12.158.1.
 - **A number a device prints is not a number a device verified.** `14 independent`
   was rendered, stored in the ledger and pasted into a diagnostics file, and it was
   wrong — because every one of those steps read the same list. Printing is not

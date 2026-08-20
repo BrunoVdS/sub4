@@ -8962,6 +8962,78 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.158 The residual over `correction` — patch 413
+
+**Earned by 412's device run** (§12.157.9). The census printed `correction: 4`
+while the authored read-back accounted for one commute decision and two moved
+sessions; by the end of the same session both said six. **Nothing reported
+either the gap or its healing.**
+
+`correction rows: 6 — 3 read as commute decisions, 3 as moved sessions, 0
+unaccounted` now prints unconditionally, beside the line it is not.
+
+### 12.158.1 `skipped` answers a different question, correctly
+
+*"Rows the reader could not read"* counts rows that **came back and would not
+decode**. It read `0` on the morning a row was invisible, and it was right to:
+`commuteSQL` INNER JOINs `activity_alias` on one `sourceID`, so a row whose
+alias is missing under that source **is never returned at all** and there is
+nothing to fail at.
+
+§12.15's shape, one turn further round than usual. The diagnostic that existed
+was not broken and did not need fixing — it simply could not answer the question
+somebody would ask of it. **Two counters that both read zero can be measuring
+different things, and only one of them is watching the thing you care about.**
+
+### 12.158.2 THE RESIDUAL IS TAKEN AGAINST THE READERS, NOT THE KINDS
+
+The obvious implementation counts `subjectKind`/`field` and subtracts. **It
+would have reported zero unaccounted on 20 August**, because the invisible row
+had a perfectly valid kind — it was the JOIN that dropped it, not the
+discriminator.
+
+So the subtraction is against **what the app's own readers actually returned**.
+That is what makes a reader's blind spot visible, and it is the only version of
+this that catches the thing it was written for. §6: *an account beats a list; a
+residual cannot hide a case* — but only if the account is taken against the
+thing that might be lying.
+
+**And it is not clamped.** `max(0, …)` would hide the impossible direction, and
+the impossible direction is the interesting one: three queries against one table
+cannot make the readers exceed the total, so if that ever prints, the premise
+that `correction` holds exactly two families has broken. It gets its own
+sentence.
+
+### 12.158.3 The mechanism is now proven; the instance is not
+
+`theInvisibleRowIsCounted` builds the state directly — a commute correction
+filed against an activity with no alias, written with SQL because **no public
+path produces it** (`importCorrections` resolves through `canonicalActivity` and
+refuses to write when that returns nothing). It confirms all three halves:
+
+- `AuthoredRepository.load` returns **one** commute where the table holds two
+- `skipped` reads **0**
+- `CorrectionCensus.rows` reads **2**, and the line says `1 NOT READ BY EITHER`
+
+**So the mechanism exists and is demonstrated.** Whether it is what happened on
+20 August remains unproven — a correction row of some third shape is still an
+alternative — and this section does not claim otherwise. The value of the line
+is that the next occurrence identifies itself instead of being reconstructed by
+subtracting two exports a day later.
+
+### 12.158.4 No device campaign
+
+**A read-only line over a `COUNT(*)` and two counts already on the report.** It
+writes nothing, gates nothing, and changes no store. Four controls, one of them
+verified failing against a clamped residual.
+
+**It will be read on the phone at the next export regardless**, which is the
+point: if `correction` and the readers ever disagree again, the line says so on
+sight. Recording the decision explicitly because the contract asks for it either
+way.
+
+---
+
 ## 12.157 The other three families invert — patch 412, topic 1B closes
 
 409 for the commute decisions, the plan moves and the match decisions. All three

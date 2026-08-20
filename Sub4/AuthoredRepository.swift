@@ -612,6 +612,13 @@ nonisolated enum AuthoredRoundTrip {
                 : "\(totalCompared) compared · \(unexplained) differences"
         }
 
+        /// **THE `correction` TABLE'S OWN COUNT — patch 413, §12.158.**
+        ///
+        /// Nil is "no `COUNT(*)` was taken", which is a real state for every
+        /// caller that compares in-memory fixtures, and prints as such rather
+        /// than as a zero. `ReadBacks` fills it; the tests leave it alone.
+        var correctionRowsInDatabase: Int?
+
         var rpeLine: String { "\(appNotesWithRPE) vs \(databaseNotesWithRPE)" }
 
         /// UNCONDITIONAL, every line, including the zeros — 266c's rule.
@@ -663,6 +670,7 @@ nonisolated enum AuthoredRoundTrip {
                 + "\(decisionsWereRead ? "yes" : "NO — nothing was compared")",
                 "  moved sessions in the app: \(movesInApp)",
                 "  moved sessions in the database: \(movesInDatabase)",
+
                 "  moved sessions compared: \(movesCompared)",
                 "  moved session fields compared: \(moveFieldsCompared)",
                 "  moved sessions only in the app: \(movesOnlyInApp.count)",
@@ -674,6 +682,14 @@ nonisolated enum AuthoredRoundTrip {
                 // print identically without this line.
                 "  moved sessions were read: "
                 + "\(movesWereRead ? "yes" : "NO — nothing was compared")",
+                // **PATCH 413 — AND IT SITS BESIDE `skipped` ON PURPOSE.**
+                // The line below counts rows that came back and would not
+                // decode; this one counts rows that never came back at all.
+                // On 20 August the first read 0 while the second would have
+                // read 1. §12.158.
+                CorrectionCensus.line(total: correctionRowsInDatabase,
+                                      commutesRead: commutesInDatabase,
+                                      movesRead: movesInDatabase),
                 "  rows the reader could not read: "
                 + "\(rowsSkipped) notes and commutes, "
                 + "\(decisionRowsSkipped) match decisions, "
@@ -1305,6 +1321,72 @@ extension MatchDecisionRepository {
         } catch {
             return .refused(String(describing: error))
         }
+    }
+}
+
+// MARK: - The residual over `correction` — patch 413, §12.158
+
+/// **WHAT THE `correction` TABLE HOLDS THAT NOBODY READ — patch 413.**
+///
+/// `correction` holds two families: the commute decisions and the plan moves,
+/// told apart by `subjectKind` and `field`. The census prints its TOTAL and the
+/// authored read-back prints the two families. **Nothing printed the
+/// difference**, and on 20 August the difference was 1: the census said four
+/// rows while the readers accounted for three, and by the end of the same
+/// session both said six. A row that could not be seen became visible and **no
+/// line moved in either direction** (§12.157.9).
+///
+/// **`skipped` DOES NOT COVER THIS, AND THAT IS THE WHOLE REASON THIS EXISTS.**
+/// `AuthoredLoad`'s *"rows the reader could not read"* counts rows that came
+/// back and would not DECODE. `commuteSQL` inner-joins `activity_alias` on one
+/// `sourceID`, so a row whose alias is missing under that source is never
+/// returned at all — there is nothing to fail to decode. It read `0` on the
+/// morning a row was invisible. §12.15: the diagnostic that existed answered a
+/// different question, and answered it correctly.
+///
+/// **THE RESIDUAL IS TAKEN AGAINST THE READERS, NOT AGAINST THE KINDS.**
+/// Counting `subjectKind`/`field` here would have reported zero unaccounted on
+/// that morning, because the row HAD a valid kind — it was the join that
+/// dropped it. Subtracting what the app's own readers actually returned is what
+/// makes a reader's blind spot visible, and it is the only version of this that
+/// would have caught the thing it was written for. §6: *an account beats a
+/// list; a residual cannot hide a case.*
+nonisolated enum CorrectionCensus {
+
+    /// One `COUNT(*)`, the authority. Nil means no database — which is
+    /// **not zero**, and the caller's line says so rather than printing a
+    /// total nobody counted (§12.54.2, the shape 410 fixed one table over).
+    static func rows(in db: Sub4Database?) -> Int? {
+        guard let db else { return nil }
+        return try? db.queue.read { d in
+            try Int.fetchOne(d, sql: """
+                SELECT COUNT(*) FROM correction WHERE accountID = ?
+                """, arguments: [Sub4Import.accountID])
+        } ?? nil
+    }
+
+    /// UNCONDITIONAL, and it names both families and the remainder — 266c's
+    /// rule. A residual that only printed when non-zero could not be told from
+    /// one nobody wired in, which is the defect this patch closes.
+    static func line(total: Int?, commutesRead: Int, movesRead: Int) -> String {
+        guard let total else {
+            return "  correction rows: not counted — the database is not open"
+        }
+        let unaccounted = total - commutesRead - movesRead
+        var s = "  correction rows: \(total) — \(commutesRead) read as commute "
+              + "decisions, \(movesRead) as moved sessions"
+        // NEGATIVE IS ITS OWN ANSWER. It cannot happen from these three
+        // queries against one table, so if it ever prints, the assumption that
+        // `correction` holds exactly these two families has broken — which is
+        // worth a sentence rather than a `max(0,)` that hides it.
+        if unaccounted > 0 {
+            s += ", \(unaccounted) NOT READ BY EITHER"
+        } else if unaccounted < 0 {
+            s += ", and the readers returned \(-unaccounted) MORE than the table holds"
+        } else {
+            s += ", 0 unaccounted"
+        }
+        return s
     }
 }
 
