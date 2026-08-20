@@ -146,6 +146,12 @@ a title is its export.
    patch: 424**. Screenshot it. If it says `Debug`, the scheme change did not
    take — go back to step 1, because **part B measures nothing otherwise**, and
    that is exactly how the 20 August run was lost.
+   **`Built` WILL LOOK OLDER THAN THE BUILD YOU JUST RAN. IGNORE IT.**
+   `scripts/preflight.sh` compiles `-configuration Release` into the same
+   DerivedData Xcode uses, so ⌘R finds the products current, links nothing and
+   installs preflight's binary — whose modification date is preflight's link
+   time. **`Configuration` is the gate here and it is a `#if DEBUG` literal
+   that cannot be wrong.** `Built` is identity, not proof of a fresh link.
 
 ### Part A — the two activities with no trace · *steps 4–9*
 

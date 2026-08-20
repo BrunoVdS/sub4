@@ -185,6 +185,17 @@ stopped being true at 342. Rename it `docs/REVIEW-2026-08-10-…` when convenien
   never seen. Fixed at 325b: no summary line now exits 1, and so does a run reporting
   under 500 tests. **A guard that cannot fail has not been tested** — the first time you
   install one, break something on purpose and watch it complain. §12.69.
+- **`Built` READS EARLIER THAN THE BUTTON YOU JUST PRESSED, AND IT IS NOT
+  STALE.** `AppVersion.built` is the executable's modification date — its link
+  time — and **`scripts/preflight.sh` builds `-configuration Release` into the
+  same shared DerivedData Xcode uses.** So after any preflight run, ⌘R in
+  Release finds the products up to date, links nothing, and installs
+  **preflight's** binary. Measured 20 August: Release linked 23:04:01 by
+  preflight, Debug linked 23:06:08 by Xcode, and a ⌘R at 23:20 moved neither.
+  **The gate is `Configuration`, which is a `#if DEBUG` literal and cannot be
+  wrong; `Built` is identity, not proof of a fresh link.** Same DerivedData
+  sharing as the module-cache rule below, different symptom. To force a real
+  relink: `touch Sub4/AppVersion.swift`, or Product → Clean Build Folder.
 - **`error: unexpected variant during dependency scanning on module 'X'`** is a poisoned
   module cache, not your code. Xcode.app and command-line `xcodebuild` share
   `~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex` and disagree on
