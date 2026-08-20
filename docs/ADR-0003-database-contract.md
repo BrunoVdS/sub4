@@ -9034,6 +9034,33 @@ correction from a URL to a name). The list is **not filtered** to items that
 exist — a missing `details/` on a device holding 698 of them is a finding, and a
 filtered list would have shown nothing at all.
 
+### 12.162.5 THE DEVICE RAN IT — 20 August 2026, seven of seven
+
+**Installed, shut down, started up, then read**, so the figures describe a
+complete `applyToExistingFiles` sweep from cold rather than a session that
+inherited them. `Protection: 7 of 7 at the expected class`, every item
+`until first unlock`, `protection writes that failed this launch: 0`. The database, its folder,
+`details/`, `streams/`, `snapshots/` and `notes.json` are all measured, not
+asserted, and the pair either side of a backgrounding differs in one field —
+`Size`, by exactly one page — with no protection reading moving.
+
+**Running it deleted a step from its own campaign.** The document opened with
+*"restart the phone, do not unlock it"* under a heading promising a reading, and
+Bruno asked the right question: how do you take a reading without unlocking? You
+do not. **The app cannot run before the first unlock** — that is what the class
+guarantees — so there is no screen, no export and no observation in that window.
+It would take a background refresh landing there, which nobody can schedule.
+
+So the prompt's *"include before-first-unlock/after-unlock behaviour where safe"*
+has an answer, and it is **not observable from inside the app at all**. Recorded
+in §6 of the campaign rather than left as a step somebody performs and learns
+nothing from.
+
+**A campaign step that cannot be performed is worse than one that is missing**:
+the tester does it, sees nothing, and has no way to tell that from a pass. The
+same shape as a guard that cannot fail (§12.69), one level out — in the
+instructions rather than the code.
+
 ### 12.162.5 What is left for 418
 
 **`AthleteStore` and `AthleteConstants` are still outside the unclean-read write

@@ -7,7 +7,7 @@
 | **Written at** | patch 417, 20 August 2026 |
 | **ADR** | §12.162 |
 | **Contract** | `docs/PLAN-database-cutover-findings-and-ai-prompts.md`, "Manual test campaign contract" |
-| **Time** | about ten minutes, one of them before you unlock the phone |
+| **Time** | about five minutes |
 | **Device** | **mandatory, and a physical one** |
 
 **The suite cannot do this and says so.** On a simulator
@@ -75,24 +75,33 @@ Each reads one of four things:
 
 ## 4. Exact navigation
 
-### Before you unlock — the only step with a time limit
+### There is no before-unlock reading, and this document used to imply one
 
-1. **Restart the phone.** Do **not** unlock it.
-2. While it is still at the passcode screen, note that Sub4's background refresh
-   cannot run yet. **Nothing to capture here** — this step exists so step 3
-   happens on a first-unlock boot, which is the state the class is named for.
-3. Unlock, open Sub4, let it reach **Today**.
+**Cut at the first run, 20 August.** The original step 1 was *"restart the phone,
+do not unlock it"*, under a heading promising a reading. **There is nothing to
+read.** The app cannot run before the first unlock — that is what the protection
+class means — so no screen, no export and no observation exists in that window.
+
+What would show it is something running **outside** the app: a background
+refresh landing before first unlock, where the files are unreadable and the
+write fails. Nobody can schedule that, and §6 already declines to claim it.
+
+**What a restart IS worth, and the first run did it:** install, shut down, start
+up, then read. `applyToExistingFiles` runs at every launch, so the readings then
+describe a **complete sweep from cold** rather than a value left over from an
+earlier session — and `protection writes that failed this launch` counts one
+boot. Worth doing. Just do not expect to read anything before you unlock.
 
 ### The measurement
 
-4. **Settings** → **Sync & data** → **Database health**.
-5. **The file** → tap the title → read the **Protection** row.
-6. Tap **⬆︎** → export.
+1. **Settings** → **Sync & data** → **Database health**.
+2. **The file** → tap the title → read the **Protection** row.
+3. Tap **⬆︎** → export.
 
 ### After a background cycle
 
-7. Leave Sub4 (Home), wait ~30 seconds, come back.
-8. **Database health** → **The file** → **⬆︎** → export.
+4. Leave Sub4 (Home), wait ~30 seconds, come back.
+5. **Database health** → **The file** → **⬆︎** → export.
 
 ---
 
@@ -100,13 +109,13 @@ Each reads one of four things:
 
 | # | after step | figure | passes | fails | meaning |
 |---|---|---|---|---|---|
-| 1 | 5 | **Protection** row | **`7 of 7 at the expected class`**, not red | fewer, red | At least one item is not protected as intended. Rows 3–5 say which. |
-| 2 | 6 | `protection writes that failed this launch` | **`0`** | ≥ 1, with a message | The sweep could not set the attribute somewhere. **This line did not exist before 417** — the failure was swallowed by `try?`. Report the message. |
-| 3 | 6 | *the database file*, *the database's folder* | `until first unlock` | anything else | The database holds every activity, note and decision. This is the row that matters most. |
-| 4 | 6 | any item | not `NOT the expected class` | `NOT the expected class — complete` | **The interesting failure.** `.complete` would break background writes while the phone is locked — the app would quietly stop updating. Worse than no protection, and the reason the reader has four states rather than three. |
-| 5 | 6 | *details/*, *streams/*, *snapshots/*, *notes.json* | `until first unlock` | `no protection attribute` | The sweep never reached it. `applyToExistingFiles` walks Application Support at every launch, so an item it missed is a real gap. |
-| 6 | 6 | any item | not `could not inspect` | `could not inspect — …` | The item is missing or unreadable. For *details/* on a phone holding 698 detail files, that is a finding about the files, not about protection. |
-| 7 | 8 | the whole export | identical to step 6 | any reading changed | Protection is set at write time and swept at launch; a backgrounding should move nothing. A change here means something is re-writing the class. |
+| 1 | 2 | **Protection** row | **`7 of 7 at the expected class`**, not red | fewer, red | At least one item is not protected as intended. Rows 3–5 say which. |
+| 2 | 3 | `protection writes that failed this launch` | **`0`** | ≥ 1, with a message | The sweep could not set the attribute somewhere. **This line did not exist before 417** — the failure was swallowed by `try?`. Report the message. |
+| 3 | 3 | *the database file*, *the database's folder* | `until first unlock` | anything else | The database holds every activity, note and decision. This is the row that matters most. |
+| 4 | 3 | any item | not `NOT the expected class` | `NOT the expected class — complete` | **The interesting failure.** `.complete` would break background writes while the phone is locked — the app would quietly stop updating. Worse than no protection, and the reason the reader has four states rather than three. |
+| 5 | 3 | *details/*, *streams/*, *snapshots/*, *notes.json* | `until first unlock` | `no protection attribute` | The sweep never reached it. `applyToExistingFiles` walks Application Support at every launch, so an item it missed is a real gap. |
+| 6 | 3 | any item | not `could not inspect` | `could not inspect — …` | The item is missing or unreadable. For *details/* on a phone holding 698 detail files, that is a finding about the files, not about protection. |
+| 7 | 5 | the whole export | identical to step 6 | any reading changed | Protection is set at write time and swept at launch; a backgrounding should move nothing. A change here means something is re-writing the class. |
 
 **Rows 1, 3 and 4 are the campaign.**
 
@@ -122,18 +131,70 @@ Each reads one of four things:
 - **Whether the class actually protects anything.** That is iOS's guarantee,
   not this app's. The campaign proves the attribute is *set*; the encryption
   behind it is Apple's.
-- **The locked-phone write path.** `FileProtection`'s header argues that
-  `.complete` would break background writes and
-  `.completeUntilFirstUserAuthentication` does not. Step 1 puts the phone through
-  a boot so the readings are taken on a first-unlock session, but proving a
-  background write succeeds while locked needs a background refresh to land at a
-  moment nobody controls. **Not covered, and not claimed.**
+- **ANYTHING BEFORE THE FIRST UNLOCK.** The prompt asks for
+  before-first-unlock behaviour *"where safe"*, and the answer found by running
+  this is that **it is not observable from inside the app at all** — the app
+  cannot run in that window, which is precisely what the class guarantees. It
+  would take a background refresh landing there, which nobody can schedule.
+  **Not covered, not claimable, and the step that pretended otherwise is gone.**
+- **The locked-phone write path.** `FileProtection`'s header argues `.complete`
+  would break background writes and `.completeUntilFirstUserAuthentication` does
+  not. Proving that needs the same unschedulable window. Not covered.
 - **The two unguarded stores.** `AthleteStore` and `AthleteConstants` are still
   outside the unclean-read write contract and `UNPROTECTED_STORE_CEILING` is 2.
   That is **418**, and it is the suite's.
 
 ---
 
-## 7. Result
+## 7. RESULT — run 20 August 2026, 19:04–19:23, six of seven; the seventh needs no restart
 
-*Not yet run.* Fill in `DEVICE-CAMPAIGN-409.md` §10's shape.
+**Installed, shut down, started up, then read** — so these are a complete
+launch sweep from cold, not a leftover from an earlier session.
+
+**Seven of seven at the expected class**, measured with `attributesOfItem`:
+
+```
+Protection: 7 of 7 at the expected class
+  Application Support: until first unlock
+  the database's folder: until first unlock
+  the database file: until first unlock
+  details/: until first unlock
+  streams/: until first unlock
+  snapshots/: until first unlock
+  notes.json: until first unlock
+  protection writes that failed this launch: 0
+```
+
+| # | figure | reading | verdict |
+|---|---|---|---|
+| 1 | **Protection** row | `7 of 7 at the expected class`, not red | pass |
+| 2 | failed writes | **0** | pass — a line that did not exist before 417 |
+| 3 | the database file and its folder | `until first unlock` | pass |
+| 4 | any `NOT the expected class` | none | pass — the interesting failure did not fire |
+| 5 | `details/`, `streams/`, `snapshots/`, `notes.json` | `until first unlock` | pass |
+| 6 | any `could not inspect` | none | pass |
+| 7 | the pair either side of a backgrounding | every reading identical | pass |
+
+Row 7's two exports differ in **one field**: `Size`, 38,977,536 → 38,981,632 —
+exactly one 4 KB page, a database write between them. **No protection reading
+moved**, which is the claim.
+
+### What running it corrected in this document
+
+The original step 1 said *"restart the phone, do not unlock it"* under a heading
+promising a reading. **There is nothing to read** — the app cannot run before
+the first unlock, which is what the class means. The step was cut and §6 now
+records the honest answer to the prompt's *"before-first-unlock behaviour where
+safe"*: **it is not observable from inside the app at all.**
+
+A campaign step that cannot be performed is worse than one that is missing: the
+tester does it, sees nothing, and has no way to tell that from a pass.
+
+### And 415's owed reading arrived in the same export
+
+`2026-08-20-run-removal` in both **Migrations** and **Expected** — **19
+migrations, 52 tables**. The additive migration applied cleanly to a 39 MB
+database holding 257 ledger rows. 415's other line,
+`removed by family, durably:`, lives in the **Import ledger** export and is
+still uncaptured; all six families should read zero, since that device's only
+two removals were pruned before 415 existed.

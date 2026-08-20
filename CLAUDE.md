@@ -706,9 +706,12 @@ run happened. §12.135–§12.150.
    `N of 7 at the expected class`, measured with `attributesOfItem`, and the
    seven readings reach the paste. **Four states, not three** — an attribute at
    the WRONG class breaks background writes and is not the same as none.
-   **`docs/DEVICE-CAMPAIGN-417.md` is unrun and a physical phone is mandatory**:
-   on a simulator `setAttributes([.protectionKey:…])` stores nothing and fails
-   at nothing, so two of the reader's four answers are unreachable in the suite.
+   **The campaign RAN on 20 August: seven of seven**, every item `until first
+   unlock`, zero failed writes (§12.162.5). A physical phone was mandatory — on
+   a simulator `setAttributes([.protectionKey:…])` stores nothing and fails at
+   nothing, so two of the reader's four answers are unreachable in the suite.
+   **Running it deleted a step**: there is no reading before first unlock,
+   because the app cannot run then.
    **418**: `AthleteStore` and `AthleteConstants` under the unclean-read guard,
    `UNPROTECTED_STORE_CEILING` 2 → 0. §12.162.
 7. **Then Bruno's list**, then **B5 — weather and gear**, with
@@ -815,6 +818,12 @@ Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
   test that passed proved only that the call returned. Split the DECISION from
   the READ (`classify` vs `read`), test the decision directly, and say in the
   test file which answers only a device can produce. §12.162.3.
+- **A CAMPAIGN STEP THAT CANNOT BE PERFORMED IS WORSE THAN A MISSING ONE.**
+  417's opened with *"restart the phone, do not unlock it"* under a heading
+  promising a reading — and the app cannot run before first unlock, which is
+  what the protection class guarantees. The tester does it, sees nothing, and
+  cannot tell that from a pass. §12.69's shape in the instructions rather than
+  the code. §12.162.5.
 - **A number a device prints is not a number a device verified.** `14 independent`
   was rendered, stored in the ledger and pasted into a diagnostics file, and it was
   wrong — because every one of those steps read the same list. Printing is not
