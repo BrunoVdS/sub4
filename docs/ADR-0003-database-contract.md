@@ -8962,6 +8962,81 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.166 A stopwatch is not an instrument — patch 421, plan topic 3 item 3
+
+Topic 3 asked for *"interaction/jank evidence rather than a construction
+timestamp"*. The campaign's answer was a person counting seconds: **"time to
+start the app after force-quit is under 2 sec."** True, unfalsifiable at that
+precision, and impossible to compare with the next reading — which is the whole
+reason the figure was wanted.
+
+**`Detail store built: 0.880 s` is a construction timestamp and cannot be made
+into a responsiveness figure.** It says what one read cost. A read of the same
+length off the main actor costs the same seconds and none of the jank; a read
+half the length on the main actor during the first frame costs less and hurts
+more. The two questions do not share an answer.
+
+### 12.166.1 Four figures, and the fourth is the one nobody had
+
+1. **`before our first line`** — process start to `Sub4App.init`: dyld, the
+   runtime and SwiftUI's own start-up, none of it this repository's code. Read
+   from `kinfo_proc.p_starttime` by sysctl. **Sampled inside `Sub4App.init` and
+   nowhere else**, because read when the Database screen opens the identical
+   arithmetic answers *how long ago was the app launched* — a different question
+   in the same units, and one that would have looked plausible for months.
+2. **`our first line to the first view`** — our own setup.
+3. **`first free main-thread turn`** — when a block queued at start-up actually
+   ran. A touch event faces exactly this queue, so this is the earliest the app
+   could have answered one.
+4. **`longest main-thread stall`** — the largest gap between consecutive fires
+   of a 60 Hz timer over ten seconds. **A timer on the main queue cannot fire
+   while the main thread is busy, which is the property being measured**: a
+   0.9 s gap is 0.9 s in which nothing rendered and nothing responded.
+
+### 12.166.2 Three states per reading, and a window that can be poisoned
+
+`Reading` is `.seconds` / `.notYet` / `.couldNotMeasure` — §12.15 for the
+fifteenth time, and here the middle state is the ordinary one. **Opening the
+screen four seconds into a ten-second window is normal**, and the stall figure
+then is a floor rather than a maximum; printed as a number it would read as a
+fast launch. It prints `not yet — the window closes at 10 s`.
+
+**And the window can be poisoned rather than merely incomplete.** If the app is
+backgrounded while the timer runs, the gaps include time the process was not
+scheduled at all, so the largest of them is not a stall. `leftTheApp` makes the
+summary say `stall unknown — the app was backgrounded` and `isComplete` false.
+A six-second "stall" that was really a trip to the home screen is exactly the
+kind of number that gets acted on.
+
+### 12.166.3 The suite proves the parts; three tests ask the collector
+
+`StallWatch` takes gaps as numbers and `LaunchTiming` formats readings as a
+value, so every state either can print is reachable without waiting for a real
+timer — 417's lesson (§12.162.3) applied before it had to be paid for twice.
+
+**But that is the whole of 419's hole.** Nine value tests would stay green
+against a `LaunchClock` that measured nothing, so `LaunchClockTests` asks the
+collector itself: did it sample the process start, did the first view reach it,
+**did the 60 Hz watch ever tick**. All three were sabotaged and all three
+failed — cutting `t.resume()` is caught by the third and by nothing else.
+§12.164.1, ten patches later, and this time the test existed before the hole did.
+
+### 12.166.4 What the campaign asked for and did not get
+
+`docs/DEVICE-CAMPAIGN-B34.md` part 1 pointed at **Read-back · athlete** for the
+provenance line that 419 installed. **It is not there.** `ReadBackSource.mark`
+renders in **Read-back roll-up**, a different section with its own export, so
+the tester exported the right screen and the row the campaign named did not
+exist on it. The campaign is corrected here rather than the code: the roll-up is
+the right home for a line about independence, since that is the section that
+judges it.
+
+Part 3 was never run — `Configuration` read `Debug` — so **the Release
+`Detail store built` figure is still owed**, and the Debug reading moved from
+1.233 s at 417 to **0.880 s at 420** with `Bootstrap read` at 0.036 s.
+
+---
+
 ## 12.165 The buckets name what is in them — patch 420, plan topic 3 closes
 
 Topic 3's campaign asks a tester to *"select an ID classified as answered-empty,

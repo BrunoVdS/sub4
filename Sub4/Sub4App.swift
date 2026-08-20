@@ -7,6 +7,15 @@ import SwiftUI
 
 @main
 struct Sub4App: App {
+
+    /// THE FIRST LINE OF THIS APP'S OWN CODE — patch 421, §12.166.
+    ///
+    /// Everything before it (dyld, the runtime, SwiftUI's own start-up) is
+    /// measured by subtraction from the kernel's process start time, which is
+    /// why the sample has to be taken HERE and cannot be taken when somebody
+    /// opens the Database screen. It reads no file and opens nothing.
+    init() { LaunchClock.appStarted() }
+
     var body: some Scene {
         // `RootView`, NOT `ContentView` — patch 215, plan step 3.3.1.
         //
@@ -23,6 +32,10 @@ struct Sub4App: App {
         // has to open it itself. Nothing does today; 3.3.3 will have to.
         WindowGroup {
             RootView()
+                // Not "first paint" — the first time the root view appears,
+                // which is the earliest event this app can observe without
+                // reaching into UIKit's layer tree. The label says so.
+                .onAppear { LaunchClock.firstViewAppeared() }
         }
         // SwiftUI registers the launch handler for us. The equivalent
         // BGTaskScheduler.register call has to happen before

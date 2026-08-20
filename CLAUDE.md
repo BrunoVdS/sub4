@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 420 (2026-08-20).** §5.3 is the 390 device run, Compare and
+**Current at patch 421 (2026-08-20).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -394,9 +394,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 420, 2026-08-20
+## 5. State — patch 421, 2026-08-20
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 420; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 421; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -645,7 +645,13 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   `docs/DEVICE-CAMPAIGN-B34.md`: the zero-length trace UI, a Release
   `Detail store built`, and interaction behaviour rather than a timestamp.
   420 also made `asked, nothing there` NAME its activities, without which the
-  campaign's central step could not be performed (§12.165). **`knownActivityIDs` is B5's**;
+  campaign's central step could not be performed (§12.165). **Parts 1 and 2 ran
+  on 20 August; part 3 did not** — `Configuration` read `Debug`, so the Release
+  figure is still owed, and part 1 pointed at the wrong section: the provenance
+  line renders in **Read-back roll-up**, not **Read-back · athlete** (§12.166.4).
+  **421 replaced the stopwatch with an instrument** — process start, first view,
+  first free main-thread turn and the longest 60 Hz stall over ten seconds,
+  three-valued and with a poisoned-window state (§12.166). **`knownActivityIDs` is B5's**;
   **`DetailStore` is invisible to RULE 1**. §12.164.
 - **A DISPOSABLE DEVICE FIXTURE IS NOW ASKED FOR BY THREE PATCHES.** 1A could
   not show the restore REPAIRS, 414 could not show a scoped REMOVAL, 415 cannot
@@ -728,9 +734,13 @@ run happened. §12.135–§12.150.
    recovery screen `RootView` lacks.
 9. **D8** — stabilise one release window, then remove the JSON writers.
 
-**B4's cost:** `Detail store built: 0.872 / 0.930 s` from the database in Debug,
-against 0.443 s of files in Debug and 3.925 s before 397. A Release reading is
-owed; the file side is 0.399 s there.
+**B4's cost:** `Detail store built: 0.872 / 0.930 / 0.880 s` from the database
+in Debug, against 0.443 s of files in Debug and 3.925 s before 397. **A Release
+reading is still owed** — the campaign's part 3 did not run — and the file side
+is 0.399 s there. **Since 421 the app also measures the launch as the user
+experiences it**: `Launch:` in *The file* gives the time to a free main thread
+and the longest main-thread stall, which is what a construction timestamp
+cannot say (§12.166).
 
 Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
 `review-data-pool.md` and `ADR-0002-strava-retirement.md`.

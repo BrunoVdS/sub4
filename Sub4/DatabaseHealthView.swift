@@ -525,6 +525,13 @@ struct DatabaseHealthView: View {
                            value: ProtectionReadBack.summary(protectionItems))
                 .foregroundStyle(protectionItems.allSatisfy(\.reading.isExpected)
                                  ? Color.primary : Color.red)
+
+            // **PATCH 421 — THE FIGURE A CONSTRUCTION TIMESTAMP CANNOT GIVE.**
+            // `Detail store built` says what one read cost; this says when the
+            // app could first have answered a touch, and how long the worst
+            // stall after that lasted. §12.166. ONE ROW — §12.76's budget is
+            // depth; the six readings behind it go to the paste.
+            LabeledContent("Launch", value: LaunchClock.timing.line)
         }
         } header: {
             DiagnosticSectionHeader(title: "The file",
@@ -4040,6 +4047,11 @@ struct DatabaseHealthView: View {
         // figure then describes this screen's own read rather than somebody
         // else's.
         l.append(DetailStore.shared.constructionTiming.line)
+        // PATCH 421 — WHAT THE LAUNCH COST AS THE USER EXPERIENCES IT. The two
+        // lines above are construction; these are responsiveness, and a store
+        // built off the main actor costs the same seconds and none of the jank.
+        // §12.166.
+        l.append(contentsOf: LaunchClock.timing.diagnosticLines)
         l.append("Plan store reads: \(PlanStore.shared.servedFrom.line)")
         l.append("Athlete store reads: \(AthleteStore.shared.servedFrom.line)")
         l.append("Constants store reads: \(ConstantsStore.shared.servedFrom.line)")

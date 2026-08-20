@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Task** | Plan topic 3, decomposition items 2 and 3 — "close evidence and behavior gaps left by B1–B4" |
-| **Patches under test** | **419** (the athlete read-back), **420** (the ids), and B4 as it has stood since 398 |
-| **Written at** | patch 420, 20 August 2026 |
+| **Patches under test** | **419** (the athlete read-back), **420** (the ids), **421** (the launch instrument), and B4 as it has stood since 398 |
+| **Written at** | patch 420, corrected at 421, 20 August 2026 |
 | **ADR** | §12.164, §12.165, and §12.142 for what B4 already proved |
 | **Contract** | `docs/PLAN-database-cutover-findings-and-ai-prompts.md`, "Manual test campaign contract" |
 | **Time** | about fifteen minutes, and **one part needs a Release build** |
@@ -43,6 +43,8 @@ until B6, which 399 marked and 419 deliberately did not change.
 | what | where |
 |---|---|
 | the athlete read-back | section **Read-back · athlete** — rows, and **⬆︎** |
+| **whether it read the files itself** | section **Read-back roll-up** — NOT the section above |
+| the launch, measured | **The file** → row **Launch**, and the six readings in its **⬆︎** |
 | the zero-trace ids | **Traces still to fetch** → **⬆︎** → under `asked, nothing there` |
 | the build | **Settings → Version → Configuration** — `Debug` or `Release` |
 | the cost | **The file** → **⬆︎** → `Detail store built` |
@@ -70,6 +72,10 @@ perform. Strava ids are the one identifier a paste may carry (§12.7).
 
 1. **Database health** → **Read-back · athlete** → tap the title → read the rows
    → **⬆︎** → export.
+1b. **Read-back roll-up** → **⬆︎** → export. **This is where the provenance
+   line lives** — `ReadBackSource.mark` renders in the roll-up, not in the
+   athlete section, and the first draft of this campaign said otherwise
+   (§12.166.4). Find the `Athlete` row and read what follows the `·`.
 
 ### Part 2 — an activity with no trace
 
@@ -86,12 +92,15 @@ perform. Strava ids are the one identifier a paste may carry (§12.7).
 
 6. Build and install a **Release** build from Xcode.
 7. **Settings** → **Version** → confirm **Configuration** reads **Release**.
-8. **Database health** → **The file** → **⬆︎** → export. Read
-   `Detail store built`.
-9. Force-quit, relaunch, and **time it by hand**: from tapping the icon to the
-   first moment **Today** responds to a scroll. Say the number out loud as you
-   count, or use a stopwatch. Approximate is fine — **a whole second is the
-   thing worth knowing.**
+8. **Force-quit and relaunch.** Then wait — **at least fifteen seconds** —
+   without leaving the app, and without pressing anything that starts a sync.
+   The stall window is ten seconds long and a reading taken inside it is a
+   floor, not an answer. **Do not switch to another app**: the window says so
+   when it happens, and the reading is then worth nothing.
+9. **Database health** → **The file** → **⬆︎** → export. Read the **Launch**
+   row and the six readings under it, and `Detail store built`.
+10. Repeat steps 8–9 once more, so there are two Release launches rather than
+    one. A single launch cannot be told from an unlucky one.
 
 ---
 
@@ -106,12 +115,18 @@ perform. Strava ids are the one identifier a paste may carry (§12.7).
 | 5 | 4 | **PROFILE**, all four tabs | absent, or a clear no-data state | empty axes, or a tab that draws a flat line at 0 | `isUsable` is `distanceM.count >= 8`; a zero-length trace must fail it in every tab, not three of four. |
 | 6 | 4 | **ROUTE** | absent | a map centred on the ocean, or on 0,0 | The classic zero-coordinate failure. |
 | 7 | 4–5 | the screen | draws, scrolls, rotates | **a crash** | §12.76's runtime stack overflow, or a force-unwrap on an empty series. **Stop and report the whole screen.** |
-| 8 | 8 | **Configuration** | `Release` | `Debug` | Part 3 measures nothing otherwise. |
-| 9 | 8 | `Detail store built` | **record it** | — | The owed figure. Debug has run 0.872–1.233 s; Release should be materially lower. There is no pass mark — the number is the result. |
-| 10 | 9 | first interaction | **record it** | over ~2 s | A construction timestamp is not responsiveness. B4's plan expected large sample reads to stay off the main actor; this is the only check of whether that held. |
+| 8 | 7 | **Configuration** | `Release` | `Debug` | Part 3 measures nothing otherwise. **This is why part 3 did not run on 20 August.** |
+| 9 | 9 | `Detail store built` | **record it** | — | The owed figure. Debug has run 0.872–1.233 s; Release should be materially lower. There is no pass mark — the number is the result. |
+| 10 | 9 | `stall window` | `closed — 10.0 s` | `still open` | You read it too early. Wait and export again; every stall figure above an open window is a floor. |
+| 11 | 9 | `left the app during the window` | `no` | `YES` | The window is poisoned — the gaps include time the app was not scheduled. Relaunch and do not leave the app. |
+| 12 | 9 | `first free main-thread turn` | **record it** | — | The earliest the app could have answered a touch. This is what "under 2 seconds by hand" was reaching for, to three decimal places. |
+| 13 | 9 | `longest main-thread stall` | **record it** | — | **The figure a construction timestamp cannot give.** If it is close to `Detail store built`, that read is on the main actor and B4's plan did not hold. If it is small while `Detail store built` is large, the read is off the main actor and the cost is invisible to the user — which is the intended outcome. |
+| 14 | 9 | `before our first line` | **record it** | `could not measure` | sysctl refused the process table; the pre-main figure is unavailable on this device and the rest still stands. |
+| 15 | 10 | the second launch | figures within a few tenths of the first | wildly different | One launch is an anecdote. |
 
-**Rows 4–7 are the campaign.** Rows 9 and 10 are measurements, not tests —
-write the numbers down, they have no pass mark.
+**Rows 4–7 are the campaign.** Rows 9, 12, 13 and 14 are measurements, not
+tests — write the numbers down, they have no pass mark. Rows 10, 11 and 15 are
+what says whether the measurements can be believed.
 
 ---
 
@@ -136,4 +151,23 @@ write the numbers down, they have no pass mark.
 
 ## 7. Result
 
-*Not yet run.* Fill in `DEVICE-CAMPAIGN-409.md` §10's shape.
+**Part 1 and part 2 ran on 20 August 2026, 21:16–21:21, at patch 420.**
+
+- **Row 1 could not be judged** — the campaign named the wrong section. Corrected
+  at 421; take it from **Read-back roll-up**.
+- **Row 2 passes**: 27 compared, 0 differing, `approved differences: 1
+  (version)`. The denominator is real and the comparison could have failed.
+- **Row 3 passes**: `asked, nothing there: 2` followed by
+  `15225521352, 16415953236`. 420 landed.
+- **Rows 4–7 were not exercised.** The activity opened has a full trace — a
+  9.44 km run with a heart-rate series, a route and `56:12 traced` — so it is
+  not one of the two. **The ids are named and still not locatable**: nothing in
+  the app finds an activity by Strava id, which is the same unperformable step
+  one level down.
+- **Rows 8–15 did not run.** `Configuration` read `Debug`.
+
+Figures recorded in passing at 420, Debug: `Bootstrap read: 0.036 s`,
+`Detail store built: 0.880 s from the database — 699 details, 672 traces`,
+`Protection: 7 of 7`, `activities with no trace: 27 of 699`.
+
+*Parts 2 and 3 outstanding.* Fill in `DEVICE-CAMPAIGN-409.md` §10's shape.
