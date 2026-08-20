@@ -656,11 +656,13 @@ tripwires, which become self-referential the day their slice flips. §12.168.
   `docs/DEVICE-CAMPAIGN-B34.md`: the zero-length trace UI, a Release
   `Detail store built`, and interaction behaviour rather than a timestamp.
   420 also made `asked, nothing there` NAME its activities, without which the
-  campaign's central step could not be performed (§12.165). **Parts 2 and 3 are
-  outstanding** — the two traceless activities were not opened and
-  `Configuration` still read `Debug`, so the Release figure is still owed. Part 1
-  took three attempts to become performable: it pointed at the wrong section
-  (§12.166.4), then omitted that the roll-up is a BUTTON.
+  campaign's central step could not be performed (§12.165). **PART 1 PASSED on
+  20 August at 422 — four of four**, and it took three attempts to become
+  performable: it pointed at the wrong section (§12.166.4), then omitted that
+  the roll-up is a BUTTON. **Rows 3 and 3b of part 2 passed too.** Everything
+  still outstanding — the two traceless activities and the Release cost — is
+  **`docs/DEVICE-CAMPAIGN-TRACE-AND-COST.md`**, written at 423, self-contained,
+  and **one Release build for both parts**.
   **421 replaced the stopwatch with an instrument** — process start, first view,
   first free main-thread turn and the longest 60 Hz stall over ten seconds,
   three-valued and with a poisoned-window state (§12.166). **422 made the two

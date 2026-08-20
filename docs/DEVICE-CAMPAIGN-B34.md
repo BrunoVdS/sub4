@@ -1,5 +1,14 @@
 # Device campaign — the B3/B4 evidence closeout
 
+> **PART 1 PASSED AND IS THE RECORD. PARTS 2 AND 3 HAVE MOVED.**
+> Part 1 ran on 20 August 2026 at patch 422 — four of four, and the roll-up's
+> self-referential count reached zero (§10.1a). Rows 3 and 3b of part 2 passed
+> the same evening (§10.1b). **Everything still outstanding is now
+> `docs/DEVICE-CAMPAIGN-TRACE-AND-COST.md`**, rewritten for patch 423 and
+> self-contained. Do not run parts 2 and 3 from this document — its step 4
+> predates 423 and its navigation cannot be performed.
+
+
 | | |
 |---|---|
 | **Task** | Plan topic 3, decomposition items 2 and 3 — "close evidence and behaviour gaps left by B1–B4" |
