@@ -4161,6 +4161,12 @@ struct DatabaseHealthView: View {
          "    queued, not yet reached: \(coverage.queued)",
          "    under 500 m, never asked: \(coverage.belowThreshold)",
          "    asked, nothing there: \(coverage.answeredEmpty)",
+         // PATCH 420 — the ids, so the campaign step can be performed.
+         // §12.7: Strava ids are acceptable in a paste; names, places and
+         // dates are not. UNCONDITIONAL, so an empty bucket says so.
+         "      " + (coverage.answeredEmptyIDs.isEmpty
+                     ? "none to name"
+                     : coverage.answeredEmptyIDs.joined(separator: ", ")),
          "    the source refused it: \(coverage.refused)",
          "    unexplained: \(coverage.unexplained)"]
     }

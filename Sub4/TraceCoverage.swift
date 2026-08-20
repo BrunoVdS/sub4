@@ -57,6 +57,30 @@ nonisolated struct TraceCoverage: Equatable, Sendable {
     /// In the queue and not yet reached.
     var queued = 0
 
+    /// **THE IDS BEHIND TWO OF THE BUCKETS — patch 420, §12.165.**
+    ///
+    /// Topic 3 asks a tester to *"select an ID classified as answered-empty,
+    /// then open Activities → activity detail"*. The screen said `asked,
+    /// nothing there: 2` and named neither, so the step could not be
+    /// performed — the same unperformable instruction 417's campaign shipped
+    /// with and §12.162.5 recorded.
+    ///
+    /// **STRAVA IDS ARE EXPLICITLY PASTEABLE** — §12.7 excludes session names,
+    /// places and dates, and names ids and field names as acceptable. So this
+    /// is the one thing that can identify an activity in a diagnostic without
+    /// carrying anything about the athlete's history.
+    ///
+    /// **UNCAPPED, AND THAT IS DELIBERATE.** A silent `prefix(10)` reads
+    /// exactly like a complete list — §12.72.7's lesson, twice paid for. Both
+    /// buckets are single digits on a real device (2 and 0 on 20 August), and
+    /// if either ever grows the count beside it says so.
+    var answeredEmptyIDs: [String] = []
+
+    /// The bucket that means the app has no explanation. Naming these matters
+    /// more than the others: a count of unexplained activities is a question,
+    /// and the ids are what turns it into an answer.
+    var unexplainedIDs: [String] = []
+
     /// None of the above.
     ///
     /// EXPECTED TO BE ZERO, and it is the only number here worth watching. The
@@ -100,11 +124,22 @@ nonisolated enum TraceCoverageReport {
             out.total += 1
             if hasTrace(a.id)                 { out.withTrace += 1 }
             else if refused.contains(a.id)    { out.refused += 1 }
-            else if answeredEmpty.contains(a.id) { out.answeredEmpty += 1 }
+            else if answeredEmpty.contains(a.id) {
+                out.answeredEmpty += 1
+                out.answeredEmptyIDs.append(a.id)
+            }
             else if a.distance < minDistance  { out.belowThreshold += 1 }
             else if queued.contains(a.id)     { out.queued += 1 }
-            else                              { out.unexplained += 1 }
+            else {
+                out.unexplained += 1
+                out.unexplainedIDs.append(a.id)
+            }
         }
+        // Sorted so two exports of one state are byte-identical — the diff of
+        // a pair either side of an action is this project's best device
+        // instrument, and an unstable order would make every pair differ.
+        out.answeredEmptyIDs.sort()
+        out.unexplainedIDs.sort()
         return out
     }
 }

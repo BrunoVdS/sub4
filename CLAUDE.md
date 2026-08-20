@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 419 (2026-08-20).** §5.3 is the 390 device run, Compare and
+**Current at patch 420 (2026-08-20).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -394,9 +394,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 419, 2026-08-20
+## 5. State — patch 420, 2026-08-20
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 419; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 420; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -641,9 +641,11 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   comparisons that could not have disagreed, printed as agreement for
   seventy-three patches. `athleteSources()` reads `constants.json` and
   `athlete.json` through 418's seams, and `.ownRead` makes the roll-up derive
-  independence. **What topic 3 still owes is DEVICE evidence, not code**: the
-  zero-length trace UI, a Release `Detail store built`, and interaction
-  behaviour rather than a timestamp. **`knownActivityIDs` is B5's**;
+  independence. **Topic 3's campaign is written at 420 and unrun** —
+  `docs/DEVICE-CAMPAIGN-B34.md`: the zero-length trace UI, a Release
+  `Detail store built`, and interaction behaviour rather than a timestamp.
+  420 also made `asked, nothing there` NAME its activities, without which the
+  campaign's central step could not be performed (§12.165). **`knownActivityIDs` is B5's**;
   **`DetailStore` is invisible to RULE 1**. §12.164.
 - **A DISPOSABLE DEVICE FIXTURE IS NOW ASKED FOR BY THREE PATCHES.** 1A could
   not show the restore REPAIRS, 414 could not show a scoped REMOVAL, 415 cannot

@@ -8962,6 +8962,50 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.165 The buckets name what is in them — patch 420, plan topic 3 closes
+
+Topic 3's campaign asks a tester to *"select an ID classified as answered-empty,
+then open Activities → activity detail"*. The screen printed `asked, nothing
+there: 2` and **named neither**, so the campaign's central step could not be
+performed.
+
+That is the unperformable instruction 417's campaign shipped with, found the
+same day and recorded at §12.162.5 — *a campaign step that cannot be performed
+is worse than a missing one; the tester does it, sees nothing, and cannot tell
+that from a pass.* Writing topic 3's campaign walked straight into it a second
+time, which is why the ids exist before the campaign does.
+
+**§12.7 is what makes this possible.** The rule excludes session names, places
+and dates and names **Strava ids and field names as acceptable** — so an id is
+the one identifier that can single out an activity in a paste without carrying
+anything about the athlete's history.
+
+`answeredEmptyIDs` and `unexplainedIDs`, both **uncapped** — a silent
+`prefix(10)` reads exactly like a complete list, which is §12.72.7 and has been
+paid for twice — and both **sorted**, so two exports of one state stay
+byte-identical and a diff of a pair remains this project's best device
+instrument. `unexplained` gets ids for the sharper reason: **a count of
+unexplained activities is a question, and the ids are what turn it into an
+answer.**
+
+### 12.165.1 Why topic 3's campaign is not topic 3's patch
+
+`docs/DEVICE-CAMPAIGN-B34.md` covers decomposition items 2 and 3 — the
+zero-length trace UI exercised end to end, and Release timing with interaction
+latency rather than a construction timestamp. **Item 1 was 419 and item 4 needs
+no action**: load parity stays classified deterministic-only until B6 can give
+it an independent file-side input, which is what 399 marked and what topic 3's
+prompt asks for in as many words.
+
+**The campaign was owed and nearly went unwritten.** 419 landed and the next
+topic was opened on the grounds that what remained was "device evidence, not
+code" — which is true of the measurements and false of the document that makes
+them possible. 1A's history records the same shape: patches landing while the
+campaign that validates them stays unwritten. Writing it is the patch author's
+work, not the tester's.
+
+---
+
 ## 12.164 The last self-referential read-back — patch 419, plan topic 3
 
 `ReadBacks.athlete` compared SQLite against `ConstantsStore.shared.c`,
