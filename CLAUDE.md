@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 414 (2026-08-20).** §5.3 is the 390 device run, Compare and
+**Current at patch 415 (2026-08-20).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -394,9 +394,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 414, 2026-08-20
+## 5. State — patch 415, 2026-08-20
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 414; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 415; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -673,23 +673,15 @@ run happened. §12.135–§12.150.
    kinds — the invisible row had a valid kind and it was `commuteSQL`'s INNER
    JOIN that dropped it, so a kind-based residual would have read zero.
    Mechanism proven by test; the 20 August instance still unproven. §12.158.
-4. **1C IS HALF DONE — 414 SCOPED THE PERMISSION, 415 OWES THE LEDGER.**
-   Reconciliation is per family: a save may delete only from the family whose
-   mutation completed, and only when **that family's own source** read cleanly.
-   **`review` could previously be pruned only by somebody else's trigger** —
-   nothing announces a proposal change — and the athlete stores held permission
-   over all five while owning none. `isRunning` is gone so the compiler
-   enumerates every prune. **The campaign RAN on 20 August**: four sentences
-   from four triggers where all four used to read `yes` — `notes`,
-   `commute decisions`, `skipped — the change belongs to no reconcilable
-   family`, and the automatic skip (§12.159.8). **Two rows carried no weight and
-   say so**: `review` is 0, so the headline protection is the SUITE's evidence;
-   and no reconciliation removed anything, because 409 made that state nearly
-   unreachable by hand.
-   **415 IS NOW URGENT AND THE DEVICE ARGUED IT.** `newest removal: never — no
-   run has deleted anything`, where it read `2` and a dated row the day before:
-   **the ledger's own retention aged out the only two removals this database has
-   ever made** (§12.159.9). `migration_run_removal(runID, family, rows)`.
+4. **1C IS DONE — 414 SCOPED THE PERMISSION, 415 MADE THE REMOVAL DURABLE.**
+   A save may delete only from the family whose mutation completed, and only
+   when **that family's own source** read cleanly (§12.159, campaign run 20
+   August). **`migration_run_removal(runID, family, rows)`** records which
+   family lost what — and **a run that removed rows is now never pruned**,
+   because the table cascades and a child cannot outlive a disposable parent.
+   The device is what argued it: the ledger had forgotten its only two
+   removals inside a day. §12.160. **One reading owed**, riding along with the
+   next export — nineteen migrations and `removed by family, durably:`.
 5. **1B's NOTES — BUILT AT 409, PROVEN 19 AUGUST.** A note save commits to
    SQLite **before** the editor closes, and `remove` with it — 408 the narrow
    write, **409 the order**, **409a the diagnostic** (§12.152, §12.153).
@@ -785,6 +777,14 @@ Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
   diagnostic was not broken and did not need fixing; it could not answer the
   question somebody asked of it. **When a count reassures you, check what it
   actually counts.** §12.158.1.
+- **AN IMPLICIT FOREIGN KEY BINDS TO WHATEVER THE PRIMARY KEY IS TODAY.**
+  `.references("migration_run", onDelete: .cascade)` emitted
+  `REFERENCES "migration_run"("sequence")`, because a rebuild two migrations
+  earlier had made `sequence` the primary key and demoted `id`. The migration
+  ran clean, the schema was valid, and every insert failed the foreign key at
+  write time. **Name the column.** §12.95.4's shape in DDL, and worse, because
+  the value it carries is whatever a later migration decides. **A migration
+  that applies cleanly has not been tested.** §12.160.2.
 - **A number a device prints is not a number a device verified.** `14 independent`
   was rendered, stored in the ledger and pasted into a diagnostics file, and it was
   wrong — because every one of those steps read the same list. Printing is not

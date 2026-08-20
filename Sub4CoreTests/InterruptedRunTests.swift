@@ -285,6 +285,12 @@ struct InterruptedRunTests {
         // Registering it keeps the test about the five-state table's upgrade
         // rather than about a column the reader needs. §12.150.
         Sub4Migrations.registerRunCause(&migrator)
+        // PATCH 415, and 406's reasoning one migration later. The retention
+        // prune now reads `rowsRemoved` — a run that deleted something is never
+        // pruned — so a database stopping before that column cannot be pruned
+        // at all. A real upgrade never stops there; this keeps the test about
+        // the five-state table rather than about a column the writer needs.
+        Sub4Migrations.registerRowsRemoved(&migrator)
         try migrator.migrate(queue)
         let upgraded = Sub4Database(queue: queue, location: .inMemory)
         let rows = try MigrationLedger.all(upgraded, limit: 20)

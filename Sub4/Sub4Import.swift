@@ -308,6 +308,28 @@ nonisolated enum Sub4Import {
                 + correctionsRemoved + movesRemoved + workItemsRemoved
         }
 
+        /// **THE SAME SUM, TAKEN APART — patch 415, §12.160.**
+        ///
+        /// `removedTotal` is what the ledger has stored since 369 and it
+        /// cannot say where the rows went. This names each family, and only
+        /// the families that lost something: a zero row would make "lost
+        /// nothing" and "was not considered" the same record, which is §12.15
+        /// in a table.
+        ///
+        /// **IT MUST DECOMPOSE `removedTotal` EXACTLY.** RULE 2 checks every
+        /// declared counter is in the sum; `everyRemovalCounterIsNamed` checks
+        /// this list takes the sum back apart. A counter added to one and not
+        /// the other is a row deleted with nothing saying by whom.
+        var removals: [(family: RemovalFamily, rows: Int)] {
+            [(.notes, notesRemoved),
+             (.matchDecisions, matchDecisionsRemoved),
+             (.reviews, reviewsRemoved),
+             (.commutes, correctionsRemoved),
+             (.moves, movesRemoved),
+             (.workQueue, workItemsRemoved)]
+                .filter { $0.1 > 0 }
+        }
+
         var unresolvedGear: [String: Int] = [:]
         var refusals: [Refusal] = []
         var seconds: Double = 0
@@ -681,7 +703,8 @@ nonisolated enum Sub4Import {
         // column. A count that cannot be written makes this a failed run,
         // which is the honest outcome — §12.113.
         try MigrationLedger.recordRemovals(db, id: runID,
-                                           rows: report.removedTotal)
+                                           rows: report.removedTotal,
+                                           families: report.removals)
         try MigrationLedger.finish(db, id: runID, state: .pending,
                                    note: report.ledgerNote,
                                    now: iso8601(Date()))

@@ -342,14 +342,36 @@ nonisolated struct LedgerCensus: Equatable, Sendable {
     /// this is the only place that claim can be checked after the fact.
     let newestRemoval: Removal?
 
+    /// **THE DURABLE ACCOUNT — patch 415, §12.160.** One entry per family that
+    /// has ever lost a row, summed over `migration_run_removal` rather than
+    /// over `migration_run.rowsRemoved`.
+    ///
+    /// The two answer different questions now. The column is per run and its
+    /// run is prunable for every row written before 415; the table's runs are
+    /// never pruned, so this is the figure that survives a day. Printed
+    /// unconditionally, every family, including the zeros — a family that
+    /// vanishes at zero cannot be told from one nobody wired in (§12.54.2).
+    let removedByFamily: [RemovalFamily: Int]
+
     nonisolated struct Removal: Equatable, Sendable {
         let startedUTC: String
         let trigger: String
         let rows: Int
+        /// **WHICH FAMILIES, WHICH §5.5 ASKED FOR SINCE 369.** Empty for a run
+        /// that predates `migration_run_removal`, and the line says so rather
+        /// than printing a removal that appears to have come from nowhere.
+        let families: [RemovalFamily: Int]
 
         var line: String {
-            "\(startedUTC) · \(trigger) · \(rows) "
-            + (rows == 1 ? "row" : "rows")
+            let base = "\(startedUTC) · \(trigger) · \(rows) row"
+                     + (rows == 1 ? "" : "s")
+            guard !families.isEmpty else {
+                return base + " · family not recorded — the run predates 415"
+            }
+            let named = families.sorted { $0.key.rawValue < $1.key.rawValue }
+                                .map { "\($0.key.label) \($0.value)" }
+                                .joined(separator: ", ")
+            return base + " · \(named)"
         }
     }
 
@@ -385,6 +407,13 @@ nonisolated struct LedgerCensus: Equatable, Sendable {
         // this in".
         lines.append("  runs that removed rows: \(runsThatRemoved)")
         lines.append("  rows removed in all runs: \(rowsRemovedEver)")
+        // PATCH 415. UNCONDITIONAL AND EVERY FAMILY, including the zeros: a
+        // family that only appears once it has lost something cannot be told
+        // from one nobody wired in. §12.54.2.
+        lines.append("  removed by family, durably: "
+                     + RemovalFamily.allCases
+                         .map { "\($0.label) \(removedByFamily[$0] ?? 0)" }
+                         .joined(separator: ", "))
         lines.append("  newest removal: "
                      + (newestRemoval?.line
                         ?? "never — no run has deleted anything"))
@@ -484,10 +513,28 @@ nonisolated enum MigrationLedger {
         var args: [DatabaseValue] = [state.rawValue.databaseValue]
         args += raws.map { $0.databaseValue }
         args.append(max(0, keeping).databaseValue)
+        // **A RUN THAT DELETED SOMETHING IS NEVER PRUNED — patch 415, §12.160.**
+        //
+        // The device proved why on 20 August: the ledger read `newest removal:
+        // never — no run has deleted anything` having read `2` and a dated
+        // authored row the day before. Two hundred automatic runs is under two
+        // days here, so the prune had aged out the record of the only two
+        // removals this database has ever made.
+        //
+        // `migration_run_removal` cascades from this table, so the child cannot
+        // be durable while the parent is disposable. This is where the
+        // durability actually comes from.
+        //
+        // It joins `manual`, `failed`, `running`, `verified` and `activated` on
+        // the list above of what is never pruned, and the same sentence
+        // settles the trade: **between a leak and a shredder, pick the leak.**
+        // Two rows in this database's lifetime against the only evidence that
+        // a deletion ever happened.
         return try String.fetchAll(d, sql: """
             SELECT id FROM migration_run
              WHERE state = ?
                AND triggeredBy IN (\(marks))
+               AND (rowsRemoved IS NULL OR rowsRemoved = 0)
              ORDER BY sequence DESC
              LIMIT -1 OFFSET ?
             """, arguments: StatementArguments(args))
@@ -578,9 +625,21 @@ nonisolated enum MigrationLedger {
     /// UNCONDITIONAL, including when the answer is zero. §12.54.2: a column
     /// written only when something was deleted cannot be told from one nobody
     /// wired in, and that is the defect this patch exists to end.
+    /// **PATCH 415 — THE TOTAL AND ITS DECOMPOSITION, IN ONE TRANSACTION.**
+    ///
+    /// `rowsRemoved` is 369's column and stays: it answers "how many" for every
+    /// run including the ones that predate the table. `migration_run_removal`
+    /// answers "from which family", one row per family that lost something.
+    ///
+    /// **ONE WRITE, NOT TWO.** A total without its families, or families
+    /// without their total, is a state no reader should have to interpret —
+    /// and a caller that wrote one and threw before the other would produce
+    /// exactly that. `finish` runs after this and makes the run terminal, so
+    /// a throw here is a failed run, which is the honest outcome (§12.113).
     static func recordRemovals(_ db: Sub4Database,
                                id: String,
-                               rows: Int) throws {
+                               rows: Int,
+                               families: [(family: RemovalFamily, rows: Int)] = []) throws {
         try db.queue.write { d in
             try d.execute(sql: """
                 UPDATE migration_run SET rowsRemoved = ? WHERE id = ?
@@ -589,6 +648,16 @@ nonisolated enum MigrationLedger {
             guard changed == 1 else {
                 throw MigrationLedgerError.invalidTransition(id: id,
                                                              target: .running)
+            }
+            // UPSERT, because `recordRemovals` may be called twice for one run
+            // — `RowsRemovedTests` does exactly that — and a second call must
+            // correct the record rather than double it.
+            for entry in families where entry.rows > 0 {
+                try d.execute(sql: """
+                    INSERT INTO migration_run_removal (runID, family, rows)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(runID, family) DO UPDATE SET rows = excluded.rows
+                    """, arguments: [id, entry.family.rawValue, entry.rows])
             }
         }
     }
@@ -784,19 +853,49 @@ nonisolated enum MigrationLedger {
                 """, arguments: [MigrationRunState.pending.rawValue,
                                  MigrationRunState.verified.rawValue,
                                  MigrationRunState.activated.rawValue]) ?? 0
+            // PATCH 415. The id comes back too, so the families can be read
+            // for exactly this run rather than for the newest row in the
+            // removal table — those are the same run today and would stop
+            // being so the moment a removal is recorded out of order.
             let newestRemoval = try Row.fetchOne(d, sql: """
-                SELECT startedUTC, triggeredBy, rowsRemoved
+                SELECT id, startedUTC, triggeredBy, rowsRemoved
                   FROM migration_run
                  WHERE rowsRemoved > 0
                  ORDER BY sequence DESC
                  LIMIT 1
-                """).map {
-                    LedgerCensus.Removal(
-                        startedUTC: ($0["startedUTC"] as String?) ?? "—",
-                        trigger: ($0["triggeredBy"] as String?)
+                """).map { row -> LedgerCensus.Removal in
+                    let id = (row["id"] as String?) ?? ""
+                    var families: [RemovalFamily: Int] = [:]
+                    let rows = (try? Row.fetchAll(d, sql: """
+                        SELECT family, rows FROM migration_run_removal
+                         WHERE runID = ?
+                        """, arguments: [id])) ?? []
+                    for r in rows {
+                        guard let name = r["family"] as String?,
+                              let f = RemovalFamily(rawValue: name) else { continue }
+                        families[f] = (r["rows"] as Int?) ?? 0
+                    }
+                    return LedgerCensus.Removal(
+                        startedUTC: (row["startedUTC"] as String?) ?? "—",
+                        trigger: (row["triggeredBy"] as String?)
                             ?? "trigger not recorded",
-                        rows: ($0["rowsRemoved"] as Int?) ?? 0)
+                        rows: (row["rowsRemoved"] as Int?) ?? 0,
+                        families: families)
                 }
+
+            // **THE ACCOUNT THAT SURVIVES — patch 415.** Over the removal
+            // table, whose runs are never pruned, rather than over the column,
+            // whose runs are.
+            var removedByFamily: [RemovalFamily: Int] = [:]
+            for r in try Row.fetchAll(d, sql: """
+                SELECT family, SUM(rows) AS total
+                  FROM migration_run_removal
+                 GROUP BY family
+                """) {
+                guard let name = r["family"] as String?,
+                      let f = RemovalFamily(rawValue: name) else { continue }
+                removedByFamily[f] = (r["total"] as Int?) ?? 0
+            }
 
             return LedgerCensus(total: total,
                                 openNow: try count(.running),
@@ -810,6 +909,7 @@ nonisolated enum MigrationLedger {
                                     (removalRow?["rows"] as Int?) ?? 0,
                                 notRecorded: notRecorded,
                                 newestRemoval: newestRemoval,
+                                removedByFamily: removedByFamily,
                                 unrecorded: unrecorded, byTrigger: byTrigger)
         }
     }

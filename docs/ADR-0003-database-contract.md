@@ -8962,6 +8962,101 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.160 A removal outlives its run — patch 415, topic 1C closes
+
+`migration_run_removal(runID, family, rows)`, one row per family that lost
+something, plus the `2026-08-20-run-removal` migration. **Topic 1C's second
+half**, and the device argued it into existence before the patch did.
+
+### 12.160.1 The evidence was being shredded on a two-day timer
+
+On 20 August the ledger read `runs that removed rows: 0` and `newest removal:
+never — no run has deleted anything`. It had read `2` and `2026-08-15T15:25:27Z
+· authored · 1 row` **the day before**.
+
+`MigrationLedger` keeps the newest 200 successful automatic runs. On this device
+that is under two days — 166 runs had opened since the last verified one — so the
+retention prune had aged out **the record of the only two removals this database
+has ever made.**
+
+§5.5 has said *"`newest removal` names the trigger, not the family"* for
+patches. It understated the problem: after a day it named nothing at all. That is
+why 1C's prompt asks for a table *"rather than overloading the ledger note"*.
+
+**AND THE TABLE ALONE WOULD NOT HAVE FIXED IT.** `migration_run_removal`
+cascades from `migration_run`, so a child cannot be durable while its parent is
+disposable. **The durability comes from the run surviving**, and `doomedIDs` now
+spares any run with `rowsRemoved > 0`. It joins `manual`, `failed`, `running`,
+`verified` and `activated` on the list of what is never pruned, and that list's
+own sentence settles the trade: *between a leak and a shredder, pick the leak.*
+Two rows in this database's lifetime, against the only evidence a deletion ever
+happened.
+
+`aRunThatRemovedIsNeverPruned` is the patch, and it fails against the old prune.
+
+### 12.160.2 AN IMPLICIT FOREIGN KEY BOUND TO THE WRONG COLUMN
+
+`.references("migration_run", onDelete: .cascade)` binds to whatever that
+table's PRIMARY KEY is. `migration_run`'s has not been `id` since
+`2026-08-16-run-recovered` rebuilt it with `sequence INTEGER PRIMARY KEY
+AUTOINCREMENT` and demoted `id` to `TEXT NOT NULL UNIQUE`.
+
+So GRDB emitted `REFERENCES "migration_run"("sequence")`. **The migration ran
+clean, the schema was valid, and every insert of a TEXT uuid failed the foreign
+key at write time** — five tests, none of them about foreign keys.
+
+**An implicit reference is a call site carrying a value nobody wrote** —
+§12.95.4's shape in DDL, and worse than the Swift version because the value it
+carries is *whatever the schema says today*, which a later migration is free to
+change. The column is now named.
+
+Worth recording that the schema was never wrong: `id` is UNIQUE and a legal
+target, the reference simply pointed elsewhere. **A migration that applies
+cleanly has not been tested.**
+
+### 12.160.3 The account is a superset of the permission
+
+`RemovalFamily` has six cases where `ReconcileFamily` has five. `work_queue` is
+pruned by `importWorkQueue` with no permission at all — B8's operational state,
+rebuilt from the app's own queue rather than authored — so it never belonged to
+414's gate. **It does belong to the account**: this table exists to say where
+every deleted row went, and a family left out for needing no permission is a
+hole in a total claiming to have none.
+
+`everyRemovalCounterIsNamed` asserts `removals` decomposes `removedTotal`
+exactly. RULE 2 checks every declared counter is IN the sum; this checks the
+record takes the sum back apart. `theTwoVocabulariesAgree` is the tripwire over
+the join and **says which way it points** (§12.129): every reconcilable family
+must be recordable, and the reverse is deliberately not an equality.
+
+### 12.160.4 An old row says it cannot name a family
+
+Runs that removed rows before 415 have a count and no families. Their line reads
+`… · 1 row · family not recorded — the run predates 415` rather than printing a
+removal that appears to have come from nowhere. §12.15, and
+`aPopulatedDatabaseUpgrades` builds exactly that row against the pre-415 chain
+and asserts the sentence.
+
+`removed by family, durably:` prints **every family including the zeros** — a
+family that only appears once it has lost something cannot be told from one
+nobody wired in (§12.54.2). It sums over the removal table rather than over
+`migration_run.rowsRemoved`, because the table's runs are the ones that survive.
+
+### 12.160.5 One reading, not a campaign
+
+**No device campaign.** 1C's prompt asks for one *"only after family-scoped
+reconciliation is wired to a real control"* — that was 414's, and it ran. 415 is
+an additive migration and a diagnostic line: it writes nothing the athlete can
+see, gates nothing, and changes no store.
+
+**One reading is owed**, and it rides along with the next export: `Migrations:`
+and `Expected:` must both gain `2026-08-20-run-removal` (nineteen), and
+`removed by family, durably: … all zeros` must appear in the **Import ledger**
+export. Zeros are the correct answer on that device — the removals it once had
+were pruned before this patch existed, and nothing has deleted since.
+
+---
+
 ## 12.159 Reconciliation becomes family-scoped — patch 414, topic 1C
 
 One permission covered five families. **A save in any authored family could

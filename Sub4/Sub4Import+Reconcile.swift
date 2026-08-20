@@ -120,6 +120,46 @@ nonisolated enum ReconcileFamily: String, CaseIterable, Equatable, Sendable {
     }
 }
 
+/// **EVERY FAMILY A RUN CAN REMOVE ROWS FROM — patch 415, §12.160.**
+///
+/// **A SUPERSET OF `ReconcileFamily`, AND THE EXTRA ONE IS THE POINT.**
+/// `work_queue` is pruned by `importWorkQueue` with no `reconcile` guard at
+/// all — it is B8's operational state, rebuilt from the app's own queue rather
+/// than authored by the athlete, so it never belonged to the permission
+/// system. It does belong to the ACCOUNT: this table exists to say where every
+/// deleted row went, and a family left out because it needs no permission
+/// would be a hole in a total that claims to have none.
+///
+/// §6: *an account beats a list. Five counters can each be right while the set
+/// is missing a case; a residual cannot hide one.* `Report.removals` decomposes
+/// `removedTotal` exactly, and `everyRemovalCounterIsNamed` asserts it —
+/// RULE 2 checks the declaration is in the sum, and this checks the RECORD
+/// takes the sum apart again.
+///
+/// The five shared names match `ReconcileFamily`'s `rawValue`s, and
+/// `theTwoVocabulariesAgree` is the tripwire over that join. §12.129: when you
+/// build one, write down which way it points.
+nonisolated enum RemovalFamily: String, CaseIterable, Equatable, Sendable {
+    case notes
+    case matchDecisions
+    case reviews
+    case commutes
+    case moves
+    /// B8's, pruned without a permission because nothing authored it.
+    case workQueue
+
+    var label: String {
+        switch self {
+        case .notes:          "notes"
+        case .matchDecisions: "match decisions"
+        case .reviews:        "reviews"
+        case .commutes:       "commute decisions"
+        case .moves:          "moved sessions"
+        case .workQueue:      "work queue items"
+        }
+    }
+}
+
 /// Which families this run may delete from, and if none, why not.
 nonisolated enum Reconciliation: Equatable, Sendable {
 
