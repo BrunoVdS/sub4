@@ -662,7 +662,13 @@ tripwires, which become self-referential the day their slice flips. §12.168.
   the roll-up is a BUTTON. **Rows 3 and 3b of part 2 passed too.** Everything
   still outstanding — the two traceless activities and the Release cost — is
   **`docs/DEVICE-CAMPAIGN-TRACE-AND-COST.md`**, written at 423, self-contained,
-  and **one Release build for both parts**.
+  and **one Release build for both parts**. **PART A PASSED on 20 August**: an
+  activity with a zero-length trace draws **no** HR panel, **no** profile and
+  **no** route — one sentence in their place, *"No recorded profile for this one
+  — entered by hand, or recorded without GPS"* — and it scrolls, rotates and
+  dismisses without a crash. §12.142.6's uncovered case is closed. **Row 9 could
+  not discriminate**: both are hand-entered and have no splits either, so
+  "splits survive an absent trace" was never asked.
   **421 replaced the stopwatch with an instrument** — process start, first view,
   first free main-thread turn and the longest 60 Hz stall over ten seconds,
   three-valued and with a poisoned-window state (§12.166). **422 made the two
@@ -756,13 +762,25 @@ run happened. §12.135–§12.150.
    recovery screen `RootView` lacks.
 9. **D8** — stabilise one release window, then remove the JSON writers.
 
-**B4's cost:** `Detail store built: 0.872 / 0.930 / 0.880 s` from the database
-in Debug, against 0.443 s of files in Debug and 3.925 s before 397. **A Release
-reading is still owed** — the campaign's part 3 did not run — and the file side
-is 0.399 s there. **Since 421 the app also measures the launch as the user
-experiences it**: `Launch:` in *The file* gives the time to a free main thread
-and the longest main-thread stall, which is what a construction timestamp
-cannot say (§12.166).
+**B4's cost — AND THE NUMBER THIS PROJECT HAS BEEN QUOTING IS THE NOISY ONE.**
+`Detail store built` has read **1.233 / 0.880 / 0.700 / 0.683 s** from the
+database in Debug — a factor of 1.8 on one build configuration — against 0.443 s
+of files in Debug and 3.925 s before 397. **A Release reading is STILL owed**;
+the file side is 0.399 s there.
+
+**AND THE LAUNCH IS NOW MEASURED AS THE USER EXPERIENCES IT — 421 — WITH A
+FINDING.** Device, 20 August, two launches in Debug:
+`first free main-thread turn: 0.022 s` and **`longest main-thread stall:
+1.053 s / 1.046 s`** — seven milliseconds apart, and **larger than the store's
+construction both times.** The app paints in 22 ms and then stops answering for
+a second. `TodayView`'s `.task { load.recomputeIfNeeded() }` is `@MainActor` and
+reads `DetailStore.shared.streamCount`, which CONSTRUCTS the store — so one
+main-actor task builds it and then walks 699 activities, right after first
+paint. **B4's plan did not hold, and 394/395 moved the cost rather than removing
+it** — §12.155's shape: a cost that stopped being measured where it was and was
+not measured where it went. **Arithmetic plus one call path is not
+attribution**; the instrument reports the largest gap, not when it began.
+§12.170.
 
 Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
 `review-data-pool.md` and `ADR-0002-strava-retirement.md`.

@@ -8962,6 +8962,65 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.170 The app paints in 22 ms and then freezes for a second — device, 20 August 2026, patch 423
+
+**`longest main-thread stall: 1.046 s` and `1.053 s`, over two launches, seven
+milliseconds apart.** Beside them, `first free main-thread turn: 0.032 s` and
+`0.022 s`.
+
+**Both are true and they describe opposite experiences.** The app reaches a
+responsive main thread almost immediately — and then, still inside the first ten
+seconds, stops answering for a full second. A single figure could not have said
+that; 421 exists because `Detail store built` is a construction timestamp and
+this is not.
+
+### 12.170.1 What the arithmetic says, and it is not a guess about which store
+
+| launch | `Detail store built` | `longest stall` | residual |
+|---|---|---|---|
+| 1 | 0.700 s | 1.053 s | 0.353 s |
+| 2 | 0.683 s | 1.046 s | 0.363 s |
+
+**The stall EXCEEDS the store's construction, consistently, by about a third of
+a second.** §12.166's rubric said *close to `Detail store built` → that read is
+on the main actor and B4's plan did not hold*. It is not close; it is larger.
+
+The path is in the source and it is short. `TodayView` has
+`.task { load.recomputeIfNeeded() }`. `LoadStore.recomputeIfNeeded` is
+`@MainActor` and its first act is `currentSignature()`, which reads
+`DetailStore.shared.streamCount` — **and reading `DetailStore.shared` is what
+constructs it.** So one main-actor task builds the store (0.69 s) and then walks
+699 activities to rebuild the load series (~0.36 s), back to back, immediately
+after first paint.
+
+**This is B4's plan not holding, measured for the first time.** 394 moved the
+two largest families out of the launch bootstrap because 3.963 s in front of
+first paint was intolerable; 395 moved them into `DetailStore`'s own
+construction. That fixed *time to first paint* — 0.022 s, and the numbers prove
+it — and moved the cost to the first frame after it, where nothing was looking.
+**§12.155's shape again: a cost that stopped being measured where it used to be,
+and was not measured where it went.**
+
+### 12.170.2 What it is not, and what would settle it
+
+The instrument reports the largest gap, **not when the gap began**. The
+attribution above is arithmetic plus one call path, which is strong and is still
+inference: any other main-actor work of the same size in the first ten seconds
+would produce the same reading. **Recording the offset from launch at which the
+longest stall started** would settle it in one launch — the stall would either
+line up with the construction or it would not.
+
+**It is not a Release measurement.** `Configuration` read **Debug** on both
+launches, so §5.6's owed Release figure for `Detail store built` is still owed
+and every number here is a Debug number.
+
+**And the Debug figure is noisy while the stall is not.** `Detail store built`
+has now read 1.233, 0.880, 0.700 and 0.683 s on the same build configuration —
+a factor of 1.8 — while the two stalls taken minutes apart differ by 7 ms. **The
+number that varies is the one this project has been quoting for eight patches.**
+
+---
+
 ## 12.169 Named, dated, and still out of reach — patch 423
 
 422 gave each traceless id its date so the activity could be found by hand. **The

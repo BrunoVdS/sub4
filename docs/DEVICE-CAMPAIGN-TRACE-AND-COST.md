@@ -9,6 +9,7 @@
 | **ADR** | §12.142.6 (what B4 left uncovered), §12.166 (the instrument), §12.169 (the way in) |
 | **Contract** | `docs/PLAN-database-cutover-findings-and-ai-prompts.md`, "Manual test campaign contract" — all ten parts below |
 | **Time** | twenty minutes, **one Release build**, no Debug build needed |
+| **State** | **Part A PASSED in Debug on 20 August — rows 2–8 and 9b; row 9 not applicable. Part B ran in DEBUG, so row 1 failed and the Release figures are still owed. §10** |
 
 **Read this document alone.** It repeats what it needs from B34 rather than
 pointing at it: a campaign that requires another campaign open beside it is a
@@ -275,12 +276,98 @@ ADR.** What reaches the ADR from rows 5–9b is a sentence describing what drew.
 
 ## 10. Result
 
-*Not yet run.*
+**Run 20 August 2026, 22:38–22:42, patch 423 — IN DEBUG, not Release.**
 
-Record it here as `### 10.1 Part A — <date>, <time>, patch <n>` and
-`### 10.2 Part B`, row by row, and say plainly which rows were **not**
-exercised. **A partial campaign is evidence for its rows only, never for the
-whole slice.**
+### 10.1 Row 1 FAILED, and it changes what part B means
+
+`Configuration` read **Debug**. Every figure below is a Debug figure and
+**§5.6's owed Release `Detail store built` is still owed.** Rows 10 and 13–15
+have Debug readings recorded here and their Release readings outstanding.
+
+### 10.2 Part A — the two activities with no trace. Rows 2–8 and 9b PASS
+
+| row | reading | |
+|---|---|---|
+| 2 | `asked, nothing there: 2`, and on screen `15225521352 · 2025-07-24 ›` and `16415953236 · 2025-11-10 ›`, each with a chevron | ✅ |
+| 3 | `unexplained: 0`, `none to name` beneath it | ✅ |
+| 4 | both entries opened their activity's detail | ✅ **423 works** |
+| 4b | neither said `— not in the activity list` | ✅ |
+| 5 | **HEART RATE absent.** In its place: *"No recorded profile for this one — entered by hand, or recorded without GPS."* | ✅ |
+| 6 | **PROFILE absent — the whole panel, so all four tabs.** Same explanatory row | ✅ |
+| 7 | **ROUTE absent.** No map, no 0,0 | ✅ |
+| 8 | both drew, scrolled, rotated to landscape and back, dismissed. **No crash** | ✅ |
+| 9b | the summary card is complete on both — distance, moving, **speed** (a Ride, so speed rather than pace) and climb | ✅ |
+
+**The app does not draw a chart over nothing.** It replaces the panels with one
+sentence that says why, which is §12.15's shape in the UI rather than in a
+diagnostic. The uncovered case §12.142.6 named after 398's device run is now
+covered, and it passed.
+
+**The two activities are swims logged as commute rides** — `Zwemmen ·
+Hazewinkel`, 1.5 km in 32:00, and `Zwemmen · Wezenberg`, 2.6 km in 1:10:00,
+both `Climb 0 m`. That is what an activity Strava had no stream for turns out to
+be: **entered by hand.** Worth writing down, because it explains the bucket
+rather than merely counting it.
+
+### 10.2a ROW 9 COULD NOT DISCRIMINATE, AND THAT IS THE CAMPAIGN'S FAULT
+
+Row 9 asked whether **KILOMETRE SPLITS** still draw when the trace is absent,
+on the argument that splits come from `activity_split` and must not be taken
+down with the trace. **The splits are absent on both activities — and that
+proves nothing**, because a hand-entered activity has no splits either. The row
+conflated *the trace is missing* with *the activity has splits*, and these two
+have neither.
+
+**Not a failure and not a pass. Not applicable.** The question row 9 was written
+to ask is still open and cannot be asked here: it needs an activity **with**
+splits and **without** a trace, and this device does not appear to have one.
+Same family as 409's control 4, which did not discriminate the order it was
+written for and said so. §12.15 applied to a test rather than to a screen.
+
+### 10.3 Part B — two launches, in Debug. Rows 11, 12 and 16 PASS
+
+| row | launch 1 | launch 2 | |
+|---|---|---|---|
+| 10 | `Detail store built: 0.700 s` | `0.683 s` | Debug. **The Release figure is still owed.** |
+| 11 | `stall window: closed — 10.0 s` | same | ✅ |
+| 12 | `left the app during the window: no` | same | ✅ |
+| 13 | `first free main-thread turn: 0.022 s` | `0.032 s` | recorded |
+| 14 | **`longest main-thread stall: 1.053 s`** over 536 samples | **`1.046 s`** over 536 samples | recorded — **and this is the finding** |
+| 15 | `before our first line: 0.046 s` | `0.021 s` | recorded |
+| 16 | the two launches agree — stalls 7 ms apart | | ✅ |
+
+Also: `Bootstrap read: 0.023 s` and `0.026 s`.
+
+### 10.4 THE FINDING — the app paints in 22 ms and then freezes for a second
+
+`first free main-thread turn: 0.022 s` and `longest main-thread stall: 1.05 s`
+are both true and describe opposite experiences. The app becomes responsive
+almost immediately and then, still inside the first ten seconds, stops answering
+for a full second.
+
+**The stall EXCEEDS the store's construction by about a third of a second,
+twice** — 1.053 against 0.700, and 1.046 against 0.683. §12.166's rubric said
+*close to `Detail store built` → that read is on the main actor and B4's plan
+did not hold*. It is not close; it is larger.
+
+The path is short and it is in the source. `TodayView` has
+`.task { load.recomputeIfNeeded() }`; `LoadStore.recomputeIfNeeded` is
+`@MainActor`; its first act reads `DetailStore.shared.streamCount`, **and
+reading `DetailStore.shared` is what constructs it.** One main-actor task builds
+the store and then walks 699 activities to rebuild the load series, back to
+back, immediately after first paint.
+
+**That is arithmetic plus one call path, and it is still inference.** The
+instrument reports the largest gap, not when it began. §12.170.2 says what would
+settle it. **Do not act on this as though it were attributed.**
+
+### 10.5 Outstanding
+
+- **Row 1 and the Release readings of rows 10 and 13–15.** Build Release, and
+  run part B again. Part A does not need repeating unless you want the
+  Release-optimisation coverage §11 mentions.
+- **Row 9 cannot be run on this device** and is recorded as not applicable.
+- **The stall's cause is unattributed.** See §12.170.2.
 
 ---
 
