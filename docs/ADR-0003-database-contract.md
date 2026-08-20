@@ -8962,6 +8962,71 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.172 The stall contains the read — device, 20 August 2026, patch 424, **in Release**
+
+**Row 15c is answered, and it is fully contained, twice.**
+
+| launch | stall span | construction span | contained | before | after | residual |
+|---|---|---|---|---|---|---|
+| A | 0.035 → **0.676** | 0.199 → 0.596 | **yes** | 0.164 s | 0.080 s | 0.244 s |
+| B | 0.051 → **0.613** | 0.199 → 0.522 | **yes** | 0.148 s | 0.091 s | 0.239 s |
+
+`DetailStore`'s construction begins and ends **inside** the longest main-thread
+stall, on both launches. §12.170.1's inference is confirmed: **the app becomes
+responsive in 20–29 ms and is then blocked for six-tenths of a second, and the
+detail store's read is roughly sixty per cent of it.**
+
+**And the shape is one uninterrupted block, not three events.** ~0.15 s of work
+from first paint before the read starts, the read itself, then ~0.08 s more —
+the same profile on both launches to within 16 ms. The leading fragment starts
+at 0.035 s and 0.051 s, which is first-view time (0.028 s, 0.035 s): **the stall
+begins at first paint.**
+
+### 12.172.1 §5.6's owed figure lands, and B4 is not a regression in the build that ships
+
+**`Detail store built: 0.323 s` and `0.397 s`, from the database, in Release.**
+
+| | Debug | Release |
+|---|---|---|
+| the files | 0.443 s | 0.399 s |
+| **the database** | 0.683 – 1.233 s | **0.323 – 0.397 s** |
+
+The fourth corner has been owed since B4 landed. **In Release the database side
+is level with or faster than the files it replaced** — 0.323 and 0.397 against
+0.399 — while in Debug it looked like a 1.5× to 2.8× regression. Every figure
+this project has quoted about B4's cost came from the build nobody ships.
+
+`Bootstrap read` is 0.011 s and 0.016 s; `before our first line` 0.014 s and
+0.015 s.
+
+### 12.172.2 The fix is NOT the one named at §12.171.3, and the measurement is why
+
+§12.171.3 said the defect was `LoadStore.currentSignature()` — commented *"cheap
+fingerprint"* — reading `DetailStore.shared.streamCount` and thereby
+constructing the store. **The observation is true and fixing it would change
+nothing**, because `recompute()`, two lines later, does `let details =
+DetailStore.shared` itself. The store gets built either way.
+
+**So the thing to move is the launch recompute, not the fingerprint.** That is a
+different and larger change — making the construction async, or deferring the
+first `recomputeIfNeeded()` past the frame that wants to be interactive — and it
+needs its own investigation rather than a one-line edit argued from a call path.
+
+**This is exactly what 424 was built to prevent.** A patch written on §12.171.3's
+reasoning would have been a real change to a real file, would have passed its
+tests, and would have moved the stall by nothing.
+
+### 12.172.3 One number to be careful with
+
+`beginning 0.199 s` is **identical to the millisecond on both launches**, while
+every other offset moved — pre-main 0.014/0.015, first view 0.028/0.035, stall
+start 0.035/0.051. A deterministic path can genuinely land twice on the same
+millisecond, and this one is short and does the same work each time. It is
+recorded here as the one figure in this run worth a third reading before it is
+built on.
+
+---
+
 ## 12.171 Two durations with no common origin — patch 424
 
 423 measured a **1.05 s** main-thread stall and a **0.69 s** `DetailStore`

@@ -773,28 +773,39 @@ run happened. §12.135–§12.150.
    recovery screen `RootView` lacks.
 9. **D8** — stabilise one release window, then remove the JSON writers.
 
-**B4's cost — AND THE NUMBER THIS PROJECT HAS BEEN QUOTING IS THE NOISY ONE.**
-`Detail store built` has read **1.233 / 0.880 / 0.700 / 0.683 s** from the
-database in Debug — a factor of 1.8 on one build configuration — against 0.443 s
-of files in Debug and 3.925 s before 397. **A Release reading is STILL owed**;
-the file side is 0.399 s there.
+**B4's cost — §5.6's OWED RELEASE FIGURE LANDED ON 20 AUGUST AND IT CHANGES THE
+ANSWER.**
 
-**AND THE LAUNCH IS NOW MEASURED AS THE USER EXPERIENCES IT — 421 — WITH A
-FINDING.** Device, 20 August, two launches in Debug:
-`first free main-thread turn: 0.022 s` and **`longest main-thread stall:
-1.053 s / 1.046 s`** — seven milliseconds apart, and **larger than the store's
-construction both times.** The app paints in 22 ms and then stops answering for
-a second. `TodayView`'s `.task { load.recomputeIfNeeded() }` is `@MainActor` and
-reads `DetailStore.shared.streamCount`, which CONSTRUCTS the store — so one
-main-actor task builds it and then walks 699 activities, right after first
-paint. **B4's plan did not hold, and 394/395 moved the cost rather than removing
-it** — §12.155's shape: a cost that stopped being measured where it was and was
-not measured where it went. **Arithmetic plus one call path is not
-attribution**; the instrument reported the largest gap, not when it began.
-§12.170. **424 GIVES BOTH DURATIONS AN ORIGIN** — `StallWatch.longestBeganAt`
-and `DetailStoreTiming.beganAt`, each printed as `beginning N s after our first
-line`, both sampled at the START of what they measure. **One launch now settles
-whether the store's construction sits inside the stall.** Unrun. §12.171.
+| | Debug | **Release** |
+|---|---|---|
+| the files | 0.443 s | 0.399 s |
+| **the database** | 0.683 – 1.233 s | **0.323 / 0.397 s** |
+
+**In the build that ships, the database side is level with or faster than the
+files it replaced.** In Debug it looked like a 1.5× to 2.8× regression — and
+every figure this project quoted about B4's cost for eight patches came from the
+build nobody ships. §12.172.1.
+
+**AND THE LAUNCH IS MEASURED AS THE USER EXPERIENCES IT SINCE 421 — WITH A
+FINDING, NOW ATTRIBUTED.** Release, 20 August, two launches:
+`first free main-thread turn: 0.020 / 0.029 s` and **`longest main-thread stall:
+0.562 / 0.641 s`**. **The app becomes responsive in 20 ms and is then blocked
+for six-tenths of a second.**
+
+**424 gave both durations an origin and row 15c is answered: the store's
+construction sits INSIDE the stall, twice.** A 0.035→0.676 stall around a
+0.199→0.596 read; a 0.051→0.613 stall around a 0.199→0.522 read. One
+uninterrupted block starting at first paint — ~0.15 s, then the read (≈60% of
+it), then ~0.08 s. §12.170, §12.171, §12.172.
+
+**B4's plan did not hold: 394/395 moved the cost out of first paint rather than
+removing it**, and nothing measured where it went — §12.155's shape.
+**AND THE FIX IS NOT THE ONE §12.171.3 PREDICTED.** `currentSignature()`'s
+"cheap fingerprint" really does construct the store, and repairing that would
+change nothing, because `recompute()` reads `DetailStore.shared` itself two
+lines later. **The launch recompute is what has to move, not the fingerprint** —
+a larger change needing its own investigation. §12.172.2, and it is precisely
+what measuring before fixing was for.
 
 Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
 `review-data-pool.md` and `ADR-0002-strava-retirement.md`.

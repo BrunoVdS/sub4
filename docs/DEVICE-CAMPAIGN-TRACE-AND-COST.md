@@ -10,7 +10,7 @@
 | **Contract** | `docs/PLAN-database-cutover-findings-and-ai-prompts.md`, "Manual test campaign contract" — all ten parts below |
 | **Time** | twenty minutes, **one Release build**, no Debug build needed |
 | **Re-run at** | patch **424**, which adds rows 15a–15c — the two offsets that place the stall and the store's construction on one timeline (§12.171) |
-| **State** | **Part A PASSED in Debug on 20 August — rows 2–8 and 9b; row 9 not applicable. Part B ran in DEBUG, so row 1 failed and the Release figures are still owed. §10** |
+| **State** | **COMPLETE except row 9 (not applicable). Part A passed in Debug; part B passed in RELEASE at 424, and row 15c attributes the stall: the detail store's read sits INSIDE it, twice. §10** |
 
 **Read this document alone.** It repeats what it needs from B34 rather than
 pointing at it: a campaign that requires another campaign open beside it is a
@@ -398,16 +398,66 @@ back, immediately after first paint.
 instrument reports the largest gap, not when it began. §12.170.2 says what would
 settle it. **Do not act on this as though it were attributed.**
 
-### 10.5 Outstanding
+### 10.6 PART B RE-RUN IN RELEASE — 20 August 23:31–23:33, patch 424. ROWS 1 AND 8–16 PASS
 
-- **Row 1 and the Release readings of rows 10 and 13–15.** Build Release, and
-  run part B again. Part A does not need repeating unless you want the
-  Release-optimisation coverage §11 mentions.
-- **Row 9 cannot be run on this device** and is recorded as not applicable.
-- **Rows 15a–15c are new at 424 and settle the attribution.** They need the same
-  run, so the Release build answers row 1, the Release figures and the cause of
-  the stall together — which is the whole reason 424 was built before anything
-  was changed. §12.171.
+| row | launch A | launch B | |
+|---|---|---|---|
+| 1 | **Configuration: Release**, Source patch 424, Built 23:30 | same | ✅ |
+| 10 | `Detail store built: 0.397 s` | **`0.323 s`** | **§5.6's owed figure** |
+| 11 | `stall window: closed — 10.0 s` | same | ✅ |
+| 12 | `left the app during the window: no` | same | ✅ |
+| 13 | `first free main-thread turn: 0.029 s` | `0.020 s` | recorded |
+| 14 | `longest main-thread stall: 0.641 s` over 543 samples | `0.562 s` over 561 | recorded |
+| 15 | `before our first line: 0.014 s` | `0.015 s` | recorded |
+| 15a | stall `beginning 0.035 s` | `beginning 0.051 s` | recorded |
+| 15b | store `beginning 0.199 s` | `beginning 0.199 s` | recorded |
+| 16 | the two agree — stalls 0.562/0.641, stores 0.323/0.397 | | ✅ |
+
+Also `Bootstrap read: 0.016 s` and `0.011 s`.
+
+### 10.7 ROW 15c — THE ANSWER, AND IT IS CONTAINED TWICE
+
+| launch | stall span | construction span | contained |
+|---|---|---|---|
+| A | 0.035 → **0.676** | 0.199 → 0.596 | **yes** |
+| B | 0.051 → **0.613** | 0.199 → 0.522 | **yes** |
+
+`DetailStore`'s construction begins and ends **inside** the longest stall, on
+both launches. **The app becomes responsive in 20–29 ms and is then blocked for
+six-tenths of a second, of which the detail store's read is about sixty per
+cent.**
+
+One uninterrupted block, not three events: ~0.15 s from first paint before the
+read starts, the read, then ~0.08 s more — the same profile on both launches to
+within 16 ms. **The stall begins at first paint** (0.035 s and 0.051 s against
+first-view times of 0.028 s and 0.035 s).
+
+### 10.8 And the Release figure changes what B4 cost
+
+| | Debug | Release |
+|---|---|---|
+| the files | 0.443 s | 0.399 s |
+| **the database** | 0.683 – 1.233 s | **0.323 – 0.397 s** |
+
+**In the build that ships, the database side is level with or faster than the
+files it replaced.** In Debug it looked like a 1.5× to 2.8× regression, and
+every figure this project has quoted about B4's cost came from the build nobody
+ships. §12.172.1.
+
+### 10.9 Outstanding
+
+**Everything except row 9 has now been exercised.**
+
+- **Row 9 cannot be run on this device** and is recorded as not applicable — it
+  needs an activity with splits and without a trace, and there is none.
+- **Part A ran in Debug**, so a rendering defect appearing only under Release
+  optimisation would still be missed. Cheap to close now that a Release build is
+  installed: steps 4–9, ten minutes.
+- **`beginning 0.199 s` is identical to the millisecond on both launches** while
+  every other offset moved. Probably a genuinely deterministic path; worth a
+  third reading before anything is built on it. §12.172.3.
+- **The stall is attributed and not fixed.** §12.172.2 — and the fix is not the
+  one §12.171.3 predicted.
 
 ---
 
