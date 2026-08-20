@@ -24,17 +24,22 @@ struct LaunchTimingTests {
     @Test("A timer firing exactly on time records no stall")
     func onTimeIsZero() {
         var w = StallWatch()
-        for _ in 0..<10 { w.tick(gap: 1.0 / 60, nominal: 1.0 / 60) }
+        for i in 0..<10 {
+            w.tick(gap: 1.0 / 60, nominal: 1.0 / 60, at: Double(i + 1) / 60)
+        }
         #expect(w.samples == 10)
         #expect(w.longest == 0)
+        // NOTHING TO PLACE, and that is not the same as a place nobody
+        // recorded — patch 424.
+        #expect(w.longestBeganAt == nil)
     }
 
     @Test("The longest gap wins, not the last one")
     func theLongestGapWins() {
         var w = StallWatch()
-        w.tick(gap: 0.020, nominal: 0.016)
-        w.tick(gap: 0.900, nominal: 0.016)
-        w.tick(gap: 0.017, nominal: 0.016)
+        w.tick(gap: 0.020, nominal: 0.016, at: 0.020)
+        w.tick(gap: 0.900, nominal: 0.016, at: 0.920)
+        w.tick(gap: 0.017, nominal: 0.016, at: 0.937)
         #expect(w.samples == 3)
         // 0.900 - 0.016. The nominal interval is subtracted, so the figure is
         // time the main thread was NOT available rather than wall time.
@@ -44,8 +49,49 @@ struct LaunchTimingTests {
     @Test("A tick that beats its deadline does not make the stall negative")
     func earlyDoesNotGoNegative() {
         var w = StallWatch()
-        w.tick(gap: 0.001, nominal: 0.016)
+        w.tick(gap: 0.001, nominal: 0.016, at: 0.001)
         #expect(w.longest == 0)
+        #expect(w.longestBeganAt == nil)
+    }
+
+    // MARK: WHERE the stall was — patch 424
+
+    /// **THE GAP BEGAN WHERE IT BEGAN, NOT WHERE IT WAS NOTICED.**
+    ///
+    /// A timer only learns about a stall when it finally fires, which is at
+    /// the END of it. Recording that instant would put every stall a full
+    /// stall-length too late — and for the 1.05 s stall 423 found, a whole
+    /// second is the difference between "inside the detail store's
+    /// construction" and "after it". §12.171.
+    @Test("The stall is placed at its start, not at the tick that noticed it")
+    func theStallIsPlacedAtItsStart() throws {
+        var w = StallWatch()
+        w.tick(gap: 0.016, nominal: 0.016, at: 0.016)
+        w.tick(gap: 1.050, nominal: 0.016, at: 1.066)
+        let began = try #require(w.longestBeganAt)
+        // 1.066 - 1.050. NOT 1.066, which is when the timer found out.
+        #expect(abs(began - 0.016) < 0.0001)
+    }
+
+    @Test("A later, smaller stall does not move the recorded start")
+    func aSmallerStallDoesNotMoveIt() throws {
+        var w = StallWatch()
+        w.tick(gap: 1.050, nominal: 0.016, at: 1.050)
+        w.tick(gap: 0.200, nominal: 0.016, at: 5.000)
+        #expect(abs(w.longest - 1.034) < 0.0001)
+        let began = try #require(w.longestBeganAt)
+        #expect(abs(began - 0.0) < 0.0001)
+    }
+
+    @Test("A start is never negative, however the arithmetic lands")
+    func theStartIsNeverNegative() throws {
+        var w = StallWatch()
+        // A gap longer than the offset it ended at cannot happen on a real
+        // clock; the clamp is what stops it printing a launch that began
+        // before the app did.
+        w.tick(gap: 2.0, nominal: 0.016, at: 1.0)
+        let began = try #require(w.longestBeganAt)
+        #expect(began == 0)
     }
 
     // MARK: The three states — §12.15
@@ -100,6 +146,37 @@ struct LaunchTimingTests {
         t.windowSeconds = 10
         #expect(t.line.contains("longest stall 0.880 s"))
         #expect(t.diagnosticLines.contains { $0.contains("closed — 10.0 s") })
+    }
+
+    /// The paste has to carry the offset, or the whole of 424 stops at the
+    /// value type.
+    @Test("The stall line names when the stall began")
+    func theStallLineNamesWhenItBegan() throws {
+        var t = LaunchTiming()
+        t.longestStall = .seconds(1.046)
+        t.longestStallBeganAt = 0.212
+        t.stallSamples = 536
+        let line = try #require(t.diagnosticLines.first {
+            $0.contains("longest main-thread stall")
+        })
+        #expect(line.contains("1.046 s"))
+        #expect(line.contains("536 samples"))
+        #expect(line.contains("beginning 0.212 s after our first line"))
+    }
+
+    /// **A STALL OF NOTHING HAS NO BEGINNING, AND SAYS SO** — §12.15. Printed
+    /// as `0.000 s` it would be indistinguishable from a stall at the instant
+    /// of launch, which is the one place a launch stall is most likely to be.
+    @Test("No stall says so rather than placing one at zero")
+    func noStallSaysSo() throws {
+        var t = LaunchTiming()
+        t.longestStall = .seconds(0)
+        t.longestStallBeganAt = nil
+        let line = try #require(t.diagnosticLines.first {
+            $0.contains("longest main-thread stall")
+        })
+        #expect(line.contains("no tick ran late"))
+        #expect(!line.contains("beginning"))
     }
 
     /// A window the app left is not a stall measurement at all.

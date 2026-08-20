@@ -8962,6 +8962,64 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.171 Two durations with no common origin — patch 424
+
+423 measured a **1.05 s** main-thread stall and a **0.69 s** `DetailStore`
+construction, and could not say whether one contained the other. Both are
+durations. **Neither said when it started**, so lining them up was arithmetic
+plus a call path — a good inference, and §12.170.2 called it what it was.
+
+**424 gives both an origin: seconds since `Sub4App.init`.**
+
+- `StallWatch.longestBeganAt`, printed on the stall's own line as
+  `beginning 0.212 s after our first line`.
+- `DetailStoreTiming.beganAt`, printed the same way on `Detail store built`.
+
+One launch now settles it. If the store's construction begins inside the
+stall's span, it is the cause; if it begins after the stall ends, the stall is
+something else entirely and 423's reading has been over-read.
+
+### 12.171.1 The gap began where it began, not where it was noticed
+
+**A timer only learns about a stall when it finally fires, which is at the END
+of it.** Recording that instant would place every stall one full stall-length
+too late — and for a 1.05 s stall, a whole second is exactly the difference
+between *inside the detail store's construction* and *after it*. So the start is
+`offset - gap`, and `theStallIsPlacedAtItsStart` is the test: two ticks, the
+second 1.050 s late at an offset of 1.066 s, and the answer must be **0.016**
+rather than 1.066. Sabotaged to `offset`; three tests failed.
+
+**`beganAt` is sampled BEFORE the read, not after**, for the same reason. Taken
+afterwards it would name the moment the read ended, which is the one instant
+that cannot be lined up against a stall's beginning.
+
+### 12.171.2 A stall of nothing has no beginning
+
+`longestBeganAt` is `nil` when no tick ever ran late, and the line then reads
+`— no tick ran late` rather than `beginning 0.000 s`. §12.15: a stall placed at
+zero and a launch with no stall at all would be the same six characters, and
+**zero is exactly where a launch stall is most likely to be**, so that collision
+is the worst one available.
+
+`at:` was added to `tick` **without a default**, so the compiler enumerated
+every caller rather than letting an unconverted one keep compiling against the
+old meaning — the same reason 416 removed `Reconciliation.isRunning` instead of
+deprecating it. `DetailStoreTiming.beganAt` is defaulted and **last**, because
+there the opposite is true: four existing call sites construct it and none of
+them is wrong.
+
+### 12.171.3 What this does not do
+
+**It does not fix anything.** If the attribution lands on `DetailStore`, the
+defect is that `LoadStore.currentSignature()` — commented *"cheap fingerprint"*
+— reads `DetailStore.shared.streamCount`, and **reading `DetailStore.shared` is
+what constructs it**. A guard written to avoid an expensive recompute performs
+the most expensive read in the app before it can decide whether to skip. That is
+the next patch and it is deliberately not this one: **a number measured once
+should not drive a redesign before it is attributed.**
+
+---
+
 ## 12.170 The app paints in 22 ms and then freezes for a second — device, 20 August 2026, patch 423
 
 **`longest main-thread stall: 1.046 s` and `1.053 s`, over two launches, seven

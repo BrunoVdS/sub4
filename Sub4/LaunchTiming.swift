@@ -91,14 +91,30 @@ nonisolated struct StallWatch: Equatable, Sendable {
     /// Seconds. The nominal interval is subtracted, so a timer firing exactly
     /// on time records zero.
     private(set) var longest: Double = 0
+
+    /// **WHEN THE WINNING GAP BEGAN, AS AN OFFSET FROM LAUNCH — patch 424.**
+    ///
+    /// A duration says how long the app was unresponsive. It does not say
+    /// WHEN, and without that the stall cannot be lined up against anything
+    /// else the launch did — which left 423's finding as arithmetic plus a
+    /// call path rather than an attribution. §12.170.2.
+    ///
+    /// `nil` means no tick ever ran late: **nothing to place, which is not the
+    /// same as a place nobody recorded.**
+    private(set) var longestBeganAt: Double?
     private(set) var samples = 0
 
-    /// `gap` is the observed interval between this tick and the previous one;
-    /// `nominal` is what it should have been.
-    mutating func tick(gap: Double, nominal: Double) {
+    /// `gap` is the observed interval between this tick and the previous one,
+    /// `nominal` is what it should have been, and `offset` is when THIS tick
+    /// happened, measured from launch. The gap therefore began `gap` seconds
+    /// before that — which is the number worth keeping.
+    mutating func tick(gap: Double, nominal: Double, at offset: Double) {
         samples += 1
         let late = gap - nominal
-        if late > longest { longest = late }
+        if late > longest {
+            longest = late
+            longestBeganAt = max(0, offset - gap)
+        }
     }
 }
 
@@ -133,6 +149,10 @@ nonisolated struct LaunchTiming: Equatable, Sendable {
     var firstLineToFirstView: Reading = .notYet("no view has appeared")
     var firstFreeTurn: Reading = .notYet("the main thread has not been free")
     var longestStall: Reading = .notYet("the window has not opened")
+
+    /// Offset from `Sub4App.init` at which the longest stall began. `nil` when
+    /// nothing ran late — see `StallWatch.longestBeganAt`.
+    var longestStallBeganAt: Double?
     var stallSamples = 0
     var windowSeconds: Double = 0
     var windowClosed = false
@@ -162,8 +182,15 @@ nonisolated struct LaunchTiming: Equatable, Sendable {
         l.append("  before our first line: \(beforeOurFirstLine.text)")
         l.append("  our first line to the first view: \(firstLineToFirstView.text)")
         l.append("  first free main-thread turn: \(firstFreeTurn.text)")
+        // THE OFFSET RIDES ON THE SAME LINE — patch 424. It is not a seventh
+        // reading, because it is meaningless apart from the duration it
+        // places: a stall of nothing has no beginning. Both endings are
+        // explicit, so neither can be mistaken for the other (§12.15).
         l.append("  longest main-thread stall: \(longestStall.text)"
-                 + " over \(stallSamples) samples")
+                 + " over \(stallSamples) samples"
+                 + (longestStallBeganAt.map {
+                        String(format: ", beginning %.3f s after our first line", $0)
+                    } ?? " — no tick ran late"))
         l.append("  stall window: "
                  + (windowClosed
                     ? String(format: "closed — %.1f s", windowSeconds)
@@ -271,7 +298,8 @@ enum LaunchClock {
         // until the main thread was free, so its own lateness IS the time to a
         // responsive app.
         if freeTurn == nil { freeTurn = now }
-        watch.tick(gap: seconds(from: last, to: now), nominal: nominal)
+        watch.tick(gap: seconds(from: last, to: now), nominal: nominal,
+                   at: seconds(from: start, to: now))
         lastTick = now
         if seconds(from: start, to: now) >= windowSeconds {
             closed = true
@@ -284,6 +312,16 @@ enum LaunchClock {
                                 to b: ContinuousClock.Instant) -> Double {
         let d = a.duration(to: b)
         return Double(d.components.seconds) + Double(d.components.attoseconds) * 1e-18
+    }
+
+    /// **SECONDS SINCE THIS APP'S FIRST LINE — patch 424.**
+    ///
+    /// The one number that lets two independently-measured durations be lined
+    /// up against each other. `nil` if the clock was never started, which on a
+    /// running app cannot happen and in a unit test can.
+    static func secondsSinceFirstLine() -> Double? {
+        guard let start = firstLine else { return nil }
+        return seconds(from: start, to: .now)
     }
 
     /// What the screen and the paste read.
@@ -308,6 +346,7 @@ enum LaunchClock {
         t.longestStall = closed
             ? .seconds(watch.longest)
             : .notYet(String(format: "the window closes at %.0f s", windowSeconds))
+        t.longestStallBeganAt = closed ? watch.longestBeganAt : nil
         return t
     }
 }

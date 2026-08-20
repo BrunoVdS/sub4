@@ -80,6 +80,23 @@ nonisolated struct DetailStoreTiming: Equatable, Sendable {
     var details = 0
     var traces = 0
 
+    /// **WHEN THE READ BEGAN, AS AN OFFSET FROM LAUNCH — patch 424.**
+    ///
+    /// LAST, AND DEFAULTED, so every existing call site still compiles against
+    /// the memberwise initialiser.
+    ///
+    /// 421 measured a 1.05 s main-thread stall and 423's device run found it
+    /// LARGER than this figure — which made `DetailStore` the likeliest cause
+    /// and could not prove it, because two durations with no common origin
+    /// cannot be lined up. This is that origin, and `StallWatch.longestBeganAt`
+    /// is the other half. §12.170.2, §12.171.
+    ///
+    /// `nil` when the clock was never started — a unit test, or a seam built
+    /// before `Sub4App.init` ran. A LARGE value is not an error: a store built
+    /// fifteen minutes into a session genuinely began nine hundred seconds
+    /// after launch, and the line says so in those words.
+    var beganAt: Double?
+
     /// UNCONDITIONAL — §12.54.2. A store built instantly must still print, or a
     /// slow build cannot be told from a line nobody wired in.
     var line: String {
@@ -88,6 +105,9 @@ nonisolated struct DetailStoreTiming: Equatable, Sendable {
         // is not guaranteed and prints garbage when it does not happen.
         String(format: "Detail store built: %.3f s", seconds)
             + " from \(source.line) — \(details) details, \(traces) traces"
+            + (beganAt.map {
+                   String(format: ", beginning %.3f s after our first line", $0)
+               } ?? ", and nothing recorded when it began")
     }
 
     static func seconds(_ d: Duration) -> Double {
@@ -364,13 +384,18 @@ final class DetailStore {
         // the shape §12.15 keeps finding.
         let clock = ContinuousClock()
         var read = FileTally()
+        // BEFORE the work, not after — patch 424. Sampled afterwards it would
+        // name the moment the read ENDED, which is the one instant that cannot
+        // be lined up against a stall's beginning.
+        let began = LaunchClock.secondsSinceFirstLine()
         let elapsed = clock.measure { read = loadFromDirectories() }
         tally = read
         constructionTiming = DetailStoreTiming(
             source: .files,
             seconds: DetailStoreTiming.seconds(elapsed),
             details: details.count,
-            traces: streams.count)
+            traces: streams.count,
+            beganAt: began)
     }
 
 
@@ -484,13 +509,15 @@ final class DetailStore {
         // PATCH 398 — THE FLIP, AND IT HAPPENS HERE RATHER THAN AT LAUNCH.
         // §12.142. Timed unconditionally either way — see `constructionTiming`.
         let clock = ContinuousClock()
+        let began = LaunchClock.secondsSinceFirstLine()
         let elapsed = clock.measure { fill() }
         constructionTiming = DetailStoreTiming(
             source: detailsServedFrom == tracesServedFrom ? detailsServedFrom
                                                           : .files,
             seconds: DetailStoreTiming.seconds(elapsed),
             details: details.count,
-            traces: streams.count)
+            traces: streams.count,
+            beganAt: began)
 
         // Streams cached before latlng existed have no map position. Drop them
         // and let the queue refill — 60 activities, two drains. Details are

@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 423 (2026-08-20).** §5.3 is the 390 device run, Compare and
+**Current at patch 424 (2026-08-20).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -394,9 +394,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 423, 2026-08-20
+## 5. State — patch 424, 2026-08-20
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 423; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 424; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -779,8 +779,11 @@ main-actor task builds it and then walks 699 activities, right after first
 paint. **B4's plan did not hold, and 394/395 moved the cost rather than removing
 it** — §12.155's shape: a cost that stopped being measured where it was and was
 not measured where it went. **Arithmetic plus one call path is not
-attribution**; the instrument reports the largest gap, not when it began.
-§12.170.
+attribution**; the instrument reported the largest gap, not when it began.
+§12.170. **424 GIVES BOTH DURATIONS AN ORIGIN** — `StallWatch.longestBeganAt`
+and `DetailStoreTiming.beganAt`, each printed as `beginning N s after our first
+line`, both sampled at the START of what they measure. **One launch now settles
+whether the store's construction sits inside the stall.** Unrun. §12.171.
 
 Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
 `review-data-pool.md` and `ADR-0002-strava-retirement.md`.

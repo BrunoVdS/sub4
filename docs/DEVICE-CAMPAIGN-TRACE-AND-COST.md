@@ -3,12 +3,13 @@
 | | |
 |---|---|
 | **Task** | Plan topic 3, decomposition items 2 and 3 — the two measurements only a device can take |
-| **Under test** | **B4** as it has stood since 398 · **421** the launch instrument · **423** the way in |
+| **Under test** | **B4** as it has stood since 398 · **421** the launch instrument · **423** the way in · **424** the two origins |
 | **Written** | patch 423, 20 August 2026 |
 | **Supersedes** | parts 2 and 3 of `docs/DEVICE-CAMPAIGN-B34.md`, whose part 1 **passed on 20 August** and stays there as the record |
 | **ADR** | §12.142.6 (what B4 left uncovered), §12.166 (the instrument), §12.169 (the way in) |
 | **Contract** | `docs/PLAN-database-cutover-findings-and-ai-prompts.md`, "Manual test campaign contract" — all ten parts below |
 | **Time** | twenty minutes, **one Release build**, no Debug build needed |
+| **Re-run at** | patch **424**, which adds rows 15a–15c — the two offsets that place the stall and the store's construction on one timeline (§12.171) |
 | **State** | **Part A PASSED in Debug on 20 August — rows 2–8 and 9b; row 9 not applicable. Part B ran in DEBUG, so row 1 failed and the Release figures are still owed. §10** |
 
 **Read this document alone.** It repeats what it needs from B34 rather than
@@ -169,6 +170,10 @@ a title is its export.
     Waiting on the Today tab without touching it is fine.
 11. **Database health** → **The file** → read the **Launch** row on screen →
     **⬆︎** → share the export.
+    **Do the subtraction while you are there** — row 15c. The stall's line now
+    ends `beginning N s after our first line`, and `Detail store built` ends the
+    same way with its own figure. **Whether the second falls inside the first's
+    span is the answer this run exists for.**
 12. **Repeat steps 9–11 once more**, so there are two Release launches. One
     launch is an anecdote.
 
@@ -227,11 +232,15 @@ the rows were not run.**
 | 13 | 11 | The file export | `first free main-thread turn` | **record it** | `not yet — …` | The earliest the app could have answered a touch — what "under two seconds by hand" was reaching for, to three decimals. A `not yet` means the 60 Hz watch never ticked, which is a 421 defect. |
 | 14 | 11 | The file export | `longest main-thread stall` | **record it** | — | **The figure a construction timestamp cannot give.** Close to `Detail store built` → **that read is on the main actor and B4's plan did not hold.** Small while `Detail store built` is large → the read is off the main actor and the cost is invisible to the user, which is the intended outcome. |
 | 15 | 11 | The file export | `before our first line` | **record it** | `could not measure — …` | sysctl refused the process table. The pre-main figure is unavailable on this device; every other row still stands. |
+| 15a | 11 | The file export | `longest main-thread stall … beginning N s` | **record N** | `— no tick ran late` | New at 424. A launch with no stall at all is a legitimate answer and reads differently from one placed at zero (§12.171.2). |
+| 15b | 11 | The file export | `Detail store built … beginning M s` | **record M** | `and nothing recorded when it began` | New at 424. The clock was never started, which on a running app cannot happen — report it as a 424 defect. |
+| **15c** | 11 | **both offsets together** | **is M inside the stall's span?** | **the arithmetic is the answer, not a pass mark** | — | **THE ROW THIS BUILD EXISTS FOR.** The stall runs from N to N + (its duration). If **M falls inside that span**, `DetailStore`'s construction is the stall and §12.170.1's inference is confirmed. If **M falls after it**, the stall is something else and 423's reading was over-read. If **M is far larger than the window** (hundreds of seconds), the store was not built at launch at all — it was built by the Database screen you just opened, and the stall belongs to something that never touched it. |
 | 16 | 12 | both exports | rows 10 and 13–15 | within a few tenths of each other | wildly different | One launch is an anecdote. **A large gap is itself a finding** — say which launch was which. |
 
-**Rows 1–9b are pass/fail. Rows 10 and 13–15 are measurements with no pass mark
-— write the numbers down. Rows 11, 12 and 16 are what say whether the
-measurements can be believed at all.**
+**Rows 1–9b are pass/fail. Rows 10 and 13–15b are measurements with no pass
+mark — write the numbers down. Rows 11, 12 and 16 are what say whether the
+measurements can be believed at all. Row 15c is a subtraction you can do on the
+spot, and it is why this run is worth taking.**
 
 ---
 
@@ -367,7 +376,10 @@ settle it. **Do not act on this as though it were attributed.**
   run part B again. Part A does not need repeating unless you want the
   Release-optimisation coverage §11 mentions.
 - **Row 9 cannot be run on this device** and is recorded as not applicable.
-- **The stall's cause is unattributed.** See §12.170.2.
+- **Rows 15a–15c are new at 424 and settle the attribution.** They need the same
+  run, so the Release build answers row 1, the Release figures and the cause of
+  the stall together — which is the whole reason 424 was built before anything
+  was changed. §12.171.
 
 ---
 
