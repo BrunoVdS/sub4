@@ -972,7 +972,8 @@ struct DatabaseHealthView: View {
                 // removal is the defect §12.2 names, from the other side.
                 LabeledContent("Reconciled", value: r.reconciled.line)
                     .font(.caption)
-                    .foregroundStyle(r.reconciled.isRunning ? Color.primary : Color.red)
+                    .foregroundStyle(r.reconciled.refusedEverythingAsked
+                                     ? Color.red : Color.primary)
                 if r.notesRemoved > 0 {
                     LabeledContent("  notes removed", value: "\(r.notesRemoved)")
                         .font(.caption2).foregroundStyle(Color.dim)

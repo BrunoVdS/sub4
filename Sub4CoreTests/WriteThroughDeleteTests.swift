@@ -80,7 +80,7 @@ struct WriteThroughDeleteTests {
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
                                matchDecisions: [decision("wk3-tue"),
                                                 decision("wk3-thu")],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
         return db
     }
 
@@ -89,7 +89,7 @@ struct WriteThroughDeleteTests {
     private func afterADelete() -> AppStores {
         var s = AppStores()
         s.matchDecisions = [decision("wk3-tue")]
-        s.reconcile = .run
+        s.reconcile = .run(Set(ReconcileFamily.allCases))
         return s
     }
 
@@ -110,10 +110,11 @@ struct WriteThroughDeleteTests {
         #expect(before == 2)
 
         let out = DatabaseWriteThrough.writeThrough(
-            db, stores: afterADelete(), appVersion: "test", trigger: .authored, cause: "a test")
+            db, stores: afterADelete(), appVersion: "test", trigger: .authored, family: .matchDecisions, cause: "a test")
 
         let r = try #require(report(out))
-        #expect(r.reconciled.isRunning, "the athlete's own save may delete")
+        #expect(r.reconciled.permits(.matchDecisions),
+                "the athlete's own save may delete its OWN family")
         #expect(r.matchDecisionsRemoved == 1)
         let after = try count(db, "match_decision")
         #expect(after == 1)
@@ -128,11 +129,12 @@ struct WriteThroughDeleteTests {
                                              .backgroundRefresh] {
             let db = try seeded()
             let out = DatabaseWriteThrough.writeThrough(
-                db, stores: afterADelete(), appVersion: "test", trigger: trigger, cause: "a test")
+                db, stores: afterADelete(), appVersion: "test", trigger: trigger,
+                family: nil, cause: "a test")
 
             let r = try #require(report(out))
-            #expect(!r.reconciled.isRunning,
-                    "a run nobody asked for may not delete")
+            #expect(ReconcileFamily.allCases.allSatisfy { !r.reconciled.permits($0) },
+                    "a run nobody asked for may not delete from ANY family")
             #expect(r.reconciled.line.contains("does not delete"))
             #expect(r.matchDecisionsRemoved == 0)
             let kept = try count(db, "match_decision")
@@ -153,10 +155,10 @@ struct WriteThroughDeleteTests {
         s.reconcile = .skipped("a store could not be read")
 
         let out = DatabaseWriteThrough.writeThrough(
-            db, stores: s, appVersion: "test", trigger: .authored, cause: "a test")
+            db, stores: s, appVersion: "test", trigger: .authored, family: .matchDecisions, cause: "a test")
 
         let r = try #require(report(out))
-        #expect(!r.reconciled.isRunning)
+        #expect(!r.reconciled.permits(.matchDecisions))
         #expect(r.reconciled.line.contains("could not be read"),
                 "the gate's reason survives, not the trigger's")
         #expect(r.matchDecisionsRemoved == 0)
@@ -175,9 +177,9 @@ struct WriteThroughDeleteTests {
 
         let byTrigger = DatabaseWriteThrough.writeThrough(
             db, stores: afterADelete(), appVersion: "test",
-            trigger: .backgrounded, cause: "a test")
+            trigger: .backgrounded, family: nil, cause: "a test")
         let byGate = DatabaseWriteThrough.writeThrough(
-            db, stores: unread, appVersion: "test", trigger: .authored, cause: "a test")
+            db, stores: unread, appVersion: "test", trigger: .authored, family: .matchDecisions, cause: "a test")
 
         let a = try #require(report(byTrigger))
         let b = try #require(report(byGate))
@@ -196,13 +198,13 @@ struct WriteThroughDeleteTests {
         let db = try seeded()
         var s = AppStores()
         s.matchDecisions = [decision("wk3-tue"), decision("wk3-thu")]
-        s.reconcile = .run
+        s.reconcile = .run(Set(ReconcileFamily.allCases))
 
         let out = DatabaseWriteThrough.writeThrough(
-            db, stores: s, appVersion: "test", trigger: .authored, cause: "a test")
+            db, stores: s, appVersion: "test", trigger: .authored, family: .matchDecisions, cause: "a test")
 
         let r = try #require(report(out))
-        #expect(r.reconciled.isRunning)
+        #expect(r.reconciled.permits(.matchDecisions))
         #expect(r.matchDecisionsRemoved == 0)
         let unchanged = try count(db, "match_decision")
         #expect(unchanged == 2)
@@ -224,19 +226,110 @@ struct WriteThroughDeleteTests {
                                 created: Date(timeIntervalSince1970: 1_780_000_000),
                                 edited: Date(timeIntervalSince1970: 1_780_000_000))
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
-                               notes: [a, b], reconcile: .run)
+                               notes: [a, b],
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
         let notesBefore = try count(db, "user_note")
         #expect(notesBefore == 2)
 
         var s = AppStores()
         s.notes = [a]
-        s.reconcile = .run
+        s.reconcile = .run(Set(ReconcileFamily.allCases))
         let out = DatabaseWriteThrough.writeThrough(
-            db, stores: s, appVersion: "test", trigger: .authored, cause: "a test")
+            db, stores: s, appVersion: "test", trigger: .authored,
+            family: .notes, cause: "a test")
 
         let r = try #require(report(out))
         #expect(r.notesRemoved == 1)
         let notesAfter = try count(db, "user_note")
         #expect(notesAfter == 1)
     }
+
+    // MARK: The cross-family path — patch 414, §12.159
+
+    private func proposal(_ ranAt: String) -> ProposalStore.Record {
+        ProposalStore.Record(
+            id: "w01-\(ranAt)",
+            ranAt: ISO8601DateFormatter().date(from: ranAt) ?? Date(),
+            windowLabel: "Week 01",
+            startDay: "2026-07-28",
+            endDay: "2026-08-01",
+            evidence: "",
+            proposal: ReviewRehearsal.proposal(naming: ["wk-01-tue-easy"]),
+            appVersion: "414-test",
+            model: "test")
+    }
+
+    /// **THE TEST TOPIC 1C ASKS FOR, IN ITS OWN WORDS.**
+    ///
+    /// *"Prove the current cross-family path with a failing test: a note-
+    /// authored trigger must not be able to remove a review row."*
+    ///
+    /// It failed before 414 and the mechanism is worth stating, because it is
+    /// worse than a shared permission. **Nothing in this app announces a
+    /// proposal change** — there is no `noteAuthoredChange` for reviews — so
+    /// `review` could ONLY ever be pruned by a trigger belonging to some other
+    /// family. Its own saves never asked; everybody else's did.
+    @Test("A note-authored run may not remove a review row")
+    func aNoteTriggerCannotDeleteAReview() throws {
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [], shoes: [],
+                               proposals: [proposal("2026-08-01T09:00:00Z")],
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
+        #expect(try count(db, "review") == 1)
+
+        // The athlete saves a note. `AppStores` has no proposals in it —
+        // which is the ordinary state, since the stores are read fresh and
+        // `proposals.json` is B7's and usually empty.
+        var s = AppStores()
+        s.notes = []
+        s.reconcile = .run(Set(ReconcileFamily.allCases))
+
+        let out = DatabaseWriteThrough.writeThrough(
+            db, stores: s, appVersion: "test", trigger: .authored,
+            family: .notes, cause: "a session note was saved")
+        let r = try #require(report(out))
+
+        #expect(r.reviewsRemoved == 0,
+                "a note save has no business deleting a review")
+        #expect(try count(db, "review") == 1,
+                "the review is the athlete's, and no note trigger may reach it")
+        #expect(r.reconciled.permits(.notes))
+        #expect(!r.reconciled.permits(.reviews))
+    }
+
+    /// The other half, and it is the one that shows the permission is real
+    /// rather than merely narrower: the family whose mutation completed still
+    /// reconciles, in the same run that refused the others.
+    @Test("The family that did change is still reconciled")
+    func theOwnFamilyStillReconciles() throws {
+        let db = try seeded()
+        let out = DatabaseWriteThrough.writeThrough(
+            db, stores: afterADelete(), appVersion: "test", trigger: .authored,
+            family: .matchDecisions, cause: "a match decision was saved")
+        let r = try #require(report(out))
+
+        #expect(r.matchDecisionsRemoved == 1, "its own family is not spared")
+        #expect(r.reconciled.permits(.matchDecisions))
+        #expect(!r.reconciled.permits(.notes))
+        #expect(!r.reconciled.permits(.reviews))
+    }
+
+    /// **THE TWO STORES THAT OWN NO FAMILY.** `AthleteStore` and
+    /// `AthleteConstants` announce `.authored` so the write-through carries
+    /// their rows across, and they prune nothing. Before 414 they were handed
+    /// permission to delete from all five families.
+    @Test("A change belonging to no family reconciles nothing")
+    func noFamilyDeletesNothing() throws {
+        let db = try seeded()
+        let out = DatabaseWriteThrough.writeThrough(
+            db, stores: afterADelete(), appVersion: "test", trigger: .authored,
+            family: nil, cause: "an athlete constant was saved")
+        let r = try #require(report(out))
+
+        #expect(r.matchDecisionsRemoved == 0)
+        #expect(try count(db, "match_decision") == 2, "nothing was theirs to remove")
+        #expect(ReconcileFamily.allCases.allSatisfy { !r.reconciled.permits($0) })
+        #expect(r.reconciled.line.contains("no reconcilable family"))
+    }
 }
+

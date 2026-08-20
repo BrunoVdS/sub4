@@ -286,7 +286,7 @@ struct PlanMoveStoreTests {
 
         // And the gate that decides whether rows may be deleted names this
         // store, because `pruneMoves` deletes on its behalf. §12.20.
-        #expect(AppStores.reconcileRequires.contains("moves.json"),
+        #expect(ReconcileFamily.moves.source == "moves.json",
                 "something prunes for this store and the gate does not name it")
     }
 

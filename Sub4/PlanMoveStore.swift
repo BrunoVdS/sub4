@@ -608,7 +608,7 @@ final class PlanMoveStore {
         // loop; and `.authored` sets `reconcile`, so a repair would arrive
         // carrying permission to delete. Every ordinary mutation still goes
         // through `save()` and still announces; the restore calls `write()`.
-        DatabaseWriteThrough.shared.noteAuthoredChange("a plan move was saved")
+        DatabaseWriteThrough.shared.noteAuthoredChange("a plan move was saved", family: .moves)
     }
 
     /// The bytes on disk, and nothing else — patch 405.

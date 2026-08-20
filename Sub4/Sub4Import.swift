@@ -403,7 +403,10 @@ nonisolated enum Sub4Import {
             l.append("  plan: \(planUnchanged > 0 ? "unchanged" : "written") — "
                      + "\(planWeeks) weeks, \(planSessions) sessions, "
                      + "\(planBlocks) blocks")
-            l.append("  reconciled: \(reconciled.isRunning ? "yes" : "no")")
+            // PATCH 414 — WHICH FAMILIES, NOT WHETHER. "yes" could not say
+            // that a note save had just been given permission to delete a
+            // review row, which is what it meant for four hundred patches.
+            l.append("  reconciled: \(reconciled.line)")
             l.append("  rows removed in total: \(removedTotal)")
             // A NUMBER, NOT A LIST. Each refusal names an activity.
             l.append("  refused: \(refusals.count)")
@@ -655,11 +658,14 @@ nonisolated enum Sub4Import {
                 // records in, so what is left over is genuinely left over.
                 // Inside the write because a throw here must roll the whole
                 // import back rather than leave a half-reconciled database.
-                if reconcile.isRunning {
-                    try reconcileAuthored(d, notes: notes, proposals: proposals,
-                                          matchDecisions: matchDecisions,
-                                          into: &report)
-                }
+                // PATCH 414. No outer gate: `reconcileAuthored` asks per
+                // family now, because the three tables it prunes belong to
+                // three different families and one `if` could not tell them
+                // apart.
+                try reconcileAuthored(d, notes: notes, proposals: proposals,
+                                      matchDecisions: matchDecisions,
+                                      permitted: reconcile,
+                                      into: &report)
             }
         }
         report.seconds = seconds(elapsed)

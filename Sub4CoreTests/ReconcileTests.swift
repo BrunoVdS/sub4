@@ -85,7 +85,7 @@ struct ReconcileTests {
     func theGateRefuses() throws {
         let db = try Sub4Database.inMemory()
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
-                               notes: [note("wk3-tue")], reconcile: .run)
+                               notes: [note("wk3-tue")], reconcile: .run(Set(ReconcileFamily.allCases)))
         let userNoteRows1 = try count(db, "user_note")
         #expect(userNoteRows1 == 1)
 
@@ -96,7 +96,7 @@ struct ReconcileTests {
         let userNoteRows2 = try count(db, "user_note")
         #expect(userNoteRows2 == 1)
         #expect(report.notesRemoved == 0)
-        #expect(report.reconciled.isRunning == false)
+        #expect(!report.reconciled.permits(.notes))
     }
 
     @Test("The skip carries its reason, and the two reasons differ")
@@ -119,12 +119,12 @@ struct ReconcileTests {
         let db = try Sub4Database.inMemory()
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
                                notes: [note("wk3-tue"), note("wk3-thu")],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
         let userNoteRows3 = try count(db, "user_note")
         #expect(userNoteRows3 == 2)
 
         let report = try Sub4Import.run(into: db, activities: [], shoes: [],
-                                        notes: [note("wk3-tue")], reconcile: .run)
+                                        notes: [note("wk3-tue")], reconcile: .run(Set(ReconcileFamily.allCases)))
         #expect(report.notesRemoved == 1)
         let userNoteRows4 = try count(db, "user_note")
         #expect(userNoteRows4 == 1)
@@ -139,14 +139,14 @@ struct ReconcileTests {
     func anEmptyStoreEmptiesTheTable() throws {
         let db = try Sub4Database.inMemory()
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
-                               notes: [note("wk3-tue")], reconcile: .run)
+                               notes: [note("wk3-tue")], reconcile: .run(Set(ReconcileFamily.allCases)))
 
         // The dangerous case, asserted deliberately rather than left to be
         // discovered: with permission, zero notes means zero rows. Everything
         // in patch 273 exists so that "zero notes" is only ever said by a
         // store that was actually read.
         let report = try Sub4Import.run(into: db, activities: [], shoes: [],
-                                        notes: [], reconcile: .run)
+                                        notes: [], reconcile: .run(Set(ReconcileFamily.allCases)))
         #expect(report.notesRemoved == 1)
         let userNoteRows5 = try count(db, "user_note")
         #expect(userNoteRows5 == 0)
@@ -160,12 +160,12 @@ struct ReconcileTests {
         let acts = [activity("19580875358")]
         _ = try Sub4Import.run(into: db, activities: acts, shoes: [],
                                matchDecisions: [decision("wk3-tue", "19580875358")],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
         let matchDecisionRows1 = try count(db, "match_decision")
         #expect(matchDecisionRows1 == 1)
 
         let report = try Sub4Import.run(into: db, activities: acts, shoes: [],
-                                        matchDecisions: [], reconcile: .run)
+                                        matchDecisions: [], reconcile: .run(Set(ReconcileFamily.allCases)))
         #expect(report.matchDecisionsRemoved == 1)
         let matchDecisionRows2 = try count(db, "match_decision")
         #expect(matchDecisionRows2 == 0)
@@ -180,12 +180,12 @@ struct ReconcileTests {
         let acts = [activity("19580875358")]
         _ = try Sub4Import.run(into: db, activities: acts, shoes: [],
                                matchDecisions: [decision("wk3-tue", "19580875358")],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
 
         // Same session, now naming an activity the database does not have.
         let report = try Sub4Import.run(into: db, activities: acts, shoes: [],
                                         matchDecisions: [decision("wk3-tue", "99999999999")],
-                                        reconcile: .run)
+                                        reconcile: .run(Set(ReconcileFamily.allCases)))
         #expect(report.matchDecisionsUnresolved == 1)
         #expect(report.matchDecisionsRemoved == 0)
         let matchDecisionRows3 = try count(db, "match_decision")
@@ -198,7 +198,7 @@ struct ReconcileTests {
     func aDeletedReviewTakesItsWholeRecord() throws {
         let db = try Sub4Database.inMemory()
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
-                               proposals: [record()], reconcile: .run)
+                               proposals: [record()], reconcile: .run(Set(ReconcileFamily.allCases)))
         let reviewRows1 = try count(db, "review")
         #expect(reviewRows1 == 1)
         let reviewEvidenceRows1 = try count(db, "review_evidence")
@@ -211,7 +211,7 @@ struct ReconcileTests {
         #expect(proposalWatchRows1 == 1)
 
         let report = try Sub4Import.run(into: db, activities: [], shoes: [],
-                                        proposals: [], reconcile: .run)
+                                        proposals: [], reconcile: .run(Set(ReconcileFamily.allCases)))
 
         #expect(report.reviewsRemoved == 1)
         // THE CASCADE, ASSERTED. Deleting one row is supposed to remove five;
@@ -233,9 +233,9 @@ struct ReconcileTests {
     func aKeptReviewSurvives() throws {
         let db = try Sub4Database.inMemory()
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
-                               proposals: [record()], reconcile: .run)
+                               proposals: [record()], reconcile: .run(Set(ReconcileFamily.allCases)))
         let report = try Sub4Import.run(into: db, activities: [], shoes: [],
-                                        proposals: [record()], reconcile: .run)
+                                        proposals: [record()], reconcile: .run(Set(ReconcileFamily.allCases)))
         #expect(report.reviewsRemoved == 0)
         let reviewRows3 = try count(db, "review")
         #expect(reviewRows3 == 1)
@@ -249,7 +249,7 @@ struct ReconcileTests {
     func anOrphanedReviewIsCaught() throws {
         let db = try Sub4Database.inMemory()
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
-                               proposals: [record()], reconcile: .run)
+                               proposals: [record()], reconcile: .run(Set(ReconcileFamily.allCases)))
 
         // The store no longer has it and the pass was not allowed to run —
         // which is precisely the state the device was in on 5 August, and
@@ -264,9 +264,9 @@ struct ReconcileTests {
         let db = try Sub4Database.inMemory()
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
                                notes: [note("wk3-tue")], proposals: [record()],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
-                               notes: [], proposals: [], reconcile: .run)
+                               notes: [], proposals: [], reconcile: .run(Set(ReconcileFamily.allCases)))
 
         let report = try SemanticVerifier.verify(db, activities: [])
         #expect(report.passed, "a reconciled migration failed verification")

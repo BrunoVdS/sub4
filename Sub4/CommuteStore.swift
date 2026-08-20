@@ -357,7 +357,7 @@ final class CommuteStore {
         // loop; and `.authored` sets `reconcile`, so a repair would arrive
         // carrying permission to delete. Every ordinary mutation still goes
         // through `save()` and still announces; the restore calls `write()`.
-        DatabaseWriteThrough.shared.noteAuthoredChange("a commute decision was saved")
+        DatabaseWriteThrough.shared.noteAuthoredChange("a commute decision was saved", family: .commutes)
     }
 
     /// The bytes on disk, and nothing else — patch 405.

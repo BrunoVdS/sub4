@@ -198,11 +198,26 @@ final class DatabaseWriteThrough {
     /// FORGOTTEN, and a store that forgets is a store nothing says anything
     /// about. The run is a third of a second and coalesces, so a burst of saves
     /// costs one run and at most one repeat.
-    func noteAuthoredChange(_ what: String) {
-        Task { await run(reason: what, trigger: .authored) }
+    /// **THE FAMILY IS NOW PART OF THE ANNOUNCEMENT — patch 414, §12.159.**
+    ///
+    /// A store used to say only THAT it had written. The run that followed
+    /// received permission to delete from every authored family, so a session
+    /// note could remove a review row and an athlete constant could remove all
+    /// five. Saying WHICH family completed is what makes the permission
+    /// answerable.
+    ///
+    /// **`nil` IS A REAL ANSWER AND TWO CALLERS GIVE IT.** `AthleteStore` and
+    /// `AthleteConstants` announce so the write-through carries their rows
+    /// across, and they own no prunable family at all. Before 414 they asked
+    /// for — and got — permission to delete from five families they have
+    /// nothing to do with. Now they reconcile nothing, which is the honest
+    /// answer rather than a conservative one.
+    func noteAuthoredChange(_ what: String, family: ReconcileFamily? = nil) {
+        Task { await run(reason: what, trigger: .authored, family: family) }
     }
 
-    func run(reason: String, trigger: MigrationRunTrigger) async {
+    func run(reason: String, trigger: MigrationRunTrigger,
+             family: ReconcileFamily? = nil) async {
         if isRunning { runAgainWhenDone = true; return }
 
         guard let db = Sub4Launch.shared.database else {
@@ -239,7 +254,8 @@ final class DatabaseWriteThrough {
                 // main actor that called it.
                 Self.writeThrough(db, stores: stores, appVersion: version,
                                   snapshotID: LegacySnapshot.latest()?.id,
-                                  trigger: trigger, cause: reason)
+                                  trigger: trigger, family: family,
+                                  cause: reason)
             }.value
             last = outcome
             runs += 1
@@ -281,6 +297,14 @@ final class DatabaseWriteThrough {
                                          appVersion: String,
                                          snapshotID: String? = nil,
                                          trigger: MigrationRunTrigger,
+                                         // PATCH 414 — REQUIRED, NOT DEFAULTED.
+                                         // A default would let a future caller
+                                         // inherit a permission it never
+                                         // considered, which is §12.95.4 and
+                                         // also the exact failure 414 exists to
+                                         // close. Nil is a real value here and
+                                         // has to be typed.
+                                         family: ReconcileFamily?,
                                          // PATCH 406 — THE SENTENCE THIS TYPE
                                          // ALREADY HAD AND THREW AWAY. §12.150:
                                          // `noteAuthoredChange` writes it,
@@ -325,8 +349,32 @@ final class DatabaseWriteThrough {
         // Still set HERE rather than at the call site, for the original reason:
         // a future trigger cannot forget it, and it cannot quietly inherit
         // permission by defaulting.
+        // **ONE FAMILY, NOT ALL OF THEM — patch 414.** `stores.reconcile`
+        // asks for every family (that is what a MANUAL import wants); an
+        // automatic authored trigger may ask only for the family whose
+        // mutation completed, and the gate still refuses it if that family's
+        // own source did not read cleanly. `theGateStillRefuses` is unchanged
+        // and still the test.
+        //
+        // **IT NARROWS THE GATE'S VERDICT; IT DOES NOT RECOMPUTE IT.**
+        // `stores.reconcile` was decided in `AppStores.current()`, on the main
+        // actor where `StoreReadJournal` lives, and holds every family whose
+        // own source read cleanly. This is `nonisolated` and could not ask the
+        // journal again even if it wanted to — which is the right shape
+        // anyway: the trigger may only ever SUBTRACT from what the gate
+        // allowed, so a widening cannot be written here by accident.
+        //
+        // **AND A REFUSED FAMILY KEEPS THE GATE'S SENTENCE.** Narrowing to
+        // `.run([])` would have been shorter and would have thrown away WHY —
+        // and `Reconciliation`'s own doc has said since it was written that "a
+        // store could not be read" and "the caller did not ask for it" are both
+        // refusals and only one of them is the gate working. §12.15.
         s.reconcile = trigger == .authored
-            ? stores.reconcile
+            ? (family.map { f in
+                   stores.reconcile.permits(f)
+                       ? Reconciliation.run([f])
+                       : .skipped("\(f.label): the source could not be read")
+               } ?? .skipped("the change belongs to no reconcilable family"))
             : .skipped("an automatic write-through does not delete")
 
         let at = Sub4Import.iso8601(Date())

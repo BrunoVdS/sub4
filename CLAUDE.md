@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 413 (2026-08-20).** §5.3 is the 390 device run, Compare and
+**Current at patch 414 (2026-08-20).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -394,9 +394,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 413, 2026-08-20
+## 5. State — patch 414, 2026-08-20
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 413; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 414; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -673,7 +673,16 @@ run happened. §12.135–§12.150.
    kinds — the invisible row had a valid kind and it was `commuteSQL`'s INNER
    JOIN that dropped it, so a kind-based residual would have read zero.
    Mechanism proven by test; the 20 August instance still unproven. §12.158.
-4. **1B's NOTES — BUILT AT 409, PROVEN 19 AUGUST.** A note save commits to
+4. **1C IS HALF DONE — 414 SCOPED THE PERMISSION, 415 OWES THE LEDGER.**
+   Reconciliation is per family: a save may delete only from the family whose
+   mutation completed, and only when **that family's own source** read cleanly.
+   **`review` could previously be pruned only by somebody else's trigger** —
+   nothing announces a proposal change — and the athlete stores held permission
+   over all five while owning none. `isRunning` is gone so the compiler
+   enumerates every prune. **`docs/DEVICE-CAMPAIGN-414.md` is unrun.**
+   **415 adds `migration_run_removal(runID, family, rows)`**, which is what
+   finally makes `newest removal` name the family. §12.159.
+5. **1B's NOTES — BUILT AT 409, PROVEN 19 AUGUST.** A note save commits to
    SQLite **before** the editor closes, and `remove` with it — 408 the narrow
    write, **409 the order**, **409a the diagnostic** (§12.152, §12.153).
    Six controls; **control 4 does not discriminate the order and says so**.
@@ -681,17 +690,17 @@ run happened. §12.135–§12.150.
    **RULE 13** stops the next store repeating 409's seam leak. Next is the same
    inversion **family by family** — the commutes, the match decisions, the plan
    moves — then 1C's reconciliation scope and removal attribution.
-5. **FILE PROTECTION.** `protect` swallows its failure with `try?`, the screen
+6. **FILE PROTECTION.** `protect` swallows its failure with `try?`, the screen
    prints `Until first unlock` as a literal, and a simulator cannot check it —
    applied silently, reported by a constant that cannot fail. The screen must
    read the attribute back.
-6. **Then Bruno's list**, then **B5 — weather and gear**, with
+7. **Then Bruno's list**, then **B5 — weather and gear**, with
    `knownActivityIDs` and `WeatherGearRoundTrip`'s own read. **Gear is the half
    of `AthleteStore` B1 did not take** — its comparison is still evidence.
-7. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
+8. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed
    recovery screen `RootView` lacks.
-8. **D8** — stabilise one release window, then remove the JSON writers.
+9. **D8** — stabilise one release window, then remove the JSON writers.
 
 **B4's cost:** `Detail store built: 0.872 / 0.930 s` from the database in Debug,
 against 0.443 s of files in Debug and 3.925 s before 397. A Release reading is

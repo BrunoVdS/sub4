@@ -172,12 +172,12 @@ struct CorrectionTests {
         let acts = [ride("19580875358")]
         _ = try Sub4Import.run(into: db, activities: acts, shoes: [],
                                commutes: [decision("19580875358", true)],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
         let before = try count(db)
         #expect(before == 1)
 
         let report = try Sub4Import.run(into: db, activities: acts, shoes: [],
-                                        commutes: [], reconcile: .run)
+                                        commutes: [], reconcile: .run(Set(ReconcileFamily.allCases)))
         #expect(report.correctionsRemoved == 1)
         let after = try count(db)
         #expect(after == 0)
@@ -189,7 +189,7 @@ struct CorrectionTests {
         let acts = [ride("19580875358")]
         _ = try Sub4Import.run(into: db, activities: acts, shoes: [],
                                commutes: [decision("19580875358", true)],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
 
         let report = try Sub4Import.run(into: db, activities: acts, shoes: [],
                                         commutes: [])
@@ -205,7 +205,7 @@ struct CorrectionTests {
         let acts = [ride("19580875358")]
         _ = try Sub4Import.run(into: db, activities: acts, shoes: [],
                                commutes: [decision("19580875358", true)],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
 
         // The store still holds the first decision AND one the database cannot
         // place. The unresolved one cannot protect its own row, so nothing may
@@ -213,7 +213,7 @@ struct CorrectionTests {
         let report = try Sub4Import.run(
             into: db, activities: acts, shoes: [],
             commutes: [decision("19580875358", true), decision("99999999999", false)],
-            reconcile: .run)
+            reconcile: .run(Set(ReconcileFamily.allCases)))
 
         #expect(report.correctionsUnresolved == 1)
         #expect(report.correctionsRemoved == 0)
@@ -241,7 +241,7 @@ struct CorrectionTests {
         }
 
         let report = try Sub4Import.run(into: db, activities: [], shoes: [],
-                                        commutes: [], reconcile: .run)
+                                        commutes: [], reconcile: .run(Set(ReconcileFamily.allCases)))
         #expect(report.correctionsRemoved == 0)
         let n = try count(db)
         #expect(n == 1)

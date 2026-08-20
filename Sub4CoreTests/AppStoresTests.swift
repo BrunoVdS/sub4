@@ -71,7 +71,9 @@ struct AppStoresTests {
     @Test("A default AppStores refuses to reconcile")
     func theDefaultIsSafe() {
         let s = AppStores()
-        #expect(s.reconcile != .run)
+        // PATCH 414 — no family, not "not running". `.run([])` and
+        // `.skipped` are different facts and neither deletes anything.
+        #expect(ReconcileFamily.allCases.allSatisfy { !s.reconcile.permits($0) })
         #expect(s.activities.isEmpty)
         #expect(s.details.isEmpty)
         #expect(s.streams.isEmpty)
@@ -116,9 +118,9 @@ struct AppStoresTests {
 
         var asked = AppStores()
         asked.activities = [ride()]
-        asked.reconcile = .run
+        asked.reconcile = .run(Set(ReconcileFamily.allCases))
         #expect(try Sub4Import.run(into: db, stores: asked, trigger: .manual, cause: "a test")
-                    .reconciled == .run)
+                    .reconciled == .run(Set(ReconcileFamily.allCases)))
 
         let other = try Sub4Database.inMemory()
         var declined = AppStores()
@@ -168,10 +170,23 @@ struct AppStoresTests {
     /// pairing is the rule: a store gains a prune and the gate gains its name
     /// together, or there is a window in which rows are deleted on the strength
     /// of a read nobody checked.
-    @Test("The reconcile gate names every store something prunes for")
+    ///
+    /// **PER FAMILY SINCE 414.** The list was five names and one verdict, so a
+    /// missing name made reconciliation more likely to run AND a present one
+    /// made four unrelated families refuse whenever the fifth store was
+    /// unreadable. `ReconcileFamily.source` pairs each family with the one read
+    /// that speaks for it, and this pins every pair.
+    @Test("Every family names the one store that speaks for it")
     func theGateListIsPinned() {
-        #expect(AppStores.reconcileRequires
-                == ["notes.json", "proposals.json", "commutes.json",
-                    "moves.json", Matcher.decisionsKey])
+        #expect(ReconcileFamily.notes.source == "notes.json")
+        #expect(ReconcileFamily.reviews.source == "proposals.json")
+        #expect(ReconcileFamily.commutes.source == "commutes.json")
+        #expect(ReconcileFamily.moves.source == "moves.json")
+        #expect(ReconcileFamily.matchDecisions.source == Matcher.decisionsKey)
+        // A FAMILY ADDED LATER CANNOT INHERIT SOMEBODY ELSE'S SOURCE BY BEING
+        // FORGOTTEN. Five distinct names for five families — if a sixth arrives
+        // sharing one, this says so.
+        #expect(Set(ReconcileFamily.allCases.map(\.source)).count
+                == ReconcileFamily.allCases.count)
     }
 }

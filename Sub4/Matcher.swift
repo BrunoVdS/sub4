@@ -462,7 +462,7 @@ final class Matcher {
         // `reconcile`, so a repair would arrive carrying permission to delete.
         // The other half of the pair `DatabaseWriteThrough`'s header names as
         // impossible to fetch again. Patch 348, §12.94.
-        DatabaseWriteThrough.shared.noteAuthoredChange("a match decision was saved")
+        DatabaseWriteThrough.shared.noteAuthoredChange("a match decision was saved", family: .matchDecisions)
         return true
     }
 

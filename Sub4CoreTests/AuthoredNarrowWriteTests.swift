@@ -17,7 +17,7 @@
 //  reconciles nowhere — the notes' removal pass lives in `reconcileAuthored` —
 //  so handing it one note moves one row. **`importCorrections` and
 //  `importMoves` prune INSIDE themselves**, from a keep-set built out of the
-//  array they are handed. Hand either of them one record with `reconcile: .run`
+//  array they are handed. Hand either of them one record with `reconcile: .run(Set(ReconcileFamily.allCases))`
 //  and every other row of that family is deleted, by a function called
 //  "import", inside one transaction, with no error.
 //
@@ -124,7 +124,7 @@ struct AuthoredNarrowWriteTests {
 
         // **THE CONTROL THIS PATCH IS MOSTLY FOR.** `importCorrections` builds
         // its keep-set from the array it is handed and deletes every commute
-        // row outside it. With `reconcile: .run` this single write would leave
+        // row outside it. With `reconcile: .run(Set(ReconcileFamily.allCases))` this single write would leave
         // ONE row where three stood — silently, inside one transaction, from a
         // function named "import". `.skipped` is what stops it.
         #expect(CommuteRepository.upsert(commute("a-2", isCommute: false),

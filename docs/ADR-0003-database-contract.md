@@ -8962,6 +8962,111 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.159 Reconciliation becomes family-scoped — patch 414, topic 1C
+
+One permission covered five families. **A save in any authored family could
+delete rows in every other one**, and two callers that own no family at all had
+the same power.
+
+### 12.159.1 The worst instance was not a hypothetical
+
+**`review` is pruned against `proposals.json`, and nothing in this app announces
+a proposal change.** There is no `noteAuthoredChange` for reviews. So the review
+table could only EVER be pruned by a trigger belonging to some other family —
+its own saves never asked, and everybody else's did.
+
+**And `AthleteConstants` and `AthleteStore` announce `.authored` while owning no
+prunable family whatsoever.** Saving an athlete constant asked for, and
+received, permission to delete notes, match decisions, reviews, commute
+decisions and moved sessions. The first real review lands 24 August; B7 was
+blocked partly on this.
+
+`aNoteTriggerCannotDeleteAReview` is topic 1C's own sentence as a test, and it
+fails against the pre-414 code, as do the other two controls.
+
+### 12.159.2 `isRunning` had to go, and its absence is the patch
+
+Keeping it as *"the set is non-empty"* would have let **every existing call site
+compile unchanged and keep doing the old thing** — a boolean any caller can
+consult is precisely how one family's trigger came to authorise another
+family's deletion. Removing it made the compiler enumerate the seven sites, and
+each now names the family it is about to delete from.
+
+§12.69's shape, one level up: a guard that can be bypassed by accident is not a
+guard, and the strongest version of "cannot be bypassed" is "does not compile".
+
+### 12.159.3 The gate was wrong in both directions
+
+`AppStores.reconcileRequires` was five store names and one verdict. Its own
+comment said *a name MISSING here makes reconciliation more likely to run, and
+reconciliation deletes rows* — true, and it had the other half backwards: **a
+name PRESENT there made four unrelated families refuse whenever the fifth
+store was unreadable.** Neither direction was the family's own answer.
+
+`ReconcileFamily.source` pairs each family with the one read that speaks for it,
+and `theGateListIsPinned` now asserts the five pairs **and that they are
+distinct** — so a sixth family cannot inherit somebody else's trustworthiness by
+being forgotten.
+
+### 12.159.4 The trigger may only subtract
+
+`AppStores.current()` requests **every** family and filters each by its own
+source — that is what a manual import wants, and it satisfies the prompt's rule
+that a manual reconciliation may ask for several families while keeping every
+gate. `DatabaseWriteThrough` then narrows that verdict to the one family whose
+mutation completed.
+
+**It narrows; it cannot widen.** The gate's verdict is computed on the main
+actor where `StoreReadJournal` lives; `writeThrough` is `nonisolated` and
+could not ask the journal again if it wanted to. The shape enforces the
+direction.
+
+`family:` is a **required** parameter, not defaulted. A default would let a
+future caller inherit a permission it never considered — §12.95.4, and also the
+exact failure this patch closes. `nil` is a real value and has to be typed.
+
+### 12.159.5 A refused family keeps the gate's sentence
+
+The first draft narrowed a refusal to `.run([])`, which was shorter and threw
+away WHY. `Reconciliation`'s own doc has said since it was written that *"a
+store could not be read" and "the caller did not ask for it" are both refusals
+and only one of them is the gate working* — so a refused family now carries
+`"<family>: the source could not be read"`. An existing test caught the loss.
+
+**And the red on the Database screen changed meaning.** It used to mean "did not
+run", which after 414 is the ordinary answer — an automatic write-through
+deletes nothing and an authored run skips four families by design. Colouring all
+of that red would be a row correct by rule, wrong in meaning, and constant
+enough to train somebody to ignore it. Red now means `refusedEverythingAsked`:
+a caller asked and every family was refused for an unreadable source.
+
+### 12.159.6 What is left for 415
+
+**The durable per-family removal record — `migration_run_removal(runID, family,
+rows)` — is not in this patch.** It is additive evidence and it only becomes
+meaningful once the families are scoped, which is what 414 does; and 414 already
+touches the permission that deletes rows, so 381-before-382 says the migration
+travels separately. §5.5's *"`newest removal` names the trigger, not the
+family"* stays open until then.
+
+### 12.159.7 The campaign, and what it can and cannot show
+
+`docs/DEVICE-CAMPAIGN-414.md`, required because family-scoped reconciliation is
+wired to real controls — every authored store's save.
+
+**It can show the decision**, because `LastImport.shared.record` is fed by every
+write-through run including authored ones, so `reconciled: notes` reaches the
+**Import** export after a note save. Before 414 that line read `yes`, which
+could not have said that a note save had just been given permission to delete a
+review row.
+
+**It cannot yet show the removal attributed to a family** — that is 415's
+ledger. So the campaign proves the effect (a delete in one family leaves every
+other family's count unchanged) and the decision (the line names one family),
+and says plainly that the third leg is owed.
+
+---
+
 ## 12.158 The residual over `correction` — patch 413
 
 **Earned by 412's device run** (§12.157.9). The census printed `correction: 4`

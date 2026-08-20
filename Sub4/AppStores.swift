@@ -87,14 +87,23 @@ nonisolated struct AppStores: Sendable {
     /// deleted on their behalf. See `reconcile`.
     /// PATCH 363 — `moves.json` ADDED WITH THE PRUNE THAT NEEDS IT.
     ///
-    /// `pruneMoves` deletes correction rows on this store's behalf, so the
-    /// store's read has to be trustworthy first. Adding the name in the same
-    /// patch as the prune is the rule this list's own comment states: a name
-    /// MISSING here makes reconciliation more likely to run, and
-    /// reconciliation deletes rows.
-    static let reconcileRequires = ["notes.json", "proposals.json",
-                                    "commutes.json", "moves.json",
-                                    Matcher.decisionsKey]
+    /// **THE PER-FAMILY GATE — patch 414, §12.159.**
+    ///
+    /// This was `reconcileRequires`, five store names and one verdict: if any
+    /// one of them read badly, NO family was reconciled, and if all five read
+    /// well, EVERY family was. Both halves were wrong in the same way — the
+    /// answer was never the family's own.
+    ///
+    /// A family may now lose rows only when **its own** source read cleanly.
+    /// `ReconcileFamily.source` holds the pairing, one name each, so a family
+    /// added later cannot inherit somebody else's trustworthiness by being
+    /// forgotten here.
+    @MainActor
+    static func permitted(_ requested: Set<ReconcileFamily>) -> Reconciliation {
+        .run(requested.filter {
+            StoreReadJournal.shared.canReconcile([$0.source])
+        })
+    }
 
     /// Read every store, now. `@MainActor` because every one of them is.
     @MainActor
@@ -161,9 +170,17 @@ nonisolated struct AppStores: Sendable {
         s.plan = PlanStore.decodeBundle().plan
         s.streams = Array(DetailStore.shared.streams.values)
         s.details = Array(DetailStore.shared.details.values)
-        s.reconcile = StoreReadJournal.shared.canReconcile(reconcileRequires)
-            ? .run
-            : .skipped("a store could not be read")
+        // **EVERY FAMILY, FILTERED — patch 414.** `AppStores.current()` is
+        // what a MANUAL import reads, and the prompt's rule is that a manual
+        // reconciliation may request several families explicitly while keeping
+        // every safety gate. Requesting all of them and letting each one's own
+        // source decide is exactly that: the caller asks widely, the gate
+        // answers narrowly, and `Reconciliation.line` prints which survived.
+        //
+        // An automatic write-through does NOT come through here — see
+        // `DatabaseWriteThrough`, which narrows the request to the one family
+        // whose mutation completed.
+        s.reconcile = permitted(Set(ReconcileFamily.allCases))
         return s
     }
 

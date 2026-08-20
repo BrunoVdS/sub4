@@ -253,12 +253,12 @@ struct PlanMoveImportTests {
         let db = try Sub4Database.inMemory()
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
                                moves: [move(session, monday)],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
         let before = try moveRows(db)
         #expect(before.count == 1)
 
         let after = try Sub4Import.run(into: db, activities: [], shoes: [],
-                                       moves: [], reconcile: .run)
+                                       moves: [], reconcile: .run(Set(ReconcileFamily.allCases)))
         #expect(after.movesRemoved == 1)
         let left = try moveRows(db)
         #expect(left.isEmpty)
@@ -271,7 +271,7 @@ struct PlanMoveImportTests {
         let db = try Sub4Database.inMemory()
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
                                moves: [move(session, monday)],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
 
         let after = try Sub4Import.run(into: db, activities: [], shoes: [],
                                        moves: [],
@@ -296,13 +296,13 @@ struct PlanMoveImportTests {
         _ = try Sub4Import.run(into: db, activities: [], shoes: [],
                                moves: [move(session, monday),
                                        move("wk-04-tue-easy", "2026-08-20")],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
         let both = try moveRows(db)
         #expect(both.count == 2)
 
         let after = try Sub4Import.run(into: db, activities: [], shoes: [],
                                        moves: [move(session, monday)],
-                                       reconcile: .run)
+                                       reconcile: .run(Set(ReconcileFamily.allCases)))
         #expect(after.movesSeen == 1)
         #expect(after.movesOrphaned == 1, "no stored plan holds this uid")
         #expect(after.movesRemoved == 1,
@@ -341,14 +341,14 @@ struct PlanMoveImportTests {
         _ = try Sub4Import.run(into: db, activities: [ride()], shoes: [],
                                commutes: [commute()],
                                moves: [move(session, monday)],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
         let seeded = try allCorrections(db)
         #expect(seeded == 2)
 
         // The moves are withdrawn; the commute decision is not.
         let after = try Sub4Import.run(into: db, activities: [ride()], shoes: [],
                                        commutes: [commute()], moves: [],
-                                       reconcile: .run)
+                                       reconcile: .run(Set(ReconcileFamily.allCases)))
         #expect(after.movesRemoved == 1)
         #expect(after.correctionsRemoved == 0)
         let left = try allCorrections(db)
@@ -365,12 +365,12 @@ struct PlanMoveImportTests {
         _ = try Sub4Import.run(into: db, activities: [ride()], shoes: [],
                                commutes: [commute()],
                                moves: [move(session, monday)],
-                               reconcile: .run)
+                               reconcile: .run(Set(ReconcileFamily.allCases)))
 
         let after = try Sub4Import.run(into: db, activities: [ride()], shoes: [],
                                        commutes: [],
                                        moves: [move(session, monday)],
-                                       reconcile: .run)
+                                       reconcile: .run(Set(ReconcileFamily.allCases)))
         #expect(after.correctionsRemoved == 1)
         #expect(after.movesRemoved == 0)
         let survivors = try moveRows(db)

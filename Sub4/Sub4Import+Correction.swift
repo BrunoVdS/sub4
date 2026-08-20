@@ -169,7 +169,7 @@ extension Sub4Import {
             }
         }
 
-        guard reconcile.isRunning else { return }
+        guard reconcile.permits(.commutes) else { return }
 
         // AND ONLY WHEN EVERY DECISION WAS ACCOUNTED FOR. `keep` is built from
         // the ids that RESOLVED, so a decision the database could not place —
@@ -283,7 +283,7 @@ extension Sub4Import {
             }
         }
 
-        guard reconcile.isRunning else { return }
+        guard reconcile.permits(.moves) else { return }
 
         // NO SECOND GUARD, unlike `importCorrections`. Its guard exists because
         // an unresolved decision cannot protect its own row; nothing here can
