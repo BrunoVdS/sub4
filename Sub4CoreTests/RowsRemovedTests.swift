@@ -99,7 +99,7 @@ struct RowsRemovedTests {
     /// checking the sum passes just as happily on a total that adds the same
     /// number twice. Each of these fails alone if its own counter is dropped.
     @Test("Every removal family reaches the total")
-    func everyRemovalFamilyReachesTheTotal() {
+    func everyReconcileFamilyReachesTheTotal() {
         var r = Sub4Import.Report()
         #expect(r.removedTotal == 0, "an empty report claims it removed rows")
 

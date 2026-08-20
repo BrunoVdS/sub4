@@ -320,7 +320,7 @@ nonisolated enum Sub4Import {
         /// declared counter is in the sum; `everyRemovalCounterIsNamed` checks
         /// this list takes the sum back apart. A counter added to one and not
         /// the other is a row deleted with nothing saying by whom.
-        var removals: [(family: RemovalFamily, rows: Int)] {
+        var removals: [(family: ReconcileFamily, rows: Int)] {
             [(.notes, notesRemoved),
              (.matchDecisions, matchDecisionsRemoved),
              (.reviews, reviewsRemoved),
@@ -647,7 +647,8 @@ nonisolated enum Sub4Import {
                 // Group 9 as well, and it references nothing — `work_queue`
                 // has no foreign keys at all, because the subject of a piece
                 // of work may be an id the database has never held.
-                try importWorkQueue(d, items: workItems, now: now, into: &report)
+                try importWorkQueue(d, items: workItems, reconcile: reconcile,
+                                    now: now, into: &report)
 
                 // `rejection.sourceID` is a RESTRICTED foreign key and
                 // `accountID` cascades, so both must exist — they do, from the

@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 415 (2026-08-20).** §5.3 is the 390 device run, Compare and
+**Current at patch 416 (2026-08-20).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -394,9 +394,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 415, 2026-08-20
+## 5. State — patch 416, 2026-08-20
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 415; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 416; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -643,6 +643,12 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   `UNPROTECTED_STORE_CEILING` pair — and closes **516 rows** nothing else checks:
   `athlete_profile` (1), `resting_month` (15), `activity_gear_reference` (500).
   **`knownActivityIDs` is B5's**; **`DetailStore` is invisible to RULE 1**.
+- **THE WORK QUEUE'S PRUNE HAS NO SOURCE READ TO CHECK.** Its items come from
+  `DetailStore`'s `failed`/`noStreams`, read as `stringArray(forKey:) ?? []` —
+  §12.116's shape, where an absent read becomes "no work" and the prune deletes
+  every row. Nothing journals it, so `ReconcileFamily.workQueue.source` is
+  **nil** and the gate prints that it could not check rather than naming a store
+  that would always say yes. **B8's to close.** §12.161.3.
 - **Snapshot `2026-08-10-084723`** (340); **`manual.html` stale**; **two stores unprotected** by §12.116; **`content_revision` unoccupied** (334).
 - **Dates:** first review **24 Aug**; Actions resets **1 Sep**; Japan **7–12 Sep**, `DayKey.key(_:in:)`'s first run outside Europe/Brussels.
 
@@ -680,8 +686,12 @@ run happened. §12.135–§12.150.
    family lost what — and **a run that removed rows is now never pruned**,
    because the table cascades and a child cannot outlive a disposable parent.
    The device is what argued it: the ledger had forgotten its only two
-   removals inside a day. §12.160. **One reading owed**, riding along with the
-   next export — nineteen migrations and `removed by family, durably:`.
+   removals inside a day. §12.160. **416 brought the work queue inside the
+   gate** — it was pruned on every run with no permission, so a report said
+   `does not delete` three lines above `rows removed in total: 1`. One
+   vocabulary now, six families. §12.161. **One reading owed**, riding along
+   with the next export — nineteen migrations and `removed by family,
+   durably:`.
 5. **1B's NOTES — BUILT AT 409, PROVEN 19 AUGUST.** A note save commits to
    SQLite **before** the editor closes, and `remove` with it — 408 the narrow
    write, **409 the order**, **409a the diagnostic** (§12.152, §12.153).
@@ -785,6 +795,13 @@ Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
   write time. **Name the column.** §12.95.4's shape in DDL, and worse, because
   the value it carries is whatever a later migration decides. **A migration
   that applies cleanly has not been tested.** §12.160.2.
+- **A TEST CAN ENCODE A CLAIM THE CODE NEVER MADE.** Three tests asserted that
+  an automatic write-through reconciles NOTHING — *"whatever it is handed"* —
+  while every one of those runs had been pruning `work_queue` for as long as the
+  queue existed. They passed because the prune was outside the permission system
+  the assertions read. **When a test asserts an absence, ask what it is actually
+  looking at**; and two lines of one report that can disagree need something
+  owning the sentence they share. §12.161.
 - **A number a device prints is not a number a device verified.** `14 independent`
   was rendered, stored in the ledger and pasted into a diagnostics file, and it was
   wrong — because every one of those steps read the same list. Printing is not

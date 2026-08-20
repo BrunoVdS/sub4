@@ -133,9 +133,17 @@ struct WriteThroughDeleteTests {
                 family: nil, cause: "a test")
 
             let r = try #require(report(out))
-            #expect(ReconcileFamily.allCases.allSatisfy { !r.reconciled.permits($0) },
-                    "a run nobody asked for may not delete from ANY family")
-            #expect(r.reconciled.line.contains("does not delete"))
+            // **PATCH 416 — THE CLAIM WAS NEVER TRUE AND THIS TEST SAID IT
+            // ANYWAY.** `importWorkQueue` pruned on every run with no
+            // permission, so an automatic run always deleted work-queue rows
+            // while the line said it did not. What is true, and is what a
+            // system run may do, is: the work queue and nothing authored.
+            #expect(r.reconciled.permits(.workQueue))
+            #expect(ReconcileFamily.allCases
+                        .filter { $0 != .workQueue }
+                        .allSatisfy { !r.reconciled.permits($0) },
+                    "a run nobody asked for may not delete anything AUTHORED")
+            #expect(r.reconciled.line.contains("work queue items"))
             #expect(r.matchDecisionsRemoved == 0)
             let kept = try count(db, "match_decision")
             #expect(kept == 2, "a system run removed a row")
@@ -328,8 +336,54 @@ struct WriteThroughDeleteTests {
 
         #expect(r.matchDecisionsRemoved == 0)
         #expect(try count(db, "match_decision") == 2, "nothing was theirs to remove")
-        #expect(ReconcileFamily.allCases.allSatisfy { !r.reconciled.permits($0) })
-        #expect(r.reconciled.line.contains("no reconcilable family"))
+        // The athlete stores own no authored family. The work queue is not
+        // theirs either — it is simply not trigger-scoped, and every run asks
+        // for it (§12.161).
+        #expect(ReconcileFamily.allCases
+                    .filter { $0 != .workQueue }
+                    .allSatisfy { !r.reconciled.permits($0) })
+        #expect(r.reconciled.line.contains("work queue items"))
+    }
+
+    // MARK: The sentence that was not true — patch 416
+
+    private func work(_ id: String) -> WorkItem {
+        WorkItem(kind: .detail, subjectID: id, state: .failed,
+                 attempts: 1, lastError: "the source refused this recording")
+    }
+
+    /// **THE PASTE CONTRADICTED ITSELF, AND NOBODY HAD TO LIE FOR IT TO.**
+    ///
+    /// `importWorkQueue` pruned `work_queue` on every import with no permission
+    /// of any kind. So a backgrounded run printed `reconciled: skipped — an
+    /// automatic write-through does not delete` **while deleting work-queue
+    /// rows**, and `workItemsRemoved` feeds `removedTotal`, so
+    /// `rows removed in total` could read non-zero three lines below it.
+    ///
+    /// Both lines were produced correctly by code that had never been asked to
+    /// agree. §12.15's shape at the level of a report rather than a value.
+    @Test("A run that deletes work-queue rows does not deny deleting")
+    func theReportDoesNotContradictItself() throws {
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [], shoes: [],
+                               workItems: [work("111"), work("222")],
+                               reconcile: .run([.workQueue]))
+
+        // The store has forgotten one of them, so the next run prunes it.
+        var s = AppStores()
+        s.workItems = [work("111")]
+        s.reconcile = .run(Set(ReconcileFamily.allCases))
+
+        let out = DatabaseWriteThrough.writeThrough(
+            db, stores: s, appVersion: "test", trigger: .backgrounded,
+            family: nil, cause: "a test")
+        let r = try #require(report(out))
+
+        #expect(r.workItemsRemoved == 1, "the prune still runs — 416 changed the sentence")
+        #expect(r.removedTotal == 1)
+        #expect(r.reconciled.line.contains("work queue items"),
+                "a report saying it removed a row must not also say it does not delete")
+        #expect(!r.reconciled.line.contains("does not delete"))
     }
 }
 

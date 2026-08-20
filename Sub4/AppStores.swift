@@ -100,8 +100,14 @@ nonisolated struct AppStores: Sendable {
     /// forgotten here.
     @MainActor
     static func permitted(_ requested: Set<ReconcileFamily>) -> Reconciliation {
-        .run(requested.filter {
-            StoreReadJournal.shared.canReconcile([$0.source])
+        .run(requested.filter { family in
+            // PATCH 416. A family with no source is one nothing journals —
+            // today only the work queue — and it is kept rather than refused,
+            // because refusing would stop the queue being cleaned at all. The
+            // gate cannot vouch for it and `Reconciliation.line` says which
+            // families those are. §12.15, and §5.5 carries it until B8.
+            guard let source = family.source else { return true }
+            return StoreReadJournal.shared.canReconcile([source])
         })
     }
 

@@ -73,7 +73,7 @@ extension Sub4Migrations {
                                 onDelete: .cascade)
                 // The family's `rawValue`, a frozen literal like every
                 // vocabulary inside a migration — CLAUDE.md's rule. It is
-                // coupled to `RemovalFamily` by test, not by import.
+                // coupled to `ReconcileFamily` by test, not by import.
                 t.column("family", .text).notNull()
                 t.column("rows", .integer).notNull()
                 // ONE ROW PER FAMILY PER RUN. A run that removed from two

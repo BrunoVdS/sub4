@@ -89,6 +89,21 @@ nonisolated enum ReconcileFamily: String, CaseIterable, Equatable, Sendable {
     case commutes
     case moves
 
+    /// **THE SIXTH, ADDED AT 416, AND IT WAS OUTSIDE THE SYSTEM ENTIRELY.**
+    ///
+    /// `importWorkQueue` pruned `work_queue` on **every** import with no
+    /// permission of any kind, which made two lines of one paste contradict
+    /// each other: a backgrounded run printed `reconciled: skipped — an
+    /// automatic write-through does not delete` while that same run deleted
+    /// work-queue rows, and `workItemsRemoved` feeds `removedTotal`, so
+    /// `rows removed in total` could be non-zero underneath it.
+    ///
+    /// 415 gave it a second vocabulary — `ReconcileFamily`, six cases where this
+    /// had five — so the account could name it. That was a symptom being
+    /// documented rather than a hole being closed, and two enums that agree on
+    /// five of six names are §12.43 waiting to happen. There is one now.
+    case workQueue
+
     /// **THE STORE WHOSE READ MUST BE CLEAN BEFORE THIS FAMILY LOSES ROWS.**
     ///
     /// One name each, where `AppStores.reconcileRequires` was five names and
@@ -97,57 +112,32 @@ nonisolated enum ReconcileFamily: String, CaseIterable, Equatable, Sendable {
     /// true, and it had the other half backwards: a name PRESENT there made
     /// four unrelated families refuse whenever the fifth store was unreadable.
     /// Neither direction was the family's own answer.
-    var source: String {
+    /// **NIL IS A REAL ANSWER AND ONE FAMILY GIVES IT — patch 416.**
+    ///
+    /// The work queue is derived from `DetailStore`'s `failed` and `noStreams`
+    /// sets, read as `UserDefaults.standard.stringArray(forKey:) ?? []`. That
+    /// `?? []` is §12.116's shape exactly — **an absent or unreadable read
+    /// becomes "no work", and the prune then deletes every row** — and nothing
+    /// journals it, so there is no verdict for this gate to consult.
+    ///
+    /// So it says so rather than naming a store that would always answer yes.
+    /// A family with no source is permitted, because refusing would stop the
+    /// queue being cleaned at all; but the gate prints that it could not check,
+    /// and §5.5 carries it until B8 gives the queue a store of its own.
+    /// §12.15: could-not-be-checked is not the same as checked-and-fine.
+    var source: String? {
         switch self {
         case .notes:          "notes.json"
         case .matchDecisions: Matcher.decisionsKey
         case .reviews:        "proposals.json"
         case .commutes:       "commutes.json"
         case .moves:          "moves.json"
+        case .workQueue:      nil
         }
     }
 
     /// For the ledger and the paste. Prose, because a reader of the health
     /// screen is not reading Swift.
-    var label: String {
-        switch self {
-        case .notes:          "notes"
-        case .matchDecisions: "match decisions"
-        case .reviews:        "reviews"
-        case .commutes:       "commute decisions"
-        case .moves:          "moved sessions"
-        }
-    }
-}
-
-/// **EVERY FAMILY A RUN CAN REMOVE ROWS FROM — patch 415, §12.160.**
-///
-/// **A SUPERSET OF `ReconcileFamily`, AND THE EXTRA ONE IS THE POINT.**
-/// `work_queue` is pruned by `importWorkQueue` with no `reconcile` guard at
-/// all — it is B8's operational state, rebuilt from the app's own queue rather
-/// than authored by the athlete, so it never belonged to the permission
-/// system. It does belong to the ACCOUNT: this table exists to say where every
-/// deleted row went, and a family left out because it needs no permission
-/// would be a hole in a total that claims to have none.
-///
-/// §6: *an account beats a list. Five counters can each be right while the set
-/// is missing a case; a residual cannot hide one.* `Report.removals` decomposes
-/// `removedTotal` exactly, and `everyRemovalCounterIsNamed` asserts it —
-/// RULE 2 checks the declaration is in the sum, and this checks the RECORD
-/// takes the sum apart again.
-///
-/// The five shared names match `ReconcileFamily`'s `rawValue`s, and
-/// `theTwoVocabulariesAgree` is the tripwire over that join. §12.129: when you
-/// build one, write down which way it points.
-nonisolated enum RemovalFamily: String, CaseIterable, Equatable, Sendable {
-    case notes
-    case matchDecisions
-    case reviews
-    case commutes
-    case moves
-    /// B8's, pruned without a permission because nothing authored it.
-    case workQueue
-
     var label: String {
         switch self {
         case .notes:          "notes"

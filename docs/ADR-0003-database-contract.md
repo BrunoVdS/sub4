@@ -8962,6 +8962,77 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.161 The sixth family, and the sentence that was not true — patch 416
+
+415 gave the work queue a name in a second enum so the account could reach it,
+and recorded the asymmetry — six removal families against five reconcilable ones
+— as a design call. **It was a symptom being documented rather than a hole being
+closed**, and looking at it properly found two things.
+
+### 12.161.1 The report contradicted itself, and nobody had to lie for it to
+
+`importWorkQueue` pruned `work_queue` on **every** import with no permission of
+any kind. So a backgrounded run printed
+
+```
+reconciled: skipped — an automatic write-through does not delete
+rows removed in total: 1
+```
+
+**in the same report, three lines apart.** `workItemsRemoved` feeds
+`removedTotal`, so the second line counted exactly the rows the first denied.
+
+Both lines were produced correctly by code that had never been asked to agree —
+§12.15's shape at the level of a REPORT rather than a value, and the reason it
+survived is that each half was true about its own subject. *When two lines of one
+paste can disagree, something has to own the sentence they share.*
+
+`theReportDoesNotContradictItself` is the control and it fails against the old
+pair.
+
+### 12.161.2 Two enums agreeing on five of six names is §12.43 waiting
+
+`ReconcileFamily` and `RemovalFamily` differed by one case, and that difference
+encoded a fact about **the permission system**, not about the vocabularies. Once
+the work queue has a permission there is nothing left to differ about, so there
+is one enum. Six cases, used for both the gate and the account.
+
+### 12.161.3 The gate cannot vouch for the work queue, and now says so
+
+`ReconcileFamily.source` is `String?`. The work queue's is **nil**.
+
+Its items come from `DetailStore`'s `failed` and `noStreams`, read as
+`UserDefaults.standard.stringArray(forKey:) ?? []`. **That `?? []` is §12.116's
+shape exactly** — an absent or unreadable read becomes *"no work"*, and the
+prune then deletes every row — and nothing journals it, so there is no verdict
+for `AppStores.permitted` to consult.
+
+Naming a store that would always answer yes would have made the gate look
+complete. **A family with no source is permitted and printed as such**, because
+refusing would stop the queue being cleaned at all; §5.5 carries the gap until
+B8 gives the queue a store of its own. §12.15 again: could-not-be-checked is not
+the same as checked-and-fine.
+
+### 12.161.4 It is asked for on every trigger, because it has no author
+
+The work queue is not trigger-scoped. It was pruned on every run before 414 gave
+anything a permission and it still should be — what changed is that the run now
+**says** so. An automatic write-through reads `reconciled: work queue items`;
+a note save reads `notes, work queue items`.
+
+**Three existing tests asserted the opposite and were wrong before this patch.**
+*"An automatic run refuses to reconcile, whatever it is handed"*, and two
+`allSatisfy { !permits($0) }` assertions, all claimed a system run deletes
+nothing — while the same runs had been deleting work-queue rows for as long as
+the queue has existed. They now assert the true claim: **the work queue and
+nothing authored.**
+
+That is the part worth keeping. A test can encode a claim the code never made,
+pass for a year, and read as proof of it — and the way this one surfaced was
+correcting an asymmetry that looked cosmetic.
+
+---
+
 ## 12.160 A removal outlives its run — patch 415, topic 1C closes
 
 `migration_run_removal(runID, family, rows)`, one row per family that lost

@@ -369,13 +369,29 @@ final class DatabaseWriteThrough {
         // and `Reconciliation`'s own doc has said since it was written that "a
         // store could not be read" and "the caller did not ask for it" are both
         // refusals and only one of them is the gate working. §12.15.
+        //
+        // **THE WORK QUEUE IS ASKED FOR ON EVERY TRIGGER — patch 416, §12.161.**
+        // It has no author, so it is not trigger-scoped: `importWorkQueue`
+        // pruned it on every run before 414 gave anything a permission, and it
+        // still should. What changed is that the run now SAYS so. Until 416
+        // an automatic run printed `skipped — an automatic write-through does
+        // not delete` while deleting work-queue rows underneath it, with
+        // `rows removed in total` non-zero on the same report.
+        let queue: Set<ReconcileFamily> =
+            stores.reconcile.permits(.workQueue) ? [.workQueue] : []
         s.reconcile = trigger == .authored
             ? (family.map { f in
                    stores.reconcile.permits(f)
-                       ? Reconciliation.run([f])
-                       : .skipped("\(f.label): the source could not be read")
-               } ?? .skipped("the change belongs to no reconcilable family"))
-            : .skipped("an automatic write-through does not delete")
+                       ? Reconciliation.run(queue.union([f]))
+                       : (queue.isEmpty
+                          ? .skipped("\(f.label): the source could not be read")
+                          : .run(queue))
+               } ?? (queue.isEmpty
+                     ? .skipped("the change belongs to no reconcilable family")
+                     : .run(queue)))
+            : (queue.isEmpty
+               ? .skipped("an automatic write-through does not delete")
+               : .run(queue))
 
         let at = Sub4Import.iso8601(Date())
         do {

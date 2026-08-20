@@ -45,7 +45,7 @@ struct DatabaseWriteThroughTests {
     // MARK: The teeth
 
     /// THE ONE WITH TEETH. A caller handing in `.run` must not get deletion.
-    @Test("An automatic run refuses to reconcile, whatever it is handed")
+    @Test("An automatic run reconciles the work queue and nothing authored")
     func anAutomaticRunDoesNotDelete() throws {
         let db = try Sub4Database.inMemory()
         var asked = stores([ride()])
@@ -57,7 +57,14 @@ struct DatabaseWriteThroughTests {
         guard case .wrote(let report, _) = outcome else {
             Issue.record("expected a write, got \(outcome)"); return
         }
-        #expect(ReconcileFamily.allCases.allSatisfy { !report.reconciled.permits($0) },
+        // PATCH 416. The caller handed in every family and got back one: the
+        // narrowing belongs inside `writeThrough`, not at the call site, and
+        // the one it keeps is the work queue — which has no author and so is
+        // not trigger-scoped. Everything authored is still refused.
+        #expect(report.reconciled.permits(.workQueue))
+        #expect(ReconcileFamily.allCases
+                    .filter { $0 != .workQueue }
+                    .allSatisfy { !report.reconciled.permits($0) },
                 "the override belongs inside writeThrough, not at the call site")
         #expect(report.notesRemoved == 0)
         #expect(report.matchDecisionsRemoved == 0)

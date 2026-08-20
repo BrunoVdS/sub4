@@ -351,7 +351,7 @@ nonisolated struct LedgerCensus: Equatable, Sendable {
     /// never pruned, so this is the figure that survives a day. Printed
     /// unconditionally, every family, including the zeros — a family that
     /// vanishes at zero cannot be told from one nobody wired in (§12.54.2).
-    let removedByFamily: [RemovalFamily: Int]
+    let removedByFamily: [ReconcileFamily: Int]
 
     nonisolated struct Removal: Equatable, Sendable {
         let startedUTC: String
@@ -360,7 +360,7 @@ nonisolated struct LedgerCensus: Equatable, Sendable {
         /// **WHICH FAMILIES, WHICH §5.5 ASKED FOR SINCE 369.** Empty for a run
         /// that predates `migration_run_removal`, and the line says so rather
         /// than printing a removal that appears to have come from nowhere.
-        let families: [RemovalFamily: Int]
+        let families: [ReconcileFamily: Int]
 
         var line: String {
             let base = "\(startedUTC) · \(trigger) · \(rows) row"
@@ -411,7 +411,7 @@ nonisolated struct LedgerCensus: Equatable, Sendable {
         // family that only appears once it has lost something cannot be told
         // from one nobody wired in. §12.54.2.
         lines.append("  removed by family, durably: "
-                     + RemovalFamily.allCases
+                     + ReconcileFamily.allCases
                          .map { "\($0.label) \(removedByFamily[$0] ?? 0)" }
                          .joined(separator: ", "))
         lines.append("  newest removal: "
@@ -639,7 +639,7 @@ nonisolated enum MigrationLedger {
     static func recordRemovals(_ db: Sub4Database,
                                id: String,
                                rows: Int,
-                               families: [(family: RemovalFamily, rows: Int)] = []) throws {
+                               families: [(family: ReconcileFamily, rows: Int)] = []) throws {
         try db.queue.write { d in
             try d.execute(sql: """
                 UPDATE migration_run SET rowsRemoved = ? WHERE id = ?
@@ -865,14 +865,14 @@ nonisolated enum MigrationLedger {
                  LIMIT 1
                 """).map { row -> LedgerCensus.Removal in
                     let id = (row["id"] as String?) ?? ""
-                    var families: [RemovalFamily: Int] = [:]
+                    var families: [ReconcileFamily: Int] = [:]
                     let rows = (try? Row.fetchAll(d, sql: """
                         SELECT family, rows FROM migration_run_removal
                          WHERE runID = ?
                         """, arguments: [id])) ?? []
                     for r in rows {
                         guard let name = r["family"] as String?,
-                              let f = RemovalFamily(rawValue: name) else { continue }
+                              let f = ReconcileFamily(rawValue: name) else { continue }
                         families[f] = (r["rows"] as Int?) ?? 0
                     }
                     return LedgerCensus.Removal(
@@ -886,14 +886,14 @@ nonisolated enum MigrationLedger {
             // **THE ACCOUNT THAT SURVIVES — patch 415.** Over the removal
             // table, whose runs are never pruned, rather than over the column,
             // whose runs are.
-            var removedByFamily: [RemovalFamily: Int] = [:]
+            var removedByFamily: [ReconcileFamily: Int] = [:]
             for r in try Row.fetchAll(d, sql: """
                 SELECT family, SUM(rows) AS total
                   FROM migration_run_removal
                  GROUP BY family
                 """) {
                 guard let name = r["family"] as String?,
-                      let f = RemovalFamily(rawValue: name) else { continue }
+                      let f = ReconcileFamily(rawValue: name) else { continue }
                 removedByFamily[f] = (r["total"] as Int?) ?? 0
             }
 

@@ -91,7 +91,7 @@ struct RunRemovalTests {
         // is a row deleted with nothing saying by whom. §6: an account beats a
         // list.
         #expect(r.removals.reduce(0) { $0 + $1.rows } == r.removedTotal)
-        #expect(Set(r.removals.map(\.family)) == Set(RemovalFamily.allCases))
+        #expect(Set(r.removals.map(\.family)) == Set(ReconcileFamily.allCases))
     }
 
     @Test("A family that lost nothing writes no row")
@@ -115,22 +115,23 @@ struct RunRemovalTests {
         #expect(rows.first?.2 == 6)
     }
 
-    // MARK: 3 — the two vocabularies, and the join between them
+    // MARK: 3 — one vocabulary, and the family that nothing vouches for
 
-    @Test("Every reconcilable family can be recorded as a removal")
-    func theTwoVocabulariesAgree() {
-        // §12.129: when you build a tripwire over a join, write down which way
-        // it points. This way. A family that may be reconciled and cannot be
-        // recorded would delete rows the account could not name.
-        for f in ReconcileFamily.allCases {
-            #expect(RemovalFamily(rawValue: f.rawValue) != nil,
-                    "\(f.rawValue) can be reconciled but not recorded")
-        }
-        // And the other way is deliberately NOT an equality: `workQueue` is
-        // pruned without a permission because nothing authored it, so the
-        // removal vocabulary is a strict superset. §12.160.
-        #expect(RemovalFamily.allCases.count == ReconcileFamily.allCases.count + 1)
-        #expect(RemovalFamily(rawValue: "workQueue") != nil)
+    @Test("Exactly one family has no source, and it is the work queue")
+    func onlyTheWorkQueueHasNoSource() {
+        // 415 had TWO enums agreeing on five of six names — §12.43 waiting to
+        // happen — because the work queue was pruned outside the permission
+        // system and could only be named by the account. 416 gave it a
+        // permission, so there is one vocabulary and this is what is left to
+        // pin: which family the gate cannot vouch for, and that it is one.
+        let sourceless = ReconcileFamily.allCases.filter { $0.source == nil }
+        #expect(sourceless == [.workQueue])
+
+        // And the rest name distinct stores, so a family added later cannot
+        // inherit somebody else's trustworthiness by being forgotten.
+        let named = ReconcileFamily.allCases.compactMap(\.source)
+        #expect(Set(named).count == named.count)
+        #expect(named.count == ReconcileFamily.allCases.count - 1)
     }
 
     // MARK: 4 — the line says which family

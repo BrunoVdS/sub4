@@ -121,6 +121,7 @@ extension Sub4Import {
     nonisolated static func importWorkQueue(
         _ d: Database,
         items: [WorkItem],
+        reconcile: Reconciliation,
         now: String,
         into report: inout Report
     ) throws {
@@ -164,6 +165,18 @@ extension Sub4Import {
             }
         }
 
+        // **PATCH 416 — IT HAD NO PERMISSION AT ALL UNTIL NOW.**
+        //
+        // This ran on every import, so a backgrounded run printed `reconciled:
+        // skipped — an automatic write-through does not delete` while deleting
+        // work-queue rows underneath it, and `workItemsRemoved` fed
+        // `removedTotal` on the same report. Two lines of one paste
+        // contradicting each other.
+        //
+        // The write-through asks for `.workQueue` on EVERY trigger, because
+        // this queue has no author and so is not trigger-scoped — the sentence
+        // now names it instead of denying it. §12.161.
+        guard reconcile.permits(.workQueue) else { return }
         report.workItemsRemoved = try prune(d, keeping: items)
     }
 

@@ -166,8 +166,10 @@ struct WorkQueueTests {
         #expect(before == 2)
 
         // `resetCache` cleared the detail verdict; the stream one stands.
+        // PATCH 416 — the prune now needs its family asked for by name.
         let report = try Sub4Import.run(into: db, activities: [], shoes: [],
-                                        workItems: [item(.stream, "222", .done)])
+                                        workItems: [item(.stream, "222", .done)],
+                                        reconcile: .run([.workQueue]))
         #expect(report.workItemsRemoved == 1)
         let after = try rows(db)
         #expect(after.count == 1)
@@ -184,7 +186,8 @@ struct WorkQueueTests {
         // re-syncing and its source is a preference array with no decode step,
         // so "empty" cannot mean "unreadable" here.
         let report = try Sub4Import.run(into: db, activities: [], shoes: [],
-                                        workItems: [])
+                                        workItems: [],
+                                        reconcile: .run([.workQueue]))
         #expect(report.workItemsRemoved == 1)
         let n = try count(db)
         #expect(n == 0)
