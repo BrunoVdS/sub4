@@ -1020,7 +1020,12 @@ nonisolated enum AuthoredRepository {
 /// **COUNTS AND A REASON, NOT A `Bool`.** §12.15: "the database refused it" and
 /// "there was no database" send a caller to different places, and a mutation
 /// that reports only success or failure cannot tell the athlete which.
-nonisolated enum NoteWrite: Equatable, Sendable {
+/// **RENAMED FROM `NoteWrite` AT 411.** 408 built it for the notes and 411
+/// gives the commutes, the plan moves and the match decisions the same three
+/// outcomes — so it is one enum with four callers rather than four enums that
+/// agree until one of them stops. §12.43, whose worst instance was five copies
+/// of one rule disagreeing for 230 patches.
+nonisolated enum AuthoredWrite: Equatable, Sendable {
     /// The row is committed. `inserted` false means it updated one.
     case wrote(inserted: Bool)
     /// The transaction refused. Carries what SQLite said, and NOTHING is
@@ -1063,7 +1068,7 @@ nonisolated enum NoteWrite: Equatable, Sendable {
 nonisolated enum NoteRepository {
 
     static func upsert(_ note: NotesStore.Note, in db: Sub4Database?,
-                       now: Date = Date()) -> NoteWrite {
+                       now: Date = Date()) -> AuthoredWrite {
         guard let db else { return .noDatabase }
         do {
             var report = Sub4Import.Report()
@@ -1096,7 +1101,7 @@ nonisolated enum NoteRepository {
     /// Deleting a note that is not there is `.wrote(inserted: false)` and not a
     /// refusal: the caller asked for it to be gone and it is gone. §12.15's
     /// distinction applies to reasons, not to work that was already done.
-    static func delete(noteFor sessionUid: String, in db: Sub4Database?) -> NoteWrite {
+    static func delete(noteFor sessionUid: String, in db: Sub4Database?) -> AuthoredWrite {
         guard let db else { return .noDatabase }
         do {
             try db.queue.write { d in
@@ -1111,3 +1116,195 @@ nonisolated enum NoteRepository {
         }
     }
 }
+
+// MARK: - The other three authored families — patch 411, §12.156
+
+/// **ONE COMMUTE DECISION, ONE TRANSACTION — patch 411.**
+///
+/// `NoteRepository`'s shape, and the differences are the whole patch.
+///
+/// **THE PRUNE LIVES INSIDE THIS IMPORTER, AND THAT IS A TRAP.**
+/// `importCorrections` builds its keep-set from the array it is handed and then
+/// deletes every commute row outside it. `importNotes` does not — the notes'
+/// reconciliation is a separate pass in `reconcileAuthored` — so 408 could hand
+/// it one note and nothing else moved. **Handing this one decision with
+/// `reconcile: .run` would delete every OTHER commute decision the athlete has
+/// ever made**, from a function whose name says "import".
+///
+/// `.skipped` is not a workaround for that; it is the parameter doing its job.
+/// The reason string reaches the health screen, so a single-record write says
+/// out loud that it did not reconcile — "a store could not be read" and "the
+/// caller did not ask" are both refusals and only one of them is the gate
+/// working (`Reconciliation`'s own doc).
+///
+/// `commutesAreNotPrunedByASingleWrite` is the control, and it is the one to
+/// read: it writes one decision into a database holding three and asserts the
+/// other two are still there.
+nonisolated enum CommuteRepository {
+
+    static func upsert(_ decision: CommuteDecision, in db: Sub4Database?,
+                       now: Date = Date()) -> AuthoredWrite {
+        guard let db else { return .noDatabase }
+        do {
+            var report = Sub4Import.Report()
+            try db.queue.write { d in
+                try Sub4Import.importCorrections(
+                    d, decisions: [decision],
+                    reconcile: .skipped("one commute decision was saved, so "
+                                        + "the store was not reconciled"),
+                    now: Sub4Import.iso8601(now), into: &report)
+            }
+            // §12.152.3 — a refusal inside the savepoint is not a throw.
+            if let refusal = report.refusals.first {
+                return .refused(refusal.reason)
+            }
+            return .wrote(inserted: report.correctionsImported > 0)
+        } catch {
+            return .refused(String(describing: error))
+        }
+    }
+
+    /// **THE DISCRIMINATOR IS NOT OPTIONAL.** `correction` holds the commute
+    /// decisions AND the plan moves — one row each, told apart by
+    /// `subjectKind` and `field`, and the census counts them together (3 rows
+    /// on 19 August: one commute, two moves). A delete keyed on `subjectID`
+    /// alone would be correct only by luck, because the two families draw their
+    /// subjects from different namespaces — an activity id and a plan session
+    /// uid — and luck is not a constraint.
+    ///
+    /// The `WHERE` is `pruneCommutes`'s, minus the keep-set. Same four columns,
+    /// same constants, so the two cannot drift apart on which rows are a
+    /// commute decision.
+    ///
+    /// **AND THE SUBJECT IS THE CANONICAL ACTIVITY, NOT THE ONE THE CALLER
+    /// HOLDS.** §3.1 — Strava ids are never primary keys — so
+    /// `importCorrections` resolves `decision.activityId` through
+    /// `canonicalActivity` before it writes, and the row is filed under the
+    /// internal id. `CommuteStore` keys its dictionary by the EXTERNAL id, so a
+    /// delete that passed it straight into the `WHERE` would match nothing and
+    /// report success. **The first version of this did exactly that**, and
+    /// `theDiscriminatorIsLoadBearing` caught it — a test written about a
+    /// different mistake.
+    ///
+    /// §12.43: the resolution is a rule, so it is called rather than copied.
+    ///
+    /// An id that resolves to nothing means there is no row to delete —
+    /// `canonicalActivity` is how one gets written in the first place. The one
+    /// state that leaves behind is a correction whose activity has since been
+    /// removed, which `pruneCommutes` is what clears.
+    static func delete(commuteFor activityId: String,
+                       in db: Sub4Database?) -> AuthoredWrite {
+        guard let db else { return .noDatabase }
+        do {
+            try db.queue.write { d in
+                guard let canonical = try Sub4Import.canonicalActivity(
+                    d, externalID: activityId) else { return }
+                try d.execute(sql: """
+                    DELETE FROM correction
+                    WHERE accountID = ? AND subjectKind = ? AND field = ?
+                      AND subjectID = ?
+                    """, arguments: [Sub4Import.accountID,
+                                     Sub4Import.commuteSubject,
+                                     Sub4Import.commuteField, canonical])
+            }
+            return .wrote(inserted: false)
+        } catch {
+            return .refused(String(describing: error))
+        }
+    }
+}
+
+/// One moved session, one transaction — patch 411.
+///
+/// `importMoves` carries the same inside-the-importer prune as
+/// `importCorrections`, for the same reason and with the same guard. It takes
+/// no `now:` — a move's timestamp is its own `decided`.
+extension PlanMoveRepository {
+
+    static func upsert(_ move: PlanMove, in db: Sub4Database?) -> AuthoredWrite {
+        guard let db else { return .noDatabase }
+        do {
+            var report = Sub4Import.Report()
+            try db.queue.write { d in
+                try Sub4Import.importMoves(
+                    d, moves: [move],
+                    reconcile: .skipped("one moved session was saved, so the "
+                                        + "store was not reconciled"),
+                    into: &report)
+            }
+            if let refusal = report.refusals.first {
+                return .refused(refusal.reason)
+            }
+            return .wrote(inserted: report.movesImported > 0)
+        } catch {
+            return .refused(String(describing: error))
+        }
+    }
+
+    /// `pruneMoves`'s `WHERE`, minus the keep-set. See
+    /// `CommuteRepository.delete` for why the discriminator is load-bearing.
+    static func delete(moveFor sessionUid: String,
+                       in db: Sub4Database?) -> AuthoredWrite {
+        guard let db else { return .noDatabase }
+        do {
+            try db.queue.write { d in
+                try d.execute(sql: """
+                    DELETE FROM correction
+                    WHERE accountID = ? AND subjectKind = ? AND field = ?
+                      AND subjectID = ?
+                    """, arguments: [Sub4Import.accountID,
+                                     Sub4Import.moveSubject,
+                                     Sub4Import.moveField, sessionUid])
+            }
+            return .wrote(inserted: false)
+        } catch {
+            return .refused(String(describing: error))
+        }
+    }
+}
+
+/// One match decision, one transaction — patch 411.
+///
+/// **THE EASY ONE, AND IT IS WORTH SAYING WHY.** `match_decision` is its own
+/// table and its removal pass lives in `reconcileAuthored` rather than inside
+/// `importMatchDecisions`, so handing the importer a single decision moves
+/// nothing else — exactly as `importNotes` behaved for 408. No `reconcile:`
+/// parameter exists here because there is nothing to skip.
+extension MatchDecisionRepository {
+
+    static func upsert(_ decision: MatchDecision, in db: Sub4Database?,
+                       now: Date = Date()) -> AuthoredWrite {
+        guard let db else { return .noDatabase }
+        do {
+            var report = Sub4Import.Report()
+            try db.queue.write { d in
+                try Sub4Import.importMatchDecisions(
+                    d, decisions: [decision],
+                    now: Sub4Import.iso8601(now), into: &report)
+            }
+            if let refusal = report.refusals.first {
+                return .refused(refusal.reason)
+            }
+            return .wrote(inserted: report.matchDecisionsImported > 0)
+        } catch {
+            return .refused(String(describing: error))
+        }
+    }
+
+    static func delete(decisionFor sessionUid: String,
+                       in db: Sub4Database?) -> AuthoredWrite {
+        guard let db else { return .noDatabase }
+        do {
+            try db.queue.write { d in
+                try d.execute(sql: """
+                    DELETE FROM match_decision
+                    WHERE accountID = ? AND planSessionUID = ?
+                    """, arguments: [Sub4Import.accountID, sessionUid])
+            }
+            return .wrote(inserted: false)
+        } catch {
+            return .refused(String(describing: error))
+        }
+    }
+}
+

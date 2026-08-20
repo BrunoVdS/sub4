@@ -341,6 +341,7 @@ final class Matcher {
     private let defaults: UserDefaults
 
     private init() {
+        database = .theLaunchs
         defaults = .standard
         load()
         // SINGLETON ONLY — patch 273, the same rule as the three file stores.
@@ -362,7 +363,16 @@ final class Matcher {
     /// The migration below is the one piece of this file that runs exactly
     /// once per device, which makes it the one piece that cannot be tested at
     /// all without this.
+    /// A seam that commits, for 412's controls.
+    init(defaults: UserDefaults, database: Sub4Database) {
+        self.database = .given(database)
+        self.defaults = defaults
+        load()
+    }
+
     init(defaults: UserDefaults) {
+        // SEE `AuthoredDatabase`. A seam does not reach the launch's.
+        database = .none
         self.defaults = defaults
         load()
     }
@@ -619,17 +629,82 @@ final class Matcher {
     /// not invent one — the control not sticking is what the athlete sees, and
     /// "Unreadable stores" is where the reason is written down.
     func setOverride(sessionUid: String, activityId: String?, now: Date = Date()) {
+        // DATABASE-FIRST SINCE 412 — §12.157.
+        let candidate = MatchDecision(sessionUid: sessionUid,
+                                      activityId: activityId,
+                                      decided: now,
+                                      dateIsKnown: true)
+        guard let committed = commitToDatabase(candidate) else { return }
         let previous = decisions[sessionUid]
-        decisions[sessionUid] = MatchDecision(sessionUid: sessionUid,
-                                              activityId: activityId,
-                                              decided: now,
-                                              dateIsKnown: true)
-        guard persist() else {
-            if let previous { decisions[sessionUid] = previous }
-            else { decisions.removeValue(forKey: sessionUid) }
+        decisions[sessionUid] = candidate
+        mirror(previous: previous, subject: sessionUid, committed: committed)
+    }
+    // MARK: The authoritative commit — patch 412, §12.157
+
+    /// Which database this instance commits to. See `AuthoredDatabase`.
+    private let database: AuthoredDatabase
+
+    /// Whether the last match decision reached the database.
+    private(set) var lastCommit: AuthoredCommit = .noneThisLaunch
+
+    /// **THE ONE THAT CANNOT THROW, AND THAT CHANGES THE ANSWER.**
+    ///
+    /// `setOverride` returns Void — §12.19's disclosed gap, because
+    /// `UserDefaults.set` has no failure to surface and there is no alert on
+    /// this path. So a refusal cannot be reported the way `NotesStore`'s is,
+    /// and the honest equivalent is **not publishing**: memory is untouched,
+    /// the tick does not stick, and the athlete sees the control fail to take.
+    /// That is the contract 372 already wrote for a failed `persist()`, applied
+    /// one step earlier.
+    ///
+    /// - Returns: `nil` when the database refused and nothing may be published;
+    ///   `true` when it committed; `false` when there is no database, which is
+    ///   an ordinary state before B9 and lets the write proceed file-only.
+    private func commitToDatabase(_ candidate: MatchDecision) -> Bool? {
+        switch MatchDecisionRepository.upsert(candidate, in: database.live) {
+        case .wrote:
+            lastCommit = .reached
+            return true
+        case .noDatabase:
+            lastCommit = .missed
+            return false
+        case .refused:
+            return nil
+        }
+    }
+
+    /// `commitToDatabase`'s other half.
+    private func deleteFromDatabase(_ sessionUid: String) -> Bool? {
+        switch MatchDecisionRepository.delete(decisionFor: sessionUid,
+                                              in: database.live) {
+        case .wrote:
+            lastCommit = .reached
+            return true
+        case .noDatabase:
+            lastCommit = .missed
+            return false
+        case .refused:
+            return nil
+        }
+    }
+
+    /// Step 4. **Committed: memory stands. Not committed: memory goes back.**
+    ///
+    /// The second half is 372's rule unchanged — a decision that never reached
+    /// `UserDefaults` must not keep showing a tick. The first half is new and
+    /// is the whole point of the inversion: once the row is in, the blob being
+    /// briefly behind is a mirror problem, and reverting the screen would
+    /// discard an edit the database is holding.
+    private func mirror(previous: MatchDecision?, subject: String,
+                        committed: Bool) {
+        guard !persist() else { return }
+        guard committed else {
+            if let previous { decisions[subject] = previous }
+            else { decisions.removeValue(forKey: subject) }
             return
         }
     }
+
 
     func clearOverride(session: Session) {
         clearOverride(sessionUid: session.uid)
@@ -640,11 +715,10 @@ final class Matcher {
     /// session is unmatched while the stored decision still says otherwise —
     /// and it looks right, because the screen is reading the memory that lied.
     func clearOverride(sessionUid: String) {
-        guard let previous = decisions.removeValue(forKey: sessionUid) else { return }
-        guard persist() else {
-            decisions[sessionUid] = previous
-            return
-        }
+        guard let previous = decisions[sessionUid] else { return }
+        guard let committed = deleteFromDatabase(sessionUid) else { return }
+        decisions.removeValue(forKey: sessionUid)
+        mirror(previous: previous, subject: sessionUid, committed: committed)
     }
 
     // MARK: Core

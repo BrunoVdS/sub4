@@ -26,7 +26,7 @@
 //  alternative — let the store read `Sub4Launch.shared.database` — put the
 //  athlete's real notes at risk from the suite: `DatabaseBootstrapTests` and
 //  `ImporterSeedTests` call `Sub4Launch.shared.begin()`, which opens the app's
-//  own database for every test that runs after them. See `NoteDatabase`.
+//  own database for every test that runs after them. See `AuthoredDatabase`.
 //
 
 import Testing
@@ -253,8 +253,8 @@ struct NoteDatabaseFirstTests {
         // after a force-quit and relaunch — where nothing has been written — so
         // its row could only ever pass. §12.15: could-not-be-checked is not the
         // same as checked-and-fine.
-        #expect(store.lastNoteCommit == .noneThisLaunch)
-        #expect(!store.lastNoteCommit.line.hasSuffix("yes"),
+        #expect(store.lastCommit == .noneThisLaunch)
+        #expect(!AuthoredCommit.line([("notes", store.lastCommit)]).hasSuffix("yes"),
                 "a launch that has written nothing must not claim it reached the database")
     }
 
@@ -266,20 +266,20 @@ struct NoteDatabaseFirstTests {
         let committing = NotesStore(directory: dir, database: db)
         _ = try committing.save(session: session(), rpe: 6, feel: .expected,
                                 text: "reached")
-        #expect(committing.lastNoteCommit == .reached)
+        #expect(committing.lastCommit == .reached)
 
         // A seam with no database is the shut-gate state the app must survive
         // before B9 — the file takes the note and the line says the row did not.
         let fileOnly = NotesStore(directory: try writableDirectory())
         _ = try fileOnly.save(session: session(), rpe: 6, feel: .expected,
                               text: "file only")
-        #expect(fileOnly.lastNoteCommit == .missed)
-        #expect(fileOnly.lastNoteCommit.line.contains("NO"))
+        #expect(fileOnly.lastCommit == .missed)
+        #expect(AuthoredCommit.line([("notes", fileOnly.lastCommit)]).contains("NO"))
 
         // AND A DELETE MOVES IT TOO. `remove` commits through the same pair, so
         // a diagnostic that only followed `save` would go stale the moment the
         // athlete cleared a note.
         try committing.remove(session: session())
-        #expect(committing.lastNoteCommit == .reached)
+        #expect(committing.lastCommit == .reached)
     }
 }

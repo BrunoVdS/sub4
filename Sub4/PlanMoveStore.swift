@@ -339,6 +339,7 @@ final class PlanMoveStore {
     private let fileURL: URL
 
     private init() {
+        database = .theLaunchs
         let dir = (try? FileManager.default.url(for: .applicationSupportDirectory,
                                                 in: .userDomainMask,
                                                 appropriateFor: nil, create: true))
@@ -354,7 +355,16 @@ final class PlanMoveStore {
     /// rule rather than an omission here: a test store writing into the shared
     /// journal would leak into whatever ran next, and `canReconcile` reads that
     /// journal to decide whether rows may be deleted.
+    /// A seam that commits, for 412's controls. See `CommuteStore`'s.
+    init(directory: URL, database: Sub4Database) {
+        self.database = .given(database)
+        fileURL = directory.appendingPathComponent("moves.json")
+        load()
+    }
+
     init(directory: URL) {
+        // SEE `AuthoredDatabase`. A seam does not reach the launch's.
+        database = .none
         fileURL = directory.appendingPathComponent("moves.json")
         load()
     }
@@ -399,17 +409,16 @@ final class PlanMoveStore {
         guard PlanMove.isDayKey(movedTo) else {
             throw PlanMoveFault.notADayKey(movedTo)
         }
+        // DATABASE-FIRST SINCE 412 — §12.157, and the day-key guard stays
+        // ahead of the commit: a malformed move is not the database's to
+        // refuse.
+        let candidate = PlanMove(sessionUid: sessionUid, movedTo: movedTo,
+                                 decided: now)
+        let committed = try commitToDatabase(candidate)
         let previous = moves[sessionUid]
-        moves[sessionUid] = PlanMove(sessionUid: sessionUid,
-                                     movedTo: movedTo,
-                                     decided: now)
-        do {
-            try save()
-        } catch {
-            if let previous { moves[sessionUid] = previous }
-            else { moves.removeValue(forKey: sessionUid) }
-            throw error
-        }
+        moves[sessionUid] = candidate
+        try mirror(previous: previous, subject: sessionUid,
+                   committed: committed)
     }
 
     /// Puts the session back on the day the plan asked for.
@@ -418,12 +427,87 @@ final class PlanMoveStore {
     /// planned date, and writing that instead would leave a correction row
     /// overriding nothing.
     func clear(_ sessionUid: String) throws {
-        guard let previous = moves.removeValue(forKey: sessionUid) else { return }
+        guard let previous = moves[sessionUid] else { return }
+        let committed = try deleteFromDatabase(sessionUid)
+        moves.removeValue(forKey: sessionUid)
+        try mirror(previous: previous, subject: sessionUid,
+                   committed: committed)
+    }
+
+
+    // MARK: The authoritative commit — patch 412, §12.157
+
+    /// Which database this instance commits to. See `AuthoredDatabase`: a seam
+    /// is inert unless it is handed one on purpose, because the alternative
+    /// reaches a process-wide singleton from a store rooted in a temp folder.
+    private let database: AuthoredDatabase
+
+    /// Whether the last moved session reached the database — `AuthoredCommit`.
+    private(set) var lastCommit: AuthoredCommit = .noneThisLaunch
+
+    /// Step 2, and the only step that may refuse the athlete's edit.
+    ///
+    /// **NO DATABASE IS NOT A REFUSAL.** The gate may not have opened and the
+    /// app must work without it until B9; refusing would mean a shut database
+    /// destroys the ability to record an answer at all. The file still takes
+    /// it, the next import catches the rows up, and `lastCommit` makes the gap
+    /// visible rather than assumed — §12.54.2.
+    @discardableResult
+    private func commitToDatabase(_ candidate: PlanMove) throws -> Bool {
+        switch PlanMoveRepository.upsert(candidate, in: database.live) {
+        case .wrote:
+            lastCommit = .reached
+            return true
+        case .noDatabase:
+            lastCommit = .missed
+            return false
+        case .refused(let why):
+            throw StoreWriteError(store: "the database", stage: .writing,
+                                  reason: why)
+        }
+    }
+
+    /// `commitToDatabase`'s other half. Same three outcomes, same reasoning.
+    @discardableResult
+    private func deleteFromDatabase(_ subject: String) throws -> Bool {
+        switch PlanMoveRepository.delete(moveFor: subject, in: database.live) {
+        case .wrote:
+            lastCommit = .reached
+            return true
+        case .noDatabase:
+            lastCommit = .missed
+            return false
+        case .refused(let why):
+            throw StoreWriteError(store: "the database", stage: .writing,
+                                  reason: why)
+        }
+    }
+
+    /// Step 4, and **whether a failure here is fatal depends on step 2.**
+    ///
+    /// **COMMITTED: memory stands and the failure is recorded.** §12.17 says
+    /// the screens must not show what the disk does not hold — and the
+    /// authoritative disk is SQLite, which holds it. Throwing would report a
+    /// failure for an edit that is already saved.
+    ///
+    /// **NOT COMMITTED: the file is the only store, so the old rule stands.**
+    /// Before B9 a shut database is an ordinary state and the file is
+    /// authoritative in it; rolling memory back is what stops the screens
+    /// showing an answer nothing holds.
+    ///
+    /// It calls `save()`, so the announcement is unchanged — 412 claims the
+    /// ORDER and nothing about the write-through, which is topic 1C's subject.
+    private func mirror(previous: PlanMove?, subject: String,
+                        committed: Bool) throws {
         do {
             try save()
         } catch {
-            moves[sessionUid] = previous
-            throw error
+            guard committed else {
+                if let previous { moves[subject] = previous }
+                else { moves.removeValue(forKey: subject) }
+                throw error
+            }
+            StoreWriteJournal.shared.attempt("moves.json") { throw error }
         }
     }
 

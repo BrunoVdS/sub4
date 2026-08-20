@@ -73,6 +73,7 @@ final class CommuteStore {
     private let fileURL: URL
 
     private init() {
+        database = .theLaunchs
         let dir = (try? FileManager.default.url(for: .applicationSupportDirectory,
                                                 in: .userDomainMask,
                                                 appropriateFor: nil, create: true))
@@ -89,7 +90,18 @@ final class CommuteStore {
     /// it — that is why it was written. `ReadBacks.authoredSources` is why it
     /// is now also production: B2 hydrates `shared` from the database, and the
     /// read-back needs `commutes.json` itself. §12.91.2.
+    /// A seam that commits, for 412's controls. A second initialiser rather
+    /// than a default argument — §12.95.4, whose instance cost 350a four
+    /// patches of a green suite.
+    init(directory: URL, database: Sub4Database) {
+        self.database = .given(database)
+        fileURL = directory.appendingPathComponent("commutes.json")
+        load()
+    }
+
     init(directory: URL) {
+        // SEE `AuthoredDatabase`. A seam does not reach the launch's.
+        database = .none
         fileURL = directory.appendingPathComponent("commutes.json")
         load()
     }
@@ -137,35 +149,115 @@ final class CommuteStore {
     /// putting the old answer back IS the toggle snapping back. Nothing in the
     /// view has to undo anything, and there is no second opinion about what
     /// happened that could drift from this one.
+    /// **DATABASE-FIRST SINCE 412, §12.157.** This was memory, then
+    /// `commutes.json`, then a fire-and-forget whole-world import — so a
+    /// termination before that import committed left SQLite older than the
+    /// file, and since B2 the launch hydrates from SQLite. The athlete's answer
+    /// reverted at the next launch, which for a commute decision means a ride
+    /// going back to the distance rule.
     func set(_ isCommute: Bool, for activityId: String, now: Date = Date()) throws {
-        let previous = decisions[activityId]
-        decisions[activityId] = CommuteDecision(activityId: activityId,
-                                                isCommute: isCommute,
-                                                decided: now)
-        do {
-            try save()
-        } catch {
-            if let previous { decisions[activityId] = previous }
-            else { decisions.removeValue(forKey: activityId) }
-            throw error
-        }
+        let candidate = CommuteDecision(activityId: activityId,
+                                        isCommute: isCommute, decided: now)
+        let committed = try commitToDatabase(candidate)       // 2. the authority
+        let previous = decisions[activityId]                  // 3. publish
+        decisions[activityId] = candidate
+        try mirror(previous: previous, subject: activityId,   // 4. the mirror
+                   committed: committed)
     }
 
     /// Removes the decision, returning the ride to the distance rule. Distinct
     /// from setting `false`: "I have no opinion" and "this is not a commute"
     /// are different answers and the second one survives a change to the
     /// threshold.
+    /// Inverted the same way, and it is the worse direction: the old order
+    /// removed the answer from memory and the file and left the row for the
+    /// next import, so a termination in that window brought the decision back
+    /// at the next launch. Putting it back on a failed mirror still matters —
+    /// forgetting an answer returns the ride to the distance rule, so a clear
+    /// that silently did not happen leaves the athlete believing the threshold
+    /// governs a ride it does not.
     func clear(_ activityId: String) throws {
-        guard let previous = decisions.removeValue(forKey: activityId) else { return }
+        guard let previous = decisions[activityId] else { return }
+        let committed = try deleteFromDatabase(activityId)
+        decisions.removeValue(forKey: activityId)
+        try mirror(previous: previous, subject: activityId,
+                   committed: committed)
+    }
+
+
+    // MARK: The authoritative commit — patch 412, §12.157
+
+    /// Which database this instance commits to. See `AuthoredDatabase`: a seam
+    /// is inert unless it is handed one on purpose, because the alternative
+    /// reaches a process-wide singleton from a store rooted in a temp folder.
+    private let database: AuthoredDatabase
+
+    /// Whether the last commute decision reached the database — `AuthoredCommit`.
+    private(set) var lastCommit: AuthoredCommit = .noneThisLaunch
+
+    /// Step 2, and the only step that may refuse the athlete's edit.
+    ///
+    /// **NO DATABASE IS NOT A REFUSAL.** The gate may not have opened and the
+    /// app must work without it until B9; refusing would mean a shut database
+    /// destroys the ability to record an answer at all. The file still takes
+    /// it, the next import catches the rows up, and `lastCommit` makes the gap
+    /// visible rather than assumed — §12.54.2.
+    @discardableResult
+    private func commitToDatabase(_ candidate: CommuteDecision) throws -> Bool {
+        switch CommuteRepository.upsert(candidate, in: database.live) {
+        case .wrote:
+            lastCommit = .reached
+            return true
+        case .noDatabase:
+            lastCommit = .missed
+            return false
+        case .refused(let why):
+            throw StoreWriteError(store: "the database", stage: .writing,
+                                  reason: why)
+        }
+    }
+
+    /// `commitToDatabase`'s other half. Same three outcomes, same reasoning.
+    @discardableResult
+    private func deleteFromDatabase(_ subject: String) throws -> Bool {
+        switch CommuteRepository.delete(commuteFor: subject, in: database.live) {
+        case .wrote:
+            lastCommit = .reached
+            return true
+        case .noDatabase:
+            lastCommit = .missed
+            return false
+        case .refused(let why):
+            throw StoreWriteError(store: "the database", stage: .writing,
+                                  reason: why)
+        }
+    }
+
+    /// Step 4, and **whether a failure here is fatal depends on step 2.**
+    ///
+    /// **COMMITTED: memory stands and the failure is recorded.** §12.17 says
+    /// the screens must not show what the disk does not hold — and the
+    /// authoritative disk is SQLite, which holds it. Throwing would report a
+    /// failure for an edit that is already saved.
+    ///
+    /// **NOT COMMITTED: the file is the only store, so the old rule stands.**
+    /// Before B9 a shut database is an ordinary state and the file is
+    /// authoritative in it; rolling memory back is what stops the screens
+    /// showing an answer nothing holds.
+    ///
+    /// It calls `save()`, so the announcement is unchanged — 412 claims the
+    /// ORDER and nothing about the write-through, which is topic 1C's subject.
+    private func mirror(previous: CommuteDecision?, subject: String,
+                        committed: Bool) throws {
         do {
             try save()
         } catch {
-            // Putting it back matters more here than it looks. Forgetting an
-            // answer returns the ride to the distance rule, so a clear that
-            // silently did not happen would leave the athlete believing the
-            // threshold governs a ride it does not.
-            decisions[activityId] = previous
-            throw error
+            guard committed else {
+                if let previous { decisions[subject] = previous }
+                else { decisions.removeValue(forKey: subject) }
+                throw error
+            }
+            StoreWriteJournal.shared.attempt("commutes.json") { throw error }
         }
     }
 

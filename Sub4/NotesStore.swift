@@ -145,51 +145,10 @@ final class NotesStore {
 
     private let fileURL: URL
 
-    /// **WHICH DATABASE A SAVE COMMITS TO — patch 409, §12.153.**
-    ///
-    /// 409 makes a save commit to SQLite BEFORE it publishes, so every instance
-    /// must answer "commit where?". The obvious answer — read
-    /// `Sub4Launch.shared.database` at the write — is wrong twice over, and the
-    /// first way cost two failing tests:
-    ///
-    ///   · **THAT SINGLETON IS PROCESS-WIDE, AND THE SEAM IS NOT.**
-    ///     `DatabaseBootstrapTests` and `ImporterSeedTests` both call
-    ///     `Sub4Launch.shared.begin()`, which opens the real database for every
-    ///     test that runs after them. A store built through `init(directory:)`
-    ///     into a temporary folder would reach straight past that folder and
-    ///     write the athlete's notes into the app's own database. The first
-    ///     version of 409 did exactly this, and `aFailedSaveRollsBack` caught
-    ///     it: the commit had succeeded, so the rollback correctly declined.
-    ///   · **AND A SEAM THAT CANNOT HOLD A DATABASE CANNOT TEST ONE.** Making
-    ///     the seam inert fixed the leak and made the new path unreachable from
-    ///     the suite — the four controls this patch owes have nowhere to run.
-    ///     A `Bool` could express *not the app's*; it could not express *this
-    ///     one instead*. §12.69: a guard that cannot fail has not been tested.
-    ///
-    /// So three states, and `.given` is the one the controls use.
-    private enum NoteDatabase {
-        /// The app's. Resolved AT THE WRITE, never at `init` — `NotesStore`
-        /// is constructed with `ContentView`, and whether the launch has
-        /// finished opening by then is `RootView`'s branch ordering, which is
-        /// not a thing a store should depend on.
-        case theLaunchs
-        /// A seam with no database. The file is authoritative and the pre-409
-        /// contract holds unchanged — which is what `init(directory:)`'s
-        /// twenty-six existing call sites already assume.
-        case none
-        /// A seam with its own, for the negative controls.
-        case given(Sub4Database)
-
-        @MainActor var live: Sub4Database? {
-            switch self {
-            case .theLaunchs:    Sub4Launch.shared.database
-            case .none:          nil
-            case .given(let db): db
-            }
-        }
-    }
-
-    private let database: NoteDatabase
+    /// Which database this instance commits to — `AuthoredDatabase`, shared
+    /// with the three stores 412 inverted. It was a nested `NoteDatabase` at
+    /// 409 and became one type the moment there were four of them (§12.43).
+    private let database: AuthoredDatabase
     private let schemaKey = "notes.schema"
     private let schemaVersion = 1
 
@@ -234,7 +193,7 @@ final class NotesStore {
     /// shared `UserDefaults` key, and a test instance has no business touching
     /// the real one.
     init(directory: URL) {
-        // SEE `NoteDatabase`. A seam does not reach the launch's database.
+        // SEE `AuthoredDatabase`. A seam does not reach the launch's.
         database = .none
         fileURL = directory.appendingPathComponent("notes.json")
         load()
@@ -349,17 +308,17 @@ final class NotesStore {
     /// Refusing would mean a shut database destroys the ability to write a note
     /// at all, which is worse than a mirror that is briefly ahead of the rows:
     /// the file is still written, the next import catches the database up, and
-    /// **the gap is visible** rather than assumed — `lastNoteCommit` reaches
+    /// **the gap is visible** rather than assumed — `lastCommit` reaches
     /// the paste, because a store that quietly stopped reaching the database is
     /// §12.54.2 in the family that cannot be fetched again.
     @discardableResult
     private func commitToDatabase(_ note: Note) throws -> Bool {
         switch NoteRepository.upsert(note, in: database.live) {
         case .wrote:
-            lastNoteCommit = .reached
+            lastCommit = .reached
             return true
         case .noDatabase:
-            lastNoteCommit = .missed
+            lastCommit = .missed
             return false
         case .refused(let why):
             throw StoreWriteError(store: "the database", stage: .writing,
@@ -408,48 +367,10 @@ final class NotesStore {
         }
     }
 
-    /// **DID THE LAST NOTE REACH THE DATABASE — patch 409, THREE STATES SINCE
-    /// 409a, §12.153.9.**
-    ///
-    /// It was a `Bool`, `databaseMissedAWrite`, and the campaign written to
-    /// exercise it found the defect before the phone did. **The flag is a
-    /// stored property reset on every launch**, so `false` — printed as
-    /// *"Notes reaching the database: yes"* — was ALSO what a launch said when
-    /// nothing had been saved yet. And the campaign reads that line after a
-    /// force-quit and relaunch, where nothing has been. **The row could only
-    /// ever pass.**
-    ///
-    /// §12.15, in the shape this project keeps rediscovering: a diagnostic that
-    /// cannot say why it has no answer will be read as having one. *Could not
-    /// be checked* is not the same as *checked and fine*, and a `Bool` has
-    /// nowhere to put the difference.
-    enum NoteCommit: Equatable, Sendable {
-        /// No note has been saved or deleted in this launch. **Not a fault**,
-        /// and the only honest thing to say before the athlete writes anything.
-        case noneThisLaunch
-        /// The last one committed to SQLite before it was published.
-        case reached
-        /// The last one went to the file with no database open. A real state
-        /// before B9 — `commitToDatabase` explains why it is not a refusal —
-        /// and one the paste has to be able to say out loud, because a store
-        /// that silently stopped reaching the database looks identical to one
-        /// that never had to. §12.54.2.
-        case missed
-
-        /// One line, always sayable, and it never mentions a note — §12.7.
-        var line: String {
-            switch self {
-            case .noneThisLaunch:
-                "Notes reaching the database: no note written since this launch"
-            case .reached:
-                "Notes reaching the database: yes"
-            case .missed:
-                "Notes reaching the database: NO — the last one went to the file only"
-            }
-        }
-    }
-
-    private(set) var lastNoteCommit: NoteCommit = .noneThisLaunch
+    /// Whether the last note reached the database — `AuthoredCommit`, shared.
+    /// See it for why three states and not a `Bool`; the campaign that found
+    /// that is §12.153.9.
+    private(set) var lastCommit: AuthoredCommit = .noneThisLaunch
 
     /// **DELETE, INVERTED THE SAME WAY — patch 409.**
     ///
@@ -478,10 +399,10 @@ final class NotesStore {
     private func deleteFromDatabase(_ sessionUid: String) throws -> Bool {
         switch NoteRepository.delete(noteFor: sessionUid, in: database.live) {
         case .wrote:
-            lastNoteCommit = .reached
+            lastCommit = .reached
             return true
         case .noDatabase:
-            lastNoteCommit = .missed
+            lastCommit = .missed
             return false
         case .refused(let why):
             throw StoreWriteError(store: "the database", stage: .writing,

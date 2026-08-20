@@ -8962,6 +8962,182 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.157 The other three families invert — patch 412, topic 1B closes
+
+409 for the commute decisions, the plan moves and the match decisions. All three
+now **validate → commit → publish → mirror**, and their clears with them.
+
+**THREE STORES IN ONE PATCH, AGAINST 381-BEFORE-382's ADVICE, AND THE REASON IS
+COST.** A flip alone in its patch is attributable; three flips share the day.
+The trade is three device campaigns and three phone trips against one, over
+three stores that are structurally identical below `Matcher` and share every
+control. 409 already paid for the mechanism — the seam leak, the rollback rule,
+the tri-state diagnostic — so what 412 risks is each family's specifics, and
+those are what the controls and the campaign separate.
+
+### 12.157.1 One resolver and one outcome, not four of each
+
+409's `NoteDatabase` and `NoteCommit` were nested in `NotesStore` and right for
+one store. Four copies would be §12.43 — the rule whose worst instance was five
+copies of "done of total" disagreeing on two tabs for 230 patches. They are now
+`AuthoredDatabase` and `AuthoredCommit` in their own file.
+
+**That also takes the singleton's name out of the stores entirely**, which is
+what RULE 13 is watching for: after 412 no authored store mentions
+`Sub4Launch.shared` at all.
+
+### 12.157.2 RULE 13 was checking two files that have no seam and missing one that does
+
+Adding the shared file made the rule fail — on `AuthoredDatabase.swift`, whose
+entire job is to be the ONE place allowed to resolve the singleton. **Its
+population test read the RAW text**, so a file that merely named
+`init(directory:)` in a doc comment joined the population, and the file was
+failed by its own explanation of why the stores may not.
+
+Stripping comments first is 372's correction to §12.115.6 again: search for the
+shape of the **risk** — a declared seam — not for a string. And the population
+was wrong in the other direction too. **`Matcher` declares `init(defaults:)`**,
+a `UserDefaults` seam with exactly the same escape hatch, and the rule could not
+see the fifth store — §12.131.4, a tripwire over a subset having no opinion
+about what is missing from it.
+
+Counted by declaration, the population is **eight**, not the nine the rule
+reported at 409–411: `ReadBacks` and `StoreReadJournal` were prose, and
+`Matcher` was absent. §12.72.7 with the count that mattered — **a grep counts
+appearances, not declarations.**
+
+### 12.157.3 The third store cannot throw, and that changes what a refusal is
+
+`Matcher.setOverride` returns Void. `UserDefaults.set` has no failure to
+surface and there is no alert on that path — §12.19's disclosed gap, written
+down long before this patch needed it. So a refused commit cannot be reported to
+the caller the way `NotesStore`'s is.
+
+Its honest equivalent is **not publishing**: memory is untouched, the tick does
+not stick, and the athlete sees the control fail to take. That is precisely the
+contract 372 wrote for a failed `persist()`, moved one step earlier.
+`commitToDatabase` returns `Bool?` — `nil` refuses, `true` committed, `false`
+no database — and the mutators `guard` on it.
+
+### 12.157.4 One line for four families, naming the ones that missed
+
+409a printed the notes alone because the notes were the only store committing.
+Four lines would say the same thing four times on the ordinary day — every store
+resolves the same `Sub4Launch.shared.database` — while a bare yes/no would lose
+the only case worth printing, which is **some** of them missing.
+
+`AuthoredCommit.line` composes: `no record written since this launch`, `yes`, or
+`NO — commutes, moved sessions went to the file only`. §12.54.2.
+
+### 12.157.5 The refusal lever is the schema, not the API
+
+409 could provoke a refusal through the public API because `user_note.rpe` has
+a statement-level CHECK and the editor passes the value straight in. `correction`
+has one CHECK — `subjectKind IN ('activity','planSession')` — and **the
+repository owns that column**, so no caller can violate it.
+
+So the controls drop the table. That is honest rather than clever: it makes the
+write fail at the statement, which is the path the guard has to survive, and it
+says out loud that the refusal branch here is reachable only by damaging the
+schema. **Recording it because the alternative is a control that quietly tests
+nothing** — 408's refusal control took three attempts for the same reason.
+
+### 12.157.6 What it does not change
+
+The mirror still calls `save()`, so the announcement is unchanged and 412 claims
+the ORDER only. Whether a database-first store should stop announcing at all is
+**topic 1C's** subject, together with an `.authored` trigger still permitting
+reconciliation across every family.
+
+---
+
+## 12.156 The other three families get their narrow write — patch 411, topic 1B
+
+408 for the commute decisions, the plan moves and the match decisions.
+**It changes no order** — all three stores are still file-first and 412 flips
+them — so anything that breaks on flip day is attributable to the flip.
+381-before-382, third time.
+
+`NoteWrite` becomes **`AuthoredWrite`**: one enum with four callers rather than
+four that agree until one stops (§12.43).
+
+### 12.156.1 THE NOTES WERE THE EASY CASE AND NOTHING SAID SO
+
+`importNotes` reconciles nowhere — the notes' removal pass lives in
+`reconcileAuthored`, one file away — so 408 could hand it a single note and
+exactly one row moved. That is not a property of the importer's design; it is a
+property of **where that family's prune happens to live**, and for two of the
+three families it lives somewhere else:
+
+**`importCorrections` and `importMoves` prune INSIDE themselves**, from a
+keep-set built out of the array they are handed. Hand either one record with
+`reconcile: .run` and **every other row of that family is deleted** — silently,
+inside one transaction, by a function called "import".
+
+```swift
+report.correctionsRemoved = try pruneCommutes(d, keeping: keep)  // keep = what you passed in
+```
+
+The escape is the parameter doing its job rather than a workaround:
+`.skipped(reason)` is checked by `guard reconcile.isRunning` before the prune,
+and the reason reaches the health screen — *"a store could not be read" and "the
+caller did not ask for it" are both refusals and only one of them is the gate
+working*, which `Reconciliation`'s own doc said before this patch needed it.
+
+**Two tests exist only to catch this**, and both fail against `.run`: three
+commute decisions written one at a time must still be three, and the same for
+moves. **A patch that had copied 408's shape without reading each importer would
+have destroyed the athlete's commute history on the first save.**
+
+### 12.156.2 A test written about one mistake found a different one
+
+`theDiscriminatorIsLoadBearing` exists because `correction` holds **two
+families** — the commute decisions and the plan moves, one table, told apart by
+`subjectKind` and `field`. The census counts them together: 3 rows on 19 August,
+one commute and two moves. So the test files a commute and a move under the same
+subject string and deletes one.
+
+It failed for a reason it was not written for. **Commute rows are keyed by the
+CANONICAL activity id** — §3.1, Strava ids are never primary keys, so
+`importCorrections` resolves through `canonicalActivity` before it writes —
+while `CommuteStore` keys its dictionary by the **external** id. The first
+`delete` passed the caller's id straight into the `WHERE`, matched nothing, and
+returned success.
+
+**A delete that reports success and deletes nothing is the 409 defect wearing
+different clothes**, and it would have survived any test that wrote and deleted
+through the same wrong id. It is caught here only because the fixture had to
+build real activities for an unrelated reason. The fix calls the resolver rather
+than copying it (§12.43); moves and match decisions need none, because a plan
+session uid IS the key.
+
+### 12.156.3 A fixture without activities would have proved nothing
+
+`importCorrections` counts a decision `correctionsUnresolved` when its activity
+is not in the database, and writes no row. So a fixture built on
+`Sub4Import.run(into:activities: [], shoes: [])` — which is what 408's notes
+fixture is, correctly — makes **every commute assertion pass by writing
+nothing**. Four of the five failures on the first run were that.
+
+Worth recording as the shape rather than the instance: **when a family's write
+is conditional on another family being present, an empty fixture is a green
+suite over an untested path.** §12.69 with the precondition one level out.
+
+### 12.156.4 No device campaign, and why
+
+**Nothing calls any of this yet** — six functions, no call sites, the same state
+408 shipped in. There is no user-visible behaviour to check and no data path to
+exercise on a phone. The campaign belongs to **412**, where the order inverts
+and `CommuteStore`, `PlanMoveStore` and `Matcher` start committing before they
+publish; it will be `DEVICE-CAMPAIGN-409.md`'s shape with three families in it.
+
+The automated evidence that makes it unnecessary here: nine controls, of which
+the four load-bearing ones were each verified failing against a sabotaged
+repository — `.run` in place of `.skipped` (both families) and the external id
+in place of the canonical one.
+
+---
+
 ## 12.155 The file tally learns how hard it looked — patch 410
 
 `Detail and trace files: 0 detail files and 0 trace files, all readable`, over

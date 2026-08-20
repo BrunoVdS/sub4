@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 410 (2026-08-19).** §5.3 is the 390 device run, Compare and
+**Current at patch 412 (2026-08-19).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -239,6 +239,26 @@ stopped being true at 342. Rename it `docs/REVIEW-2026-08-10-…` when convenien
   three labels: "Fix match…" (Today), "Change match" (activity sheet), "Change" / "Match…"
   (session detail). "Fix match" is the sheet's navigation title, not a button.
 
+**And one bought on 19 August, over the authored writes:**
+
+- **WHERE A FAMILY'S PRUNE LIVES IS NOT A DETAIL.** `importNotes` reconciles
+  nowhere — the notes' removal pass is in `reconcileAuthored` — so handing it one
+  note moves one row, and 408 was safe by accident of layout.
+  **`importCorrections` and `importMoves` prune INSIDE themselves**, from a
+  keep-set built out of the array they are handed, so handing either ONE record
+  with `reconcile: .run` deletes every other row of that family — inside one
+  transaction, from a function called "import", with no error. `.skipped(reason)`
+  is the guard and the reason reaches the screen. **Read every importer you
+  intend to call with one record**; the shape of the first one is not the shape
+  of the rest. §12.156.1.
+- **A GREP COUNTS APPEARANCES, NOT DECLARATIONS — AND A RULE CAN INHERIT THAT.**
+  RULE 13's population test read raw text, so `ReadBacks` and `StoreReadJournal`
+  joined it by MENTIONING `init(directory:)` in prose while `Matcher`, which
+  declares `init(defaults:)`, was absent. The rule spent three patches examining
+  two files with no seam and ignoring one that had one. **Strip comments before
+  you decide what a file IS**, and when a rule's population is a shape, ask what
+  other shapes are the same risk. §12.157.2.
+
 **Two rules of argument, both bought with a patch:**
 
 - **Do not reimplement a rule; call it** (§12.43). Eleven applications: `isKept`/`dedup`
@@ -374,9 +394,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 410, 2026-08-19
+## 5. State — patch 412, 2026-08-19
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 410; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 412; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -431,11 +451,15 @@ exactly** — the mirror is complete and B4 is genuinely reversible. Cost:
 `Detail store built: 1.127 s` against 409a's own 0.997 and 1.214 without it.
 §12.155.
 
-**AND SINCE 409 ONE STORE WRITES THE OTHER WAY ROUND.** `NotesStore` commits to
+**AND SINCE 412 ALL FOUR AUTHORED STORES WRITE THE OTHER WAY ROUND.** Notes at
+409, the commutes, plan moves and match decisions at 411–412. Each commits to
 SQLite before it publishes and writes `notes.json` as a mirror afterwards. A
 shut database is still not a refusal — the file takes it and the next import
 catches up — so **`Notes reaching the database` prints unconditionally** in the
-export from *The app's own files* (a paste line, **not a screen row**). §12.153.
+export from *The app's own files* (a paste line, **not a screen row**) — one
+line naming any family that missed, §12.157.4. **`Matcher` cannot throw**, so
+its refusal is a decision that does not stick rather than an alert. §12.153,
+§12.157.
 
 **409a MADE THAT LINE THREE-VALUED, AND WRITING THE CAMPAIGN IS WHAT FOUND IT.**
 It was a `Bool` reset every launch, so `false` — printed `yes` — was ALSO what a
@@ -639,11 +663,13 @@ run happened. §12.135–§12.150.
    on either side until **24 August 2026**. The gate is **eight of nine agree,
    zero differ, zero could not look, abstention named** — B7 blocked on it too.
    **AND ONE OF THE EIGHT IS NOT EVIDENCE** — §5.4a counts it, §5.5 names it.
-2. **NEXT IS THE INVERSION, FAMILY BY FAMILY** — the commutes, the match
-   decisions, the plan moves, each the shape 409 gave the notes and each
-   meeting RULE 13 on its first draft. Then **1C** — reconciliation scope and
-   durable per-family removal accounting.
-3. **1B IS DONE — BUILT, AND PROVEN ON THE PHONE.** A note save commits to
+2. **1B IS BUILT END TO END — 412 NEEDS ITS DEVICE CAMPAIGN.** All four
+   authored stores now commit before they publish: the notes (409), and the
+   commutes, plan moves and match decisions (411 the writes, **412 the order**).
+   `docs/DEVICE-CAMPAIGN-412.md` is written and **unrun**; it is 409's shape
+   with three families. Then **1C** — reconciliation scope and durable
+   per-family removal accounting.
+3. **1B's NOTES ARE DONE — BUILT, AND PROVEN ON THE PHONE.** A note save commits to
    SQLite **before** the editor closes, and `remove` with it — 408 the narrow
    write, **409 the order**, **409a the diagnostic** (§12.152, §12.153).
    Six controls; **control 4 does not discriminate the order and says so**.

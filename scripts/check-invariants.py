@@ -1028,7 +1028,16 @@ def no_restore_announces() -> None:
 # an instance rooted somewhere other than the app's own container — which is
 # what the tests, and three read-backs, are built on.
 #
-# The floor is 9 at 409. It goes UP as stores gain seams, never quietly down.
+# **THE POPULATION IS EIGHT AND AT 409-411 THIS RULE THOUGHT IT WAS NINE.**
+# `ReadBacks.swift` and `StoreReadJournal.swift` only ever MENTIONED
+# `init(directory:)` in prose, and `Matcher` — which declares `init(defaults:)`
+# — was not in it at all. So the rule was examining two files that offer no
+# seam and ignoring one that does, which is §12.72.7 with the count that
+# mattered: a grep counts appearances, not declarations.
+#
+# Eight, verified by declaration at 412: ActivityStore, CommuteStore,
+# DetailStore, Matcher, NotesStore, PlanMoveStore, ProposalStore, Weather.
+# It goes UP as stores gain seams, and DOWN only on purpose.
 SEAM_STORE_FLOOR = 8
 
 
@@ -1118,11 +1127,25 @@ def a_seam_never_reaches_the_launchs_database():
     rule = "a seam never reaches the launch's database"
     seams, mediated = 0, 0
     for f in app_sources():
-        raw = f.read_text()
-        if "init(directory:" not in raw:
+        # **THE POPULATION IS WHAT A FILE DECLARES, NOT WHAT IT MENTIONS —
+        # widened and corrected at 412.**
+        #
+        # This read the RAW text, so a file that merely named `init(directory:)`
+        # in a doc comment joined the population — and `AuthoredDatabase.swift`,
+        # whose entire job is to be the ONE place that resolves the singleton,
+        # was failed by its own explanation of why the stores may not. Stripping
+        # first is the same correction 372 made to §12.115.6: search for the
+        # shape of the RISK, which is a declared seam, not for a string.
+        #
+        # **AND `init(defaults:)` IS A SEAM TOO.** `Matcher` is backed by
+        # `UserDefaults` rather than a file and offers exactly the same escape
+        # hatch, so the rule could not see the fifth store — §12.131.4's lesson,
+        # a tripwire over a subset having no opinion about what is missing from
+        # it. 412 inverts `Matcher`, which is when it started to matter.
+        text = strip_comments(f.read_text())
+        if "init(directory:" not in text and "init(defaults:" not in text:
             continue
         seams += 1
-        text = strip_comments(raw)
         if "Sub4Launch.shared" not in text:
             continue
 

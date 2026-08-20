@@ -203,9 +203,9 @@ struct NoteWriteTests {
     /// it in front of somebody who cannot see the code.
     @Test("Every outcome can describe itself")
     func everyOutcomeCanDescribeItself() {
-        #expect(NoteWrite.wrote(inserted: true).line == "written")
-        #expect(NoteWrite.wrote(inserted: false).line == "updated")
-        #expect(NoteWrite.refused("disk I/O error").line.contains("REFUSED"))
-        #expect(NoteWrite.noDatabase.line.contains("not open"))
+        #expect(AuthoredWrite.wrote(inserted: true).line == "written")
+        #expect(AuthoredWrite.wrote(inserted: false).line == "updated")
+        #expect(AuthoredWrite.refused("disk I/O error").line.contains("REFUSED"))
+        #expect(AuthoredWrite.noDatabase.line.contains("not open"))
     }
 }

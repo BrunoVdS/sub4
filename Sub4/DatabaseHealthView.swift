@@ -4103,9 +4103,19 @@ struct DatabaseHealthView: View {
     /// a two-valued source cannot carry a third answer, and the view had
     /// nowhere to put *nothing has been saved yet*. §12.43 — the store owns the
     /// state, so it owns the words for it.
+    /// **ONE LINE, FOUR FAMILIES — patch 412.** 409a printed the notes alone
+    /// because the notes were the only store committing. Four lines saying the
+    /// same thing on the ordinary day would be noise; a bare yes/no would lose
+    /// the case worth printing, which is SOME of them missing. So the families
+    /// are named and `AuthoredCommit.line` composes them.
     @MainActor
     private static var noteCommitLine: String {
-        NotesStore.shared.lastNoteCommit.line
+        AuthoredCommit.line([
+            ("notes", NotesStore.shared.lastCommit),
+            ("commutes", CommuteStore.shared.lastCommit),
+            ("moved sessions", PlanMoveStore.shared.lastCommit),
+            ("match decisions", Matcher.shared.lastCommit),
+        ])
     }
 
     /// "Traces still to fetch" — patch 331's block.
