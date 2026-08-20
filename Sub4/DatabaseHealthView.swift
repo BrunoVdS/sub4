@@ -511,7 +511,20 @@ struct DatabaseHealthView: View {
                 .foregroundStyle(Sub4Launch.shared.database != nil
                                  ? Color.primary : Color.red)
 
-            LabeledContent("Protection", value: "Until first unlock")
+            // **PATCH 417 — IT WAS A STRING LITERAL.** `"Until first unlock"`
+            // was not read from anything: `FileProtection.protect` swallowed
+            // its failure with `try?`, so the attribute could have failed on
+            // every item and this row would have said the same words in the
+            // same colour. §12.15 with the stakes raised — a security property
+            // reported by a constant is a sentence, not a guarantee.
+            //
+            // ONE ROW, NOT SEVEN. §12.76's budget is depth and this screen has
+            // spent it twice; the per-item readings go to the paste, which is
+            // where a reader who is not holding the phone looks anyway.
+            LabeledContent("Protection",
+                           value: ProtectionReadBack.summary(protectionItems))
+                .foregroundStyle(protectionItems.allSatisfy(\.reading.isExpected)
+                                 ? Color.primary : Color.red)
         }
         } header: {
             DiagnosticSectionHeader(title: "The file",
@@ -3986,6 +3999,16 @@ struct DatabaseHealthView: View {
             }
         }
         l.append("Prepared: \(Sub4Launch.shared.database != nil ? "at launch" : "by this screen")")
+        // PATCH 417. UNCONDITIONAL, every item, measured. The row on screen is
+        // the summary; these are the seven readings behind it, and they carry
+        // NAMES rather than paths — a container path names the device's user
+        // (§12.7, 407's correction).
+        let protection = protectionItems
+        l.append("Protection: \(ProtectionReadBack.summary(protection))")
+        l.append(contentsOf: protection.map(\.line))
+        l.append("  protection writes that failed this launch: "
+                 + "\(FileProtection.failureCount)"
+                 + (FileProtection.lastError.map { " — newest: \($0)" } ?? ""))
         l.append("Reads from: \(Sub4Launch.shared.persistence.line)")
         // PATCH 398a — "AT LAUNCH", AND IT IS A CORRECTION. This is
         // `Sub4Launch`'s account of what THE LAUNCH fed, and since 395 that
@@ -4117,6 +4140,16 @@ struct DatabaseHealthView: View {
             ("moved sessions", PlanMoveStore.shared.lastCommit),
             ("match decisions", Matcher.shared.lastCommit),
         ])
+    }
+
+    /// **THE MEASURED PROTECTION — patch 417, §12.162.**
+    ///
+    /// Computed when the screen asks, so it is never a value somebody pressed a
+    /// button for once and left behind (§12.77.5). Seven `attributesOfItem`
+    /// calls; the screen is already doing more than that to draw itself.
+    @MainActor
+    private var protectionItems: [ProtectionReadBack.Item] {
+        ProtectionReadBack.everything()
     }
 
     /// "Traces still to fetch" — patch 331's block.

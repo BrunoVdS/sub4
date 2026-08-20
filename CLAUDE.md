@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 416 (2026-08-20).** §5.3 is the 390 device run, Compare and
+**Current at patch 417 (2026-08-20).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -394,9 +394,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 416, 2026-08-20
+## 5. State — patch 417, 2026-08-20
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 416; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 417; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -649,7 +649,7 @@ fed yet* (B7's tripwire), *COULD NOT READ ITS OWN SIDE* (red). §12.133–§12.1
   every row. Nothing journals it, so `ReconcileFamily.workQueue.source` is
   **nil** and the gate prints that it could not check rather than naming a store
   that would always say yes. **B8's to close.** §12.161.3.
-- **Snapshot `2026-08-10-084723`** (340); **`manual.html` stale**; **two stores unprotected** by §12.116; **`content_revision` unoccupied** (334).
+- **Snapshot `2026-08-10-084723`** (340); **`manual.html` stale**; **two stores unprotected** by §12.116 — 418's; **`content_revision` unoccupied** (334).
 - **Dates:** first review **24 Aug**; Actions resets **1 Sep**; Japan **7–12 Sep**, `DayKey.key(_:in:)`'s first run outside Europe/Brussels.
 
 ### 5.6 Next, in order
@@ -700,10 +700,17 @@ run happened. §12.135–§12.150.
    **RULE 13** stops the next store repeating 409's seam leak. Next is the same
    inversion **family by family** — the commutes, the match decisions, the plan
    moves — then 1C's reconciliation scope and removal attribution.
-6. **FILE PROTECTION.** `protect` swallows its failure with `try?`, the screen
-   prints `Until first unlock` as a literal, and a simulator cannot check it —
-   applied silently, reported by a constant that cannot fail. The screen must
-   read the attribute back.
+6. **FILE PROTECTION — 417 MEASURES IT; 418 OWES THE LAST TWO STORES.**
+   `Protection · Until first unlock` was a **string literal** and
+   `FileProtection.protect` swallowed its failure with `try?`. The row now reads
+   `N of 7 at the expected class`, measured with `attributesOfItem`, and the
+   seven readings reach the paste. **Four states, not three** — an attribute at
+   the WRONG class breaks background writes and is not the same as none.
+   **`docs/DEVICE-CAMPAIGN-417.md` is unrun and a physical phone is mandatory**:
+   on a simulator `setAttributes([.protectionKey:…])` stores nothing and fails
+   at nothing, so two of the reader's four answers are unreachable in the suite.
+   **418**: `AthleteStore` and `AthleteConstants` under the unclean-read guard,
+   `UNPROTECTED_STORE_CEILING` 2 → 0. §12.162.
 7. **Then Bruno's list**, then **B5 — weather and gear**, with
    `knownActivityIDs` and `WeatherGearRoundTrip`'s own read. **Gear is the half
    of `AthleteStore` B1 did not take** — its comparison is still evidence.
@@ -802,6 +809,12 @@ Phase 4A (Apple Health canonical) cannot start before D7's exit gate — see
   the assertions read. **When a test asserts an absence, ask what it is actually
   looking at**; and two lines of one report that can disagree need something
   owning the sentence they share. §12.161.
+- **A SIMULATOR CAN ACCEPT A WRITE AND KEEP NOTHING.**
+  `setAttributes([.protectionKey: …])` there stores no attribute and fails at
+  nothing — **not even for a directory that does not exist**. So a protection
+  test that passed proved only that the call returned. Split the DECISION from
+  the READ (`classify` vs `read`), test the decision directly, and say in the
+  test file which answers only a device can produce. §12.162.3.
 - **A number a device prints is not a number a device verified.** `14 independent`
   was rendered, stored in the ledger and pasted into a diagnostics file, and it was
   wrong — because every one of those steps read the same list. Printing is not

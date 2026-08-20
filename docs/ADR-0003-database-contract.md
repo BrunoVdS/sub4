@@ -8962,6 +8962,89 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.162 The protection class, measured — patch 417, plan topic 2
+
+`Protection · Until first unlock` was a **string literal**. It was not read from
+anything, and `FileProtection.protect` swallowed its failure with `try?`, so the
+attribute could have failed to apply on every item and the row would have said
+the same words in the same colour.
+
+**A security property that fails silently and is reported as successful is not a
+guarantee — it is a sentence.** §12.15 with the stakes raised.
+
+### 12.162.1 The write reports, and the failures are counted
+
+`protect(directory:)` returns `ProtectionWrite` — `@discardableResult`, because
+nine call sites legitimately have nothing to do about it in the moment, and a
+`throws` would have made them all pretend otherwise. **The failure is recorded
+either way.**
+
+`lastError` held one string, so a sweep that failed on forty files reported one
+of them and read exactly like a sweep that failed on one. `failureCount` sits
+beside it: a count with its message is evidence, a bare message is an anecdote
+(§12.54.2). Two more `try?`s went with it — `applyToExistingFiles`' own
+container line, which is the item every file inside inherits from, and
+`Sub4Database.protectEverything`.
+
+### 12.162.2 FOUR STATES, WHERE THE PROMPT ASKED FOR THREE
+
+Topic 2 asks for *"expected protection, no protection attribute, or inspection
+failure"*. There is a fourth: **an attribute that is present and is the wrong
+class.**
+
+Folding it into `noAttribute` would report a file protected as `.complete` —
+which breaks the background writes `FileProtection`'s own header exists to
+preserve — identically to a file protected by nothing at all. Folding it into
+`asExpected` would be a lie. §12.132: when a classification is a binary
+complement, ask what a third kind of member does to it.
+
+`.couldNotInspect` and `.noAttribute` stay apart for the same reason one level
+down. *The attribute is not set* and *I could not look* send a reader to
+different places, and an optional could hold neither distinction.
+
+### 12.162.3 THE SIMULATOR ACCEPTS THE WRITE AND DOES NOT KEEP IT
+
+The plan's finding says *"simulator tests verify the requested mapping, not the
+real device attribute"*. It is worse than that, and the tests found it:
+
+**`setAttributes([.protectionKey: …])` on a simulator is a complete no-op.** It
+stores nothing, and it fails at nothing — **not even for a directory that does
+not exist**, where it still returns success. So `protect` can never return
+`.refused` there, and `read` can never return `.asExpected` or `.different`.
+
+Two of the reader's four answers and one of the writer's two are unreachable in
+the suite. The decision is therefore split out as `classify(_:)`, a pure
+function of the attribute value that the tests drive directly, while `read` is
+tested for the two states a simulator can genuinely produce. **The refusal path
+and the two positive readings are the device's**, and
+`ProtectionReadBackTests`' header says so rather than leaving a green suite to
+imply otherwise — which over a security property is the exact failure this
+patch is about.
+
+### 12.162.4 One row, seven readings
+
+The screen shows `Protection · N of 7 at the expected class`, red unless all
+seven are, and the seven readings go to the paste. **One row, not seven** —
+§12.76's budget is depth and this screen has spent it twice; and the paste is
+where a reader who is not holding the phone looks anyway.
+
+The items are named, never pathed: *the database file*, *details/*, *snapshots/*,
+*notes.json*. A container path names the device's user (§12.7, and 407's
+correction from a URL to a name). The list is **not filtered** to items that
+exist — a missing `details/` on a device holding 698 of them is a finding, and a
+filtered list would have shown nothing at all.
+
+### 12.162.5 What is left for 418
+
+**`AthleteStore` and `AthleteConstants` are still outside the unclean-read write
+guard** — `UNPROTECTED_STORE_CEILING` is 2 and topic 2's acceptance criteria
+want it at 0. That is the same topic and a different mechanism: §12.116's
+read-before-write contract, not the file system's attribute. It travels
+separately for the reason 381-before-382 gives, and because 417 already owes a
+device campaign of its own.
+
+---
+
 ## 12.161 The sixth family, and the sentence that was not true — patch 416
 
 415 gave the work queue a name in a second enum so the account could reach it,

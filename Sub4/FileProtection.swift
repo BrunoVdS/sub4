@@ -66,8 +66,55 @@ enum FileProtection {
     /// Sets the protection class on a directory, so files created inside it
     /// inherit it. `details/` and `streams/` hold one file per activity and are
     /// created before anything is written into them.
-    nonisolated static func protect(directory url: URL, using fm: FileManager = .default) {
-        try? fm.setAttributes([.protectionKey: attribute], ofItemAtPath: url.path)
+    /// **IT RETURNED NOTHING AND SWALLOWED THE FAILURE UNTIL 417.**
+    ///
+    /// `try?` on a security attribute is the shape §12.20 keeps finding: the
+    /// call cannot fail in any way a reader can see, so *"protection is in
+    /// force"* became a sentence nobody could check. Nine call sites, none of
+    /// which wanted to crash — which is why it swallowed, and why the answer is
+    /// a value rather than a `throws`.
+    ///
+    /// `@discardableResult`, because most callers legitimately have nothing to
+    /// do about it in the moment. **The failure is still recorded** — see
+    /// `failures` — so ignoring the return does not lose the fact.
+    @discardableResult
+    nonisolated static func protect(directory url: URL,
+                                    using fm: FileManager = .default) -> ProtectionWrite {
+        do {
+            try fm.setAttributes([.protectionKey: attribute],
+                                 ofItemAtPath: url.path)
+            return .applied
+        } catch {
+            note(url, error)
+            return .refused(error.localizedDescription)
+        }
+    }
+
+    /// Whether one attribute write landed.
+    nonisolated enum ProtectionWrite: Equatable, Sendable {
+        case applied
+        case refused(String)
+
+        var didApply: Bool { self == .applied }
+    }
+
+    /// **A COUNT AND THE NEWEST MESSAGE, NOT ONE SLOT — patch 417.**
+    ///
+    /// `lastError` held a single string, so a sweep that failed on forty files
+    /// reported one of them and read exactly like a sweep that failed on one.
+    /// A count beside its message is evidence; a bare message is an anecdote.
+    /// §12.54.2.
+    nonisolated(unsafe) static private(set) var failureCount = 0
+
+    nonisolated static func note(_ url: URL, _ error: Error) {
+        failureCount += 1
+        lastError = "\(url.lastPathComponent): \(error.localizedDescription)"
+    }
+
+    /// For tests, which must not inherit a count from whatever ran before them.
+    nonisolated static func resetFailures() {
+        failureCount = 0
+        lastError = nil
     }
 
     /// Walks Application Support once and applies the class to everything
@@ -88,7 +135,10 @@ enum FileProtection {
         else { return 0 }
 
         var touched = 0
-        try? fm.setAttributes([.protectionKey: attribute], ofItemAtPath: base.path)
+        // PATCH 417 — the container's own attribute went through `try?` too,
+        // so the one item whose class every file inside inherits was the one
+        // item whose failure nothing recorded.
+        protect(directory: base, using: fm)
         for case let url as URL in e {
             do {
                 try fm.setAttributes([.protectionKey: attribute], ofItemAtPath: url.path)
@@ -96,8 +146,8 @@ enum FileProtection {
             } catch {
                 // Deliberately not fatal and deliberately not silent-forever:
                 // a file that refuses the attribute is reported through
-                // `lastError` below rather than pretending the sweep worked.
-                lastError = "\(url.lastPathComponent): \(error.localizedDescription)"
+                // `failures` below rather than pretending the sweep worked.
+                note(url, error)
             }
         }
         return touched
