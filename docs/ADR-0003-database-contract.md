@@ -9042,6 +9042,81 @@ says out loud that the refusal branch here is reachable only by damaging the
 schema. **Recording it because the alternative is a control that quietly tests
 nothing** — 408's refusal control took three attempts for the same reason.
 
+### 12.157.7 THE DEVICE RAN IT — 20 August 2026, 07:09–07:39, twelve of twelve
+
+`docs/DEVICE-CAMPAIGN-412.md` executed. Three families, three force-quits, five
+census exports and two read-backs. **Topic 1B is closed on the phone.**
+
+**The three that are the campaign:**
+
+- **Row 10 — `Authored writes reaching the database: yes`.** The database is
+  open when all three stores write, observed rather than argued. And row 1 read
+  `no record written since this launch` before anything, so the composed line is
+  not stuck — the defect 409a fixed, not reintroduced by 412's four-family
+  version.
+- **Row 11 — the state survived two force-quits.** The match override taken
+  immediately after setting it, and again after being changed back.
+- **Row 12 — `correction` 6 → 5 across a clear and a force-quit**, with the
+  session staying on Thursday. **The delete reached the rows.**
+
+**Both sides moved together at every checkpoint.** Commutes 1 vs 1 → 3 vs 3,
+match decisions 8 vs 8 → 9 vs 9, moved sessions 2 vs 2 → 3 vs 3, with `only in
+the app`, `only in the database` and `fields that differ` at zero throughout and
+`unexplained differences: 0`. The read-back's app side reads the files directly,
+so those are the files and the rows.
+
+**A bonus the campaign did not ask for.** Taking a ride out of the commutes
+moved `Load` 99 → 105 TRIMP and putting it back moved it down again — the
+commute decision propagating through the load model in both directions. The
+decision is live, not merely stored.
+
+### 12.157.8 THE DELETE PATH HAS EXACTLY ONE DEVICE-REACHABLE ROUTE
+
+Worth recording because the run nearly ended without exercising it, and the
+campaign as written would not have caught that.
+
+**Nothing in the first thirty minutes deleted anything.** Commutes went 1 → 3,
+moves 2 → 3, decisions 8 → 9; every count only rose. Putting the bicycle glyph
+back writes `isCommute = true` — a decision, correctly, because *"I have no
+opinion"* and *"this is not a commute"* are different answers — and putting the
+match back rewrote the override rather than removing it (`match_decision` stayed
+at 9, which is how we know which action it was).
+
+**`Back to Thursday 20 August` is the one route that removes a row.** It is
+`Correction.putBack` → `PlanMoveStore.clear`, and 366a's rule is why it exists:
+a `correction` saying `date = <the day the plan already holds>` overrides
+nothing and would sit there meaning nothing.
+
+So the generalisation: **a mutation store's delete may have no obvious control,
+and "I undid it" is usually a second write rather than a removal.** When a
+campaign claims to test a clear, name the control that actually deletes — and if
+there is only one, say so, because the tester will otherwise undo things the
+natural way and never touch the path.
+
+### 12.157.9 A ROW THE READ-BACK COULD NOT SEE, AND IT HEALED
+
+At 07:10 the census read `correction: 4` while the read-back accounted for **1
+commute + 2 moves = 3**. `correction` holds exactly those two families. At 07:28
+it read `6` and the read-back accounted for **3 + 3 = 6**.
+
+Between those two the readers gained **three** while the table gained **two**, so
+**a row that was invisible became visible.** That is subtraction on the exports,
+not a hypothesis.
+
+**The cause is unproven and this section does not claim one.** The likeliest is
+`commuteSQL`'s **INNER JOIN** to `activity_alias` on a single `sourceID`, where
+`decisionSQL` deliberately LEFT JOINs; its doc states the premise — *"a commute
+correction ALWAYS names an activity, so an inner join loses nothing"* — and a
+row whose alias is absent under that source would be dropped silently. A
+correction of some third shape is the alternative.
+
+**What is certain is that nothing reported either event.** A gap that opens and
+closes with no line moving is worse than one that stays open, and the remedy is
+the one §6 already knows: **an account beats a list; a residual cannot hide a
+case.** The census prints a total and the read-back prints two families, and
+nothing prints the difference. `correction: 6 — 3 commutes, 3 moves, 0
+unaccounted` would have shown this the moment it happened. **That is 413.**
+
 ### 12.157.6 What it does not change
 
 The mirror still calls `save()`, so the announcement is unchanged and 412 claims

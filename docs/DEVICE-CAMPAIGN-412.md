@@ -190,6 +190,45 @@ The screens themselves are not evidence: they read the hydrated stores.
 
 ---
 
-## 7. Result
+## 7. RESULT — run 20 August 2026, 07:09–07:39, twelve of twelve
 
-*Not yet run.* Fill in `DEVICE-CAMPAIGN-409.md` §10's shape.
+`C = 4`, `M = 8` at the start. Five census exports, two read-backs, three
+force-quits.
+
+| # | figure | reading | verdict |
+|---|---|---|---|
+| 1 | the line, before | `no record written since this launch` | pass — not stuck |
+| 2 | the glyph | took | pass |
+| 3 | the glyph after relaunch | held | pass |
+| 4 | **Commute decisions · In each side** | 1 vs 1 → **3 vs 3** | pass |
+| 5 | Only in the app | `0` | pass |
+| 6 | the match after relaunch | held | pass |
+| 7 | **`match_decision`** | 8 → **9** | pass |
+| 8 | Match decisions · Only in the app | `0` | pass |
+| 9 | **Moved sessions · In each side** | 2 vs 2 → **3 vs 3** | pass |
+| 10 | the line, in-launch | **`yes`** | pass — the database is open at write time |
+| 11 | after two force-quits | the state held both times | pass |
+| 12 | **`correction` after a clear + force-quit** | 6 → **5** | **pass — the delete reached the rows** |
+| 13 | ledger `authored:` | 43, moving normally | informational |
+
+`unexplained differences: 0` throughout; `only in the database` and `fields that
+differ` zero at every checkpoint.
+
+**A bonus:** `Load` moved 99 → 105 TRIMP when a ride left the commutes and back
+again when it returned — the decision propagating through the load model in both
+directions.
+
+### Two things the run taught the campaign
+
+**§4 did not name a control that actually deletes.** Nothing in the first thirty
+minutes removed a row: the glyph put back writes `isCommute = true`, and the
+match put back rewrote the override (`match_decision` stayed at 9, which is how
+we know). **`Back to Thursday 20 August` — `Correction.putBack` — is the one
+device-reachable delete**, and without it row 12 would have been recorded as
+uncovered. A campaign that tests a clear must name the control that deletes.
+
+**A `correction` row was invisible for part of the run.** At 07:10 the census
+said 4 and the read-back accounted for 3; by 07:28 both said 6. The readers
+gained three while the table gained two, so a row that could not be seen became
+visible, and **nothing reported either event**. Cause unproven — ADR §12.157.9
+has the candidates. The fix is a residual line, and it is 413.

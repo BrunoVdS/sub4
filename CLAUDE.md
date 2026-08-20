@@ -663,13 +663,15 @@ run happened. §12.135–§12.150.
    on either side until **24 August 2026**. The gate is **eight of nine agree,
    zero differ, zero could not look, abstention named** — B7 blocked on it too.
    **AND ONE OF THE EIGHT IS NOT EVIDENCE** — §5.4a counts it, §5.5 names it.
-2. **1B IS BUILT END TO END — 412 NEEDS ITS DEVICE CAMPAIGN.** All four
-   authored stores now commit before they publish: the notes (409), and the
-   commutes, plan moves and match decisions (411 the writes, **412 the order**).
-   `docs/DEVICE-CAMPAIGN-412.md` is written and **unrun**; it is 409's shape
-   with three families. Then **1C** — reconciliation scope and durable
-   per-family removal accounting.
-3. **1B's NOTES ARE DONE — BUILT, AND PROVEN ON THE PHONE.** A note save commits to
+2. **1B IS DONE, ON THE PHONE — TOPIC CLOSED.** All four authored stores commit
+   before they publish, and **412's campaign ran on 20 August: twelve of
+   twelve** (§12.157.7). `correction` **6 → 5** across a clear and a force-quit
+   is the row that matters — the delete reaches the rows.
+3. **413 — THE RESIDUAL.** A `correction` row was invisible to the read-back for
+   part of the 412 run and became visible again, **with nothing reporting either
+   event** (§12.157.9). The census prints a total and the read-back prints two
+   families; nothing prints the difference. *An account beats a list.* Small.
+4. **1B's NOTES — BUILT AT 409, PROVEN 19 AUGUST.** A note save commits to
    SQLite **before** the editor closes, and `remove` with it — 408 the narrow
    write, **409 the order**, **409a the diagnostic** (§12.152, §12.153).
    Six controls; **control 4 does not discriminate the order and says so**.
@@ -677,17 +679,17 @@ run happened. §12.135–§12.150.
    **RULE 13** stops the next store repeating 409's seam leak. Next is the same
    inversion **family by family** — the commutes, the match decisions, the plan
    moves — then 1C's reconciliation scope and removal attribution.
-4. **FILE PROTECTION.** `protect` swallows its failure with `try?`, the screen
+5. **FILE PROTECTION.** `protect` swallows its failure with `try?`, the screen
    prints `Until first unlock` as a literal, and a simulator cannot check it —
    applied silently, reported by a constant that cannot fail. The screen must
    read the attribute back.
-5. **Then Bruno's list**, then **B5 — weather and gear**, with
+6. **Then Bruno's list**, then **B5 — weather and gear**, with
    `knownActivityIDs` and `WeatherGearRoundTrip`'s own read. **Gear is the half
    of `AthleteStore` B1 did not take** — its comparison is still evidence.
-6. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
+7. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed
    recovery screen `RootView` lacks.
-7. **D8** — stabilise one release window, then remove the JSON writers.
+8. **D8** — stabilise one release window, then remove the JSON writers.
 
 **B4's cost:** `Detail store built: 0.872 / 0.930 s` from the database in Debug,
 against 0.443 s of files in Debug and 3.925 s before 397. A Release reading is
