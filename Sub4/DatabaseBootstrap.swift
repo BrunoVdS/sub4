@@ -154,13 +154,29 @@ nonisolated struct DatabaseBootstrap: Sendable {
     /// cannot, because `LoadStore.currentSignature` keys on `streamCount` and
     /// `recompute` walks every trace for TRIMP. §12.138.
 
+    /// **PATCH 428 — D7 slice B5, and the eighth field.**
+    ///
+    /// **ONE FIELD FOR TWO FAMILIES, AND THAT IS `fieldCount`'S RULE RATHER
+    /// THAN AN EXCEPTION TO IT.** The rule is that a field mirrors a read that
+    /// can fail on its own: the details and the traces got two because they
+    /// come out of separate tables through separate repositories.
+    /// `WeatherGearRepository.load` is ONE `db.queue.read` returning one
+    /// value — either it succeeds for both or it fails for both — so two
+    /// fields here would report one failure as two families. `authored` is the
+    /// same shape and the same decision, at 357.
+    ///
+    /// The HYDRATION is a different axis and does get two cases
+    /// (`PersistenceAuthority.Family.weather` and `.gear`), because rolling
+    /// back half of B5 has to be possible.
+    let weatherGear: WeatherGearLoad
+
     /// THE NUMBER A TEST HOLDS — see `AppStores.fieldCount` and its comment.
     ///
     /// Pinning the count does not prove the forwarding. It makes adding a
     /// family a thing somebody has to acknowledge, which is the half that can
     /// be checked cheaply. Three at B1: the plan, its trimmings, and the
     /// athlete.
-    static let fieldCount = 7
+    static let fieldCount = 8
 
     // MARK: The two verdicts
 
@@ -173,6 +189,7 @@ nonisolated struct DatabaseBootstrap: Sendable {
         plan.wasReadCleanly && extras.wasReadCleanly && athlete.wasReadCleanly
             && authored.wasReadCleanly && decisions.wasReadCleanly
             && moves.wasReadCleanly && activities.wasReadCleanly
+            && weatherGear.isTrustworthy
     }
 
     /// Does every family hold something to hydrate a store from.
@@ -220,6 +237,12 @@ nonisolated struct DatabaseBootstrap: Sendable {
         if !moves.wasReadCleanly { return "the plan moves — \(moves.line)" }
         if !activities.wasReadCleanly {
             return "the activities — \(activities.line)"
+        }
+        // PATCH 428. LAST, for `activities`' reason at 379: field order is this
+        // property's order and the paste's order, and moving the seven above it
+        // would shift every line a reader has learned the position of.
+        if !weatherGear.isTrustworthy {
+            return "the weather and gear — \(weatherGear.line)"
         }
         // PATCH 394. LAST, in field order, which is `firstFault`'s own rule and
         // the paste's order.
@@ -398,7 +421,14 @@ nonisolated struct DatabaseBootstrap: Sendable {
                  // written by the athlete, and an empty one is a device
                  // between its first launch and its first sync rather than a
                  // store keeping a file nobody may blank. §12.123.
-                 "  activities: \(activities.line)"]
+                 "  activities: \(activities.line)",
+                 // PATCH 428 — D7 slice B5. Beside the activities and not
+                 // among the authored families, for the same reason: weather
+                 // is fetched and gear comes from the athlete profile, so an
+                 // empty one is a device between its first launch and its
+                 // first sync rather than a store keeping a file nobody may
+                 // blank. §12.123.
+                 "  weather and gear: \(weatherGear.line)"]
         l.append("  every read succeeded: \(wasReadCleanly ? "yes" : "no")")
         l.append("  first fault: \(firstFault ?? "none")")
         l.append("  every family holds data: \(canHydrate ? "yes" : "no")")
@@ -481,6 +511,7 @@ nonisolated enum DatabaseBootstrapReader {
         var decisions: MatchDecisionLoad = .unavailable
         var moves: PlanMoveLoad = .unavailable
         var activities: ActivityLoad = .unavailable
+        var weatherGear: WeatherGearLoad = .unavailable
 
         // THE READS ARE INSIDE THE CLOCK AND THE ASSEMBLY IS NOT. Building the
         // struct is nine stores of an existing value; timing it would add
@@ -498,12 +529,19 @@ nonisolated enum DatabaseBootstrapReader {
             // makes that authoritative for order, where `startLocal` is
             // authoritative for which training day a session belongs to.
             activities = ActivityRepository.all(db)
+            // PATCH 428 — D7 slice B5. Tens of gear rows and 603 weather
+            // readings on the device, against 699 activities in the line
+            // above: this is the cheapest family the bootstrap reads, and
+            // §12.174's threshold is watched anyway. `Bootstrap read` says
+            // what it cost on every launch.
+            weatherGear = WeatherGearRepository.load(db)
         }
         timing.total = seconds(elapsed)
 
         return (DatabaseBootstrap(plan: plan, extras: extras, athlete: athlete,
                                   authored: authored, decisions: decisions,
-                                  moves: moves, activities: activities),
+                                  moves: moves, activities: activities,
+                                  weatherGear: weatherGear),
                 timing)
     }
 

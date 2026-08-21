@@ -97,9 +97,9 @@ struct DetailHydrationTests {
     /// names alone pass if a tenth arrives beside them.
     @Test("The launch reads seven families and neither of the expensive two")
     func theLaunchReadsSeven() {
-        #expect(DatabaseBootstrap.fieldCount == 7,
+        #expect(DatabaseBootstrap.fieldCount == 8,
                 "394's two came back out — §12.139")
-        #expect(DatabaseBootstrap.diagnosticLineCount == 13)
+        #expect(DatabaseBootstrap.diagnosticLineCount == 14)
 
         let boot = DatabaseBootstrap(plan: HydrationFixtures.loadedPlan(),
                                      extras: HydrationFixtures.loadedExtras(),
@@ -107,7 +107,8 @@ struct DetailHydrationTests {
                                      authored: .noneWritten,
                                      decisions: .noneRecorded,
                                      moves: .loaded(moves: [], skipped: 0),
-                                     activities: .loaded(activities: [], skipped: 0))
+                                     activities: .loaded(activities: [], skipped: 0),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
         let lines = boot.diagnosticLines
         #expect(lines.count == DatabaseBootstrap.diagnosticLineCount)
         #expect(!lines.contains { $0.hasPrefix("  details:") },
@@ -122,7 +123,12 @@ struct DetailHydrationTests {
     func bothFamiliesAreFed() {
         let read = Set(PersistenceAuthority.Family.allCases)
         let fed = PersistenceAuthority.hydratedFamilies
-        #expect(read.subtracting(fed).isEmpty, "nine declared, nine fed")
+        // **428 — THIS IS NO LONGER THE WHOLE-SET ASSERTION AND MUST NOT BE.**
+        // B5 declares `.weather` and `.gear` and feeds neither, so the set
+        // difference is the slice in flight rather than a defect. What this
+        // test is ABOUT is B4's two, so it asks about B4's two.
+        #expect(read.subtracting(fed) == [.weather, .gear],
+                "the only unfed families are B5's, in flight since 428")
         #expect(PersistenceAuthority.hydrates(.details))
         #expect(PersistenceAuthority.hydrates(.traces))
         // AND THE LAUNCH STILL DOES NOT NAME THE STORE — the assertion below

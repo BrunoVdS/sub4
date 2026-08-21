@@ -68,16 +68,22 @@ struct ActivitiesAreReadTests {
     /// what it holds is the slice in flight.
     /// **398 CLOSED THE GAP AND THIS ASSERTION INVERTED**, which is what a
     /// slice looks like from a test's side. It read `[.details, .traces]` from
-    /// 394 to 397 and reads empty now. Kept as an inversion rather than deleted:
-    /// the day B5 declares `.gear` without feeding it, this fails and names it.
-    @Test("Nothing is fed that is not read, and nothing read is unfed")
+    /// 394 to 397, read empty from 398, and **reads `[.weather, .gear]` from
+    /// 428** — which is what its own comment said would happen: *"the day B5
+    /// declares `.gear` without feeding it, this fails and names it."* It did,
+    /// and this is the naming.
+    @Test("Nothing is fed that is not read, and the unfed families are the slice")
     func nothingIsFedThatIsNotRead() {
         let read = Set(PersistenceAuthority.Family.allCases)
         let fed = PersistenceAuthority.hydratedFamilies
         #expect(fed.subtracting(read).isEmpty,
                 "a store fed from a family nobody read hydrates from nothing")
-        #expect(read.subtracting(fed).isEmpty,
-                "B4 closed at 398 — a family declared and not fed is the next slice in flight")
+        // **THE DIRECTION THAT IS ALLOWED TO BE NON-EMPTY, AND ONLY WITH
+        // NAMES.** A bare `!isEmpty` would pass for any slice in flight and for
+        // a family somebody forgot; naming them means 429's flip has to edit
+        // this line and say what it closed.
+        #expect(read.subtracting(fed) == [.weather, .gear],
+                "B5 is in flight — 428 declares the two and 429 feeds them")
     }
 
     // MARK: The read itself
@@ -87,7 +93,7 @@ struct ActivitiesAreReadTests {
         let db = try Sub4Database.inMemory()
         let b = DatabaseBootstrapReader.read(db)
 
-        #expect(DatabaseBootstrap.fieldCount == 7)
+        #expect(DatabaseBootstrap.fieldCount == 8)
         #expect(DatabaseBootstrap.diagnosticLineCount
                 == DatabaseBootstrap.fieldCount + 6,
                 "derived, so only the family term moves")
@@ -123,7 +129,8 @@ struct ActivitiesAreReadTests {
             plan: .unavailable, extras: .unavailable, athlete: .unavailable,
             authored: .unavailable, decisions: .unavailable,
             moves: .unavailable,
-            activities: .failed("no such table: activity"))
+            activities: .failed("no such table: activity"),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
         #expect(!b.wasReadCleanly)
         #expect(b.firstFault?.contains("plan") == true,
                 "field order — the plan failed first and is what gets named")
@@ -133,7 +140,8 @@ struct ActivitiesAreReadTests {
             extras: .noActiveVersion(versionsPresent: 0),
             athlete: .missing, authored: .noneWritten,
             decisions: .noneRecorded, moves: .loaded(moves: [], skipped: 0),
-            activities: .failed("no such table: activity"))
+            activities: .failed("no such table: activity"),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
         #expect(!onlyActivities.wasReadCleanly,
                 "the seventh family can fail the whole verdict on its own")
         #expect(onlyActivities.firstFault?.contains("activities") == true)
@@ -166,7 +174,8 @@ struct ActivitiesAreReadTests {
                              zones: [.init(index: 1, min: 0, max: 115)]),
             authored: .noneWritten, decisions: .noneRecorded,
             moves: .loaded(moves: [], skipped: 0),
-            activities: .loaded(activities: [], skipped: 0))
+            activities: .loaded(activities: [], skipped: 0),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
 
         #expect(planned.canHydrate,
                 "the plan, its trimmings and the athlete are all here")

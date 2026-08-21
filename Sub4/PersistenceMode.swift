@@ -211,6 +211,18 @@ nonisolated enum PersistenceAuthority {
         /// read before it is fed is what 344/346, 357/358 and 379/382 all
         /// looked like.
         case details, traces
+        /// **PATCH 428 — D7 slice B5, AND TWO CASES FOR ONE READ.**
+        ///
+        /// `WeatherGearRepository.load` is a single `db.queue.read` returning
+        /// one `WeatherGearLoad`, so the bootstrap holds ONE field for them —
+        /// `fieldCount`'s rule follows the read, and either failing fails both.
+        ///
+        /// **The hydration is a different axis and gets two cases**, because
+        /// the groundwork found the two halves at very different maturity:
+        /// weather is twelve columns, eleven compared and restorable, while
+        /// gear only stopped being lossy at 425–427. Rolling back half a slice
+        /// is a two-character edit with two cases and impossible with one.
+        case weather, gear
     }
 
     /// **PATCH 358 WAS THIS LINE, AND 379 IS WHERE IT STOPPED BEING THE
@@ -248,6 +260,15 @@ nonisolated enum PersistenceAuthority {
     /// were. **`DetailStore.init` is what reads this one**, not `Sub4Launch` —
     /// §12.139 measured why. Reversible by deleting them: `details/` and
     /// `streams/` are still written and still complete.
+    /// **PATCH 428 LEAVES THIS LINE ALONE, AND THAT IS THE PATCH.** `.weather`
+    /// and `.gear` are in `Family` and in the bootstrap and are NOT here, so
+    /// **eleven families are read and nine are fed.** That gap is the slice.
+    /// 429 adds the two, and because it adds nothing else, any failure it
+    /// produces is attributable to the flip — 346's four were, 382's three
+    /// were, 398's zero were.
+    ///
+    /// Reversible by deleting them: `weather.json` and `athlete.json` are still
+    /// written and still complete, which is what makes a slice a slice.
     static let hydratedFamilies: Set<Family> = [.plan, .extras, .athlete,
                                                 .authored, .decisions, .moves,
                                                 .activities, .details, .traces]

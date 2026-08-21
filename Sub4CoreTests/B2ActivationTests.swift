@@ -96,7 +96,8 @@ struct B2ActivationTests {
             authored: .loaded(notes: [note()], commutes: [commute()], skipped: 0),
             decisions: .loaded(decisions: [decision()], skipped: 0),
             moves: .loaded(moves: [], skipped: 0),
-            activities: .loaded(activities: [], skipped: 0))
+            activities: .loaded(activities: [], skipped: 0),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
     }
 
     // MARK: The line this patch is
@@ -236,7 +237,8 @@ struct B2ActivationTests {
             authored: .loaded(notes: [note()], commutes: [], skipped: 0),
             decisions: .loaded(decisions: [], skipped: 0),
             moves: .loaded(moves: [], skipped: 0),
-            activities: .loaded(activities: [], skipped: 0))
+            activities: .loaded(activities: [], skipped: 0),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
 
         #expect(b.hydratableAuthored != nil, "one note is content")
         #expect(b.hydratableDecisions == nil, "and no decision is not")
@@ -382,7 +384,7 @@ struct B2ActivationTests {
         let lines = DatabaseBootstrapReader.read(db).diagnosticLines
         let head = try #require(lines.first)
 
-        #expect(head.hasPrefix("Database bootstrap: 7 families"),
+        #expect(head.hasPrefix("Database bootstrap: 8 families"),
                 "the prefix every earlier pin was written against")
         #expect(head.contains("read at launch"))
         #expect(head.lowercased().contains("live"),

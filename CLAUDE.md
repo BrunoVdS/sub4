@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 427 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 428 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -412,9 +412,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 427, 2026-08-21
+## 5. State — patch 428, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 427; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 428; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -430,7 +430,7 @@ code wins and this section is the defect.
 | **D7 B2** — notes, commutes, match decisions, plan moves | done, 355–358 and 377 |
 | **D7 B3** — the activities | **done, 379–383** |
 | **D7 B4** — details, traces | **DONE, 388–398** — `D7-B4-GROUNDWORK.md`, §12.139–§12.142 |
-| D7 B5 — weather, gear | not started |
+| **D7 B5** — weather, gear | **425–428 built, NOT flipped** — 429 is the line |
 | D7 B6 — derived metrics | not started |
 | D7 B7 — reviews | not started, and blocked until a real review exists |
 | D7 B8 — sync cursor, work queue, rejections, revisions | not started |
@@ -829,7 +829,13 @@ run happened. §12.135–§12.150.
    `wearIsMeaningful` keeps `?? .shoe` because that is a RENDERING answer, not a
    storage one. `gear.retiredUTC` stays approved with a REWRITTEN reason — it is
    written now, and only the DATE lacks a counterpart. §12.177.
-   **Still to come: 428 wires the machinery, 429 is the flip.**
+   **428 IS THE MACHINERY: ELEVEN FAMILIES DECLARED, NINE FED**, and that gap
+   is the slice. ONE bootstrap field for two families — the read fails as one
+   thing (`fieldCount`'s rule, `authored`'s precedent) — and TWO `Family` cases,
+   because the hydration must be reversible by half. `nothingIsFedThatIsNotRead`
+   predicted this in its own comment and now names `[.weather, .gear]` rather
+   than asserting emptiness, so **429 has to edit that line and say what it
+   closed**. §12.178. **429 is the flip: one line.**
 9. **Then Bruno's list.**
 10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed

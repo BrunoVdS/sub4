@@ -108,7 +108,8 @@ struct ActivityHydrationTests {
                              zones: [.init(index: 1, min: 0, max: 115)]),
             authored: .noneWritten, decisions: .noneRecorded,
             moves: .loaded(moves: [], skipped: 0),
-            activities: .loaded(activities: list, skipped: 0))
+            activities: .loaded(activities: list, skipped: 0),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
     }
 
     // MARK: THE ONE THAT IS THE PATCH
@@ -169,9 +170,13 @@ struct ActivityHydrationTests {
     /// than deleting it is what makes the change visible in a diff.
     @Test("382 moves both counts")
     func theCountsMoved() {
-        #expect(DatabaseBootstrap.fieldCount == 7,
-                "the bootstrap gained no family — 379 did that")
-        #expect(PersistenceAuthority.Family.allCases.count == 9)
+        // **428 — AND THE COMMENT BELOW CALLED IT.** B5 declares `.weather`
+        // and `.gear` and feeds neither, so `allCases` moved and
+        // `hydratedFamilies` did not. Eleven read, nine fed; that gap is the
+        // slice, and 429 closes it.
+        #expect(DatabaseBootstrap.fieldCount == 8,
+                "the bootstrap gained ONE field for the two families — one read")
+        #expect(PersistenceAuthority.Family.allCases.count == 11)
         // 398 — AND NOW EVERY FAMILY IS FED. The gap 394 opened and 395 kept
         // open closed at the flip: nine declared, nine hydrated. The next
         // number to move here is B5's, and it moves `allCases` first.
@@ -211,7 +216,8 @@ struct ActivityHydrationTests {
                 athlete: .missing, authored: .noneWritten,
                 decisions: .noneRecorded,
                 moves: .loaded(moves: [], skipped: 0),
-                activities: bad)
+                activities: bad,
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
             #expect(isNil(b.hydratableActivities),
                     "nil rather than [] — a failed read is not an empty one")
         }

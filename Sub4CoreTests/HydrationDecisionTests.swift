@@ -44,7 +44,8 @@ struct HydrationDecisionTests {
                           athlete: HydrationFixtures.loadedAthlete(),
                           authored: .noneWritten, decisions: .noneRecorded,
                           moves: .loaded(moves: [], skipped: 0),
-                          activities: .loaded(activities: [], skipped: 0))
+                          activities: .loaded(activities: [], skipped: 0),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
     }
 
     /// A migrated database nobody has imported into.
@@ -54,7 +55,8 @@ struct HydrationDecisionTests {
                           athlete: .missing,
                           authored: .noneWritten, decisions: .noneRecorded,
                           moves: .loaded(moves: [], skipped: 0),
-                          activities: .loaded(activities: [], skipped: 0))
+                          activities: .loaded(activities: [], skipped: 0),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
     }
 
     private func isHydrate(_ i: HydrationPlanner.Instruction) -> Bool {
@@ -182,7 +184,8 @@ struct HydrationDecisionTests {
                                        authored: .noneWritten,
                                        decisions: .noneRecorded,
                                        moves: .loaded(moves: [], skipped: 0),
-                                       activities: .loaded(activities: [], skipped: 0))
+                                       activities: .loaded(activities: [], skipped: 0),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
         let i = HydrationPlanner.decide(mode: .shadow("B1"), bootstrap: broken)
 
         #expect(!isHydrate(i), "no plan may leave this function")
@@ -207,7 +210,8 @@ struct HydrationDecisionTests {
                                      authored: .noneWritten,
                                      decisions: .noneRecorded,
                                      moves: .loaded(moves: [], skipped: 0),
-                                     activities: .loaded(activities: [], skipped: 0))
+                                     activities: .loaded(activities: [], skipped: 0),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
         let i = HydrationPlanner.decide(mode: .shadow("B1"), bootstrap: both)
         #expect(outcome(i)?.isFault == true)
     }
@@ -237,7 +241,8 @@ struct HydrationDecisionTests {
                                      authored: .noneWritten,
                                      decisions: .noneRecorded,
                                      moves: .loaded(moves: [], skipped: 0),
-                                     activities: .loaded(activities: [], skipped: 0))
+                                     activities: .loaded(activities: [], skipped: 0),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0))
         let i = HydrationPlanner.decide(mode: .shadow("B1"), bootstrap: half)
         #expect(!isHydrate(i))
         #expect(outcome(i)?.isFault == false, "absent trimmings are not a read failure")
@@ -256,7 +261,8 @@ struct HydrationDecisionTests {
                                          authored: .noneWritten,
                                          decisions: .noneRecorded,
                                          moves: .loaded(moves: [], skipped: 0),
-                                         activities: .loaded(activities: [], skipped: 0)))
+                                         activities: .loaded(activities: [], skipped: 0),
+            weatherGear: .loaded(weather: [], gear: [], skipped: 0)))
         #expect(!isHydrate(i))
         guard case .nothingStored(let who)? = outcome(i) else {
             Issue.record("a missing profile is not a fault")

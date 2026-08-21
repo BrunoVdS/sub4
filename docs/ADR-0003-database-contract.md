@@ -8962,6 +8962,70 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.178 The machinery, and the gap that is the slice — patch 428, D7 slice B5
+
+**Eleven families declared, nine fed.** The bootstrap reads weather and gear on
+every launch and nothing hydrates from them. That is what 379/380 and 394/395
+both looked like, and the reason is always the same: **the flip must be one
+line, so that any failure it produces is attributable to it.** 346's four
+failures were, 382's three were, 398's zero were.
+
+### 12.178.1 One field, two families, and the two axes are different questions
+
+`DatabaseBootstrap` gains **one** field. `WeatherGearRepository.load` is a
+single `db.queue.read` returning one value — either it succeeds for both or it
+fails for both — so two fields would report one failure as two families.
+That is `fieldCount`'s rule, not an exception to it: the details and the traces
+got two fields because they come out of separate tables through separate
+repositories. **`authored` is the same shape and the same decision, taken at
+357** for notes and commutes.
+
+`PersistenceAuthority.Family` gains **two** cases, because the hydration is a
+different axis. **The groundwork found the two halves at very different
+maturity** — weather is twelve columns, eleven compared and restorable, while
+gear only stopped being lossy at 425–427 — so rolling back half of B5 has to be
+possible. With two cases that is a two-character edit; with one it is
+impossible.
+
+### 12.178.2 The tests that had to be inverted, and one of them predicted it
+
+`nothingIsFedThatIsNotRead` asserted `read.subtracting(fed).isEmpty`, and its
+own comment read: *"the day B5 declares `.gear` without feeding it, this fails
+and names it."* **It did.** Kept as an inversion rather than deleted — the same
+treatment 398 gave it — and now asserting `read.subtracting(fed) == [.weather,
+.gear]`.
+
+**Named rather than merely non-empty**, and that is the whole of the change's
+value: a bare `!isEmpty` would pass for any slice in flight AND for a family
+somebody forgot to feed. Naming them means **429 has to edit this line and say
+what it closed.**
+
+`bothFamiliesAreFed` in `DetailHydrationTests` carried the same whole-set
+assertion while being about B4's two. It now asks about B4's two.
+
+### 12.178.3 RULE 5 fired eight times and that is the rule working
+
+Eight pinned counts moved: `Family.allCases.count` 9 → 11 in three files,
+`fieldCount` 7 → 8 in six, `diagnosticLineCount` 13 → 14 in two. **RULE 5's
+message is the argument for the design** — *"adding a family is a decision and
+this pin is how it is taken, but it is taken in the patch that adds the family,
+not four rounds later"* (§12.121.8).
+
+**And sabotaging the flip is caught by RULE 5 rather than by a test.** Adding
+`.weather` and `.gear` to `hydratedFamilies` fails `check-invariants.py` before
+the suite runs at all, because two pins on `hydratedFamilies.count` still say 9.
+Worth recording because the failure looks different: `FAIL [pinned counts match
+the source]`, not a red test, and a grep for `✘ Test` finds nothing.
+
+### 12.178.4 What it costs
+
+Tens of gear rows and 603 weather readings, against 699 activities already read
+in the line above. **The cheapest family the bootstrap reads** — and
+`Bootstrap read` prints what it cost on every launch, so §12.174's 1.0 s
+threshold is watched without anybody having to remember to look.
+
+---
+
 ## 12.177 The read-back can disagree about gear — patch 427, D7 slice B5
 
 `StoredGear` reads `kind` and `isRetired`, the comparison walks them, and the
