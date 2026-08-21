@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 434 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 435 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -361,7 +361,17 @@ magnitude, and `test.sh` fails below 500 for the same reason.
 ```sh
 ./scripts/test.sh          # xcodebuild test on the simulator — run before every device build
 ./scripts/preflight.sh     # test + Release build; run before anything destructive
+./scripts/selftest-lock.sh # proves the repository lock, in under a second
 ```
+
+**ONE RUN AT A TIME, AND ONE LOG PER RUN — patch 435.** Both scripts take an
+exclusive lock keyed on this checkout and write run-stamped logs
+(`sub4-test-<utc>-<pid>.log`). A second invocation is refused by name rather
+than silently sharing a simulator, DerivedData and an output file — a failing
+run's evidence used to be replaceable by a passing one. `preflight.sh` holds the
+lock for its whole run and `test.sh` inherits it. A stale lock from a killed run
+is reclaimed loudly. **`docs/evidence/post-b5/PROGRESS.md` says where the
+runbook's build is standing**; it is updated at the end of every patch.
 
 **Both fail on a compiler warning from `Sub4/` or `Sub4CoreTests/` since 403.**
 One slipped past a green suite AND a successful Release build at 400a and was
@@ -447,9 +457,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 434, 2026-08-21
+## 5. State — patch 435, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 434; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 435; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.

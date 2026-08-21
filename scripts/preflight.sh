@@ -13,6 +13,20 @@ cd "$(dirname "$0")/.."
 SCHEME="${SUB4_SCHEME:-Sub4}"
 PROJECT="Sub4.xcodeproj"
 
+# --- one preflight at a time, and one log per run — patch 435, §12.190 ---
+#
+# `test.sh` takes the lock for its own stage, but stage 3's Release build drives
+# the same DerivedData and wrote to one shared `/tmp/sub4-release.log`. Holding
+# the lock across the WHOLE run is what makes "preflight passed" a statement
+# about one tree rather than about whichever run finished last; `test.sh`
+# inherits it rather than refusing its own parent.
+RUN_ID="${SUB4_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+export SUB4_RUN_ID="$RUN_ID"
+# shellcheck source=scripts/lock.sh
+. "$(dirname "$0")/lock.sh"
+sub4_lock_acquire "preflight.sh $RUN_ID" || exit 1
+trap 'sub4_lock_release' EXIT INT TERM
+
 echo "=== 1/3  working tree ==="
 git status --short
 if [[ -n "$(git status --porcelain)" ]]; then
@@ -32,7 +46,7 @@ echo "=== 3/3  Release build ==="
 # WARNINGS just as completely, so the Release configuration — the one that
 # ships, and the one a Debug-only gate cannot see — was unreadable here too.
 # Output goes to a log; only the lines worth reading reach the terminal.
-RELEASE_LOG="${SUB4_RELEASE_LOG:-/tmp/sub4-release.log}"
+RELEASE_LOG="${SUB4_RELEASE_LOG:-${TMPDIR:-/tmp}/sub4-release-$RUN_ID.log}"
 set +e
 xcodebuild build \
   -project "$PROJECT" \

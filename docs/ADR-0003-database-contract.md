@@ -8962,6 +8962,64 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.190 Evidence a concurrent run can overwrite is evidence nobody can cite — patch 435
+
+Task 0A tranche 4. `scripts/test.sh` wrote every run to one path,
+`/tmp/sub4-test.log`, and drove a simulator and DerivedData that a second run
+would drive at the same time.
+
+The log is the dangerous one. **A failing run's output can be replaced by a
+passing run's**, and the reader is then looking at a summary of a run they did
+not start. CLAUDE.md already recorded the DerivedData half — two front-ends
+producing `invalid reuse after initialization failure` on files that are fine —
+and the runbook's preamble carried a manual workaround for the rest: *prove no
+other suite is running and set a unique `SUB4_LOG`*. **A rule nobody can be
+relied on to follow is a rule that has not been implemented.** This is it as
+code.
+
+### 12.190.1 A directory, because `mkdir` is atomic and macOS has no `flock`
+
+Creating the directory IS acquiring the lock — there is no test-then-create
+window. It is keyed on the checkout so two clones never block each other, and
+kept under `TMPDIR` because `.gitignore`'s own rule is that this repository
+holds source and nothing a local session produces: a lock left by a killed
+process must not appear in `git status` as a mystery.
+
+**Stale locks are reclaimed, loudly.** A holder whose PID is gone is a crash,
+and refusing on the strength of it would make the next honest run look like
+contention — but silence would make a real overlap indistinguishable from a
+tidy-up.
+
+**Release only removes a lock this process owns.** A run that reclaimed a stale
+lock and was then itself superseded must not delete its successor's.
+
+### 12.190.2 Inherited, so a gate cannot refuse its own parent
+
+`preflight.sh` now holds the lock for its **whole** run, because stage 3's
+Release build drives the same DerivedData and had its own shared log. `test.sh`,
+called from inside it, adopts the lock and does not release it on the way out.
+
+**"Preflight passed" is now a statement about one tree** rather than about
+whichever run finished last.
+
+### 12.190.3 The self-test, and the property it first got wrong
+
+The runbook asks for contention proved *without launching two full suites* — two
+real runs would take four minutes, need two simulators to be honest, and be run
+once and never again. `scripts/selftest-lock.sh` proves six properties in under
+a second, and both the liveness check and the ownership check were sabotaged and
+caught.
+
+**Property 2 was wrong in its first draft.** It used a bare subshell as the
+"second run" — but a subshell is a CHILD and inherits the lock **on purpose**,
+which is property 6 and the thing that lets preflight call test.sh. It now uses
+`env -u SUB4_LOCK_DIR`, because an independent run is a fresh invocation that
+never saw the variable. **A test that models the wrong thing turns a working
+inheritance into a failing contention**, and it would have been read as the lock
+being broken.
+
+---
+
 ## 12.189 The app said the weather came from files for three patches — patch 434
 
 `PersistenceMode.sliceUnderTest` is the sentence the athlete reads on the

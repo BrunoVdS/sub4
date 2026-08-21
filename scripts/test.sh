@@ -25,7 +25,25 @@ cd "$(dirname "$0")/.."
 
 SCHEME="${SUB4_SCHEME:-Sub4}"
 PROJECT="Sub4.xcodeproj"
-LOG="${SUB4_LOG:-/tmp/sub4-test.log}"
+
+# --- one run at a time, and one log per run — patch 435, §12.190 ---
+#
+# `LOG` was `/tmp/sub4-test.log` for every run. Two suites at once overwrote
+# each other's output, so a failing run's evidence could be replaced by a
+# passing one and the reader would be looking at a summary of a run they did
+# not start. The runbook's preamble had to carry a manual workaround —
+# "prove no other suite is running and set a unique SUB4_LOG" — which is a rule
+# nobody can be relied on to follow. This is that rule as code.
+RUN_ID="${SUB4_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+LOG="${SUB4_LOG:-${TMPDIR:-/tmp}/sub4-test-$RUN_ID.log}"
+
+# shellcheck source=scripts/lock.sh
+. "$(dirname "$0")/lock.sh"
+sub4_lock_acquire "test.sh $RUN_ID" || exit 1
+# TRAP-SAFE. A lock that survives ⌃C is a lock that blocks the next honest run,
+# and the first thing anybody does then is delete it by hand — which is how a
+# lock stops being believed.
+trap 'sub4_lock_release' EXIT INT TERM
 
 if [[ ! -d "$PROJECT" ]]; then
   echo "error: $PROJECT not found — run this from the repo root" >&2
@@ -70,6 +88,7 @@ fi
 
 echo "scheme:      $SCHEME"
 echo "destination: $DEST"
+echo "run:         $RUN_ID"
 echo "log:         $LOG"
 echo
 
@@ -119,6 +138,11 @@ echo
 ./scripts/no-warnings.sh "$LOG" "test build"
 echo
 echo "full log: $LOG"
+# A stable name for the newest run, for a human who does not want to read a
+# timestamp. It is a CONVENIENCE and never the evidence: the run-stamped file
+# above is what an acceptance manifest cites, because a symlink is exactly the
+# shared mutable path this patch exists to stop relying on.
+ln -sfn "$LOG" "${TMPDIR:-/tmp}/sub4-test-latest.log" 2>/dev/null || true
 
 # The count grows with the suite; the point is the order of magnitude, not the
 # figure. 1005 tests in 92 suites as of patch 322b. A run reporting tens rather
