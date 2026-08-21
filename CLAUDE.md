@@ -772,13 +772,26 @@ run happened. §12.135–§12.150.
    are under the unclean-read guard and **`UNPROTECTED_STORE_CEILING` is 0**,
    from 2 since 378 — it may never rise. Both gained `init(directory:)`, which
    §5.5 wants for `ReadBacks.athlete` anyway. §12.162, §12.163.
-7. **Then Bruno's list**, then **B5 — weather and gear**, with
+7. **B6a IS ON THE LADDER NOW, FROM A MEASUREMENT.** The Release stall is
+   ~0.6 s and 0.32–0.40 s of it is `DetailStore`'s construction — which is
+   **load-bearing**, because `LoadEngine` scores rung 1 from the trace and rung
+   2 from the session average, so a series built without traces is *different*,
+   not partial. **The freeze buys correct figures and does not scale**: linear
+   in activity count at ~700 a year, so ~0.9 s at 1,500 activities and ~35 MB
+   of resident traces at 3,000. Filling asynchronously fixes the freeze and
+   neither the residency nor the time to correct figures. **B6a persists each
+   activity's `WorkoutLoad` — the output of the existing pure function, never a
+   formula in SQL — so the launch reads N narrow rows and traces become lazy.**
+   Runs **with B6**, because B6's invalidation audit is B6a's hardest half.
+   **Threshold: if the Release stall passes 1.0 s, B6a becomes the next patch.**
+   §12.174.
+8. **Then Bruno's list**, then **B5 — weather and gear**, with
    `knownActivityIDs` and `WeatherGearRoundTrip`'s own read. **Gear is the half
    of `AthleteStore` B1 did not take** — its comparison is still evidence.
-8. **B6, B7, B8, then B9** — activate, `activateVerified` called for the first
+9. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed
    recovery screen `RootView` lacks.
-9. **D8** — stabilise one release window, then remove the JSON writers.
+10. **D8** — stabilise one release window, then remove the JSON writers.
 
 **B4's cost — §5.6's OWED RELEASE FIGURE LANDED ON 20 AUGUST AND IT CHANGES THE
 ANSWER.**

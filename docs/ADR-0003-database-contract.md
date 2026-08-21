@@ -8962,6 +8962,94 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.174 The launch freeze buys correctness, and it does not scale — B6a is added to the ladder
+
+### 12.174.1 What the freeze is
+
+421 and 424 measured it and 424's Release run attributed it. In the build that
+ships, ~0.6 s of main-thread block starting at first paint:
+
+| | | |
+|---|---|---|
+| first paint → the read starts | ~0.15 s | SwiftUI's first evaluation of the tab tree. Not this project's to move. |
+| **`DetailStore` construction** | **0.32 – 0.40 s** | 699 details and 672 recordings over 199,848 sample rows. **~60%, and the only large movable piece.** |
+| `LoadSeries.build` + PMC + monotony | ~0.08 s | already pure over its arguments |
+
+**Exactly one thing constructs `DetailStore` at launch.** Fourteen files touch
+it; the launch path has one — `TodayView`'s `.task { load.recomputeIfNeeded() }`.
+Every other reader is a sheet the athlete opens, a sync, or a diagnostic screen.
+No view body reads it.
+
+### 12.174.2 And the read is load-bearing, which §12.171.3 did not see
+
+`LoadEngine.load` has a fallback ladder and **rung 1 is the trace; rung 2 is the
+session average.** A load series built before the traces land is not *partial* —
+it is *different*. 672 activities would score `.average` rather than `.stream`,
+and TRIMP, CTL/ATL, time in zone and monotony would all shift and shift back a
+moment later.
+
+**So the freeze is the price of not showing a number that would silently
+change.** It is a trade, and until now it was an unstated one. §12.171.3's
+"cheap fingerprint" fix would have been wrong twice over: it would have moved
+nothing, and the thing it blamed is carrying the app's correctness.
+
+### 12.174.3 Why none of the obvious three is the answer
+
+`ActivityStreams.targetSamples` is **300**, and 199,848 ÷ 672 = 297 — so the
+read grows with the NUMBER OF ACTIVITIES, not with how long each one lasted.
+Linear, and this athlete adds roughly 700 a year.
+
+| activities | launch read | traces resident |
+|---|---|---|
+| 699 today | 0.32 – 0.40 s | ~7 – 9 MB |
+| 1,000 | ~0.5 – 0.6 s | ~12 MB |
+| 1,500 | ~0.75 – 0.9 s | ~19 MB |
+| 3,000 | ~1.5 – 1.8 s | ~35 MB |
+
+- **Accept it** — the freeze grows without bound.
+- **Make the read cheaper** — a constant factor, then linear again. It delays
+  the wall rather than moving it.
+- **Fill asynchronously** — the freeze goes for good at any size, because the
+  main thread stops blocking. **But it fixes responsiveness only**: time to
+  correct figures still grows linearly, and **every trace still becomes
+  resident**, on its way to ~35 MB. That ceiling was not stated when the option
+  was first offered and it is the reason the option is not taken.
+
+### 12.174.4 B6a — the trace is not a launch input
+
+**The launch needs traces for one reason: rung 1.** And that value is derived
+and stable — for one activity at one `LoadEngine.version` (4 today, and already
+stamped into every `WorkoutLoad` as `engineVersion`) it never changes.
+
+Compute it once when the trace arrives, store it, and **the launch reads N
+narrow load rows instead of N × 300 samples.** Traces are then read one at a
+time, when an activity's detail is opened. Launch cost becomes O(activities)
+over small rows; residency stops accumulating; **both stay flat as the history
+grows.**
+
+**Two things this is not.** It is **not what B6 is specified to do** — B6's
+prompt asks for one repository-backed *input snapshot* feeding the existing pure
+functions, and read naively it would gather every trace up front and make this
+worse. Storing the *output* of `LoadEngine.load` keeps that constraint (no
+formula in SQL, the pure function still owns it), but it is an **addition to the
+plan**. And it is **not free of the hardest part**: a stored derivation needs
+real invalidation — engine version, `DataCorrections`, athlete constants, notes
+and RPE, a match changing, and a trace arriving late must each expire it.
+**That is the invalidation audit B6 already asks for**, which is why the two
+belong in the same stretch of ladder rather than in separate months.
+
+Placed as **B6a, to run with B6.** Not before B5.
+
+### 12.174.5 The threshold
+
+`Launch:` prints the stall and its offset on every launch, and
+`Detail store built` prints its own. **Watch them at every remaining flip —
+B5 adds weather and gear to the same path, B6 the derived snapshot.** If the
+stall passes **1.0 s in Release**, B6a stops being scheduled work and becomes
+the next patch.
+
+---
+
 ## 12.173 The scheme is a tracked file the campaign is supposed to edit — RULE 14
 
 Taking a Release reading means setting the shared scheme's Run action to

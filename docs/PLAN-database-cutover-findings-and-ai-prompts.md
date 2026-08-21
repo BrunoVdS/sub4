@@ -685,6 +685,65 @@ weather reading. Specify file-removal rehearsal, relaunch and rollback steps.
 
 ---
 
+## 5a. Execute B6a: the trace is not a launch input
+
+### Status
+
+**Queued to run WITH B6. Added 21 August 2026 from a measurement, not a
+review** — ADR-0003 §12.174.
+
+### Findings
+
+**Measured on the device in Release at patch 424:** the app becomes responsive
+in 20–29 ms and then blocks the main thread for ~0.6 s, of which **0.32–0.40 s
+is `DetailStore`'s construction** — 699 details and 672 recordings over 199,848
+sample rows. Attributed, not inferred: the construction's span sits inside the
+stall's span on both launches.
+
+**Exactly one thing triggers it at launch** — `TodayView`'s
+`.task { load.recomputeIfNeeded() }`. No view body reads the store.
+
+**And the read is load-bearing.** `LoadEngine.load` scores rung 1 from the
+trace and rung 2 from the session average, so a series built without traces is
+*different*, not partial. The freeze buys correct figures.
+
+**It does not scale.** `targetSamples` is 300, so the cost is linear in activity
+count — roughly 700 a year for this athlete. ~0.5–0.6 s at 1,000 activities,
+~1.5–1.8 s at 3,000, with trace residency reaching ~35 MB.
+
+Filling asynchronously removes the freeze at any size but not the residency and
+not the time to correct figures. **Only removing the launch read scales.**
+
+### What B6a does
+
+Persist each activity's `WorkoutLoad` — the OUTPUT of the existing pure
+function, never a formula in SQL — so the launch reads N narrow rows instead of
+N × 300 samples, and traces are read one at a time when a detail screen asks.
+
+### Acceptance criteria
+
+- `LoadEngine` remains the only place a TRIMP is calculated.
+- A stored derivation expires on **every** material input: `engineVersion`,
+  `DataCorrections`, athlete constants, notes and RPE, a match changing, and a
+  trace arriving late. Each one proven by a negative-control test that fails
+  before the invalidation exists.
+- The launch no longer constructs `DetailStore`, proven by
+  `Detail store built ... beginning N s` no longer appearing inside the stall.
+- `Launch:` and `Detail store built` recorded in Release before and after.
+- No load figure changes value. This is a caching change, not a scoring change,
+  and shadow parity must show zero differences.
+
+### Sequencing
+
+**After B5, with B6.** B6's invalidation audit and B6a's invalidation
+requirement are the same work; splitting them would audit a snapshot that B6a
+then replaces.
+
+**Threshold:** if the Release stall passes **1.0 s** before then, B6a becomes
+the next patch rather than scheduled work.
+
+---
+
 ## 6. Execute B6: derived metrics
 
 ### Status
