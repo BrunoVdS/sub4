@@ -785,13 +785,26 @@ run happened. §12.135–§12.150.
    Runs **with B6**, because B6's invalidation audit is B6a's hardest half.
    **Threshold: if the Release stall passes 1.0 s, B6a becomes the next patch.**
    §12.174.
-8. **Then Bruno's list**, then **B5 — weather and gear**, with
-   `knownActivityIDs` and `WeatherGearRoundTrip`'s own read. **Gear is the half
-   of `AthleteStore` B1 did not take** — its comparison is still evidence.
-9. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
+8. **B5's GROUNDWORK IS WRITTEN — `docs/D7-B5-GROUNDWORK.md`, and it is
+   WAITING ON FIVE DECISIONS.** Weather is nearly done: twelve columns, eleven
+   compared, restorable, 603 rows. **Gear is not a database-backed
+   presentation** — `bike vs shoe`, `retired vs active` and any retirement date
+   are held in the file as ARRAY MEMBERSHIP (`shoes`/`bikes`/`retired`) and are
+   in the database in **no form at all**, because `s.gear = allGear` flattens
+   them before `importGear` is reached. **The importer is not discarding the
+   kind; it is never told.** §12.68's argument applies to three more facts:
+   after Strava, *thrown away* becomes *gone*, and the endpoint is the only
+   thing that ever said which. **Retirement is INFERRED** by
+   `resolveRetiredGear` from activities naming gear the profile no longer holds
+   — and `fetchGear` returns no type, so **a retired bike and a retired shoe are
+   indistinguishable**, latent only because `activeShoes` renders `shoes` alone
+   and bikes and retired gear are drawn nowhere. Also `knownActivityIDs` still
+   reads the database-fed roster — the last self-referential filter left.
+9. **Then Bruno's list.**
+10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed
    recovery screen `RootView` lacks.
-10. **D8** — stabilise one release window, then remove the JSON writers.
+11. **D8** — stabilise one release window, then remove the JSON writers.
 
 **B4's cost — §5.6's OWED RELEASE FIGURE LANDED ON 20 AUGUST AND IT CHANGES THE
 ANSWER.**
