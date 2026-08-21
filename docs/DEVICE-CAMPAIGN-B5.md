@@ -7,7 +7,7 @@
 | **Groundwork** | `docs/D7-B5-GROUNDWORK.md` — §6's five decisions, all approved 21 August |
 | **ADR** | §12.175–§12.182a |
 | **Time** | about twenty-five minutes. **Part D needs a Release build. Part E moves files.** |
-| **State** | **PART A PASSED 21 August, nine of nine** (§10.1). Parts B–E outstanding — the rendering, the weather cards, the Release cost, and whether the files can go. |
+| **State** | **PARTS A AND B PASSED 21 August — thirteen of thirteen** (§10.1, §10.1a). Parts C–E outstanding: the weather cards, the Release cost, and whether the files can go. |
 
 **THIS IS THE FIRST B-SLICE CAMPAIGN THAT IS NOT READ-ONLY.** Part E moves
 `athlete.json` and `weather.json` aside to prove the app no longer needs them.
@@ -256,10 +256,46 @@ was empty; two are the loop staying closed.**
 `MigrationLedger.prune` at its ceiling, and §12.153.10 records the same one-row
 movement on 19 August for the same reason. `imported rows` follows it by one.
 
+### 10.1a Part B — 21 August 2026, 13:47, patch 432. FOUR OF FOUR
+
+| # | figure | read | |
+|---|---|---|---|
+| 10 | the shoes section | **six rows** | ✅ |
+| 11 | each row's kilometres | **unchanged** | ✅ |
+| 12 | each row's bar | **present on all six** | ✅ |
+| 13 | order and names | by distance descending, names as before | ✅ |
+
+```
+Lowa ZEPHYR GTX                              534 km
+Adidas GSG 9-7                               516 km
+ASICS Novablast 5 TR (Green) Antwerpen       324 km
+New Balance Fresh Foam X Hierro V9           248 km
+ASICS Gel Cumulus Trail                      114 km
+ASICS ASICS Novablast 5 TR (Oranje) Berlin   108 km
+```
+
+**ROW 11 HAS AN INDEPENDENT WITNESS, AND IT IS BETTER THAN MEMORY.** The
+activity detail photographed on **20 August, before B5 flipped**, reads
+`Shoe: ASICS ASICS Novablast 5 TR (Oranje) Berlin · 108 km`. The same pair reads
+**108 km** here, from rows. A figure carried across the flip and checked against
+a screenshot taken before it — which is exactly the independent expected result
+§5 asks for, and it happened to already exist.
+
+**AND THE SOURCE'S OWN COMMENT IS THE SECOND WITNESS.** `Shoe.Wear`'s self-test
+note, written long before B5, says *"the highest pair is at 534 km, so amber is
+66 km away and red is 266"*. The highest pair reads **534 km**. The thresholds
+are 600 and 800, so **every bar is correctly untinted** — and the two states
+above `.fine` remain unreachable on this athlete's data, which is why that
+self-test exists at all.
+
+Six rows and not eleven: the four bikes and the one retired item are drawn
+nowhere, which is §11's first entry and the reason 429's wear guard cannot be
+seen here.
+
 ### 10.2 Outstanding
 
-**Parts B, C, D and E — rows 10 to 22.** Everything a read-back cannot see: the
-rendering, the weather cards, the Release cost, and whether the files can go.
+**Parts C, D and E — rows 14 to 22.** The weather cards, the Release cost, and
+whether the files can go.
 
 Record each part below, and say plainly which rows were not exercised. **A
 partial campaign is evidence for its rows only, never for the whole slice.**
