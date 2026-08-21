@@ -27,18 +27,18 @@ export SUB4_RUN_ID="$RUN_ID"
 sub4_lock_acquire "preflight.sh $RUN_ID" || exit 1
 trap 'sub4_lock_release' EXIT INT TERM
 
-echo "=== 1/3  working tree ==="
+echo "=== 1/4  working tree ==="
 git status --short
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "note: uncommitted changes above — that is fine, just know what they are."
 fi
 echo
 
-echo "=== 2/3  test suite (simulator) ==="
+echo "=== 2/4  test suite (simulator) ==="
 ./scripts/test.sh
 echo
 
-echo "=== 3/3  Release build ==="
+echo "=== 3/4  Release build ==="
 # A Release-only problem is plausible and has happened; this stood in for CI
 # on 2026-08-04 and passed.
 # NO `-quiet`, AND THAT IS PATCH 403. The flag hid swift-testing's summary
@@ -63,6 +63,29 @@ if (( STATUS != 0 )); then
 fi
 echo "Release build OK"
 ./scripts/no-warnings.sh "$RELEASE_LOG" "Release build"
+echo
+
+echo "=== 4/4  evidence manifests ==="
+# PATCH 438, §12.193. The runbook's later tasks key off the word "accepted" in
+# these files, so the files have to be machine-evaluable — and the checker has
+# to be provably able to refuse. `selftest-evidence.sh` drives the four
+# failures the runbook names by hand (invalid, missing, stale, circular) plus
+# the four the runner and the shape owe, in under a second.
+./scripts/selftest-evidence.sh
+echo
+# And then the REAL manifests, if any exist yet. A glob that matches nothing is
+# not an empty pass here: the validator exits 2 when given no input, so the
+# absence is stated rather than skipped.
+REAL=()
+while IFS= read -r m; do REAL+=("$m"); done < <(
+  find docs/evidence/post-b5 -maxdepth 1 -name '*.json' \
+       ! -name 'manifest.schema.json' | sort)
+if (( ${#REAL[@]} )); then
+  python3 scripts/evidence-manifest.py validate "${REAL[@]}"
+else
+  echo "no accepted evidence manifests yet — docs/evidence/post-b5/ holds the"
+  echo "schema, the fixtures and PROGRESS.md, and nothing claiming acceptance."
+fi
 echo
 
 cat <<'EOF'

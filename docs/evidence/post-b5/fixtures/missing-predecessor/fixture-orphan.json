@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture-orphan",
+  "task": "0A",
+  "title": "fixture \u2014 fixture-orphan",
+  "status": "accepted",
+  "owner": "bruno",
+  "capturedUTC": "2026-08-21T23:00:00Z",
+  "approval": {
+    "by": "bruno",
+    "atUTC": "2026-08-21T23:05:00Z",
+    "statement": "fixture acceptance, not a real one"
+  },
+  "predecessors": [
+    {
+      "id": "a-manifest-nobody-wrote",
+      "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ],
+  "tree": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "patch": 438,
+    "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "binding": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "signature": {
+      "kind": "fixture",
+      "value": "not a real signature"
+    }
+  },
+  "evidence": [
+    {
+      "path": "reading.txt",
+      "sha256": "bdcf4c994585af6dd6cb1cfbff78bcc73ab27dc30a299db5bb83766ca05b5de4",
+      "bytes": 9
+    }
+  ]
+}

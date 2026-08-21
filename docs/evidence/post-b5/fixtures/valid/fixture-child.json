@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture-child",
+  "task": "0A",
+  "title": "fixture \u2014 fixture-child",
+  "status": "accepted",
+  "owner": "bruno",
+  "capturedUTC": "2026-08-21T23:00:00Z",
+  "approval": {
+    "by": "bruno",
+    "atUTC": "2026-08-21T23:05:00Z",
+    "statement": "fixture acceptance, not a real one"
+  },
+  "predecessors": [
+    {
+      "id": "fixture-root",
+      "sha256": "c3bb63fe844cc4c798eb97fd47a3c34a7586199c6a289eacb93d93962003ab62"
+    }
+  ],
+  "tree": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "patch": 438,
+    "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "binding": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "signature": {
+      "kind": "fixture",
+      "value": "not a real signature"
+    }
+  },
+  "evidence": [
+    {
+      "path": "reading.txt",
+      "sha256": "5109d10889ff87bf83cf56269485cbc240ed63802ceae392d2a094d991b733c0",
+      "bytes": 33
+    }
+  ]
+}

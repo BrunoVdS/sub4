@@ -1,0 +1,31 @@
+{
+  "$comment": "Post-B5 evidence manifest, schema version 1 — patch 438, ADR-0003 §12.193. THE VALIDATOR IS scripts/evidence-manifest.py AND IT IS THE AUTHORITY; this file is the human-readable statement of the same shape, kept beside the manifests it describes. A field here that the validator does not check is a field nobody checks.",
+  "schemaVersion": 1,
+  "required": {
+    "schemaVersion": "integer — must be a version the validator knows. A manifest from another version is NOT machine-evaluable here and is refused rather than half-read.",
+    "id": "kebab-case slug, and it must equal the filename stem. Predecessors are cited by this id.",
+    "task": "the runbook task this closes, e.g. \"0A\".",
+    "title": "one line, for a human reading a directory listing.",
+    "status": "draft | accepted | blocked. Later tasks key off \"accepted\", so it is the one word that may not be self-asserted.",
+    "owner": "who is answerable for the record.",
+    "capturedUTC": "YYYY-MM-DDTHH:MM:SSZ.",
+    "approval": "object or null. REQUIRED non-null when status is \"accepted\": {by, atUTC, statement}, and \"by\" must equal \"owner\". Must be null otherwise.",
+    "predecessors": "list of {id, sha256}. The sha256 is the hash of THAT MANIFEST FILE, which is what makes a predecessor revised underneath this one a detectable fact rather than a silent one.",
+    "tree": "{commit, patch, digest} — the implementation tree the evidence was taken against. \"digest\" is scripts/evidence-manifest.py digest: sorted (path, content hash) over Sub4/, Sub4CoreTests/ and scripts/. Recomputed only when HEAD is the named commit; otherwise the validator SAYS it did not recompute, and --require-recompute makes that a failure.",
+    "binding": "{commit, signature:{kind, value}} — the final commit and the external signature binding this record to it. binding.commit must equal tree.commit.",
+    "evidence": "non-empty list of {path, sha256, bytes}. Paths are relative to the manifest's own directory and may not be absolute or climb out of it. A missing file and a changed file are reported as different answers — MISSING and STALE."
+  },
+  "optional": {
+    "notes": "free text."
+  },
+  "refusals": [
+    "unknown or missing key — checked in both directions, because a fact nobody reads and a fact nobody stated are the same defect from either end",
+    "status accepted with no approval, or an approval signed by somebody who is not the owner",
+    "a predecessor id nobody supplied (MISSING) or whose file has changed since it was cited (STALE)",
+    "a circular predecessor chain, reported against every manifest on the cycle",
+    "an evidence file that is absent (MISSING) or whose hash or size has moved (STALE)",
+    "binding.commit naming a different commit from tree.commit",
+    "an empty evidence list — a manifest citing nothing proves nothing",
+    "no manifests given at all: that is not a pass, it is exit 2"
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture-stale",
+  "task": "0A",
+  "title": "fixture \u2014 fixture-stale",
+  "status": "accepted",
+  "owner": "bruno",
+  "capturedUTC": "2026-08-21T23:00:00Z",
+  "approval": {
+    "by": "bruno",
+    "atUTC": "2026-08-21T23:05:00Z",
+    "statement": "fixture acceptance, not a real one"
+  },
+  "predecessors": [],
+  "tree": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "patch": 438,
+    "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "binding": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "signature": {
+      "kind": "fixture",
+      "value": "not a real signature"
+    }
+  },
+  "evidence": [
+    {
+      "path": "reading.txt",
+      "sha256": "fcdf567ecd900bc58b6d0a89e26bfba4f82093318698301c85f0ea17d286f5de",
+      "bytes": 33
+    }
+  ]
+}

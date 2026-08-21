@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture-unsigned",
+  "task": "0A",
+  "title": "fixture \u2014 fixture-unsigned",
+  "status": "accepted",
+  "owner": "bruno",
+  "capturedUTC": "2026-08-21T23:00:00Z",
+  "approval": null,
+  "predecessors": [],
+  "tree": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "patch": 438,
+    "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "binding": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "signature": {
+      "kind": "fixture",
+      "value": "not a real signature"
+    }
+  },
+  "evidence": [
+    {
+      "path": "reading.txt",
+      "sha256": "bdcf4c994585af6dd6cb1cfbff78bcc73ab27dc30a299db5bb83766ca05b5de4",
+      "bytes": 9
+    }
+  ]
+}

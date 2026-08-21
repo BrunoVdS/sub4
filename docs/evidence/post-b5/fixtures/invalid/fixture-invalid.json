@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 99,
+  "id": "fixture-invalid",
+  "task": "0A",
+  "title": "fixture \u2014 fixture-invalid",
+  "status": "accepted",
+  "capturedUTC": "yesterday",
+  "approval": {
+    "by": "bruno",
+    "atUTC": "2026-08-21T23:05:00Z",
+    "statement": "fixture acceptance, not a real one"
+  },
+  "predecessors": [],
+  "tree": {
+    "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "patch": 438,
+    "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "binding": {
+    "commit": "cccccccccccccccccccccccccccccccccccccccc",
+    "signature": {
+      "kind": "fixture",
+      "value": "not a real signature"
+    }
+  },
+  "evidence": [
+    {
+      "path": "reading.txt",
+      "sha256": "73cb3858a687a8494ca3323053016282f3dad39d42cf62ca4e79dda2aac7d9ac",
+      "bytes": 2
+    }
+  ],
+  "extra": "a key nobody reads"
+}

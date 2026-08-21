@@ -8962,6 +8962,63 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.193 The evidence manifests are machine-evaluable, and the checker can fail — patch 438
+
+Task 0A's last tranche. The runbook's later tasks say *"starts only after an
+accepted 0A artifact"* and *"record one accepted Task 0 handoff manifest"* — and
+until this patch there was no schema, no validator and no manifest. **A record
+that nothing evaluates is a sentence in a file**: it can claim `accepted` with
+nobody's name against it, cite a predecessor that was revised underneath it, or
+hash evidence that has since changed, and every one of those reads exactly like
+an accepted handoff.
+
+`scripts/evidence-manifest.py` is the authority and
+`docs/evidence/post-b5/manifest.schema.json` is the same shape written for a
+person. Version 1 requires status **and** an approval signed by the owner,
+predecessor references, the tested implementation tree digest, the final
+commit/signature binding, and per-file evidence hashes.
+
+### 12.193.1 MISSING and STALE are different answers, and so are the two directions of a shape check
+
+A cited file that is absent and a cited file whose bytes moved are reported as
+**MISSING** and **STALE** rather than as one word — §12.15's rule applied to a
+checker instead of a screen. The same for keys: a required key nobody stated and
+an unknown key nobody reads are checked in **both** directions, because they are
+one defect seen from either end (§12.129).
+
+**Predecessors are cited by id AND by the hash of that manifest file.** That is
+what makes "revised underneath the record citing it" a detectable fact; an id
+alone would have made it a silent one.
+
+### 12.193.2 The one thing it refuses to guess
+
+`tree.digest` describes the implementation tree the evidence was taken against,
+and it can only be **recomputed** when the checkout is standing on the commit the
+manifest names. Any other commit and the recomputation would be about a tree
+nobody tested. So the validator says which of *recomputed and matched*,
+*recomputed and DIFFERED* or *not recomputed, because HEAD is <other>* happened,
+and **`--require-recompute` turns the third into a failure** for the acceptance
+run. A number nobody recomputed prints exactly like a number somebody did.
+
+**And validating nothing exits 2, not 0.** A run that examined no input and
+exited zero reads like a run that examined everything — §12.183's family.
+
+### 12.193.3 Ten fixtures, each checked for its REASON
+
+`scripts/selftest-evidence.sh` drives the four failures the runbook names by hand
+— invalid, missing, stale, circular — plus a revised predecessor, a predecessor
+nobody wrote, an unsigned acceptance, an empty evidence list, unparseable input,
+and the two the runner owes (no input, `--require-recompute`). Thirteen
+properties in under a second, and `preflight.sh` gained a fourth stage that runs
+them and then validates any real manifest in `docs/evidence/post-b5/`.
+
+**Every case asserts the REASON, not only the exit status.** Sabotage proved why:
+removing the MISSING report left the run exiting 1 anyway — a second fixture
+manifest failed for its own reason — and an exit-status-only test would have
+called that a pass. §12.191.3, in a script written the day after it was learned.
+
+---
+
 ## 12.192 The lifecycle screen said where the bytes are, not which copy is read — patch 437
 
 Task 0A tranche 1b, and the **same drift as 434 one screen over**.

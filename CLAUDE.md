@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 437 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 438 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -366,8 +366,18 @@ magnitude, and `test.sh` fails below 500 for the same reason.
 ```sh
 ./scripts/test.sh          # xcodebuild test on the simulator — run before every device build
 ./scripts/preflight.sh     # test + Release build; run before anything destructive
-./scripts/selftest-lock.sh # proves the repository lock, in under a second
+./scripts/selftest-lock.sh     # proves the repository lock, in under a second
+./scripts/selftest-evidence.sh # proves the evidence-manifest validator can refuse
 ```
+
+**THE EVIDENCE MANIFESTS ARE MACHINE-EVALUABLE SINCE 438.** The runbook's later
+tasks key off the word `accepted` in `docs/evidence/post-b5/`, so
+`scripts/evidence-manifest.py` validates status-with-a-signed-approval,
+predecessor references bound by hash, the tested tree digest, the commit/signature
+binding and every evidence hash. **MISSING and STALE are different answers**, a
+cycle is named, validating nothing exits 2, and `--require-recompute` turns *I
+could not check the tree digest* into a failure. `preflight.sh` stage 4 runs the
+ten fixtures and then any real manifest. §12.193.
 
 **ONE RUN AT A TIME, AND ONE LOG PER RUN — patch 435.** Both scripts take an
 exclusive lock keyed on this checkout and write run-stamped logs
@@ -462,9 +472,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 437, 2026-08-21
+## 5. State — patch 438, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 437; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 438; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.

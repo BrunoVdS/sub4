@@ -4,12 +4,12 @@
 
 | | |
 |---|---|
-| **Status** | Sequential execution runbook. **Task 0 starts only when B5 implementation is claimed complete; Task 0 performs the independent acceptance.** |
+| **Status** | Sequential execution runbook. **B5 implementation is accepted at patch 433a; one residual physical gear-independence proof closes in Task 0A. Task 0 also closes the evidence, lifecycle and tooling handoff; Task 1 is the next functional product task.** |
 | **Reviewed** | 21 August 2026 |
-| **Repository window inspected** | Review began at `ae12549` / patch 426; B5 advanced during drafting through `0ca9af1` / patch 428 with further changing uncommitted work. Task 0 must re-read the final state rather than trust any frozen ID |
-| **Committed verification at that point** | 1,833 tests in 172 suites and preflight green; future tasks must re-measure rather than reuse this number |
+| **Repository/evidence identities** | B5 implementation: patch 433a at `debcfd6`. Final device-observation prose and current verification tree: clean synchronized `main` at `60c52dc` |
+| **Recorded B5 verification** | Against `60c52dc`: 1,876 tests in 179 suites and all 15 source invariants. Release physical-device campaign records 22/22, with the row-19 gear-file proof ambiguity explicitly retained for Task 0A. Future tasks must re-measure rather than reuse these numbers |
 | **Purpose** | Give a new AI one bounded, dependency-safe task at a time from the end of B5 through SQLite activation, Health replacement, Strava retirement, D8 and the architecture handoff |
-| **Current-state evidence** | Current source, tests, device evidence and `CLAUDE.md` §5 describe behavior; a source/ADR disagreement is a defect to resolve, not permission to silently redefine the contract |
+| **Current-state evidence** | Current source, tests and accepted device evidence establish behavior. `CLAUDE.md`, README, lifecycle copy and groundwork must be reconciled in Task 0 where they lag source; a disagreement is a defect, not permission to silently redefine the contract |
 | **Persistence authority** | `docs/ADR-0003-database-contract.md` |
 | **Source-retirement authority** | `docs/ADR-0002-strava-retirement.md` |
 | **Project-roadmap context** | `docs/PLAN-codebase-modernization-and-feature-delivery.md` |
@@ -46,7 +46,7 @@ After B5, SUB4 will still **not** be ready to disconnect Strava.
 The safe end-to-end order is:
 
 ```text
-accept B5
+close the completed B5 handoff and trustworthy evidence path
   → finish B6/B7/B8
   → build backup, export, audit and exact dataset binding
   → activate SQLite and prove fail-closed operation (B9/B10)
@@ -60,10 +60,36 @@ accept B5
 Database activation and Strava retirement are separate decisions. Neither one
 is evidence for the other.
 
+## Re-baseline after completed B5
+
+The 21 August review separates the accepted implementation slice from the remaining
+handoff work:
+
+| Item | Status | Evidence / consequence |
+|---|---|---|
+| Weather and gear SQLite hydration | **Complete** | Patch 433a; 606 weather rows; 11 gear rows (6 shoes, 4 bikes, 1 unknown); one retired item with the accepted derived date; zero unexplained mapped differences |
+| B5 automated implementation acceptance | **Complete** | 1,876 tests in 179 suites and 15 invariants against `60c52dc` |
+| B5 Release-device campaign | **22/22 recorded; one targeted proof remains** | Row 19 demonstrated the product state but `athlete.json` had been rewritten during the gear half, so Task 0A repeats only the small network-disabled SQLite-provenance check—not the full campaign |
+| Post-B5 Release launch baseline | **Accepted baseline** | longest main-thread stall 0.608/0.613 s; `DetailStore` 0.344/0.349 s; bootstrap 0.055/0.057 s; first free turn 0.035/0.037 s |
+| On-phone protected legacy snapshot | **Complete on device** | `2026-08-21-123201`, 1,380/1,380 entries, about 19.7 MB, no capture failures |
+| Xcode `.xcappdata` download | **Rejected as authority** | the downloaded package omitted the database, live stores and part of the verified snapshot; an Xcode download is supplemental evidence only until a manifest proves it complete |
+| Task 0 handoff | **Open** | current disclosures, lifecycle inventory, evidence schema/validator, collision-safe test evidence and a complete off-device evidence artifact still need closure |
+| Tasks 1–20 | **Not started** | Task 1 remains the next functional task after Task 0 closes |
+
+### Post-B5 housekeeping ledger
+
+| Phone/repository note | Status | Required disposition |
+|---|---|---|
+| `hidden-for-test/athlete.json.written-while-hidden` | **Open; low runtime risk, real lifecycle gap** | Classify it as non-authoritative internal-test evidence, not migration input. Task 0 should bind its metadata/hash and perform scoped receipted removal after last-copy checks; if Bruno retains the bytes, move them to immutable private encrypted evidence with an owner/expiry and remove the live-container copy no later than Task 18. Task 19 proves future remnants cannot escape cleanup. Never use Xcode Replace Container |
+| Shared Xcode Run scheme | **Complete** | Working tree, index and HEAD use Debug; RULE 14 is green. Do not carry the old “scheme is Release” remark as open work |
+| Debug build installed on the phone | **Open; non-gating housekeeping** | Install and run Debug, then capture Settings → Version showing `Configuration = Debug` before Task 3 establishes the next comparable timing baseline. It does not require rerunning B5 and does not block Task 1 |
+
 ## Scope and final outcome
 
-This plan begins **after** B5. It does not authorize an AI to finish, rewrite or
-commit the active B5 work. Task 0 only decides whether B5 has actually passed.
+This plan begins **after the accepted B5 implementation slice**. It does not authorize
+an AI to reopen or rewrite B5 without a newly demonstrated defect. Task 0 closes
+the handoff evidence, lifecycle and documentation gaps listed above; it does not
+repeat the 22-row B5 campaign merely to create newer prose.
 
 The plan is complete when:
 
@@ -156,9 +182,15 @@ Implementation rules:
 - Add a negative control that fails when the new protection/mapping is disconnected,
   and sabotage it once when practical so the test is known to discriminate.
 - Run focused tests, python3 scripts/check-invariants.py and ./scripts/test.sh.
+  Never run the full suite concurrently against the same simulator/DerivedData.
+  Until Task 0 lands a repository-enforced lock and unique evidence identity, first
+  prove no other suite is running and set a unique task-specific `SUB4_LOG`; preserve
+  the command's own exit status rather than inferring it from a shared log.
   Run a Release build/device measurement for launch, background, Health, rendering,
-  activation, backup/restore or performance work. Restore the shared Run action to
-  Debug after a Release campaign.
+  activation, backup/restore or performance work. After every Release campaign,
+  restore the shared Run action to Debug, install/run a Debug build once and capture
+  Settings → Version proving `Configuration = Debug`, unless an intentionally
+  retained Release installation is named in the acceptance record.
 - Update ADR/current-state/manual text whose truth changed; preserve historical ADR
   decisions and add a superseding entry instead of rewriting history.
 - Never send Strava-lineage evidence to an AI provider.
@@ -231,7 +263,7 @@ Every campaign must contain:
 8. **Evidence capture and redaction** — screenshots, copied diagnostics, exported
    files, hashes and timestamps. Exclude tokens, API keys, raw private routes,
    precise coordinates and unrelated free-text notes. Preserve complete backup/
-   container artifacts unchanged in protected storage and share only separately
+   evidence artifacts unchanged in protected storage and share only separately
    generated redacted reports.
 9. **Cleanup and rollback** — restore files/settings/build configuration, remove
    disposable fixtures and re-check starting counts/fingerprints.
@@ -250,13 +282,21 @@ Preferred in-app evidence areas, subject to current labels in source:
 - Settings → Apple Health: coverage, source overlap, checkpoint, pending work and
   authorization state.
 - Settings data/lifecycle controls: export, backup, restore, previews and receipts.
-- A downloaded Xcode `.xcappdata` package for independent file/database evidence.
+- An app-generated, manifest-verified evidence package or authoritative database
+  backup, independently validated after export.
+
+An Xcode `.xcappdata` download is **supplemental and untrusted by default**. B5
+proved that Xcode can return a partial package even when the on-phone snapshot is
+complete. It may support an investigation only after its contents match an in-app
+manifest/digest; a missing database, sidecar, preference or declared payload is a
+hard completeness failure. Never use Xcode **Replace Container** as a restore,
+cleanup or test mechanism.
 
 ## Ordered task map
 
 | # | Task | Starts only after | Principal exit |
 |---|---|---|---|
-| 0 | Accept B5 and freeze the starting evidence | B5 implementation claims complete | B5 is independently proven and a fresh legacy snapshot exists |
+| 0 | Close the completed B5 handoff and freeze trustworthy evidence | accepted patch 433a implementation / recorded campaign | residual gear proof and lifecycle/docs/tooling gaps close; a complete app-generated evidence package verifies off-device |
 | 1 | Resolve match-picker behavior and match-decision fidelity | 0 | picker/resolver agree and the decision round-trips |
 | 2 | Build a disposable authored repair/removal fixture | 1 | restore, scoped removal and durable attribution are proven, not merely no-ops |
 | 3 | Write B6/B6a derivation and persisted-load groundwork | 2 | complete input/invalidation/lineage contract accepted |
@@ -280,75 +320,186 @@ Preferred in-app evidence areas, subject to current labels in source:
 
 ---
 
-## Task 0 — Accept B5 and freeze the starting evidence
+## Task 0 — Close the completed B5 handoff and freeze trustworthy starting evidence
 
 ### Why this exists
 
-This review began at committed patch 426 while B5 follow-on work was actively
-changing the worktree. B5 advanced through committed patch 428 during drafting and the
-worktree continued changing afterward. `docs/D7-B5-GROUNDWORK.md` was written
-before the approved decisions and is no longer sufficient proof. Task 0 is a gate,
-not permission to continue B5 under this plan.
+The B5 implementation slice is accepted at patch 433a: the committed suite/
+invariants pass and the Release campaign records 22/22. Row 19's gear half was
+weakened by an `athlete.json` rewrite, so Task 0A closes only that residual physical
+independence proof. Do not rerun the whole campaign or reopen weather/gear
+implementation merely because this runbook previously called B5 active.
+
+The handoff is nevertheless incomplete. Current user-facing lifecycle text and
+README/current-state prose predate the weather/gear flip. The retained
+`hidden-for-test/athlete.json.written-while-hidden` is ignored at runtime but is
+also absent from snapshot, export, deletion and disconnect inventories. The
+on-phone snapshot is complete, while the Xcode-downloaded `.xcappdata` is provably
+partial. No post-B5 evidence schema/validator exists, and concurrent full-suite
+runs can share a simulator and overwrite `/tmp/sub4-test.log`. Finally, the B5 gear
+file-removal observation also saw `AthleteStore` rewrite `athlete.json` without
+binding that write to a proven cause, so one small network-disabled physical check
+should close the hydration/provenance ambiguity.
 
 ### Exit gate
 
-B5 is accepted only when weather and all supported gear facts hydrate from
-SQLite; kind, retirement fact and retirement date semantics are independently
-read back where a source counterpart exists; the derived retirement timestamp is
-proven by its accepted deterministic activity-reference fixture/rule rather than a
-nonexistent legacy date; `knownActivityIDs` comes from an independent legacy roster; rollback
-remains selectable; focused/full tests and a Release-device campaign pass; the
-current docs agree; and a new preference-inclusive protected legacy snapshot is
-retained off-device. If any item is false, stop and return ownership to B5.
+Task 0 closes when the accepted B5 evidence is recorded without being
+misrepresented or needlessly repeated; current docs/UI disclosures agree with the
+actual SQLite-fed families; `hidden-for-test/` has an explicit non-authoritative
+lineage/lifecycle classification and its current phone copy has a receipted removal
+or protected external-retention disposition; a populated pre-B5 migration
+regression exists; the short Strava-disabled gear check passes; evidence manifests
+validate; full-suite evidence cannot collide; and a fresh app-generated package
+containing the complete protected legacy snapshot plus a transaction-consistent
+diagnostic database copy verifies off-device. The package is starting evidence,
+not Task 9's authoritative restore backup. The shared scheme is recorded complete;
+the phone Debug reinstall may remain a named non-blocker only until immediately
+before Task 3.
 
-### AI prompt 0
+Execute 0A and 0B as separate AI tasks. Task 0B starts only after an accepted 0A
+artifact; Task 1 starts only after the combined Task 0 acceptance manifest.
+
+### AI prompt 0A — Close current truth, lifecycle and evidence tooling
 
 ~~~text
 Apply the common preamble and shared campaign contract from
 docs/PLAN-post-B5-database-cutover-execution.md.
 
-Task 0: audit B5 at the actual current commit. Do not implement missing B5 work
-under this post-B5 plan and do not overwrite the active worktree.
+Task 0A: close the accepted B5 implementation handoff at the actual current commit.
+Do not reimplement B5, rerun its complete 22-row campaign, overwrite the worktree
+or start Task 0B/Task 1.
 
-Trace the complete weather/gear path: athlete/weather legacy decode, array
-membership recovery, GearKind/unknown handling, isRetired, retiredUTC definition,
-import/reconciliation, repository load, round-trip, bootstrap, PersistenceMode,
-AthleteStore/WeatherStore hydration, read provenance and every UI consumer.
+First bind the identities separately: patch 433a implementation at `debcfd6`; final
+device-observation documentation/current verification tree at `60c52dc`; and the
+1,876/179 suite result plus 15 invariants against `60c52dc`. Record the 22/22 device
+campaign together with its residual row-19 ambiguity, exact Release timings and
+on-phone snapshot `2026-08-21-123201`. Independently re-read source and evidence;
+if they contradict those facts, stop with a blocker rather than rewriting history.
 
-Require evidence for:
-- additive migration upgrade from a populated pre-B5 DB;
-- active shoe, bike, retired shoe, unknown kind/reference and missing weather;
-- direct legacy comparison for kind/retirement membership, plus the accepted
-  deterministic `activity_gear_reference` fixture and rationale for retiredUTC,
-  which has no legacy timestamp counterpart;
-- old athlete.json without new fields;
-- a gear-only/authored import not erasing retirement date;
-- direct file-side activity roster rather than ActivityStore-fed filtering;
-- machinery patch separate from hydration flip and hydration writing nothing;
-- legacy rollback after removing B5 families from the hydration set;
-- current DataLifecycle/export/lineage disclosures.
+Close these handoff defects in bounded tranches:
 
-Run focused tests, invariants and the full suite. Reconcile CLAUDE §5, README,
-ADR-0003 and B5 groundwork with source. If B5 is already evidenced, do not rerun
-destructive steps just to produce new prose.
-
+1. Reconcile current-state truth in CLAUDE §5, README, DataLifecycle user-facing
+   disclosure, Database diagnostics, this plan and B5 groundwork. Mark the old
+   groundwork historical/accepted rather than deleting its chronology. State that
+   activities, details, recordings, plan, zones/FTP/resting figures, weather and
+   gear now hydrate from SQLite while authority is still transitional.
+2. Add `hidden-for-test/` and every known `*.written-while-hidden` output to the
+   executable lifecycle/lineage inventory, completeness tests, delete/disconnect
+   preview and receipts under an explicit `nonAuthoritativeInternalTestArtifact`
+   role. It is not canonical migration input and must be excluded from ordinary
+   legacy snapshots, source parity and the personal readable export. Record only
+   path/hash/bytes/status in redacted support output. If raw bytes are retained for
+   forensics, put them in a separately named immutable private encrypted annex that
+   must never be sent to an AI provider; remove the live copy no later than Task 18.
+   Recommend scoped app-owned removal in Task 0 after Bruno confirms the preview.
+   Refuse unless no input remains hidden, every expected live counterpart exists and
+   is readable, the target is an exact allow-listed path (not a wildcard), and a
+   verified canonical snapshot/evidence hash or accepted no-retention decision
+   exists. Preview exact path/hash/bytes; confirm; remove; verify absence; receipt.
+   Never use Xcode Replace Container or an unreceipted raw delete.
+3. Add the missing populated upgrade regression: migrate a populated pre-B5
+   database, apply both B5 migrations, and prove rows survive with honest defaults
+   before reconciliation supplies kind/retirement facts.
+4. Harden `scripts/test.sh` so two runs cannot share evidence or mutate the same
+   simulator/DerivedData concurrently. Use a repository-scoped exclusive lock,
+   unique per-run log/evidence identity, trap-safe cleanup and the actual process
+   status. Test contention without launching two full suites.
 Create the versioned `docs/evidence/post-b5/` manifest JSON schema, validator command
 and fixture tests if they do not exist. Require explicit status/owner approval,
 predecessor references, tested implementation tree digest, final commit/external-
 signature binding and evidence hashes. Prove invalid/missing/stale/circular manifests
 fail before any later task treats them as machine-evaluable.
 
-Manual-campaign decision: mandatory unless an already-accepted post-flip B5
-campaign contains every row above. Otherwise build/amend it from actual labels.
-Derive expected weather/gear from direct athlete.json/weather.json reads and the
-independent read-back; navigate to records through current Today/Week/Plan or
-diagnostic links; run in Release; move legacy inputs aside rather than delete;
-relaunch and roll back. After acceptance, create and verify a fresh
-preference-inclusive protected legacy snapshot and retain its manifest/digest and
-an off-device container copy. This snapshot is not a database backup.
+Manual-campaign decision: mandatory but narrowly scoped; do not repeat the accepted
+B5 campaign. Build current tap-by-tap instructions from Settings source. Disable
+“Read activities from Strava” (or use an approved reversible network-off state).
+Before hiding, require both live `athlete.json` and `weather.json` to exist/read or
+record an explicitly accepted absence; record the control's exact moved set. Use the
+internal B5 hide control, cold launch, and prove gear/weather still render with
+SQLite hydration/UI provenance before any file-side read. Prove every Strava/network
+attempt was disabled or refused. Observe the live-file state directly; if a legacy
+mirror reappears, classify its exact writer/time/hash and prove it was a post-DB
+mirror rather than failing solely because the file exists. Restore every moved input;
+account for any newly written mirror without overwriting the original and prove the
+starting canonical fingerprint. Then preview and record Bruno's chosen safe
+disposition for the older retained copy. If removal is approved, exercise the
+last-copy guards and receipt above. If the current phone is intentionally left on
+Release, record the Debug reinstall as due before Task 3; otherwise install/run
+Debug now and capture Settings → Version. Derive every label from the current app.
 
-Stop with either a binary B5 acceptance record or an exact blocker list. Do not
-start Task 1 and do not commit/push without approval.
+Stop with either an accepted Task 0A record or an exact blocker list. Do not start
+Task 0B/Task 1 and do not commit/push without approval.
+~~~
+
+### AI prompt 0B — Build and verify the complete starting-evidence package
+
+~~~text
+Apply the common preamble and shared campaign contract from
+docs/PLAN-post-B5-database-cutover-execution.md.
+
+Task 0B: after Task 0A is accepted, build the app-generated evidence path that
+replaces Xcode `.xcappdata` as the authoritative post-B5 analysis input. Do not
+implement general database restore/retention, run a legacy import or start Task 1.
+
+Build one private exportable **starting-evidence package** containing:
+- a fresh preference-inclusive protected legacy snapshot and its exact manifest;
+- a non-authoritative test-artifact inventory with path/hash/bytes/disposition, but
+  no raw `hidden-for-test/` bytes in canonical migration inputs or ordinary export;
+- a transaction-consistent diagnostic SQLite copy created through the supported
+  SQLite/GRDB backup API, never by copying a live database without its WAL state;
+- schema/migration/integrity/foreign-key results, app/commit/patch, snapshot ID,
+  proven available revisions, capture UTC, pre/post source+database fingerprints/
+  counts and per-file hashes;
+- a private complete manifest and a separately generated redacted support report.
+
+Use a bounded evidence-export barrier: obtain exclusive ownership, drain/pause/refuse
+every currently known source refresh, background job, queue claim and authored
+writer; capture pre-state hashes/fingerprints/counts; create the legacy snapshot and
+database copy; then recalculate the same values before releasing the barrier. Bind
+both components to one package capture ID. Use a current revision as supporting
+evidence only after tracing and proving that every relevant writer advances it;
+do not invent B8's future global revision authority in Task 0. Any pre/post change,
+unowned writer path, background timeout, partial copy, low space or cancellation
+must fail the package rather than publish mismatched
+evidence. Never construct normal stores as a side effect of export.
+
+If Bruno explicitly retains raw internal-test bytes for forensics, place them in a
+separately named immutable private encrypted annex with owner/expiry; never feed it
+to migration/import parity and never send it to an AI provider. Only the redacted
+support report is casually shareable.
+
+Exclude Keychain tokens/credentials and unrelated system data, but do not silently
+omit app-owned domain/preference data. Apply the accepted on-device file-protection
+class. The package may contain notes, routes and other private data, so its share UI
+must require an explicit protection warning and encrypted off-device destination.
+The diagnostic database copy is read-only evidence, not a supported restore artifact;
+factor reusable capture/manifest code for Task 9 without claiming Task 9's backup,
+retention, restore or recovery guarantees.
+
+Build a pinned, read-only off-device validator for this package now. It validates
+every path/hash, declared absence, plist/JSON parse, database integrity/foreign keys,
+schema/migrations and the cross-artifact capture/fingerprint boundary. It never edits
+or recovers the only package in place. Add fixtures for exact success, omitted DB,
+missing preference, partial snapshot, changed same-count file, tampered manifest,
+hot-WAL input, duplicate/unsafe path, mismatched pre/post state, an unowned-writer
+negative control, low-space/interrupt output and deterministic repeat. Unit tests
+use synthetic redacted fixtures. During external acceptance, feed the protected
+known partial B5 `.xcappdata` capture to the completeness-negative test while
+keeping it outside the repository; it must fail and may never be installed with
+Xcode Replace Container.
+
+Manual-campaign decision: mandatory because this touches protected files, a live
+database and off-device export. Build exact current Settings navigation and any
+missing progress/identity diagnostics first. Start from the accepted Task 0A state;
+create/share the package through the app; independently validate it in encrypted
+off-device storage; compare the on-phone and off-device IDs, counts and hashes; lock
+the phone during capture to test the accepted file-protection behavior; exercise a
+safe cancellation/low-space refusal; and prove the app, writers and queue resume
+after both success and failure. Do not expose private payloads in screenshots or
+repository evidence.
+
+Record one accepted Task 0 handoff manifest binding both 0A and 0B evidence. Stop
+before Task 1 and do not commit/push without approval.
 ~~~
 
 ---
@@ -435,8 +586,9 @@ real note or the only production database as disposable data.
 Re-read StoreRestore, family-scoped reconciliation, migration_run_removal,
 retention and the completed 1A/1B/1C campaigns. Choose a fixture boundary that
 cannot ship as an ordinary destructive control: preferably an in-memory/test DB
-plus a cloned disposable container; if physical-device proof needs an internal
-debug action, gate it by internal build, explicit fixture identity and confirmation.
+plus an isolated simulator or app-supported restore into a disposable database;
+if physical-device proof needs an internal debug action, gate it by internal build,
+explicit fixture identity and confirmation. Xcode Replace Container is forbidden.
 
 The fixture must create:
 1. a DB-authored record missing only from its legacy mirror, so Restore adds one;
@@ -453,8 +605,8 @@ obtain. Build exact current taps and add redacted fixture diagnostics first. The
 campaign records pre/post counts from Settings → Database direct queries/read-backs,
 the Restore receipt and removal ledger, verifies the affected UI record, relaunches,
 forces ledger retention, then removes the fixture and proves the original
-fingerprint/counts return. Start from a protected off-device copy; abort if the app
-cannot prove it is operating on the disposable fixture.
+fingerprint/counts return. Start from Task 0's manifest-verified evidence package;
+abort if the app cannot prove it is operating on the disposable fixture.
 ~~~
 
 ---
@@ -463,8 +615,9 @@ cannot prove it is operating on the disposable fixture.
 
 ### Finding
 
-Release measurements show a roughly 0.6 s post-first-frame main-thread stall;
-0.32–0.40 s is `DetailStore` construction over all recordings. The launch read is
+The accepted post-B5 Release baseline is 0.608/0.613 s for the longest main-thread
+stall, 0.344/0.349 s for `DetailStore`, 0.055/0.057 s for bootstrap and
+0.035/0.037 s to the first free turn. The launch read is
 load-bearing because `LoadEngine` prefers trace evidence. Making it asynchronous
 would hide the freeze but still retain all traces and still delay correct values.
 
@@ -487,6 +640,11 @@ Apply the common preamble and shared campaign contract.
 
 Task 3: write B6/B6a groundwork only. Do not change formulas, persist load or
 flip production behavior in this task.
+
+Before collecting a new Debug timing baseline, install/run Debug on the phone and
+capture Settings → Version proving `Configuration = Debug`. Keep Debug and Release
+series separate. Use the accepted post-B5 Release figures above as the performance
+baseline; do not substitute the older B4 range.
 
 Inventory every input and consumer for matching, volume, pace, zones, TRIMP/load,
 power conversion, PMC/CTL/ATL/TSB, monotony and Today/Week/Plan/Progress summaries.
@@ -583,9 +741,11 @@ Today/Week/Plan/Progress values from the frozen independent report, same-count e
 invalidations, first-free-turn/longest-stall and Detail-store timing. Open a rich
 trace and a zero-length trace through existing links; prove lazy detail behavior,
 rotation/interaction and no value drift. Require the longest Release stall below
-the documented 1.0-second ceiling, no first-free-turn regression and the improvement
-target against the 0.562–0.641-second B4 baseline that Task 3 fixed before results
-were known. Restore the shared scheme to Debug and every authored test edit.
+the documented 1.0-second ceiling, no first-free-turn regression and the pre-agreed
+improvement target against the accepted post-B5 baseline: 0.608/0.613 s longest
+stall, 0.344/0.349 s DetailStore, 0.055/0.057 s bootstrap and 0.035/0.037 s first
+free turn. Restore every authored test edit, restore the shared scheme to Debug,
+install/run Debug once and capture Settings → Version.
 ~~~
 
 ---
@@ -626,6 +786,11 @@ Apply the common preamble and shared campaign contract.
 Task 5: resolve the B7/Health circular dependency first, then execute only the
 approved privacy-safe B7 contract. Do not call Claude/another model, send a review
 payload, or create a fake record in production.
+
+First check the actual current date, `ReviewDue` and on-device review history. The
+first real review was scheduled for 24 August 2026; use the circular-gate workaround
+only if a real policy-permitted review still does not exist. Do not assume either
+state from this 21 August plan.
 
 Read ADR-0002, review-data-pool.md, ReviewRunner, ReviewPayload, ReviewDue,
 ProposalStore, ReviewRepository/read-back, rehearsal code and the current device
@@ -785,8 +950,8 @@ stale-running relaunch, alias/multi-source identity and mirror failure.
 Manual-campaign decision: mandatory on a physical phone with Release/internal
 instrumentation. Execute the campaign written in Task 6. Use current Settings
 sync/background controls and Database diagnostics; force-quit at each safe one-shot
-kill point; foreground/relaunch; compare the app lines with an independent
-downloaded DB/container read. Exercise duplicate delivery, late detail, no-stream
+kill point; foreground/relaunch; compare the app lines with an independently
+validated fresh app-generated evidence package/diagnostic database copy. Exercise duplicate delivery, late detail, no-stream
 and retry exhaustion without exposing source IDs/routes/private errors. Remove all
 fault switches and restore the starting queue/revision state.
 ~~~
@@ -963,7 +1128,8 @@ loss or split authority.
 Manual-campaign decision: mandatory. Add progress, manifest, integrity, rollback
 and reopen diagnostics first. Build exact current Settings data/Database backup,
 readable export and restore navigation. Run restore only on a cloned/disposable
-container; compare pre/post fingerprints and authored/operational state; test a
+database created through the app-supported staging/restore path or an isolated
+simulator; never use Xcode Replace Container. Compare pre/post fingerprints and authored/operational state; test a
 tampered artifact refusal, file protection while locked/unlocked, low-space/
 cancellation and every restore kill point; download and retain the verified backup,
 personal export, redacted support report and receipts in their correct protection
@@ -973,7 +1139,7 @@ as the first restore test.
 
 ---
 
-## Task 10 — Build the external `.xcappdata` auditor and exact dataset binding
+## Task 10 — Build the external evidence-artifact auditor and exact dataset binding
 
 ### Finding
 
@@ -981,6 +1147,9 @@ as the first restore test.
 small activity fingerprint, not the dataset. `runsSinceVerified == 0` proves only
 that the ledger did not move. Import and verify read live stores independently;
 the snapshot name on the ledger is not proof of input bytes or current DB state.
+B5 additionally proved that an Xcode `.xcappdata` download may silently omit the
+database, live stores and part of a verified snapshot, so it cannot be the auditor's
+authoritative input format.
 
 ### Exit gate
 
@@ -1002,22 +1171,31 @@ Apply the common preamble and shared campaign contract.
 Task 10: create a reproducible external audit gate and bind migration verification
 to exact immutable evidence. Stop before B9 activation.
 
-Build a read-only tool under tools/ that accepts an .xcappdata bundle or extracted
-container. It discovers live legacy stores, filtered preferences/snapshots,
-SQLite and sidecars; never mutates the package; copies DB+WAL/hot journal to a temp
-workspace before recovery/open; validates JSON/plist parsing, snapshot manifests/
-hashes, SQLite integrity/foreign keys, schema/migrations and counts; and compares
-field-by-field through Task 8's matrix/normalizations.
+Build a read-only tool under tools/ whose primary source input is Task 0's
+app-generated, manifest-verified evidence package. It discovers the declared live
+legacy snapshot/preferences/internal-test artifacts and transaction-consistent
+diagnostic SQLite copy; never mutates the package; validates JSON/plist parsing,
+every manifest/hash, SQLite integrity/foreign keys, schema/migrations and counts;
+and compares field-by-field through Task 8's matrix/normalizations. If a supported
+package can contain a WAL/hot journal, copy the complete declared set to a temporary
+workspace before recovery/open and make missing sidecars a completeness failure.
+
+An `.xcappdata` mode is optional and explicitly supplemental. Before reading any
+values, require it to match the selected in-app manifest/package identity. Missing
+database, sidecar, preference, manifest or declared payload exits non-zero and
+forbids a parity/activation claim. Include the known partial B5 download as a
+negative fixture. Never use Xcode Replace Container.
 
 Add a separate Task-9 backup-artifact input mode. Without restoring, validate its
 manifest, observable encryption/protection metadata, hashes, SQLite integrity,
 foreign keys, schema/account scope, included companion preferences and backup-
 snapshot identity. The activation checkpoint binds this exact audit/report digest.
 
-Require explicit CLI selection of snapshot ID, manifest digest and migration run;
+Require explicit CLI selection of evidence-package ID, source snapshot ID, manifest
+digest and migration run;
 multiple plausible inputs are an ambiguity failure. Define the raw artifact digest
 as a canonical sequence of sorted relative paths plus exact declared file/preference
-bytes, excluding unrelated container metadata. Define how the directory-package
+bytes, excluding unrelated package metadata. Define how the directory-package
 hash is produced. Pin tool/runtime dependencies, prohibit network access and prove
 temporary cleanup plus byte-unchanged input.
 
@@ -1084,15 +1262,17 @@ matrix explicitly excludes leaves activation evidence stable; changing a content
 row, revision, active cache generation or bound backup identity does not.
 
 Manual-campaign decision: mandatory. Build exact current Settings → Database
-snapshot/import/verify/ledger steps and Xcode Devices and Simulators container
-download steps. Capture snapshot/manifest digest, run ID, evidence version and
-source/DB fingerprints from redacted app diagnostics; run the tool; retain audit
-JSON/Markdown, report digest and the precisely defined package hash. Quiesce/close
-the app before container capture and explicitly select the snapshot/run. Retain the
-historical pre-import package if a migration import is still required, then a second
-post-verification quiescent package so the evidence is self-contained. If B8 has
-already accepted database-first changes, audit current revisions and do not re-import
-a stale mirror.
+snapshot/import/verify/ledger and evidence-package export/share steps. Capture
+package/snapshot/manifest digests, run ID, evidence version and source/DB
+fingerprints from redacted app diagnostics; run the tool; retain audit JSON/Markdown,
+report digest and the precisely defined package hash in encrypted storage. Quiesce
+writers as required by the app's export protocol and explicitly select the package,
+snapshot and run. Retain the historical pre-import package if a migration import is
+still required, then a second post-verification quiescent package so the evidence is
+self-contained. If B8 has already accepted database-first changes, audit current
+revisions and do not re-import a stale mirror. Optionally feed the known partial
+`.xcappdata` package to the completeness-negative control; it must be refused, not
+repaired or installed on the phone.
 ~~~
 
 ---
@@ -1167,7 +1347,8 @@ removing the authoritative database while open. Keep actual Strava disconnect
 refused with a user-facing reason until Task 18.
 
 Manual-campaign decision: mandatory now for every non-activation recovery behavior.
-Build and execute a safe Release-device campaign on a disposable container covering
+Build and execute a safe Release-device campaign against an isolated database
+created/restored through the app-supported Task 9 path, covering
 recovery UI, retry, diagnostics, tampered-backup refusal, successful restore and
 every Task-9 restore-journal kill phase, missing/corrupt DB, runtime JSON absent,
 arriving writes refused and authored save/relaunch. Derive exact labels from the new
@@ -1240,7 +1421,7 @@ restore and lifecycle preview. Exercise success, legitimate empty, stale, partia
 unavailable, failed and recovery states.
 
 After the named pre-fault-injection safety backup, move every runtime LegacyStore
-input aside (do not delete) on a disposable/restorable copy. Also quarantine every
+input aside (do not delete) in an isolated/restorable app-supported test state. Also quarantine every
 preference-backed legacy
 runtime authority (match decisions, cursor/sync/rejections, detail terminal sets and
 other Task-8 inventory), while retaining only explicitly approved one-shot upgrade
@@ -1248,11 +1429,13 @@ markers. Prove every served-from/provenance line is SQLite, the bundled plan is 
 a fallback, fresh-install behavior matches Task 11's decision and a deliberately
 failed JSON mirror cannot undo or report failure for a committed DB save. Repeat
 cold launch, relaunch, authored saves and principal screens. Test missing/corrupt/
-authority-validity-invalid DB only on the disposable container: no normal store or
+authority-validity-invalid DB only in that isolated test state: no normal store or
 network work may initialize; recovery UI must be the only app content, then restore.
-Download the post-activation .xcappdata, run Task 10's auditor, retain the final
-post-campaign authority backup and all redacted evidence, and restore temporary
-files/build settings.
+Export a fresh post-activation app-generated evidence package, run Task 10's auditor,
+retain the final post-campaign authority backup and all redacted evidence, and
+restore temporary files/build settings. An optional `.xcappdata` download may be
+kept only as supplemental evidence and must independently pass completeness before
+use; never install it with Xcode Replace Container.
 
 Do not call D7 complete unless all rows pass. D7 completion still does not permit
 Strava retirement; it means database-authoritative persistence while Strava remains
@@ -1410,9 +1593,9 @@ workout; include delayed route, edit and delete where the source app permits it.
 Include a real condensed-series device case when the available writer produces one,
 or retain a fixture-only limitation explicitly.
 Force-quit and relaunch between delivery phases, wait for background observation,
-then download the container and independently query/audit SQLite. Record unsupported
-cases rather than simulating them. Strava network/source priority must remain
-unchanged throughout.
+then export a fresh manifest-verified evidence package and independently query/audit
+its transaction-consistent SQLite copy. Record unsupported cases rather than
+simulating them. Strava network/source priority must remain unchanged throughout.
 ~~~
 
 ---
@@ -1634,9 +1817,10 @@ Manual-campaign decision: this task is itself a mandatory Release-device campaig
 Build the full document before the observation window using exact current taps and
 redacted Settings -> Apple Health/Database diagnostics. Each row must name its
 direct Health/source/raw-table expectation, app observation, tolerance and evidence.
-Include network-negative proof, force quit/background timing, a downloaded final
-container, cleanup, restored network state and credential-presence check. A missing
-representative case remains explicitly open; it is not silently waived.
+Include network-negative proof, force quit/background timing, an exported final
+app-generated evidence package, cleanup, restored network state and
+credential-presence check. A missing representative case remains explicitly open;
+it is not silently waived.
 ~~~
 
 ---
@@ -1671,8 +1855,9 @@ Task 18: design, test and—only after Bruno's explicit destructive approval—e
 Health activation, remote Strava revocation and lineage-aware local purge. Do not
 map this onto the old folder-delete coordinator.
 
-Deliver 18A first: build and test the state machine plus cloned-container campaign
-without changing production. Stop with the exact preview and acceptance artifact.
+Deliver 18A first: build and test the state machine against an isolated database
+restored through Task 9's supported path, without changing production. Stop with
+the exact preview and acceptance artifact.
 18B is a separate run requiring Bruno's immediate explicit destructive approval.
 
 First build a persisted resumable state machine with preview and receipts:
@@ -1706,7 +1891,8 @@ First build a persisted resumable state machine with preview and receipts:
 11. finalize a durable redacted lifecycle receipt/post-state identity, integrity/
     source census and the UTC/release start of the already-accepted D8 window;
 12. create and independently restore/audit a new post-purge authoritative backup and
-    new personal export. Mark every pre-C8 backup/snapshot/container/export with
+    new personal export. Inventory every Task 0 starting-evidence package/private
+    forensic annex as well as every other pre-C8 backup/snapshot/container/export with
     restricted lineage as rollback-only before revoke and unusable after terminal
     revocation; then apply Bruno's accepted delete or bounded protected-retention
     rule. Record every artifact ID/hash/location/disposition in the C8 receipt and
@@ -1728,8 +1914,8 @@ Add source/binary/Info.plist/scheduled-work/network invariants proving no active
 reconnect/OAuth/Strava request path exists in the production configuration.
 
 Manual-campaign decision: mandatory and destructive. Build and pass the full
-campaign first against a cloned/disposable container and test account/credential
-boundary. The production campaign must state the irreversible point, expected
+campaign first against an isolated/disposable database restored through Task 9 and
+a test account/credential boundary; never use Xcode Replace Container. The production campaign must state the irreversible point, expected
 remote-account check, exact preview counts by lineage/table, backups and hashes,
 rollback limits, exact UI diagnostics and emergency stop. Require Bruno to confirm
 the preview immediately before execution. Afterward prove network-negative launch,
@@ -1767,6 +1953,15 @@ preference, journal, Keychain item, snapshot/receipt, URL/background trigger,
 endpoint, entitlement, reader, writer, destination, migration version, removal
 condition, owner and automated/manual proof.
 
+The inventory must explicitly include `hidden-for-test/`, every
+`*.written-while-hidden` file and any later internal migration/test artifact. Prove
+“Delete local data,” disconnect/purge, protected-history rules and cleanup receipts
+cannot omit such a directory merely because it is outside a normal LegacyStore
+path. Apply the Task 0 disposition to the retained athlete copy and verify no
+success message can coexist with an undeclared app-owned personal-data remnant.
+Task 19 verifies that Task 0/18 already dispositioned the known copy; it is not the
+first permitted purge point for that Strava-lineage artifact.
+
 Remove or disable legacy writers before readers. Keep any required one-time upgrade
 reader isolated under a Data/Upgrade/LegacyJSON boundary; it must be idempotent,
 version-gated, absent from normal runtime and have a dated deletion condition.
@@ -1797,8 +1992,8 @@ fixture/document.
 Manual-campaign decision: mandatory. Build a disposable oldest-supported upgrade
 campaign and a clean-install/DB-only Release campaign. Back up first; upgrade,
 relaunch repeatedly, edit authored data, export, restore, move runtime JSON aside,
-cold-launch and download the container. Compare to the accepted post-Task-18
-database/product baseline and inventory. Verify no files/preferences are recreated,
+cold-launch and export a fresh app-generated evidence package. Compare it to the
+accepted post-Task-18 database/product baseline and inventory. Verify no files/preferences are recreated,
 no network request targets Strava and the bounded upgrade path still works. Restore
 shared build settings and retain redacted inventory/evidence.
 ~~~
@@ -1859,6 +2054,7 @@ must stop rather than infer a product, privacy or destructive-lifecycle choice.
 
 | Decision | Required before | Recommended starting position |
 |---|---:|---|
+| Retained `hidden-for-test` artifact disposition | 0 | Prefer scoped receipted removal after last-copy proof; otherwise move to immutable private evidence with owner/expiry and remove the live copy no later than Task 18 |
 | Whether a manually selected match may override automatic eligibility | 1 | Keep non-negotiable exclusions absolute; make the picker explain them |
 | B7 circular-gate proof | 5 | Legitimate-empty plus deterministic local full-graph fixture; real run at C6 |
 | Health-derived load retention/export/revocation | 3 | Persist explicit lineage and invalidate/purge on lost source permission |
@@ -1932,9 +2128,14 @@ must stop rather than infer a product, privacy or destructive-lifecycle choice.
 
 ## Current readiness statement
 
-At the reviewed point, B5 is still active and no task in this document has started.
-The database migration is advanced, but the app is not ready to disconnect Strava.
-The next action is **Task 0 only**: accept the finished B5 work without modifying it,
-freeze fresh evidence and then proceed one prompt at a time. Database activation is
-Task 12; Strava disconnection is Task 18; runtime JSON and code retirement is Task
-19. Those milestones must remain separate in status reports and release decisions.
+At the reviewed point, the B5 implementation is accepted at patch 433a and Tasks
+1–20 have not started. Its Release campaign records 22/22, with one targeted
+physical gear-independence proof retained for Task 0A. Task 0 is partially satisfied
+by the existing B5 evidence but remains open for the post-B5 lifecycle, disclosure,
+evidence-package and test-runner closeout described above. The database migration
+is advanced, but the app is not ready to disconnect Strava.
+
+The next action is **Task 0 only**; Task 1 is the next functional product task once
+that handoff is accepted. Database activation is Task 12; Strava disconnection is
+Task 18; runtime JSON and code retirement is Task 19. Those milestones must remain
+separate in status reports and release decisions.
