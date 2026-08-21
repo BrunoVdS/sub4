@@ -7,7 +7,7 @@
 | **Groundwork** | `docs/D7-B5-GROUNDWORK.md` — §6's five decisions, all approved 21 August |
 | **ADR** | §12.175–§12.182a |
 | **Time** | about twenty-five minutes. **Part D needs a Release build. Part E moves files.** |
-| **State** | **PARTS A, B AND C PASSED — fourteen of fourteen**, 21 August, §10.1–§10.1d. Outstanding: **part D** the Release cost, **part E** whether the files can go. |
+| **State** | **PARTS A–D PASSED — eighteen of eighteen**, 21 August, §10.1–§10.1g. **Only part E is left**: whether the files can go. |
 
 **THIS IS THE FIRST B-SLICE CAMPAIGN THAT IS NOT READ-ONLY.** Part E moves
 `athlete.json` and `weather.json` aside to prove the app no longer needs them.
@@ -347,10 +347,60 @@ That is a **planned session with no activity matched to it**, on
 `SessionDetailView`. It draws cleanly and it is not what row 14's third clause
 asks for.
 
+### 10.1e Part D — 21 August 2026, 14:28 and 14:30, patch 432, **in Release**. FOUR OF FOUR
+
+| # | figure | launch 1 | launch 2 | |
+|---|---|---|---|---|
+| 15 | `Configuration` | **Release** | Release | ✅ |
+| 16 | **`longest main-thread stall`** | **0.613 s** | **0.608 s** | ✅ **under 1.0 s** |
+| 17 | `Bootstrap read` | 0.057 s | 0.055 s | recorded |
+| 18 | the two launches | agree to **5 ms** on the stall and 5 ms on the store | | ✅ |
+
+Also `first free main-thread turn` 0.037 / 0.035 s, `before our first line`
+0.021 / 0.017 s, `Detail store built` 0.349 / 0.344 s.
+
+**ROW 16 IS THE DECISION AND IT GOES THE QUIET WAY.** §12.174 set the threshold
+at **1.0 s in Release**; the reading is **0.61 s**. **B6a stays scheduled work
+beside B6 and does not become the next patch.**
+
+### 10.1f What B5 actually cost, measured either side of the flip
+
+| | **424** — 7 families, before B5 | **432** — 8 families, B5 fed |
+|---|---|---|
+| `Bootstrap read` | 0.011 / 0.016 s | **0.055 / 0.057 s** |
+| `longest main-thread stall` | 0.562 / 0.641 s | **0.608 / 0.613 s** |
+| `Detail store built` | 0.323 / 0.397 s | 0.344 / 0.349 s |
+| stall began | 0.035 / 0.051 s | **0.085 s, both** |
+
+**B5 costs about forty milliseconds of bootstrap and nothing measurable
+anywhere else.** 424's two stalls differ by 79 ms; the two runs' means differ by
+about 10 ms — **inside a single run's own spread.** 606 weather readings and 11
+gear rows against 699 activities already read on the line above, exactly as §10
+of the groundwork predicted.
+
+The stall now begins at **0.085 s rather than 0.035–0.051 s**, which is the
+longer bootstrap pushing first paint later. The stall is not longer; it starts
+later.
+
+**AND §12.172's ATTRIBUTION STILL HOLDS.** The construction is contained inside
+the stall on both launches — 0.210 → 0.554 inside 0.085 → 0.693, and
+0.212 → 0.561 inside 0.085 → 0.698 — with a residual of **0.264 s both times**,
+against 0.244 and 0.239 at 424. Two families were added to the launch and the
+shape of the block did not change.
+
+### 10.1g One confound, recorded rather than ignored
+
+**The phone was on a call throughout part D** — the Dynamic Island shows 8:28,
+9:30, 9:48 and 10m across the four screenshots. A call is real CPU.
+
+**It did not move the figures**: they sit inside 424's own spread, taken on an
+idle phone. Recorded because a reading taken under a load nobody mentioned is a
+reading nobody can reproduce, and because if these numbers are ever quoted
+against a future one, the next reader should know what the phone was doing.
+
 ### 10.2 Outstanding
 
-**Rows 15 to 22 — parts D and E.** The Release cost, and whether the files can
-go.
+**Rows 19 to 22 — part E only.** Whether the files can go.
 
 Record each part below, and say plainly which rows were not exercised. **A
 partial campaign is evidence for its rows only, never for the whole slice.**

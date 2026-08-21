@@ -1248,12 +1248,29 @@ def the_scheme_runs_debug():
     does not stop the edit, it stops the edit being committed.
     """
     rule = "the scheme runs Debug"
-    path = ROOT / SCHEME
-    if not path.exists():
-        fail(rule, f"{SCHEME} is missing — the shared scheme is what CI and "
-                   "every ⌘R read")
-        return
-    text = path.read_text()
+    # **IT READS THE INDEX, NOT THE WORKING FILE — and the first version did
+    # not.** RULE 14's own comment says it "does not stop the edit, it stops
+    # the edit being committed". As first written it read the working copy, so
+    # it failed EVERY commit for as long as a campaign had the scheme on
+    # Release — which is exactly the situation it exists for, and it blocked
+    # documentation commits that had nothing to do with the scheme. A rule that
+    # makes the repository unworkable during the one procedure it guards is a
+    # rule people will route around. §12.185.
+    #
+    # `git show :path` is the INDEX — what the next commit would contain — and
+    # falls back to HEAD for a file nobody staged. So a local Release scheme is
+    # fine and a staged one is not.
+    try:
+        text = subprocess.run(["git", "show", f":{SCHEME}"], cwd=ROOT,
+                              capture_output=True, text=True,
+                              check=True).stdout
+    except Exception:
+        path = ROOT / SCHEME
+        if not path.exists():
+            fail(rule, f"{SCHEME} is missing — the shared scheme is what CI "
+                       "and every ⌘R read")
+            return
+        text = path.read_text()
     m = re.search(r'<LaunchAction\b[^>]*?buildConfiguration\s*=\s*"(\w+)"',
                   text, re.S)
     if m is None:
@@ -1262,10 +1279,12 @@ def the_scheme_runs_debug():
         return
     config = m.group(1)
     if config != "Debug":
-        fail(rule, f"the scheme's Run action builds {config}, not Debug. A "
-                   "device campaign left it that way and it was committed — "
-                   "put it back in Xcode (Edit Scheme -> Run -> Info) or with "
-                   f"`git checkout -- {SCHEME}`")
+        fail(rule, f"the scheme's Run action builds {config}, not Debug, in "
+                   "what is about to be committed. A device campaign left it "
+                   "that way and it got staged — unstage it with "
+                   f"`git restore --staged {SCHEME}`, or put it back with "
+                   f"`git checkout -- {SCHEME}`. A Release scheme in your "
+                   "WORKING copy is fine and expected during a campaign.")
         return
     counted(rule, 1, 1, f"shared scheme read — the Run action builds {config}")
 

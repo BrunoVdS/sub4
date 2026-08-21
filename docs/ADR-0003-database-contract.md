@@ -8962,6 +8962,75 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.185 RULE 14 guarded the wrong copy — 21 August 2026
+
+RULE 14's own comment says it *"does not stop the edit, it stops the edit being
+committed"*. **As written it read the working file**, so it failed **every**
+commit for as long as a campaign had the scheme on Release — including
+documentation commits with nothing to do with it.
+
+That is the situation the rule exists for. B5's campaign part D *requires* a
+Release Run action, and for the twenty minutes that took, the repository could
+not be committed to at all. **A rule that makes the repository unworkable during
+the one procedure it guards is a rule people route around**, and routing around
+it is exactly how `4bac3ac` happened in the first place.
+
+It now reads `git show :<path>` — **the index, which is what the next commit
+would contain** — falling back to HEAD for a file nobody staged. A Release
+scheme in the working copy is fine and expected; a staged one fails, with the
+`git restore --staged` remedy in the message.
+
+**Sabotaged both ways**: staged Release fails, unstaged Release passes.
+
+**And the pairing with §12.183 is the lesson.** One patch made the gate report
+success when it had failed; the next made the gate fail when nothing was wrong.
+**Both were about the gate rather than the code, and neither would have been
+found by a test** — the first by reading a shell pipeline, the second by using
+the rule during the campaign it was written for.
+
+---
+
+## 12.184 What B5 cost, measured either side of its own flip — Release, 21 August 2026
+
+| | **424**, 7 families, before B5 | **432**, 8 families, B5 fed |
+|---|---|---|
+| `Bootstrap read` | 0.011 / 0.016 s | **0.055 / 0.057 s** |
+| **`longest main-thread stall`** | 0.562 / 0.641 s | **0.608 / 0.613 s** |
+| `Detail store built` | 0.323 / 0.397 s | 0.344 / 0.349 s |
+| the stall began | 0.035 / 0.051 s | **0.085 s, both** |
+
+**About forty milliseconds of bootstrap, and nothing measurable anywhere else.**
+424's own two stalls differ by 79 ms; the difference between the two runs' means
+is about 10 ms — **inside a single run's spread.** The stall starts later rather
+than lasting longer, which is the longer bootstrap pushing first paint back.
+
+**§12.174's threshold was 1.0 s in Release. The reading is 0.61 s, so B6a stays
+scheduled beside B6** and does not become the next patch. **The instrument
+decided that, not an opinion** — which is what 421 and 424 were built for.
+
+### 12.184.1 The attribution survived a slice landing on top of it
+
+§12.172 found `DetailStore`'s construction contained inside the stall. It still
+is: 0.210 → 0.554 inside 0.085 → 0.693, and 0.212 → 0.561 inside
+0.085 → 0.698. **The residual is 0.264 s both times**, against 0.244 and 0.239
+at 424.
+
+Two families joined the launch path and the shape of the block did not change —
+which is the strongest evidence yet that the ~0.26 s outside the read is
+SwiftUI's first pass and not something the ladder keeps adding to.
+
+### 12.184.2 The phone was on a call, and that is in the record
+
+The Dynamic Island shows an active call across all four of part D's
+screenshots. **It did not move the figures** — they sit inside 424's spread,
+taken on an idle phone.
+
+Written down because **a reading taken under a load nobody mentioned is a
+reading nobody can reproduce**, and these four numbers are now the baseline the
+next slice will be compared against.
+
+---
+
 ## 12.183 A gate piped through `grep` is not a gate — 21 August 2026
 
 Every commit this session ran:

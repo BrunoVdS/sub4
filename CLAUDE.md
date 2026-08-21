@@ -192,6 +192,9 @@ stopped being true at 342. Rename it `docs/REVIEW-2026-08-10-…` when convenien
   Everyone who pulls gets a Release Run action with no debugger and no
   explanation. **RULE 14 fails the build unless the Run action is `Debug`**; put
   it back with `git checkout --` on that path when a campaign ends. §12.173.
+  **The rule reads the INDEX, not your working file** — a Release scheme
+  locally is fine and expected during a campaign; only a staged one fails.
+  §12.185.
 - **A GATE PIPED THROUGH `grep` IS NOT A GATE.** `check-invariants.py | grep
   -E "all invariants|FAIL" && git commit` ran the commit **when the rule
   failed**, because grep succeeds on finding `FAIL`. It swept a Release scheme
@@ -792,7 +795,12 @@ run happened. §12.135–§12.150.
    formula in SQL — so the launch reads N narrow rows and traces become lazy.**
    Runs **with B6**, because B6's invalidation audit is B6a's hardest half.
    **Threshold: if the Release stall passes 1.0 s, B6a becomes the next patch.**
-   §12.174.
+   §12.174. **MEASURED AGAIN AFTER B5, 21 August: 0.608 / 0.613 s in Release —
+   B6a STAYS SCHEDULED.** B5 cost ~40 ms of bootstrap (0.011/0.016 →
+   0.055/0.057) and nothing measurable elsewhere; **the stall starts later
+   rather than lasting longer.** §12.172's attribution survived a slice landing
+   on top of it — the construction is still contained, residual **0.264 s both
+   launches** against 0.244 and 0.239 at 424. §12.184.
 8. **B5's GROUNDWORK IS WRITTEN — `docs/D7-B5-GROUNDWORK.md`, and it is
    WAITING ON FIVE DECISIONS.** Weather is nearly done: twelve columns, eleven
    compared, restorable, 603 rows. **Gear is not a database-backed
@@ -900,7 +908,7 @@ ANSWER.**
 | | Debug | **Release** |
 |---|---|---|
 | the files | 0.443 s | 0.399 s |
-| **the database** | 0.683 – 1.233 s | **0.323 / 0.397 s** |
+| **the database** | 0.683 – 1.233 s | **0.323 / 0.397 s** at 424, **0.344 / 0.349 s** at 432 with B5 |
 
 **In the build that ships, the database side is level with or faster than the
 files it replaced.** In Debug it looked like a 1.5× to 2.8× regression — and
