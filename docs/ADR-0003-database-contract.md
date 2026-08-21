@@ -8962,6 +8962,59 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.188 B5 is verified, and the test found a gap in the tester — patch 433a
+
+**Twenty-two of twenty-two.** Device, 21 August, patches 432 and 433.
+
+**Row 19 is the answer B5 existed for.** With `athlete.json` and `weather.json`
+moved out of the container, the app drew six shoes at 534/516/324/248/114/108 km
+and `Evening Run` at Overcast 21 °C · Felt 23 · Wind 10 WSW · Humidity 83 %,
+identical to the same screens an hour earlier. **The files are no longer
+load-bearing.**
+
+**Row 21 is the one that could have passed dishonestly.** With nothing on the
+app side, an agreement of zero against zero would have been the failure. The
+section turned red and counted **606 differences it could not explain**. Zero
+compared to 606 is not agreement, and the screen said so without being asked.
+
+### 12.188.1 `gear in the app` read 11 while its file was hidden
+
+The seam reads `athlete.json` and nothing else, so the file was **back** within
+sixty seconds. That is 433's own rule 4 happening for real: `StoreLoad.absent`
+is **trustworthy**, so the store read nothing, decided that was legitimate, and
+saved a fresh one.
+
+**Restore kept the rewrite exactly as designed — and reported
+`moved athlete.json, weather.json`.** The preservation is the interesting half
+and it said nothing.
+
+The consequence is not hypothetical. **It made the gear half of row 19 weaker
+than it looks**, because the file it was supposed to be doing without had
+quietly returned. The weather half is the strong evidence: nothing fetched
+weather, so `weather.json` stayed hidden and its app side really was empty.
+
+### 12.188.2 What 433a says now
+
+`— AND KEPT athlete.json.written-while-hidden, written by the app while hidden`
+on the outcome, and `· kept from an earlier test: …` on the unconditional line.
+
+**The line outlives the test**, because a kept copy is a fact about the
+container rather than about the current hiding — and the paste is read
+afterwards, by someone who was not there.
+
+A second run replaces the kept copy rather than refusing, so the test stays
+repeatable; `aSecondRunIsNotBlockedByTheKeptCopy` is that assertion.
+
+### 12.188.3 The shape, one more time
+
+**A diagnostic that did the right thing and did not say so.** §12.15's family,
+and the fourth instance in three days — 409a's vacuous `yes`, §12.155's blind
+file tally, 426's non-discriminating control, and this. **The tool built to
+prove a slice needed the same scrutiny as the slice**, and it got it only
+because the device was watched rather than trusted.
+
+---
+
 ## 12.187 The app hides its own legacy files — patch 433
 
 **Every D7 slice ends with the same unanswered question: the store reads rows

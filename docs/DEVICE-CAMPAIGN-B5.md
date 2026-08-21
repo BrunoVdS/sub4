@@ -7,7 +7,7 @@
 | **Groundwork** | `docs/D7-B5-GROUNDWORK.md` — §6's five decisions, all approved 21 August |
 | **ADR** | §12.175–§12.182a |
 | **Time** | about twenty-five minutes. **Part D needs a Release build. Part E moves files.** |
-| **State** | **PARTS A–D PASSED — eighteen of eighteen**, and part E's snapshot with them. **Rows 19–22 were blocked and are UNBLOCKED at 433** — the app hides its own files now (§12.187). Install 433 and run part E. |
+| **State** | **COMPLETE — twenty-two of twenty-two**, 21 August, §10.1–§10.1k. Two rows recorded as not applicable on this device (§11). B5 is verified. |
 
 **THIS IS THE FIRST B-SLICE CAMPAIGN THAT IS NOT READ-ONLY.** Part E moves
 `athlete.json` and `weather.json` aside to prove the app no longer needs them.
@@ -460,11 +460,54 @@ there is no isolated device.
 that was written for them is unsafe, and the campaign does not invent a second
 one under pressure.
 
+### 10.1j Part E — 21 August 2026, 16:02–16:05, patch 433. ROWS 19–22 PASS
+
+**With `athlete.json` and `weather.json` hidden:**
+
+| # | figure | read | |
+|---|---|---|---|
+| 19 | Progress → shoes, and an activity's weather card | **identical** — six rows, 534/516/324/248/114/108 km; `Evening Run` still Overcast 21 °C · Felt 23 · Wind 10 WSW · Humidity 83 % | ✅ |
+| 20 | `gear only in the app` | 0 | ✅ |
+| **21** | the read-back with its app side gone | `readings in the app: 0` · `only in the database: 606` **in red** · `Compared: 11` **in red** · `unexplained differences: 606` | ✅ |
+| 22 | after `Put the legacy files back` | **identical to part A**: 606 vs 606, 0 differing, gear 11 vs 11, `unexplained differences: 0` | ✅ |
+
+**ROW 19 IS THE ANSWER B5 EXISTED FOR.** The app drew its shoes and its weather
+**with both legacy files moved out of the container**. The slice is complete in
+the sense that matters: the files are no longer load-bearing.
+
+**AND ROW 21 IS THE ONE THAT COULD HAVE PASSED DISHONESTLY.** With nothing on
+the app side, an agreement of zero against zero would have been the failure.
+Instead the section turned red and counted 606 differences it could not explain.
+**Zero compared to 606 is not agreement, and the screen says so without being
+asked.**
+
+### 10.1k And the run found a gap in 433 itself — fixed as 433a
+
+**`gear in the app` read 11 while `athlete.json` was hidden.** The seam reads
+that file and nothing else, so the file was **back** by the time the read-back
+ran — inside sixty seconds.
+
+That is 433's own rule 4 happening for real: `StoreLoad.absent` is
+**trustworthy**, so `AthleteStore` read nothing, decided that was legitimate,
+and saved a fresh file. Restore kept the rewrite correctly, as designed — and
+**reported only `moved athlete.json, weather.json`.**
+
+**The preservation is the interesting half and it said nothing.** The
+consequence is not hypothetical: it made the gear half of row 19 weaker than it
+looks, because the file it was supposed to be doing without had quietly
+returned. **The weather half is the strong evidence** — `weather.json` was not
+rewritten, because nothing fetched weather, so its app side really was empty.
+
+**433a** makes the outcome say `— AND KEPT athlete.json.written-while-hidden,
+written by the app while hidden`, and adds `· kept from an earlier test: …` to
+the unconditional line, **which outlives the test** — a kept copy is a fact
+about the container, not about the current hiding, and the paste is read
+afterwards.
+
 ### 10.2 Outstanding
 
-**Rows 19 to 22 — runnable again on patch 433.** Whether the files can go.
-Steps 15 and 19 are rewritten to use the app's own control; the container route
-is forbidden (§10.1h).
+**Nothing.** Every row has been exercised or recorded as not applicable.
+**B5 is verified**, and 433a is the one correction the run produced.
 
 Record each part below, and say plainly which rows were not exercised. **A
 partial campaign is evidence for its rows only, never for the whole slice.**

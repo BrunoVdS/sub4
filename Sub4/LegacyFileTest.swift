@@ -73,17 +73,30 @@ nonisolated enum LegacyFileTest {
     /// Written for the paste and for the two buttons. Every case says what
     /// happened rather than returning a Bool somebody has to interpret.
     enum Outcome: Equatable, Sendable {
-        case moved([String])
+        /// `kept` names files the app WROTE while its own were hidden and
+        /// which restore moved aside rather than overwrote. **Empty on the
+        /// happy path and the whole point when it is not** — patch 433a.
+        case moved([String], kept: [String] = [])
         case nothingToMove(String)
         case refused(String)
 
         var line: String {
             switch self {
-            case .moved(let names):
-                names.isEmpty ? "nothing moved"
-                              : "moved \(names.sorted().joined(separator: ", "))"
-            case .nothingToMove(let why): "nothing to do — \(why)"
-            case .refused(let why):       "REFUSED — \(why)"
+            case .moved(let names, let kept):
+                let base = names.isEmpty
+                    ? "nothing moved"
+                    : "moved \(names.sorted().joined(separator: ", "))"
+                guard !kept.isEmpty else { return base }
+                // **SAID, NOT SILENT.** The first device run of 433 restored
+                // an `athlete.json` the app had rewritten while its own was
+                // hidden, kept it correctly, and reported only "moved
+                // athlete.json, weather.json". The preservation is the
+                // interesting half and it said nothing. §12.15, §12.188.
+                return base + " — AND KEPT "
+                     + kept.sorted().joined(separator: ", ")
+                     + ", written by the app while hidden"
+            case .nothingToMove(let why): return "nothing to do — \(why)"
+            case .refused(let why):       return "REFUSED — \(why)"
             }
         }
     }
@@ -91,9 +104,25 @@ nonisolated enum LegacyFileTest {
     /// What is hidden right now. Read off the disk, so it is still right after
     /// a force-quit.
     static func hiddenNow(in container: URL) -> [String] {
+        contents(of: container).filter { names.contains($0) }.sorted()
+    }
+
+    /// **FILES THE APP WROTE WHILE ITS OWN WERE HIDDEN — patch 433a.**
+    ///
+    /// `StoreLoad.absent` is trustworthy, so a store whose file is hidden reads
+    /// nothing, decides that is legitimate and saves a fresh one. Restore keeps
+    /// that write; **this is what makes the keeping visible.** On the first
+    /// device run of 433 it happened to `athlete.json` inside sixty seconds and
+    /// nothing said so — which weakened the very row the test exists for.
+    static func writtenWhileHidden(in container: URL) -> [String] {
+        contents(of: container)
+            .filter { $0.hasSuffix(".written-while-hidden") }
+            .sorted()
+    }
+
+    private static func contents(of container: URL) -> [String] {
         let dir = container.appendingPathComponent(directoryName)
-        let found = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-        return found.filter { names.contains($0) }.sorted()
+        return (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
     }
 
     /// **UNCONDITIONAL, AND IT NAMES THE FILES.** A test that leaves data
@@ -104,9 +133,17 @@ nonisolated enum LegacyFileTest {
             return "Application Support is unreachable, so nothing could be checked"
         }
         let hidden = hiddenNow(in: container)
-        return hidden.isEmpty
+        let kept = writtenWhileHidden(in: container)
+        var out = hidden.isEmpty
             ? "none — every legacy file is in its place"
             : "HIDDEN: \(hidden.joined(separator: ", ")) — put them back"
+        // **UNCONDITIONAL ONCE IT EXISTS, AND IT OUTLIVES THE TEST.** A kept
+        // copy is a fact about the container, not about the current hiding, so
+        // it is reported whether or not anything is hidden now. Patch 433a.
+        if !kept.isEmpty {
+            out += " · kept from an earlier test: \(kept.joined(separator: ", "))"
+        }
+        return out
     }
 
     static func hide(in container: URL) -> Outcome {
@@ -155,16 +192,20 @@ nonisolated enum LegacyFileTest {
         }
 
         var moved: [String] = []
+        var kept: [String] = []
         for name in hidden {
             let live = container.appendingPathComponent(name)
             let stored = dir.appendingPathComponent(name)
             do {
                 // RULE 4 — see the header. The store wrote a fresh file while
-                // its own was hidden, and both are kept.
+                // its own was hidden, and both are kept. **Patch 433a REPORTS
+                // it**: the first device run did exactly this and said nothing.
                 if fm.fileExists(atPath: live.path) {
-                    try fm.moveItem(
-                        at: live,
-                        to: dir.appendingPathComponent("\(name).written-while-hidden"))
+                    let keptName = "\(name).written-while-hidden"
+                    try? fm.removeItem(at: dir.appendingPathComponent(keptName))
+                    try fm.moveItem(at: live,
+                                    to: dir.appendingPathComponent(keptName))
+                    kept.append(keptName)
                 }
                 try fm.moveItem(at: stored, to: live)
                 moved.append(name)
@@ -172,6 +213,6 @@ nonisolated enum LegacyFileTest {
                 return .refused("\(name): \(error) — \(moved.count) restored")
             }
         }
-        return .moved(moved)
+        return .moved(moved, kept: kept)
     }
 }

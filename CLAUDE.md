@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 433 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 433a (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -432,9 +432,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 433, 2026-08-21
+## 5. State — patch 433a, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 433; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 433a; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -450,7 +450,7 @@ code wins and this section is the defect.
 | **D7 B2** — notes, commutes, match decisions, plan moves | done, 355–358 and 377 |
 | **D7 B3** — the activities | **done, 379–383** |
 | **D7 B4** — details, traces | **DONE, 388–398** — `D7-B4-GROUNDWORK.md`, §12.139–§12.142 |
-| **D7 B5** — weather, gear | **FLIPPED AT 430**, corrected at 431–432, **read-back confirmed on device**. Campaign outstanding — `docs/DEVICE-CAMPAIGN-B5.md` |
+| **D7 B5** — weather, gear | **DONE AND VERIFIED** — 425–433a, campaign 22 of 22 on 21 August |
 | D7 B6 — derived metrics | not started |
 | D7 B7 — reviews | not started, and blocked until a real review exists |
 | D7 B8 — sync cursor, work queue, rejections, revisions | not started |
@@ -915,6 +915,15 @@ run happened. §12.135–§12.150.
    own was hidden** — `StoreLoad.absent` is trustworthy, so the store rewrites
    it. §12.187. **This is the fourth patch to want a disposable fixture and the
    first to get one.**
+   **B5 IS VERIFIED — TWENTY-TWO OF TWENTY-TWO, 21 August.** Row 19 is the
+   answer the slice existed for: with both legacy files moved out of the
+   container the app drew the same six shoes and the same weather card. Row 21
+   is the one that could have passed dishonestly — with nothing on the app side
+   the section turned **red** and counted 606 differences it could not explain,
+   rather than agreeing zero with zero. **And the run found a gap in the tester,
+   not the slice**: `gear in the app` read 11 while `athlete.json` was hidden,
+   because the store rewrote it (`.absent` is trustworthy) — restore kept the
+   rewrite correctly **and said nothing**. 433a reports it. §12.188.
 9. **Then Bruno's list.**
 10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed

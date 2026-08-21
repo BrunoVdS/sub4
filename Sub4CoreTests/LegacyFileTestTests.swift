@@ -51,7 +51,7 @@ struct LegacyFileTestTests {
         try write("C", "constants.json", in: dir)
 
         let out = LegacyFileTest.hide(in: dir)
-        #expect(out == .moved(["athlete.json", "weather.json"]))
+        #expect(out == .moved(["athlete.json", "weather.json"], kept: []))
         #expect(read("athlete.json", in: dir) == nil)
         #expect(read("weather.json", in: dir) == nil)
         // NOT B5's, so NOT touched.
@@ -135,7 +135,7 @@ struct LegacyFileTestTests {
         _ = LegacyFileTest.hide(in: dir)
 
         let out = LegacyFileTest.restore(in: dir)
-        #expect(out == .moved(["athlete.json", "weather.json"]))
+        #expect(out == .moved(["athlete.json", "weather.json"], kept: []))
         #expect(read("athlete.json", in: dir) == "A")
         #expect(read("weather.json", in: dir) == "W")
         #expect(LegacyFileTest.hiddenNow(in: dir).isEmpty)
@@ -152,9 +152,17 @@ struct LegacyFileTestTests {
         // The store notices nothing is there and saves a fresh one.
         try write("written while hidden", "athlete.json", in: dir)
 
-        _ = LegacyFileTest.restore(in: dir)
+        let out = LegacyFileTest.restore(in: dir)
         #expect(read("athlete.json", in: dir) == "original",
                 "the original did not come back")
+        // **PATCH 433a — IT HAS TO SAY SO.** The first device run of 433 kept
+        // a rewritten `athlete.json` correctly and reported only "moved
+        // athlete.json, weather.json". The preservation is the interesting
+        // half; silence about it weakened the very row the test exists for.
+        #expect(out == .moved(["athlete.json"],
+                              kept: ["athlete.json.written-while-hidden"]))
+        #expect(out.line.contains("AND KEPT"))
+        #expect(out.line.contains("written by the app while hidden"))
         let kept = dir.appendingPathComponent(LegacyFileTest.directoryName)
             .appendingPathComponent("athlete.json.written-while-hidden")
         #expect((try? String(contentsOf: kept, encoding: .utf8)) == "written while hidden",
@@ -187,6 +195,45 @@ struct LegacyFileTestTests {
         #expect(line.contains("HIDDEN"))
         #expect(line.contains("athlete.json"))
         #expect(line.contains("put them back"))
+    }
+
+    /// A kept copy is a fact about the container, not about the current
+    /// hiding, so it is reported after the test is over too — which is when
+    /// somebody reads the paste and wonders what happened.
+    @Test("A file kept from an earlier test is reported after the restore")
+    func theKeptFileOutlivesTheTest() throws {
+        let dir = try container()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write("original", "athlete.json", in: dir)
+        _ = LegacyFileTest.hide(in: dir)
+        try write("written while hidden", "athlete.json", in: dir)
+        _ = LegacyFileTest.restore(in: dir)
+
+        #expect(LegacyFileTest.hiddenNow(in: dir).isEmpty)
+        #expect(LegacyFileTest.writtenWhileHidden(in: dir)
+                == ["athlete.json.written-while-hidden"])
+        let line = LegacyFileTest.line(in: dir)
+        #expect(line.contains("every legacy file is in its place"))
+        #expect(line.contains("kept from an earlier test"),
+                "the paste forgot a file the app wrote during a test")
+    }
+
+    /// A second test must not fail because the first left a kept copy behind.
+    @Test("A second run replaces the kept copy rather than refusing")
+    func aSecondRunIsNotBlockedByTheKeptCopy() throws {
+        let dir = try container()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try write("first", "athlete.json", in: dir)
+        _ = LegacyFileTest.hide(in: dir)
+        try write("written once", "athlete.json", in: dir)
+        _ = LegacyFileTest.restore(in: dir)
+
+        _ = LegacyFileTest.hide(in: dir)
+        try write("written twice", "athlete.json", in: dir)
+        let out = LegacyFileTest.restore(in: dir)
+        #expect(out == .moved(["athlete.json"],
+                              kept: ["athlete.json.written-while-hidden"]))
+        #expect(read("athlete.json", in: dir) == "first")
     }
 
     @Test("An unreachable container says so rather than reporting nothing hidden")
