@@ -8962,6 +8962,58 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.191 The only test where `ALTER TABLE` runs over rows — patch 436
+
+Task 0A tranche 3. **Every B5 test starts from `Sub4Database.inMemory()`, which
+runs the whole migrator** — so `gear` has had `kind` and `isRetired` from its
+first statement, and every assertion about *the default* was made against a
+table that never existed without them.
+
+**The device does not work like that.** Bruno's database was created in August
+and held eleven gear rows written by an importer that named six columns. The two
+B5 migrations ran over live data, and the first thing the app did afterwards was
+read those rows and believe them.
+
+`PreB5UpgradeTests` migrates to `2026-08-20-run-removal`, populates the way the
+pre-426 importer populated, and only then applies B5.
+
+### 12.191.1 It proves two moments, and a full migration can only see the second
+
+§12.175.4 and §12.176.2 argue that `unknown` and `false` are **honest** for a row
+written before the fact existed, and that reconciliation supplies the truth
+afterwards. Those are claims about two different moments.
+
+`theDefaultsAreHonest` is the first — and **two of the three fixture rows really
+are shoes**, so the guessed default would have been right for them, which is
+exactly what makes guessing dangerous rather than merely wrong.
+`reconciliationCorrectsTheDefaults` is the second, and it reproduces the device:
+`0 new, 3 known, 3 refreshed`, where the phone reported eleven on 21 August.
+
+### 12.191.2 A fixture that is nearly the production write tests a path production never takes
+
+The first draft inserted gear **without `sourceID`**. `importGear` matches on
+`accountID AND sourceID AND externalID`, so reconciliation did not recognise its
+own rows: it inserted three new ones beside the three it was meant to correct and
+reported `3 inserted` where the device reported eleven refreshed.
+
+The test failed and said so, which is the system working — but it is worth
+writing down, because **the fixture looked right**. Six columns, real names, real
+distances, and one omission that changed which code path ran.
+
+### 12.191.3 And a grep for failures is not a check that failures happened
+
+Sabotaging the migration to default `shoe` produced **no output** from
+`./scripts/test.sh 2>&1 | grep '✘ Test "'`, and it was read as "the control does
+not discriminate". It did: the run failed with five issues, visible in the
+summary line.
+
+**Third instance today of a pipeline reporting nothing for two different
+reasons** — §12.183's `grep "all invariants|FAIL" && git commit`, §12.185's rule
+reading the wrong copy, and now this. **Read the summary and the exit status,
+never a grep for the shape of a failure.**
+
+---
+
 ## 12.190 Evidence a concurrent run can overwrite is evidence nobody can cite — patch 435
 
 Task 0A tranche 4. `scripts/test.sh` wrote every run to one path,

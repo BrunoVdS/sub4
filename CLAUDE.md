@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 435 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 436 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -210,6 +210,11 @@ stopped being true at 342. Rename it `docs/REVIEW-2026-08-10-…` when convenien
   **The rule reads the INDEX, not your working file** — a Release scheme
   locally is fine and expected during a campaign; only a staged one fails.
   §12.185.
+- **AND A GREP FOR FAILURES IS NOT A CHECK THAT FAILURES HAPPENED.**
+  `./scripts/test.sh | grep '✘ Test "'` printed nothing for a sabotage that
+  failed five assertions, and it was read as the control not discriminating.
+  **Read the summary line and the exit status.** Same shape as the rule below,
+  third instance in one day. §12.191.3.
 - **A GATE PIPED THROUGH `grep` IS NOT A GATE.** `check-invariants.py | grep
   -E "all invariants|FAIL" && git commit` ran the commit **when the rule
   failed**, because grep succeeds on finding `FAIL`. It swept a Release scheme
@@ -457,9 +462,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 435, 2026-08-21
+## 5. State — patch 436, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 435; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 436; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
