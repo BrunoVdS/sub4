@@ -32,7 +32,8 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 | 3 | Populated pre-B5 upgrade regression | **436** | **done** — migrates to `2026-08-20-run-removal`, populates as the pre-426 importer did, then applies B5; proves honest defaults *then* reconciliation (§12.191) |
 | 4 | `scripts/test.sh` cannot share a simulator or overwrite evidence | **435** | **done** — repository lock, run-stamped logs, trap-safe release, inherited by `preflight.sh` (§12.190) |
 | 5 | `docs/evidence/post-b5/` manifest schema, validator, fixtures | **438** | **done** — v1 schema, `scripts/evidence-manifest.py`, ten fixtures and thirteen properties in `scripts/selftest-evidence.sh`, run as preflight stage 4. MISSING ≠ STALE; validating nothing exits 2; `--require-recompute` refuses an unrecomputable tree digest (§12.193) |
-| 6 | Narrow Strava-disabled gear-provenance campaign | — | **open** — closes B5's residual row-19 ambiguity |
+| 6 | Narrow Strava-disabled gear-provenance campaign | **written at 440** | **written, NOT RUN** — `docs/DEVICE-CAMPAIGN-0A-GEAR-PROVENANCE.md`, twenty steps in five parts, seventeen rows, every label read from source. Needs the phone |
+| 1c | B5 groundwork marked historical/accepted | **440** | **done** — status row and banner; the chronology is kept, and the file no longer reads as a statement about today |
 
 ## Decisions waiting on Bruno
 

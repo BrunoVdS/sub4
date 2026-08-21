@@ -6,7 +6,13 @@
 | **Written at** | patch 424, 21 August 2026 |
 | **Task** | `docs/PLAN-database-cutover-findings-and-ai-prompts.md` §5, "B5 groundwork, no flip" |
 | **Pattern** | `D7-B4-GROUNDWORK.md` and `D6C-SHADOW-PARITY-GROUNDWORK.md` |
-| **Status** | **Groundwork only. Nothing flips. §5 asks for decisions, and §6 is the list Bruno must approve before a line is written.** |
+| **Status** | **HISTORICAL — ACCEPTED.** This is the groundwork as written at 424, kept in full because its chronology is the argument. **B5 shipped at 425–433a, flipped at 430, and was verified on the device on 21 August 2026, twenty-two of twenty-two** — `docs/DEVICE-CAMPAIGN-B5.md`. §6's five decisions were all approved on 21 August and are in the code; do not re-ask them. |
+| **What is still open** | One residual: row 19's gear half was weakened by an `athlete.json` rewrite while the file was hidden (§12.188). `docs/DEVICE-CAMPAIGN-0A-GEAR-PROVENANCE.md` closes it, and it is the only B5 question left. |
+| **Where current state lives** | `CLAUDE.md` §5 and the ADR. **Nothing in this file is a statement about today** — where it says "nothing flips" or "not in the database in any form", it is describing patch 424. |
+
+> **READ THE STATUS ROW ABOVE FIRST.** Everything below is the state of the world at
+> patch 424, before any of it was built. It is kept because the reasoning is what a
+> later slice reuses — not because any sentence in it is still current.
 
 **B5 is two slices wearing one name, and they are not the same size.**
 
