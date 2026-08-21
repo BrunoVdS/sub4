@@ -7,7 +7,7 @@
 | **Groundwork** | `docs/D7-B5-GROUNDWORK.md` — §6's five decisions, all approved 21 August |
 | **ADR** | §12.175–§12.182a |
 | **Time** | about twenty-five minutes. **Part D needs a Release build. Part E moves files.** |
-| **State** | **The read-back half is already confirmed** (§12.182a). What is left is what a read-back cannot see. |
+| **State** | **PART A PASSED 21 August, nine of nine** (§10.1). Parts B–E outstanding — the rendering, the weather cards, the Release cost, and whether the files can go. |
 
 **THIS IS THE FIRST B-SLICE CAMPAIGN THAT IS NOT READ-ONLY.** Part E moves
 `athlete.json` and `weather.json` aside to prove the app no longer needs them.
@@ -227,9 +227,42 @@ are for your review; what reaches the ADR from rows 10–14 is a sentence.
 
 ## 10. Result
 
-*Not yet run.* Record part by part, and say plainly which rows were not
-exercised. **A partial campaign is evidence for its rows only, never for the
-whole slice.**
+### 10.1 Part A — 21 August 2026, 13:34 and 13:46, patch 432. NINE OF NINE
+
+| # | figure | read | |
+|---|---|---|---|
+| 1 | `Athlete store reads` | **`the database`** — no `until slice B5` | ✅ |
+| 2 | `Weather store reads` | `the database` | ✅ |
+| 3 | **`Gear facts recovered from the file at hydration`** | **`0`** | ✅ |
+| 4 | `gear by kind` | **6 shoes, 4 bikes, 1 of unknown kind** | ✅ |
+| 5 | `gear the database marks retired` | **1** | ✅ |
+| 6 | `gear carrying a retirement date` | **1** | ✅ |
+| 7 | `gear fields that differ` | **0** | ✅ |
+| 8 | `approved differences` | **2 (Shoe.primary, gear.retiredUTC)** | ✅ |
+| 9 | `gear` / `weather` / `activity_gear_reference` | **11 / 606 / 504** | ✅ |
+
+Also: **21 migrations**, `Migrations` identical to `Expected`, ending
+`2026-08-21-gear-kind, 2026-08-21-gear-retired`. `Integrity: ok`,
+`Orphaned rows: 0`, `Foreign keys: on`, `Protection: 7 of 7`.
+`Hydration at launch: … the activities, the weather, the gear`.
+`Database bootstrap: 8 families`.
+
+**AND THE TWO EXPORTS TWELVE MINUTES APART ARE IDENTICAL BELOW THE HEADER.**
+Row 3 in particular: `Gear facts recovered` was 0 at 13:34 and 0 again at 13:46.
+**A single zero could be a hydration that found nothing to do because the store
+was empty; two are the loop staying closed.**
+
+`migration_run` reads **256**, down from 257. **Not data loss** — it is
+`MigrationLedger.prune` at its ceiling, and §12.153.10 records the same one-row
+movement on 19 August for the same reason. `imported rows` follows it by one.
+
+### 10.2 Outstanding
+
+**Parts B, C, D and E — rows 10 to 22.** Everything a read-back cannot see: the
+rendering, the weather cards, the Release cost, and whether the files can go.
+
+Record each part below, and say plainly which rows were not exercised. **A
+partial campaign is evidence for its rows only, never for the whole slice.**
 
 ---
 
