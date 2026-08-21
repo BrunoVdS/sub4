@@ -192,6 +192,14 @@ stopped being true at 342. Rename it `docs/REVIEW-2026-08-10-…` when convenien
   Everyone who pulls gets a Release Run action with no debugger and no
   explanation. **RULE 14 fails the build unless the Run action is `Debug`**; put
   it back with `git checkout --` on that path when a campaign ends. §12.173.
+- **A GATE PIPED THROUGH `grep` IS NOT A GATE.** `check-invariants.py | grep
+  -E "all invariants|FAIL" && git commit` ran the commit **when the rule
+  failed**, because grep succeeds on finding `FAIL`. It swept a Release scheme
+  into `4bac3ac` — **the exact defect RULE 14 was written to prevent, committed
+  by the session that wrote the rule.** Check the EXIT CODE
+  (`python3 scripts/check-invariants.py > /dev/null && git commit`), and prefer
+  explicit paths to `git add -A`. §12.72.7's family: a pipeline that reports
+  success for two opposite outcomes. §12.183.
 - **`Built` READS EARLIER THAN THE BUTTON YOU JUST PRESSED, AND IT IS NOT
   STALE.** `AppVersion.built` is the executable's modification date — its link
   time — and **`scripts/preflight.sh` builds `-configuration Release` into the

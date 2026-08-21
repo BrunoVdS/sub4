@@ -8962,6 +8962,49 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.183 A gate piped through `grep` is not a gate — 21 August 2026
+
+Every commit this session ran:
+
+```
+python3 scripts/check-invariants.py | grep -E "all invariants|FAIL" && git commit …
+```
+
+**`grep` succeeds when it finds `FAIL`.** So the `&&` ran the commit *because*
+the rule had failed. It worked all session only because nothing failed.
+
+`4bac3ac` therefore committed a Release Run action in the shared scheme —
+**the exact defect RULE 14 was written to prevent, committed by the session that
+wrote RULE 14**, and swept in by a `git add -A` while the working copy was set
+up for the campaign's part D.
+
+**The rule did its job. The pipeline around it did not.** RULE 14 printed its
+failure, with the remedy in the message, and the shell ignored the exit code and
+committed anyway.
+
+### 12.183.1 Two habits, and only one of them is about grep
+
+- **Check the exit code**: `python3 scripts/check-invariants.py > /dev/null &&
+  git commit`. A gate that reports success for two opposite outcomes is
+  §12.72.7's family — the `grep | head` that hid a file from an enumeration
+  twice in one session.
+- **`git add -A` is what made it invisible.** The scheme is a file the campaign
+  is *supposed* to edit locally, and no reading of a diff summary would have
+  caught it among forty-six lines of documentation. Explicit paths.
+
+### 12.183.2 And the working copy was right
+
+Setting the scheme to Release is what part D of `DEVICE-CAMPAIGN-B5.md` asks
+for. **Nothing about the device work was wrong.** The repository is what must
+stay on Debug, which is precisely the line RULE 14's own comment draws: *it does
+not stop the edit, it stops the edit being committed.*
+
+Restored from `a83bfd6`. **If the campaign's part D is in progress, the scheme
+has to be set to Release again in Xcode** — and this time it does not get
+committed.
+
+---
+
 ## 12.182a The device agrees — 21 August 2026, 13:34, patch 432
 
 | | before (431) | after (432) |

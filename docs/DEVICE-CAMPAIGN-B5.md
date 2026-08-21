@@ -7,7 +7,7 @@
 | **Groundwork** | `docs/D7-B5-GROUNDWORK.md` — §6's five decisions, all approved 21 August |
 | **ADR** | §12.175–§12.182a |
 | **Time** | about twenty-five minutes. **Part D needs a Release build. Part E moves files.** |
-| **State** | **PARTS A AND B PASSED, PART C IS TWO THIRDS** — 21 August, §10.1–§10.1c. Outstanding: one no-weather activity, the Release cost, and whether the files can go. |
+| **State** | **PARTS A, B AND C PASSED — fourteen of fourteen**, 21 August, §10.1–§10.1d. Outstanding: **part D** the Release cost, **part E** whether the files can go. |
 
 **THIS IS THE FIRST B-SLICE CAMPAIGN THAT IS NOT READ-ONLY.** Part E moves
 `athlete.json` and `weather.json` aside to prove the app no longer needs them.
@@ -315,27 +315,42 @@ Drizzle), and **a different fourth metric** — the run shows Humidity, the swim
 shows Rain, because the swim had precipitation and the run did not. The readings
 are per activity.
 
-### 10.1c AND THE THIRD SUB-CASE WAS NOT EXERCISED
+### 10.1c The third sub-case, on the second attempt — 13:51. ROW 14 PASSES
+
+**`A1 · Squat day` · WeightTraining · Tuesday 18 August 19:39.**
+Duration **28:55** · Avg HR **107 bpm** · Energy **212 kcal** — and **no weather
+block at all.** Not `0 °C`, not `0 km/h`, not an empty row: the card carries
+three metrics instead of seven and the reader is told nothing that is not true.
+
+**That is the clause, and it is the one that matters most in part C.** An
+absence drawn as a measurement is this project's oldest failure mode
+(§12.15, §12.54.2), and 606 readings against 699 activities means ninety-three
+chances to commit it.
+
+Note also what the card DOES carry: `Avg HR` and `Energy`, which come from
+`activity` and `activity_detail`, so the missing weather took nothing with it.
+
+### 10.1d The first attempt opened the wrong kind of screen
+
+Worth keeping, because the mistake is easy to repeat. The screen first opened
+was **`Bike · aerobic (evening)`, Wed — `Not recorded yet`**: a **planned
+session with no activity matched to it**, on `SessionDetailView`. It draws
+cleanly and it cannot answer row 14 — **there is no summary card to leave a gap
+in.**
+
+*A session with nothing recorded* and *an activity with no weather* are
+different screens answering different questions, and only the second is a test
+of B5.
 
 The third screen is **`Bike · aerobic (evening)`, Wed — `Not recorded yet`**.
 That is a **planned session with no activity matched to it**, on
 `SessionDetailView`. It draws cleanly and it is not what row 14's third clause
 asks for.
 
-**Row 14 wants a RECORDED ACTIVITY that has no weather reading** — 699
-activities against 606 readings, so ninety-three of them. The question is
-whether the weather figures are **absent** or drawn as zeros, and a session with
-no activity cannot answer it: there is no summary card to leave a gap in.
-
-**Not a failure. Not applicable to the screen that was opened.** Named here
-rather than counted, and the run is outstanding: open a **strength** activity
-from **Today** or **Week** — the Progress tab's zone card names five of them in
-the last thirty days — and confirm the summary card has no weather line at all.
-
 ### 10.2 Outstanding
 
-**Row 14's third clause, and rows 15 to 22.** One recorded activity with no
-weather; the Release cost; whether the files can go.
+**Rows 15 to 22 — parts D and E.** The Release cost, and whether the files can
+go.
 
 Record each part below, and say plainly which rows were not exercised. **A
 partial campaign is evidence for its rows only, never for the whole slice.**
