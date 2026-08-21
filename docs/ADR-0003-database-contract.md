@@ -8962,6 +8962,37 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.173 The scheme is a tracked file the campaign is supposed to edit — RULE 14
+
+Taking a Release reading means setting the shared scheme's Run action to
+Release. **The scheme is `Shared`, therefore tracked**, so a `git add -A` sweeps
+it into whatever commit comes next.
+
+**It has now happened twice, in opposite directions.** Something committed
+Release before patch 397, which quietly put it back; and 424's own device run
+left it Release, committed by `c79d24a` — a documentation commit about the
+measurement, which had nothing to do with the build setting.
+
+**The cost is silent.** Everyone who pulls gets a Release Run action; ⌘R installs
+an optimised binary with no debugger attached; breakpoints stop working for a
+reason nothing on screen explains. Nobody notices for weeks, which is how it
+survived from before 397.
+
+RULE 14 reads the `<LaunchAction>`'s `buildConfiguration` and fails unless it is
+`Debug`. **It does not stop the edit — it stops the edit being committed**,
+which is the correct place for the guard: the campaign genuinely needs Release
+locally and the repository genuinely needs Debug.
+
+### 12.173.1 And the first sabotage of it proved nothing
+
+The first attempt to break the rule replaced a string that did not match the
+file's whitespace. Nothing changed, the check passed, and it looked exactly like
+a rule that cannot fail — §12.69 one level up: **the sabotage has to be verified
+too, by looking at the file rather than at the exit code.** Re-done with a
+regex, the rule fails with the message and the remedy in it.
+
+---
+
 ## 12.172 The stall contains the read — device, 20 August 2026, patch 424, **in Release**
 
 **Row 15c is answered, and it is fully contained, twice.**

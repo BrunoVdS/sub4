@@ -1202,6 +1202,58 @@ def a_seam_never_reaches_the_launchs_database():
                   "initialiser's choice")
 
 
+# RULE 14 — patch 424a, §12.173
+# --------------------------------------------------------------------------
+
+# The shared scheme's Run action must build Debug, with the debugger attached.
+#
+# Setting it to Release is how a Release reading gets taken on the device — and
+# the file is `Shared`, so it is TRACKED, and a `git add -A` sweeps it into the
+# next commit. **That has now happened twice in opposite directions**: something
+# committed Release before patch 397, which put it back; and patch 424's own
+# device run left it Release again, committed by a documentation commit that had
+# nothing to do with it.
+#
+# The cost is quiet. Everyone who pulls gets a Release Run action, ⌘R installs
+# an unoptimised-symbol-free binary with no debugger, and breakpoints stop
+# working for a reason nothing on screen explains.
+SCHEME = "Sub4.xcodeproj/xcshareddata/xcschemes/Sub4.xcscheme"
+
+
+def the_scheme_runs_debug():
+    """**A TRACKED FILE THAT A DEVICE CAMPAIGN IS SUPPOSED TO EDIT.**
+
+    Every other rule here guards source. This one guards a build setting,
+    because it is the only tracked file this project deliberately modifies as
+    part of running a test and then has to remember to put back — and
+    remembering is exactly what failed, twice.
+
+    Debug is the committed default; Release is a temporary local state. The rule
+    does not stop the edit, it stops the edit being committed.
+    """
+    rule = "the scheme runs Debug"
+    path = ROOT / SCHEME
+    if not path.exists():
+        fail(rule, f"{SCHEME} is missing — the shared scheme is what CI and "
+                   "every ⌘R read")
+        return
+    text = path.read_text()
+    m = re.search(r'<LaunchAction\b[^>]*?buildConfiguration\s*=\s*"(\w+)"',
+                  text, re.S)
+    if m is None:
+        fail(rule, "could not find the LaunchAction's buildConfiguration in "
+                   f"{SCHEME}")
+        return
+    config = m.group(1)
+    if config != "Debug":
+        fail(rule, f"the scheme's Run action builds {config}, not Debug. A "
+                   "device campaign left it that way and it was committed — "
+                   "put it back in Xcode (Edit Scheme -> Run -> Info) or with "
+                   f"`git checkout -- {SCHEME}`")
+        return
+    counted(rule, 1, 1, f"shared scheme read — the Run action builds {config}")
+
+
 RULES = [
     a_seam_never_reaches_the_launchs_database,
     every_store_that_records_a_read_refuses_a_write,
@@ -1216,6 +1268,7 @@ RULES = [
     every_tracked_source_is_compiled,
     every_restore_receipt_reaches_a_paste,
     no_restore_announces,
+    the_scheme_runs_debug,
 ]
 
 for r in RULES:

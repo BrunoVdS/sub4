@@ -185,6 +185,13 @@ stopped being true at 342. Rename it `docs/REVIEW-2026-08-10-…` when convenien
   never seen. Fixed at 325b: no summary line now exits 1, and so does a run reporting
   under 500 tests. **A guard that cannot fail has not been tested** — the first time you
   install one, break something on purpose and watch it complain. §12.69.
+- **THE SHARED SCHEME IS TRACKED, AND A DEVICE CAMPAIGN EDITS IT.** Setting
+  Run to Release for a measurement modifies
+  `Sub4.xcodeproj/xcshareddata/xcschemes/Sub4.xcscheme`, which a `git add -A`
+  then commits. Twice now, in both directions — before 397, and again at 424.
+  Everyone who pulls gets a Release Run action with no debugger and no
+  explanation. **RULE 14 fails the build unless the Run action is `Debug`**; put
+  it back with `git checkout --` on that path when a campaign ends. §12.173.
 - **`Built` READS EARLIER THAN THE BUTTON YOU JUST PRESSED, AND IT IS NOT
   STALE.** `AppVersion.built` is the executable's modification date — its link
   time — and **`scripts/preflight.sh` builds `-configuration Release` into the
