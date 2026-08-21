@@ -4149,6 +4149,11 @@ struct DatabaseHealthView: View {
         // from a store nobody wired in (§12.54.2), and the line has to exist
         // BEFORE the thing it reports on. It says the files until 430.
         l.append("Weather store reads: \(WeatherStore.shared.servedFrom.line)")
+        // PATCH 432. UNCONDITIONAL. Zero is the expected reading from the
+        // second launch after B5 onward, and a zero that stays zero is what
+        // says the write-through carried the facts back. §12.182.
+        l.append("Gear facts recovered from the file at hydration: "
+                 + "\(AthleteStore.shared.gearRecoveredFromTheFile)")
         l.append("Detail store reads: \(DetailStore.shared.detailsServedFrom.line)")
         l.append("Trace store reads: \(DetailStore.shared.tracesServedFrom.line)")
         return l

@@ -8962,6 +8962,69 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.182 The device disagreed, and it was right — patch 432
+
+**First run of B5 on the phone, patch 431, 21 August:**
+
+```
+gear fields that differ: 11
+gear by kind: 0 shoes, 0 bikes, 11 of unknown kind
+  b10348095 · kind   b13458344 · kind   b16082443 · kind
+  b6932581 · kind    g14536649 · kind   g15077214 · kind
+```
+
+`gear: 0 new, 11 known, 0 refreshed`. **The refresh had nothing to do**, and
+that is the defect.
+
+### 12.182.1 The loop
+
+1. The launch hydrates gear from the database. Every row was written before 426,
+   so every kind is `unknown`, and the store becomes eleven items of unknown
+   kind.
+2. `AppStores` hands the importer `AthleteStore.shared.allGear` — **which is now
+   the rows**.
+3. `importGear` compares `unknown` with `unknown`, finds nothing changed, and
+   writes nothing.
+
+**The kinds sit in `athlete.json`, are read at every launch by `loadFromCache`,
+and are thrown away at every launch by the hydration two steps later.** The
+database could never learn them, and no amount of importing would help.
+
+### 12.182.2 It was visible only because of 431
+
+**Before 431 both sides of that comparison were the rows.** The read-back would
+have printed `gear fields that differ: 0` and eleven items of unknown kind on
+both sides, and B5 would have been signed off.
+
+§12.125 says the patch before a flip is the one that asks what the flip is about
+to make vacuous. B5 got that patch late — and it earned its keep on the first
+device run, by disagreeing.
+
+### 12.182.3 The rule: hydration may not lower what the store knows
+
+Narrow, and it is `kinded`'s rule one level up. `unknown` is the database's word
+for *not recorded*, so a kind the file knows fills a gap rather than overriding
+a fact. Retirement is the same shape: `false` on a row written before 426 is an
+absence, not a denial.
+
+**The database still wins wherever it knows something** — name and distance
+always, kind and retirement whenever it has an answer.
+`theDatabaseWinsWhenItKnows` is the control for that direction, and both
+directions were sabotaged.
+
+**TRANSITIONAL BY CONSTRUCTION.** The first import after this writes the
+recovered facts; from then on the rows know and the merge finds nothing to do.
+
+### 12.182.4 The counter is the tripwire, not the fix
+
+`Gear facts recovered from the file at hydration: N`, unconditional in the
+paste. **Non-zero is expected exactly once.** A number that stays non-zero after
+an import means the write-through is not carrying the facts back — which is the
+loop still running, and the only thing that would make this patch a plaster
+rather than a repair. §12.54.2.
+
+---
+
 ## 12.181 What 430 made vacuous — patch 431, and B5 did not get §12.125's patch
 
 **§12.125's rule: the patch before a flip is the one that asks what the flip is

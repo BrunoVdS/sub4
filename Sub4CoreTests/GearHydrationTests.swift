@@ -199,3 +199,107 @@ struct WeatherGearIndependenceTests {
                     given: ExpectationSources(fedByTheDatabase: [.weather, .gear])))
     }
 }
+
+/// **PATCH 432 — THE LOOP THE DEVICE FOUND.**
+///
+/// After 430 the launch hydrated gear from the database, `AppStores` handed the
+/// importer `AthleteStore.shared.allGear` — which was now the rows — and
+/// `importGear` found nothing changed. The kinds sat in `athlete.json`, were
+/// read at every launch and thrown away at every launch, and the database could
+/// never learn them.
+///
+/// The first device run at 431 reported `gear fields that differ: 11`, all
+/// `kind`, with `gear by kind: 0 shoes, 0 bikes, 11 of unknown kind`. **It was
+/// visible only because 431 gave the read-back its own read** — before that,
+/// both sides were the rows and it looked perfect.
+@Suite
+@MainActor
+struct GearHydrationMergeTests {
+
+    private func row(_ id: String, kind: GearKind, retired: Bool)
+    -> WeatherGearLoad.StoredGear {
+        WeatherGearLoad.StoredGear(externalID: id, name: id, distanceM: 1000,
+                                   retiredUTC: nil, kind: kind, isRetired: retired)
+    }
+
+    /// A store whose file knew the kinds — which is every device on the first
+    /// launch after B5.
+    private func storeFromFile() throws -> AthleteStore {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir,
+                                                withIntermediateDirectories: true)
+        let shoe = AthleteStore.Shoe(id: "g1", name: "Novablast",
+                                     distanceM: 1000, primary: false)
+        let bike = AthleteStore.Shoe(id: "b1", name: "Gravel",
+                                     distanceM: 1000, primary: false)
+        let old = AthleteStore.Shoe(id: "r1", name: "Old pair",
+                                    distanceM: 1000, primary: false)
+        // No `kind` and no `retired` key — a file written before 425.
+        let cache = AthleteStore.Cache(zones: [], shoes: [shoe], bikes: [bike],
+                                       retired: [old], fetched: nil, ftp: nil)
+        try JSONEncoder().encode(cache)
+            .write(to: dir.appendingPathComponent("athlete.json"))
+        return AthleteStore(directory: dir)
+    }
+
+    /// **THE ONE THAT IS THE PATCH.** Rows written before 426 say `unknown`
+    /// for everything, and the file knows better.
+    @Test("A kind the database does not know is taken from the file")
+    func theKindIsRecovered() throws {
+        let s = try storeFromFile()
+        s.hydrate(gear: [row("g1", kind: .unknown, retired: false),
+                         row("b1", kind: .unknown, retired: false)])
+
+        #expect(s.bikes.map(\.id) == ["b1"],
+                "the bike went back to being unclassified, and the database can never learn it")
+        #expect(s.shoes.map(\.id) == ["g1"])
+        #expect(s.gearRecoveredFromTheFile == 2)
+    }
+
+    /// Retirement is the same shape: `false` on a row written before 426 is an
+    /// absence, not a denial.
+    @Test("A retirement the database does not know is taken from the file")
+    func retirementIsRecovered() throws {
+        let s = try storeFromFile()
+        s.hydrate(gear: [row("r1", kind: .unknown, retired: false)])
+        #expect(s.retired.map(\.id) == ["r1"])
+        // Two facts recovered for one item: its kind is unknown on both sides,
+        // so only the retirement counts — and `.unknown` from the file is not
+        // an improvement on `.unknown` from the row.
+        #expect(s.gearRecoveredFromTheFile == 1)
+    }
+
+    /// **THE DATABASE STILL WINS WHERE IT KNOWS SOMETHING.** The merge fills
+    /// gaps; it does not prefer the file.
+    @Test("A kind the database knows is not overridden by the file")
+    func theDatabaseWinsWhenItKnows() throws {
+        let s = try storeFromFile()
+        // The file calls g1 a shoe; the database says bike. The database wins.
+        s.hydrate(gear: [row("g1", kind: .bike, retired: false)])
+        #expect(s.bikes.map(\.id) == ["g1"])
+        #expect(s.gearRecoveredFromTheFile == 0)
+    }
+
+    @Test("Name and distance always come from the row")
+    func theRowOwnsNameAndDistance() throws {
+        let s = try storeFromFile()
+        s.hydrate(gear: [WeatherGearLoad.StoredGear(
+            externalID: "g1", name: "Renamed", distanceM: 9_999,
+            retiredUTC: nil, kind: .shoe, isRetired: false)])
+        #expect(s.shoes.first?.name == "Renamed")
+        #expect(s.shoes.first?.distanceM == 9_999)
+    }
+
+    /// **THE COUNTER IS THE TRIPWIRE.** Zero on the second launch is what says
+    /// the write-through carried the facts back; a number that stays non-zero
+    /// is the loop still running.
+    @Test("Nothing is recovered once the database knows")
+    func theCounterFallsToZero() throws {
+        let s = try storeFromFile()
+        s.hydrate(gear: [row("g1", kind: .shoe, retired: false),
+                         row("b1", kind: .bike, retired: false),
+                         row("r1", kind: .unknown, retired: true)])
+        #expect(s.gearRecoveredFromTheFile == 0)
+    }
+}

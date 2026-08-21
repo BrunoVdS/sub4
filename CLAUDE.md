@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 431 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 432 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -412,9 +412,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 431, 2026-08-21
+## 5. State — patch 432, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 431; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 432; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -861,6 +861,17 @@ run happened. §12.135–§12.150.
    `.gear` was fine because it ASKS. **RULE 15 is the guard** — every arm is a
    question or a listed literal, and it fails both ways. No test can see this
    one. §12.181.
+   **AND THE FIRST DEVICE RUN DISAGREED — 11 gear fields, all `kind`.** The
+   launch hydrated gear from rows written before 426 (`0 shoes, 0 bikes, 11 of
+   unknown kind`), `AppStores` handed the importer that same hydrated store, and
+   the refresh found nothing changed: **the kinds sat in `athlete.json`, read at
+   every launch and thrown away at every launch.** 432's rule is that
+   **hydration may not lower what the store knows** — `unknown` is the
+   database's word for *not recorded*, so the file fills a gap and never
+   overrides a fact. `Gear facts recovered from the file at hydration: N` is the
+   tripwire: non-zero exactly once, and **still non-zero after an import means
+   the loop is still running.** §12.182.
+   **B5 IS NOT CONFIRMED. The campaign has not run and 432 is unverified.**
 9. **Then Bruno's list.**
 10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed

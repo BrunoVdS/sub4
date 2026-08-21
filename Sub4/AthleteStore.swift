@@ -81,6 +81,16 @@ final class AthleteStore {
     /// Where this store's data came from — patch 344. See `PlanStore`'s.
     private(set) var servedFrom: StoreSource = .files
 
+    /// **HOW MANY GEAR FACTS THE LAST HYDRATION TOOK FROM THE FILE RATHER THAN
+    /// FROM THE ROW — patch 432, §12.182.**
+    ///
+    /// Unconditional in the paste. Non-zero means the database does not yet
+    /// know something `athlete.json` does — expected exactly once, on the first
+    /// launch after B5 — and **still non-zero after an import means the
+    /// write-through is not carrying it back**, which is the loop this counter
+    /// exists to make visible. §12.54.2.
+    private(set) var gearRecoveredFromTheFile = 0
+
     /// **THE TWO HALVES OF `servedFrom`, AS VALUES** — patch 386, §12.130.
     ///
     /// `.partial(fromDatabase: "zones and FTP", fromFiles: "gear")` is a
@@ -828,16 +838,53 @@ final class AthleteStore {
     ///
     /// IT DOES NOT WRITE — see `PlanStore.hydrate`.
     func hydrate(gear stored: [WeatherGearLoad.StoredGear]) {
+        // **THE MERGE, AND THE DEVICE IS WHAT ARGUED FOR IT — patch 432,
+        // §12.182.** Whatever this store already holds came from
+        // `athlete.json`, read in `init` a moment ago, and the file's three
+        // arrays carry facts the database may not have yet.
+        //
+        // Without this the app cannot ever learn them. Hydration replaces the
+        // store with the rows; `AppStores` then hands the importer
+        // `AthleteStore.shared.allGear`, which is now the rows again; and
+        // `importGear` finds nothing changed. **The kinds sit in the file and
+        // are read at every launch and thrown away at every launch.**
+        //
+        // The rule is narrow: **hydration may not lower what this store
+        // knows.** `unknown` is the database's word for "not recorded", so a
+        // kind the file knows fills that gap — `kinded`'s rule, one level up.
+        // Retirement is the same shape: `false` on a row written before 426 is
+        // an absence, not a denial.
+        //
+        // **TRANSITIONAL BY CONSTRUCTION.** The first import after this writes
+        // the recovered facts, and from then on the rows know and the merge
+        // finds nothing to do. `gearRecoveredFromTheFile` is what says so, and
+        // it should read 0 on every launch after the first.
+        let known = Dictionary(allGear.map { ($0.id, $0) },
+                               uniquingKeysWith: { first, _ in first })
+        var recovered = 0
+
         var s: [Shoe] = [], b: [Shoe] = [], r: [Shoe] = []
         for row in stored {
+            let held = known[row.externalID]
+            var kind = row.kind
+            if kind == .unknown, let heldKind = held?.kind, heldKind != .unknown {
+                kind = heldKind
+                recovered += 1
+            }
+            var isRetired = row.isRetired
+            if !isRetired, held?.retired == true {
+                isRetired = true
+                recovered += 1
+            }
             let shoe = Shoe(id: row.externalID, name: row.name,
                             distanceM: row.distanceM, primary: false,
-                            kind: row.kind, retired: row.isRetired)
-            if row.isRetired { r.append(shoe) }
-            else if row.kind == .bike { b.append(shoe) }
+                            kind: kind, retired: isRetired)
+            if isRetired { r.append(shoe) }
+            else if kind == .bike { b.append(shoe) }
             else { s.append(shoe) }
         }
         shoes = s; bikes = b; retired = r
+        gearRecoveredFromTheFile = recovered
         // **WHOLE AT LAST.** B1 took the zones and the FTP and said so; this is
         // the sentence that had `until slice B5` in it for eighty-three
         // patches.
