@@ -7,7 +7,7 @@
 | **Groundwork** | `docs/D7-B5-GROUNDWORK.md` — §6's five decisions, all approved 21 August |
 | **ADR** | §12.175–§12.182a |
 | **Time** | about twenty-five minutes. **Part D needs a Release build. Part E moves files.** |
-| **State** | **PARTS A–D PASSED — eighteen of eighteen**, 21 August, §10.1–§10.1g. **Only part E is left**: whether the files can go. |
+| **State** | **PARTS A–D PASSED — eighteen of eighteen**, and **part E's step 14 passed**. **Rows 19–22 are BLOCKED**: the container download is not a faithful copy and must not be written back. §10.1h. |
 
 **THIS IS THE FIRST B-SLICE CAMPAIGN THAT IS NOT READ-ONLY.** Part E moves
 `athlete.json` and `weather.json` aside to prove the app no longer needs them.
@@ -125,9 +125,12 @@ Preconditions: `Integrity: ok`, `Orphaned rows: 0`, `Foreign keys: on`,
 ### Part E — the files go · *steps 14–19*
 
 14. **Database health → Protected snapshot → take one.** Record the id.
-15. Move `athlete.json` and `weather.json` out of the app's container — through
-    Xcode's device container download, or the Files app if the container is
-    exposed. **Move, do not delete.**
+15. **THIS STEP IS SUSPENDED — see §10.1h.** It read: *move the two files out
+    through Xcode's container download*. On 21 August that download came back
+    **without the database, without either live payload folder and without four
+    of the stores**, so writing it back would destroy the app's data rather than
+    test it. **Do not replace the device container.**
+    A safe route has to exist in the app itself before rows 19–22 can run.
 16. **Force-quit and relaunch.**
 17. **Progress → shoes**: the same six rows, the same figures.
     **An activity detail**: the same weather.
@@ -398,9 +401,55 @@ idle phone. Recorded because a reading taken under a load nobody mentioned is a
 reading nobody can reproduce, and because if these numbers are ever quoted
 against a future one, the next reader should know what the phone was doing.
 
+### 10.1h Part E stopped at step 15 — the container download is not a copy
+
+**Step 14 passed.** Snapshot `2026-08-21-123201`, captured 14:32:01,
+**1380 of 1380 files**, 19.7 MB, `stores not written: 0`,
+`declared but not present: 2 — retired formats 2`, taken by patch 432.
+Two full copies and seven receipts remain.
+
+**Step 15 did not, and it must not.** The `.xcappdata` container downloaded from
+Xcode at 14:34 is **not a faithful copy of the app's data**, and replacing the
+device container with it would be the most destructive act available in this
+campaign.
+
+| | on the device | in the download |
+|---|---|---|
+| the database | 39 MB | **absent** — the largest file in the archive is 4.1 MB, and no `.sqlite` outside `HTTPStorages` |
+| live `details/` | ~699 files | **0** |
+| live `streams/` | ~672 files | **0** |
+| `athlete.json`, `weather.json`, `notes.json`, `activities.json` | present | **absent** |
+| snapshot `2026-08-21-123201` | **1380 files**, per the app | **778** — 98 details of ~699 |
+| `Application Support` top level | seven or more items | **three**: `constants.json`, `moves.json`, `commutes.json` |
+
+**The app's own figure is the witness.** It reported `1380 of 1380` a minute
+before the download, and the download holds 778 of that snapshot. The two
+numbers come from opposite sides and only one of them can be right about what is
+on the phone — and the one that copied the files is the one that counted them.
+
+**Whatever truncated it, the conclusion does not depend on knowing:** an archive
+missing the database, both live payload folders and four stores cannot be
+written back over a working container.
+
+### 10.1i And this is the fourth patch to ask for a disposable fixture
+
+§12.160.6 records three — 1A could not show the restore repairs, 414 could not
+show a scoped removal, 415 could not show a removal recorded and surviving.
+**Row 19 is the fourth**, and it is the one that decides whether B5 is complete:
+*does the app still work with the legacy files gone?*
+
+The groundwork's acceptance criterion says it in as many words — *"legacy
+weather/athlete files can be removed in an **isolated** B5 device test"* — and
+there is no isolated device.
+
+**Rows 19 to 22 are therefore OUTSTANDING AND BLOCKED**, not failed. The route
+that was written for them is unsafe, and the campaign does not invent a second
+one under pressure.
+
 ### 10.2 Outstanding
 
-**Rows 19 to 22 — part E only.** Whether the files can go.
+**Rows 19 to 22 — blocked, not failed.** Whether the files can go. The route
+written for them is unsafe on this device; see §10.1h and §10.1i.
 
 Record each part below, and say plainly which rows were not exercised. **A
 partial campaign is evidence for its rows only, never for the whole slice.**
