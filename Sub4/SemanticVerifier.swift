@@ -240,11 +240,27 @@ extension ExpectationSources {
         // because the answer IS `servedFrom`.
         case .details:          DetailStore.shared.detailsServedFrom == .database
         case .traces:           DetailStore.shared.tracesServedFrom == .database
+        // **PATCH 431 — `.weather` STOPPED BEING A CONSTANT, AND 430 IS WHY
+        // IT HAD TO.**
+        //
+        // The comment below said B5 would turn this line into a question for a
+        // store. B5 flipped at 430 and this line stayed `false`, so every
+        // comparison reading `WeatherStore` counted as EVIDENCE while the
+        // store was serving rows — a self-referential comparison classified as
+        // independent, which is the exact failure §12.130.2 says cannot happen
+        // *because the answer IS `servedFrom`*. It could happen here because
+        // the answer was a literal.
+        //
+        // `.gear` did not have the defect: it asks `gearServedFrom`, which is
+        // derived from `servedFrom`, and whoever wrote that derivation said why
+        // — "B5 makes this store whole, so both halves move together and one
+        // edit should carry them." One arm was written as a question and one as
+        // an answer, and only the question survived its slice.
+        case .weather:          WeatherStore.shared.servedFrom == .database
         // NO STORE DECLARES THESE YET, and `ExpectationField.slice` names the
         // one that will. `false` is a statement about this build rather than a
-        // placeholder: B5, B7 and B8 each turn one of these lines into a
-        // question for a store.
-        case .weather:          false
+        // placeholder: B7 and B8 each turn one of these lines into a question
+        // for a store.
         case .reviews:          false
         case .workItems:        false
         case .databaseAlone:    false

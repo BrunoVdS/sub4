@@ -150,6 +150,60 @@ enum ReadBacks {
         }
     }
 
+    /// **THE FILE SIDE OF B5'S READ-BACK — patch 431.**
+    ///
+    /// §12.125's rule: *the patch before a flip is the one that asks what the
+    /// flip is about to make vacuous.* **B5 did not get that patch.** 430
+    /// hydrated `WeatherStore` and `AthleteStore`'s gear half, and this
+    /// read-back went on comparing the database with
+    /// `WeatherStore.shared.byActivity` and `AthleteStore.shared.allGear` —
+    /// both of which the database now feeds. Nine hundred readings agreeing
+    /// with themselves.
+    ///
+    /// 419 did exactly this for the athlete and took the roll-up's
+    /// self-referential count to zero (§12.168). This is the same seam for the
+    /// same reason, one slice later, and the groundwork asked for it in as many
+    /// words before either flip was written.
+    struct WeatherGearSources {
+        let weather: [ActivityWeather]
+        let gear: [AthleteStore.Shoe]
+
+        let weatherLoad: StoreLoad
+        let athleteLoad: StoreLoad
+        let directoryFound: Bool
+
+        var isTrustworthy: Bool {
+            directoryFound && weatherLoad.isTrustworthy && athleteLoad.isTrustworthy
+        }
+
+        var line: String {
+            guard directoryFound else {
+                return "Application Support is unreachable, so the app side was "
+                     + "not read at all"
+            }
+            return "weather.json and athlete.json, read directly"
+        }
+    }
+
+    /// Builds B5's file side, through the seams both stores already offer —
+    /// RULE 13 counts them.
+    @MainActor
+    static func weatherGearSources() -> WeatherGearSources {
+        guard let dir = AppSupportItem.container else {
+            return WeatherGearSources(weather: [], gear: [],
+                                      weatherLoad: .absent, athleteLoad: .absent,
+                                      directoryFound: false)
+        }
+        let weather = WeatherStore(directory: dir)
+        let athlete = AthleteStore(directory: dir)
+        return WeatherGearSources(
+            weather: Array(weather.byActivity.values),
+            gear: athlete.allGear,
+            weatherLoad: weather.lastLoad,
+            athleteLoad: athlete.lastLoad,
+            directoryFound: true)
+    }
+
     /// Builds the athlete's file side. See `AthleteSources`.
     @MainActor
     static func athleteSources() -> AthleteSources {
@@ -436,14 +490,17 @@ enum ReadBacks {
         let load = await Task.detached(priority: .utility) {
             WeatherGearRepository.load(db)
         }.value
+        let sources = weatherGearSources()
         return (load, WeatherGearRoundTrip.compare(
-            storeWeather: Array(WeatherStore.shared.byActivity.values),
-            storeGear: AthleteStore.shared.allGear,
+            storeWeather: sources.weather,
+            storeGear: sources.gear,
             knownActivityIDs: activitiesSources(),
             rosterCameFrom: "activities.json, read directly",
             database: load),
-                .liveStores([.from(.weather, "the readings the store holds"),
-                             .from(.gear, "AthleteStore's file half")]))
+                // **`.ownRead`, NOT `.liveStores` — patch 431.** The roll-up
+                // derives independence from this, and after 430 the two stores
+                // it used to name are both fed by the database.
+                .ownRead(sources.line))
     }
 
     /// Patch 327 — D6c slice 7. Six review tables.

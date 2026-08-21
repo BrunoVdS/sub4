@@ -146,3 +146,56 @@ struct WeatherHydrationTests {
         #expect(PersistenceAuthority.hydrates(.gear))
     }
 }
+
+/// **PATCH 431 — WHAT 430 MADE VACUOUS, AND WHAT ASKS THE FUNCTION.**
+///
+/// §12.125: the patch before a flip is the one that asks what the flip is about
+/// to make vacuous. B5 did not get that patch, so these are the tests that go
+/// with the correction.
+@Suite
+@MainActor
+struct WeatherGearIndependenceTests {
+
+    /// **THE ARM THAT WAS A CONSTANT.** `case .weather: false` survived the
+    /// flip, so every comparison reading `WeatherStore` counted as evidence
+    /// while the store was serving rows.
+    @Test("Whether weather is fed is asked, not stated")
+    func weatherIsAQuestion() {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let w = WeatherStore(directory: dir)
+        #expect(w.servedFrom == .files)
+        w.hydrate(from: [])
+        #expect(w.servedFrom == .database,
+                "the store must be able to answer, or the arm has nothing to ask")
+    }
+
+    /// The gear arm never had the defect, and its own comment says why.
+    @Test("Gear's two halves move with the store")
+    func gearFollowsTheStore() {
+        let s = AthleteStore(directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString))
+        s.hydrate(zones: [], ftp: nil)
+        #expect(s.zonesServedFrom == .database)
+        #expect(s.gearServedFrom == .files, "half hydrated is half on files")
+        s.hydrate(gear: [])
+        #expect(s.gearServedFrom == .database)
+    }
+
+    /// **ASK THE FUNCTION, NOT ITS INGREDIENTS — §12.164.** Reverting
+    /// `weatherGear` to the singletons leaves every test above green.
+    @Test("The read-back reports its own read")
+    func theReadBackReportsItsOwnRead() async throws {
+        let db = try Sub4Database.inMemory()
+        let (_, _, source) = await ReadBacks.weatherGear(db)
+
+        guard case .ownRead(let where_) = source else {
+            Issue.record("the row is self-referential — got \(source)")
+            return
+        }
+        #expect(where_.contains("read directly") || where_.contains("unreachable"))
+        // Fed or not, a row that went and read the files can disagree.
+        #expect(!source.isSelfReferential(
+                    given: ExpectationSources(fedByTheDatabase: [.weather, .gear])))
+    }
+}

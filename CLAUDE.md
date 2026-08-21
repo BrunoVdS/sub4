@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 430 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 431 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -412,9 +412,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 430, 2026-08-21
+## 5. State — patch 431, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 430; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 431; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -852,6 +852,15 @@ run happened. §12.135–§12.150.
    either side of the line. §12.180.
    **B5 IS CODE-COMPLETE AND UNVERIFIED — `docs/D7-B5-GROUNDWORK.md` §13 is the
    campaign, and it is the first B-slice campaign that is not read-only.**
+   **431 IS THE PATCH B5 SHOULD HAVE HAD BEFORE THE FLIP** (§12.125). The
+   read-back was comparing the database with itself — 430 fed both stores it
+   read — so `weatherGearSources()` now reads `weather.json` and `athlete.json`
+   through the seams, exactly as 419 did. **And one arm of the derivation was a
+   LITERAL**: `case .weather: false` survived the flip, counting every
+   comparison that read `WeatherStore` as evidence while the store served rows.
+   `.gear` was fine because it ASKS. **RULE 15 is the guard** — every arm is a
+   question or a listed literal, and it fails both ways. No test can see this
+   one. §12.181.
 9. **Then Bruno's list.**
 10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed

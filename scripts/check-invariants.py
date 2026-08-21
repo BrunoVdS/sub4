@@ -1270,6 +1270,69 @@ def the_scheme_runs_debug():
     counted(rule, 1, 1, f"shared scheme read — the Run action builds {config}")
 
 
+# RULE 15 — patch 431, §12.181
+# --------------------------------------------------------------------------
+
+# `ExpectationSources.servesFromDatabase` decides, per field, whether a
+# comparison reading that store could still disagree. Every arm is either a
+# QUESTION for a store or a LITERAL, and 430 proved the difference matters: B5
+# flipped, `case .weather: false` stayed, and every comparison reading
+# `WeatherStore` counted as evidence while the store was serving rows.
+#
+# §12.130.2 says a flip cannot leave an answer stale "because the answer IS
+# `servedFrom`". That is true of an arm that asks. It is false of a literal, and
+# the file had both shapes side by side with nothing distinguishing them.
+#
+# A literal is legitimate — for a family no store feeds yet, `false` is a
+# statement about this build rather than a placeholder. So the rule is not "no
+# literals"; it is "every literal is listed here, with the slice that will turn
+# it into a question".
+LITERAL_ARMS_ALLOWED = {
+    "reviews": "B7 — no store serves reviews from rows yet",
+    "workItems": "B8 — the work queue is still UserDefaults",
+    "databaseAlone": "reads no store at all, by construction (§12.132)",
+}
+
+
+def every_fed_field_asks_a_store():
+    """**A LITERAL THAT OUTLIVES ITS SLICE IS A COMPARISON MISCLASSIFIED.**
+
+    The cost is not a wrong number on a screen: it is a self-referential
+    comparison counted as independent evidence, which is what §12.132 and
+    §12.129 are both about and what 386/387 rebuilt the derivation to prevent.
+    Two arms were written as questions and one as an answer, and only the
+    questions survived their slices.
+    """
+    rule = "every fed field asks a store"
+    path = APP / "SemanticVerifier.swift"
+    if not path.exists():
+        fail(rule, "SemanticVerifier.swift is missing")
+        return
+    body = strip_comments(path.read_text())
+    span = braced_span(body, "private static func servesFromDatabase")
+    if span is None:
+        fail(rule, "could not find servesFromDatabase — this rule is reading "
+                   "the wrong thing, which means it has been checking nothing")
+        return
+    block = body[span[0]:span[1]]
+    arms = re.findall(r"case \.(\w+):\s*(.+)", block)
+    counted(rule, len(arms), 14, "fields classified")
+    for field, answer in arms:
+        literal = answer.strip().rstrip(",").strip() in ("true", "false")
+        if literal and field not in LITERAL_ARMS_ALLOWED:
+            fail(rule, f"`.{field}` answers with a literal and is not on the "
+                       "allow-list. Either a store can answer it now — ask the "
+                       "store — or add it to LITERAL_ARMS_ALLOWED with the "
+                       "slice that will. 430 flipped B5 and left "
+                       "`case .weather: false` behind, which counted a "
+                       "self-referential comparison as evidence.")
+        if not literal and field in LITERAL_ARMS_ALLOWED:
+            fail(rule, f"`.{field}` now asks a store and is still on the "
+                       "allow-list. Remove it — the list is what says which "
+                       "slices are outstanding, and an entry nobody removes "
+                       "stops meaning anything.")
+
+
 RULES = [
     a_seam_never_reaches_the_launchs_database,
     every_store_that_records_a_read_refuses_a_write,
@@ -1285,6 +1348,7 @@ RULES = [
     every_restore_receipt_reaches_a_paste,
     no_restore_announces,
     the_scheme_runs_debug,
+    every_fed_field_asks_a_store,
 ]
 
 for r in RULES:

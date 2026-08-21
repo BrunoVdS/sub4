@@ -8962,6 +8962,67 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.181 What 430 made vacuous — patch 431, and B5 did not get §12.125's patch
+
+**§12.125's rule: the patch before a flip is the one that asks what the flip is
+about to make vacuous.** 381 exists because switching `ActivityStore` to the
+database would have made shadow parity compare the database with itself.
+
+**B5 did not get that patch, and two things went wrong at once.**
+
+### 12.181.1 The read-back went on comparing the database with itself
+
+`ReadBacks.weatherGear` compared the rows against
+`WeatherStore.shared.byActivity` and `AthleteStore.shared.allGear`. **430 fed
+both of those from the database.** Six hundred readings agreeing with
+themselves, and the gear beside them.
+
+419 did exactly this for the athlete and took the roll-up's self-referential
+count to zero (§12.168). **The groundwork asked for the same seam in as many
+words** — §8.1, written at 424, before any of the flip was built — and five
+patches later it was not there. `weatherGearSources()` reads `weather.json` and
+`athlete.json` through the seams both stores already offer, and the row is
+`.ownRead` again.
+
+### 12.181.2 And one arm of the derivation was a literal
+
+`ExpectationSources.servesFromDatabase` decides, per field, whether a comparison
+reading that store could still disagree. **`case .weather: false` survived the
+flip.** So every comparison reading `WeatherStore` counted as **evidence** while
+the store was serving rows.
+
+§12.130.2 says a flip cannot leave an answer stale *"because the answer IS
+`servedFrom`"*. **That is true of an arm that asks and false of a literal**, and
+the file had both shapes side by side with nothing distinguishing them.
+
+**`.gear` did not have the defect**, and the reason is written in its own
+derivation: `gearServedFrom` is computed from `servedFrom`, with the note *"B5
+makes this store whole, so both halves move together and one edit should carry
+them."* **One arm was written as a question and one as an answer, and only the
+question survived its slice.**
+
+### 12.181.3 RULE 15, because no test can see this one
+
+The wiring revert is caught — `theReadBackReportsItsOwnRead` fails, §12.164's
+lesson applied. **The literal arm is caught by nothing.** In a test host the
+singleton is on its files, so `live` says false either way; the only
+discriminator would be hydrating a shared store, which is what RULE 13 exists to
+stop.
+
+So it is a rule. **Every arm is either a question for a store or a literal, and
+every literal must be on an allow-list with the slice that will turn it into a
+question.** Today: `.reviews` (B7), `.workItems` (B8), `.databaseAlone` (reads
+no store by construction, §12.132).
+
+**It fails in both directions**, and both were sabotaged: a literal that is not
+on the list, and a list entry whose arm now asks. The second matters as much —
+a list nobody prunes stops saying which slices are outstanding.
+
+**This would have caught 430 on the day it landed**, and it is what B7 and B8
+will hit if they repeat it.
+
+---
+
 ## 12.180 D7 slice B5 flips — patch 430
 
 **Two cases into `hydratedFamilies`. Eleven read, eleven fed.** Everything B5
