@@ -59,7 +59,7 @@ nonisolated enum Sub4Migrations {
                                 runTrigger, confidenceScale, reviewRecordKey,
                                 interruptedRun, runRecovered,
                                 authoredTrigger, rowsRemoved,
-                                runCause, runRemoval]
+                                runCause, runRemoval, gearKind]
 
     static var migrator: DatabaseMigrator {
         var m = DatabaseMigrator()
@@ -83,6 +83,7 @@ nonisolated enum Sub4Migrations {
         registerRowsRemoved(&m)   // Sub4Migrations+RowsRemoved.swift
         registerRunCause(&m)      // Sub4Migrations+RunCause.swift
         registerRunRemoval(&m)    // Sub4Migrations+RunRemoval.swift
+        registerGearKind(&m)      // Sub4Migrations+GearKind.swift
         return m
     }
 

@@ -82,15 +82,23 @@ struct AthleteFileAgreementTests {
         // so two shapes that both leave `bikes` nil write the same keys and
         // this test would pass while proving nothing — which is what it did
         // when patch 267 first added the field to one side only.
+        // PATCH 425 — `kind` IS SET ON BOTH SIDES ON PURPOSE. A nil optional
+        // is omitted by `JSONEncoder`, so a fixture leaving it nil would make
+        // the two shapes agree by both writing nothing, which is precisely the
+        // agreement this test exists to disprove.
         let cache = AthleteStore.Cache(
             zones: [], shoes: [],
-            bikes: [.init(id: "b1", name: "Bike", distanceM: 1, primary: false)],
-            retired: [.init(id: "g1", name: "Old", distanceM: 1, primary: false)],
+            bikes: [.init(id: "b1", name: "Bike", distanceM: 1, primary: false,
+                          kind: .bike)],
+            retired: [.init(id: "g1", name: "Old", distanceM: 1, primary: false,
+                            kind: .unknown)],
             fetched: Date(timeIntervalSince1970: 0), ftp: 200)
         let file = AthleteFile(
             zones: [], shoes: [],
-            bikes: [.init(id: "b1", name: "Bike", distanceM: 1, primary: false)],
-            retired: [.init(id: "g1", name: "Old", distanceM: 1, primary: false)],
+            bikes: [.init(id: "b1", name: "Bike", distanceM: 1, primary: false,
+                          kind: .bike)],
+            retired: [.init(id: "g1", name: "Old", distanceM: 1, primary: false,
+                            kind: .unknown)],
             fetched: Date(timeIntervalSince1970: 0), ftp: 200)
 
         let fromCache = try keys(of: JSONEncoder().encode(cache))

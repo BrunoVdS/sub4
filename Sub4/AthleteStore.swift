@@ -58,6 +58,17 @@ final class AthleteStore {
     /// Everything the athlete owns or once owned, for callers that only need a
     /// name for an id — the importer, the verifier, and `gear(id:)` below.
     var allGear: [Shoe] { shoes + bikes + retired }
+
+    /// Stamps a kind on gear that has none, and leaves gear that has one alone.
+    ///
+    /// **IT MAY ONLY EVER FILL A GAP.** Overwriting a kind already set would
+    /// make the array the authority over the item, and the two disagree in one
+    /// real case: `retired` holds items whose kind is genuinely `.unknown` and
+    /// may one day hold one resolved from a source that knew. Filling only
+    /// `nil` is what makes this safe to run on every load.
+    nonisolated static func kinded(_ list: [Shoe], _ kind: GearKind) -> [Shoe] {
+        list.map { $0.kind == nil ? $0.withKind(kind) : $0 }
+    }
     private(set) var lastFetch: Date?
     private(set) var lastError: String?
 
@@ -180,6 +191,29 @@ final class AthleteStore {
         let distanceM: Double
         let primary: Bool
 
+        /// **WHAT THIS GEAR IS — patch 425, D7 slice B5, §12.175.**
+        ///
+        /// The fact has always existed and has never been carried: this store
+        /// keeps `shoes`, `bikes` and `retired` as three arrays, so the kind IS
+        /// which array a `Shoe` sits in — and `allGear` flattens all three
+        /// before anything downstream sees them. The importer is not
+        /// discarding the kind; **it is never told.**
+        ///
+        /// **OPTIONAL, AND FOR THE `bikes` REASON.** A synthesised
+        /// `init(from:)` does not use Swift default values, so a non-optional
+        /// property here would make every `athlete.json` written before today
+        /// fail to decode ENTIRELY — taking the zones, the FTP and the whole
+        /// shoe history with it. That hazard is recorded against `bikes` and
+        /// `retired` a few lines up and against `constants.json` in
+        /// `LegacyFixtures`.
+        ///
+        /// **`nil` IS NOT `unknown`.** `nil` means a file written before this
+        /// patch, whose kind is recoverable from which array it decodes into —
+        /// and `loadFromCache` does exactly that. `unknown` means the kind was
+        /// asked for and could not be had, which happens for real: `fetchGear`
+        /// returns no type, so retired gear arrives untyped. §12.15.
+        var kind: GearKind?
+
         var km: Double { distanceM / 1000 }
 
         /// Running shoes are usually retired somewhere in 600–800 km. The range
@@ -205,6 +239,29 @@ final class AthleteStore {
         /// self-test below can compare states directly.
         enum Wear: Equatable { case fine, worn, spent }
         var wear: Wear { isSpent ? .spent : (needsAttention ? .worn : .fine) }
+
+        /// **THE THRESHOLDS ARE RUNNING-SHOE NUMBERS AND THIS IS WHERE THAT
+        /// STOPS BEING IMPLICIT — patch 425.** 600 and 800 km describe a
+        /// running shoe; on a bicycle they are meaningless, and on gear whose
+        /// kind nobody knows they are a guess. `bikes` was made a separate
+        /// array in patch 267 for exactly this reason, and the reason has never
+        /// been readable from a `Shoe` itself.
+        ///
+        /// Callers that draw a wear bar ask THIS, not `wear`.
+        nonisolated var wearIsMeaningful: Bool { (kind ?? .shoe) == .shoe }
+
+        /// Value-semantics helper for `kinded`. `id`, `name`, `distanceM` and
+        /// `primary` are `let` and stay that way — only the kind was ever
+        /// missing.
+        /// `nonisolated` because `kinded` is, and SE-0434 covers a stored
+        /// property's READ but not a method: `Shoe` is nested in a main-actor
+        /// class, so every method it declares is main-actor by default. Sixth
+        /// instance of that rule in this project — CLAUDE.md §2.
+        nonisolated func withKind(_ k: GearKind) -> Shoe {
+            var out = self
+            out.kind = k
+            return out
+        }
 
         // MARK: Self-test
         //
@@ -448,7 +505,16 @@ final class AthleteStore {
                     distanceM: g.distance ?? 0,
                     // A retired shoe is nobody's primary, whatever the API
                     // says about the day it was.
-                    primary: false)
+                    primary: false,
+                    // **`unknown`, AND IT IS THE HONEST ANSWER — patch 425.**
+                    // `DetailedGear` above decodes id, name, distance and
+                    // primary; the endpoint returns no type, so a retired BIKE
+                    // arrives here indistinguishable from a retired shoe.
+                    // Guessing `.shoe` would put `Shoe.wear`'s 600/800 km
+                    // running thresholds on a bicycle — and would be right most
+                    // of the time, which is what makes it dangerous rather than
+                    // merely wrong. §12.132's third bucket, printed.
+                    kind: .unknown)
     }
 
     nonisolated static func refreshProblems(zones: Int, gear: Int) -> [String] {
@@ -564,16 +630,22 @@ final class AthleteStore {
         // Two independent lists in one response, and each is allowed to be
         // absent on its own — the same reasoning as the FTP above. An athlete
         // with bikes and no shoes is a cyclist, not an error.
-        func gear(_ list: [Athlete.Gear]?, fallbackName: String) -> [Shoe] {
+        //
+        // **AND THE KIND IS DECIDED HERE, WHERE IT IS KNOWN** — patch 425. The
+        // response has two lists and the list is the fact; every layer below
+        // this one has only a flat array to look at.
+        func gear(_ list: [Athlete.Gear]?, fallbackName: String,
+                  kind: GearKind) -> [Shoe] {
             (list ?? []).map {
                 Shoe(id: $0.id,
                      name: $0.name ?? fallbackName,
                      distanceM: $0.distance ?? 0,
-                     primary: $0.primary ?? false)
+                     primary: $0.primary ?? false,
+                     kind: kind)
             }
         }
-        return (shoes: gear(a.shoes, fallbackName: "Shoe"),
-                bikes: gear(a.bikes, fallbackName: "Bike"))
+        return (shoes: gear(a.shoes, fallbackName: "Shoe", kind: .shoe),
+                bikes: gear(a.bikes, fallbackName: "Bike", kind: .bike))
     }
 
     private func get(_ urlString: String, token: String) async -> Data? {
@@ -673,11 +745,20 @@ final class AthleteStore {
         // Also on the way OUT of the cache, so a file written before patch 81
         // is corrected without waiting for the next Strava fetch.
         hrZones = Self.separate(c.zones)
-        shoes = c.shoes
+        // **THE KIND IS RECOVERED FROM THE ARRAY, NOT INVENTED — patch 425.**
+        // A file written before this patch carries `kind: nil` on every item,
+        // and the fact is not lost: it is in which key the item decoded from.
+        // So the same rule applies on the way out of the cache as on the way
+        // out of the endpoint, and no file needs rewriting for the database to
+        // learn what it already knew. `kinded` leaves a kind that IS set alone.
+        shoes = Self.kinded(c.shoes, .shoe)
         // Absent in every file written before patch 267, which is the whole
         // reason the column is optional. Empty until the next refresh.
-        bikes = c.bikes ?? []
-        retired = c.retired ?? []
+        bikes = Self.kinded(c.bikes ?? [], .bike)
+        // NOT `.shoe`. Retired gear is the one list whose kind was never known
+        // — see `fetchGear` — so an item that arrived without one keeps
+        // `.unknown` rather than being told what it was.
+        retired = Self.kinded(c.retired ?? [], .unknown)
         lastFetch = c.fetched
         ftp = c.ftp
     }

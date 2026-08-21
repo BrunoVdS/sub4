@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 424 (2026-08-20).** §5.3 is the 390 device run, Compare and
+**Current at patch 425 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -412,9 +412,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 424, 2026-08-20
+## 5. State — patch 425, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 424; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 425; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -800,6 +800,16 @@ run happened. §12.135–§12.150.
    indistinguishable**, latent only because `activeShoes` renders `shoes` alone
    and bikes and retired gear are drawn nowhere. Also `knownActivityIDs` still
    reads the database-fed roster — the last self-referential filter left.
+   **ALL FIVE DECISIONS APPROVED 21 AUGUST, AND 425 IS THE MAPPING.**
+   `2026-08-21-gear-kind` adds `gear.kind` defaulting to **`unknown`, not
+   `shoe`** — every existing row was written without the fact. `GearKind` is
+   three-valued and `Shoe.kind` is **optional**, because a synthesised
+   `init(from:)` ignores Swift defaults and a non-optional would fail to decode
+   every `athlete.json` on disk. **`nil` is not `unknown`**: nil is a pre-425
+   file whose kind is recoverable from which array it decoded from, and
+   `loadFromCache` recovers it. `wearIsMeaningful` is new and false for bikes
+   and unknowns. **Nothing writes the column yet — 426 is the importer.**
+   §12.175.
 9. **Then Bruno's list.**
 10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed

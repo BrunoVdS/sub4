@@ -73,6 +73,16 @@ nonisolated struct AthleteFile: Codable, Hashable {
         let name: String
         let distanceM: Double
         let primary: Bool
+        /// PATCH 425, D7 slice B5. Optional for the reason every other optional
+        /// in this file is optional: a synthesised `init(from:)` ignores Swift
+        /// defaults, so a non-optional here would fail to decode every
+        /// `athlete.json` written before today.
+        ///
+        /// **THE MIRROR CARRIES IT EVEN THOUGH THE MIRROR CANNOT USE IT.**
+        /// `AthleteFileAgreementTests` holds this declaration field by field
+        /// against `AthleteStore.Cache`; a mirror missing a field is a mirror
+        /// that silently drops it on the way through a nonisolated decode.
+        let kind: GearKind?
     }
 
     var zones: [Zone]

@@ -8962,6 +8962,100 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.175 The mapping for gear's kind — patch 425, D7 slice B5
+
+**The §12 mapping, written before the importer** — this project's rule, and
+seven of the seven mappings written that way found something.
+
+`2026-08-21-gear-kind` adds one column. `Shoe` gains one property. **Nothing
+writes the column yet and nothing reads it**; 426 is the importer.
+
+### 12.175.1 The fact was never discarded — it was never told
+
+`AthleteStore` keeps `shoes`, `bikes` and `retired` as three arrays, so a piece
+of gear's kind IS which array it sits in. `AppStores` then sets
+`s.gear = AthleteStore.shared.allGear` — `shoes + bikes + retired` — and hands
+that to `importGear`, which names six columns.
+
+**By the time the importer runs the fact is already gone.** Every review of this
+has read as *the importer drops the kind*; it does not, and could not. It is
+never given one.
+
+**And nothing disagreed, because neither side could express it.**
+`WeatherGearRoundTrip` compares the name and the distance, and its `approved`
+list records `Shoe.primary` and `gear.retiredUTC`. **There is no entry for the
+kind at all** — a difference that cannot be expressed appears on no list.
+§12.132's shape in a comparison rather than in a category, and the second time
+that shape has cost something.
+
+### 12.175.2 Why it is now and not after Strava
+
+§12.68 made this argument for one field: ADR-0002 retires Strava, so whatever
+is in `gear.distanceM` that day is the mileage **for ever** — there is no second
+copy to reconcile against. 325 fixed distance for that reason.
+
+**The athlete endpoint is the only thing that has ever said which gear is a
+bike.** Free today, unrecoverable later. The same holds for retirement, which is
+inferred from the endpoint no longer listing something.
+
+### 12.175.3 Three values, and the third is a measurement
+
+`unknown` exists because `AthleteStore.fetchGear`'s `DetailedGear` decodes
+`id`, `name`, `distance`, `primary` — **and no type.** Retired gear is found by
+`resolveRetiredGear` from activities naming ids the profile no longer holds, and
+fetched one at a time; **a retired bike arrives indistinguishable from a retired
+shoe.**
+
+Guessing `.shoe` there would put `Shoe.wear`'s 600/800 km running thresholds on
+a bicycle — and would be right most of the time, **which is what makes it
+dangerous rather than merely wrong.** §12.132's third bucket, printed.
+
+`Shoe.wearIsMeaningful` is where that stops being implicit. 267 split `bikes`
+into its own array precisely because the thresholds are running numbers, and
+that reason has never been readable from a `Shoe` itself.
+
+### 12.175.4 `nil` is not `unknown`, and the default is not `shoe`
+
+**Two separate distinctions, both §12.15.**
+
+- **`Shoe.kind` is optional**, for the reason `bikes` and `retired` are: a
+  synthesised `init(from:)` ignores Swift defaults, so a non-optional property
+  would fail to decode **every `athlete.json` written before today**, taking the
+  zones, the FTP and the whole shoe history with it. `nil` means *a file written
+  before 425*, and that kind is **recoverable** — it is in which key the item
+  decoded from. `loadFromCache` recovers it, so no file needs rewriting.
+- **`gear.kind` defaults to `unknown`, not `shoe`.** Every row already in the
+  table was written without the fact. Defaulting to the common answer would
+  invent complete confidence about a past nothing recorded.
+
+`kinded` may only ever FILL a gap, never overwrite one. Overwriting would make
+the array the authority over the item, and `retired` is exactly where those two
+disagree.
+
+### 12.175.5 What `retiredUTC` will hold, written where it cannot drift
+
+The column has existed since patch 205 and the importer has never written it.
+**Strava reports no retirement date and there is no reason to think one exists**
+— gear stops being listed, and that is all that ever happens.
+
+So the value is **the day the gear was last used**, the newest activity naming
+it, and non-null means retired. A real fact derived from data this app owns,
+rather than a timestamp recording when the app happened to look — which is what
+"the day we noticed" would be, §12.15 as a date.
+
+**It is a definition, not an inference from the name**, so it is written in the
+migration file where it cannot drift from the column. 426 writes it.
+
+### 12.175.6 The vocabulary is enforced by a test and not by the database
+
+SQLite cannot add a CHECK by `ALTER`, and rebuilding `gear` to get one would
+rewrite history for a constraint. So unlike `work_queue.state`, which the
+database refuses, `gear.kind` is held by
+`theFrozenGearKindsMatchTheSchema` alone. **Said plainly because it is a real
+difference in how much the two are protected.**
+
+---
+
 ## 12.174 The launch freeze buys correctness, and it does not scale — B6a is added to the ladder
 
 ### 12.174.1 What the freeze is
