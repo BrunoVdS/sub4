@@ -430,7 +430,7 @@ code wins and this section is the defect.
 | **D7 B2** — notes, commutes, match decisions, plan moves | done, 355–358 and 377 |
 | **D7 B3** — the activities | **done, 379–383** |
 | **D7 B4** — details, traces | **DONE, 388–398** — `D7-B4-GROUNDWORK.md`, §12.139–§12.142 |
-| **D7 B5** — weather, gear | **FLIPPED AT 430** — 425–429 built it, 430 is the line. **Unverified: the campaign has not run.** |
+| **D7 B5** — weather, gear | **FLIPPED AT 430**, corrected at 431–432, **read-back confirmed on device**. Campaign outstanding — `docs/DEVICE-CAMPAIGN-B5.md` |
 | D7 B6 — derived metrics | not started |
 | D7 B7 — reviews | not started, and blocked until a real review exists |
 | D7 B8 — sync cursor, work queue, rejections, revisions | not started |
@@ -871,7 +871,15 @@ run happened. §12.135–§12.150.
    overrides a fact. `Gear facts recovered from the file at hydration: N` is the
    tripwire: non-zero exactly once, and **still non-zero after an import means
    the loop is still running.** §12.182.
-   **B5 IS NOT CONFIRMED. The campaign has not run and 432 is unverified.**
+   **432 CONFIRMED ON THE DEVICE, 21 August 13:34**: `gear fields that differ`
+   11 → **0**, `gear by kind` **6 shoes, 4 bikes, 1 unknown**, **1 retired and
+   it carries a date** — decision 3 working on real data — and the tripwire
+   reads **0**, which is the whole proof that the write-through carried the
+   facts back. `Athlete store reads: the database`. §12.182a.
+   **B5's CODE IS CONFIRMED; THE SLICE IS NOT.** The campaign has not run:
+   the rendering, the weather card, the no-weather case, the file-removal
+   rehearsal and a RELEASE launch reading are all outstanding.
+   `docs/DEVICE-CAMPAIGN-B5.md`.
 9. **Then Bruno's list.**
 10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed

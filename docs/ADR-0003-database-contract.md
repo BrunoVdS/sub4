@@ -8962,6 +8962,56 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.182a The device agrees — 21 August 2026, 13:34, patch 432
+
+| | before (431) | after (432) |
+|---|---|---|
+| `gear fields that differ` | **11**, all `kind` | **0** |
+| `gear by kind` | 0 shoes, 0 bikes, **11 unknown** | **6 shoes, 4 bikes, 1 unknown** |
+| `gear the database marks retired` | 0 | **1** |
+| `gear carrying a retirement date` | 0 | **1** |
+| `Gear facts recovered from the file` | — | **0** |
+
+**The tripwire reads zero, and that is the whole proof.** Non-zero was expected
+exactly once; zero on this launch means the write-through carried the recovered
+facts into the rows and the loop is closed. Had it stayed non-zero, 432 would
+have been a plaster.
+
+**And decision 3 works on real data.** One piece of gear is retired, and it
+carries a date — `dateRetiredGear` found the newest activity naming it through
+`activity_gear_reference` and wrote it. That is B5's most speculative decision,
+confirmed on the device rather than in a fixture.
+
+`Athlete store reads: the database` — the sentence that said `until slice B5`
+for eighty-three patches. `Weather store reads: the database`.
+`Hydration at launch: … the activities, the weather, the gear`. 21 migrations,
+`Migrations` identical to `Expected`, integrity ok, 0 orphaned rows,
+protection 7 of 7.
+
+### 12.182a.1 The one kind of gear this device cannot show
+
+**6 shoes, 4 bikes, 1 unknown — and the unknown one is the retired one.**
+`ProgressTabView` renders `activeShoes`, which is the `shoes` array, so it draws
+six items and every one of them has `kind == .shoe`.
+
+**429's wear guard is therefore unreachable on this device.** Bikes and retired
+gear are drawn on no screen at all, and the only unclassified item is retired.
+The guard is proved by test and not by eye, and the campaign records that as
+**not applicable** rather than discovering it half way through — 426's row 9 is
+the precedent for naming an unrunnable row before the run.
+
+### 12.182a.2 The launch figure moved, in Debug
+
+`Bootstrap read` 0.023 → **0.070 s**; the stall 1.046/1.053 → **1.115 s**, with
+`Detail store built` at 0.780 s beginning 0.276 s. **All Debug, and §12.174's
+threshold is 1.0 s in RELEASE**, where the last reading was 0.562/0.641 s.
+
+Two families were added to the launch path and the Debug figures moved by less
+than their own run-to-run spread. **The Release reading is what decides, and the
+campaign takes it.**
+
+---
+
 ## 12.182 The device disagreed, and it was right — patch 432
 
 **First run of B5 on the phone, patch 431, 21 August:**
