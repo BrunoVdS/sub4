@@ -382,6 +382,15 @@ Database screen" has been rejected as too thin twice.
   second reference → `Models 2.swift` → invalid redeclaration. Wrecked the project twice.
   This is a real advantage now: you can add Swift files with `Write` and never touch
   `project.pbxproj`.
+- **NEVER USE XCODE'S "REPLACE CONTAINER" ON THIS APP.** Its **Download
+  Container** silently omits files: on 21 August two downloads seven minutes
+  apart both came back **without the 39 MB database, without live `details/` and
+  `streams/`, and without `athlete.json`, `weather.json`, `notes.json` and
+  `activities.json`** — while the app's own snapshot counted 1380 of 1380 files
+  a minute earlier. **Not the build configuration** (both Debug and Release
+  carry `get-task-allow`) and **not the transfer** (the bundle on the Mac has
+  the same holes). Writing such a download back destroys everything it does not
+  contain. §12.186.
 - **A NEW file needs ⌘Q and a reopen before the app target sees it.** The test target picks
   new files up without one; the app target does not. Patch 317 lost a build to this — forty
   errors, all `cannot find 'AthleteRepository' in scope`.

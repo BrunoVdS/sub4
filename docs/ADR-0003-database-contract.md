@@ -8962,6 +8962,69 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.186 Xcode's container download omits files, and it does it silently — 21 August 2026
+
+B5's campaign step 15 asked for the two legacy files to be moved aside through
+Xcode's container download. **The download is not a copy of the container**, and
+it took two hypotheses and three checks to establish it.
+
+### 12.186.1 It is not the build configuration
+
+The first hypothesis was that a **Release** build is not accessible the way a
+Debug one is. **Disproven directly**: both products carry the entitlement that
+governs exactly this.
+
+```
+Debug   get-task-allow  true
+Release get-task-allow  true
+```
+
+Worth recording because it is the plausible answer and it is wrong, and because
+the check is one command against DerivedData rather than an argument.
+
+### 12.186.2 It is not the transfer either
+
+The second was that the archive had been truncated on its way into this
+conversation. **Also disproven**: the `.xcappdata` bundle **on the Mac**, from a
+second download seven minutes later, has the same holes — 68 MB, 1114 files, and
+`Application Support` containing exactly `commutes.json`, `constants.json`,
+`moves.json` and `snapshots/`.
+
+### 12.186.3 What is missing, and how we know it exists
+
+| | on the device | in the download |
+|---|---|---|
+| the database | 39 MB | **absent** |
+| live `details/` · `streams/` | ~699 · ~672 files | **0 · 0** |
+| `athlete.json` · `weather.json` · `notes.json` · `activities.json` | present | **absent** |
+| snapshot `2026-08-21-123201` | **1380 files**, by the app's own count | **778** |
+
+**`athlete.json` demonstrably exists**: `weatherGearSources()` read eleven pieces
+of gear out of it through the seam, twice, an hour before the download. A file
+the app read cannot be a file the phone lacks.
+
+**The missing set is close to the protected set** — `notes.json`, the database's
+folder, the database file, `details/` and `streams/` are five of
+`FileProtection`'s seven items, and the three files that came through are in
+none of them. It is not an exact fit (`athlete.json` and `weather.json` are not
+named in the list either) and **the cause is not established.** What is
+established is the behaviour, twice, from two downloads.
+
+### 12.186.4 The standing hazard
+
+**Never use Xcode's "Replace Container" on this app.** A download that omits the
+database, both payload folders and four stores, written back over a working
+container, destroys everything it does not contain. The campaign step that
+proposed it is suspended, and the ADR says so before anyone reaches for the
+Devices window again.
+
+**And it changes what a device fixture is for.** §12.160.6 records three patches
+asking for a disposable device; row 19 is the fourth. **The container is not the
+route to one** — which means either a real second device, or the app growing the
+ability to hide its own legacy files.
+
+---
+
 ## 12.185 RULE 14 guarded the wrong copy — 21 August 2026
 
 RULE 14's own comment says it *"does not stop the edit, it stops the edit being
