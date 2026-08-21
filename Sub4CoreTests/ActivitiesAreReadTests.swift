@@ -78,12 +78,13 @@ struct ActivitiesAreReadTests {
         let fed = PersistenceAuthority.hydratedFamilies
         #expect(fed.subtracting(read).isEmpty,
                 "a store fed from a family nobody read hydrates from nothing")
-        // **THE DIRECTION THAT IS ALLOWED TO BE NON-EMPTY, AND ONLY WITH
-        // NAMES.** A bare `!isEmpty` would pass for any slice in flight and for
-        // a family somebody forgot; naming them means 429's flip has to edit
-        // this line and say what it closed.
-        #expect(read.subtracting(fed) == [.weather, .gear],
-                "B5 is in flight — 428 declares the two and 429 feeds them")
+        // **AND 430 EDITED THIS LINE, WHICH IS WHAT NAMING THEM WAS FOR.**
+        // It read `[.details, .traces]` from 394, empty from 398,
+        // `[.weather, .gear]` from 428, and empty again now. Kept as an
+        // inversion each time rather than deleted: the day B6 declares a family
+        // without feeding it, this fails and names it.
+        #expect(read.subtracting(fed).isEmpty,
+                "B5 closed at 430 — a family declared and not fed is the next slice in flight")
     }
 
     // MARK: The read itself

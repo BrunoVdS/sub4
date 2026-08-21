@@ -260,18 +260,25 @@ nonisolated enum PersistenceAuthority {
     /// were. **`DetailStore.init` is what reads this one**, not `Sub4Launch` —
     /// §12.139 measured why. Reversible by deleting them: `details/` and
     /// `streams/` are still written and still complete.
-    /// **PATCH 428 LEAVES THIS LINE ALONE, AND THAT IS THE PATCH.** `.weather`
-    /// and `.gear` are in `Family` and in the bootstrap and are NOT here, so
-    /// **eleven families are read and nine are fed.** That gap is the slice.
-    /// 429 adds the two, and because it adds nothing else, any failure it
-    /// produces is attributable to the flip — 346's four were, 382's three
-    /// were, 398's zero were.
+    /// **PATCH 430 ADDS THE LAST TWO, AND THE PATCH IS THIS LINE.** Everything
+    /// B5 needed was built and switched off across 425–429: the two columns,
+    /// the importer, the comparison, the read, the hydration. **Nothing but
+    /// these two cases changes here**, so any failure the flip produces is
+    /// attributable to the flip — 346's four were, 382's three were, 398's zero
+    /// were.
     ///
-    /// Reversible by deleting them: `weather.json` and `athlete.json` are still
-    /// written and still complete, which is what makes a slice a slice.
+    /// **Eleven read, eleven fed. The ladder's gap closes for the fourth
+    /// time**, and the next one to open is B6's.
+    ///
+    /// Reversible by deleting them, and **by half**: `.gear` alone can go back
+    /// if gear misbehaves on the device, which is why 428 spent two cases on
+    /// one read. `weather.json` and `athlete.json` are still written and still
+    /// complete, which is what makes a slice a slice, and it is why hydration
+    /// must not write.
     static let hydratedFamilies: Set<Family> = [.plan, .extras, .athlete,
                                                 .authored, .decisions, .moves,
-                                                .activities, .details, .traces]
+                                                .activities, .details, .traces,
+                                                .weather, .gear]
 
     /// Whether this build feeds a given store from the database. Asked by the
     /// planner and by nothing else — a second caller would be a second opinion

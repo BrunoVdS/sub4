@@ -170,17 +170,17 @@ struct ActivityHydrationTests {
     /// than deleting it is what makes the change visible in a diff.
     @Test("382 moves both counts")
     func theCountsMoved() {
-        // **428 — AND THE COMMENT BELOW CALLED IT.** B5 declares `.weather`
-        // and `.gear` and feeds neither, so `allCases` moved and
-        // `hydratedFamilies` did not. Eleven read, nine fed; that gap is the
-        // slice, and 429 closes it.
+        // **430 — THE GAP CLOSES FOR THE FOURTH TIME.** 428 declared
+        // `.weather` and `.gear` and fed neither; 429 built the hydration and
+        // still fed neither; this is the line that feeds them. Eleven read,
+        // eleven fed. The next number to move here is B6's.
         #expect(DatabaseBootstrap.fieldCount == 8,
                 "the bootstrap gained ONE field for the two families — one read")
         #expect(PersistenceAuthority.Family.allCases.count == 11)
         // 398 — AND NOW EVERY FAMILY IS FED. The gap 394 opened and 395 kept
         // open closed at the flip: nine declared, nine hydrated. The next
         // number to move here is B5's, and it moves `allCases` first.
-        #expect(PersistenceAuthority.hydratedFamilies.count == 9)
+        #expect(PersistenceAuthority.hydratedFamilies.count == 11)
         // 387 — THE LIST'S COUNT WENT WITH THE LIST. `HydratedStores.all.count
         // == 9` was a hand-kept total that stood at 8 while nine comparisons
         // read a hydrated store; what is left is the fact this test is about,

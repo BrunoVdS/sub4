@@ -781,8 +781,23 @@ final class AthleteStore {
     func hydrate(zones: [HRZone], ftp: Int?) {
         hrZones = Self.separate(zones)
         self.ftp = ftp
-        servedFrom = .partial(fromDatabase: "zones and FTP",
-                              fromFiles: "gear, until slice B5")
+        // **PATCH 430 — THE SENTENCE STOPS NAMING A SLICE THAT HAS LANDED.**
+        //
+        // `hydrate(gear:)` runs after this one and upgrades `servedFrom` to
+        // `.database`, so this value is only ever READ when the gear did not
+        // arrive — and after the flip there are two reasons for that, not one.
+        // Printing `until slice B5` on a device where B5 shipped and the gear
+        // table is simply empty would send a reader to the ladder instead of to
+        // the import. §12.15, and §12.127.5's rule that a sentence about what a
+        // store currently HOLDS cannot be a constant.
+        //
+        // `DetailStore.fill` asks the authority the same way, for the same
+        // reason.
+        servedFrom = .partial(
+            fromDatabase: "zones and FTP",
+            fromFiles: PersistenceAuthority.hydrates(.gear)
+                ? "gear, nothing stored to hydrate from"
+                : "gear, until slice B5")
     }
 
     /// **THE HALF B1 DID NOT TAKE — patch 429, D7 slice B5.**

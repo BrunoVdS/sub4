@@ -39,6 +39,42 @@ struct HydrationDecisionTests {
     // MARK: Fixtures
 
     /// Everything present and readable — the state Bruno's device is in.
+    /// **THE ONE THAT PROVES 430.** `whole()` holds no weather and no gear, so
+    /// the planner withholds both for the legitimate reason — and a test where
+    /// both are nil looks identical before and after the flip. This is the
+    /// fixture with rows in it.
+    @Test("A stocked database feeds both of B5's families")
+    func aStockedDatabaseFeedsBoth() {
+        let reading = ActivityWeather(
+            activityId: "a1", tempC: 21, feelsLikeC: 23, humidity: 83,
+            windKmh: 10, windFromDegrees: 240, precipitationMm: 0,
+            symbolName: "cloud", conditionLabel: "Overcast", samples: 2,
+            fetched: Date(timeIntervalSince1970: 0), source: .openMeteo)
+        let gear = WeatherGearLoad.StoredGear(
+            externalID: "g1", name: "Novablast", distanceM: 534_000,
+            retiredUTC: nil, kind: .shoe, isRetired: false)
+
+        let stocked = DatabaseBootstrap(
+            plan: HydrationFixtures.loadedPlan(),
+            extras: HydrationFixtures.loadedExtras(),
+            athlete: HydrationFixtures.loadedAthlete(),
+            authored: .noneWritten, decisions: .noneRecorded,
+            moves: .loaded(moves: [], skipped: 0),
+            activities: .loaded(activities: [], skipped: 0),
+            weatherGear: .loaded(weather: [reading], gear: [gear], skipped: 0))
+
+        let i = HydrationPlanner.decide(mode: .shadow("B5"), bootstrap: stocked)
+        guard case .hydrate(_, _, _, _, _, _, _, _,
+                            let storedWeather, let storedGear) = i else {
+            Issue.record("every family loaded, so the stores must be fed")
+            return
+        }
+        #expect(storedWeather?.count == 1,
+                "430 is the flip — nil here means hydratedFamilies does not name .weather")
+        #expect(storedGear?.count == 1)
+        #expect(storedGear?.first?.kind == .shoe)
+    }
+
     private func whole() -> DatabaseBootstrap {
         DatabaseBootstrap(plan: HydrationFixtures.loadedPlan(), extras: HydrationFixtures.loadedExtras(),
                           athlete: HydrationFixtures.loadedAthlete(),
@@ -125,12 +161,13 @@ struct HydrationDecisionTests {
             Issue.record("every family loaded, so the stores must be fed")
             return
         }
-        // **PATCH 429 — BOTH NIL, AND THAT IS THE PATCH.** The machinery is
-        // complete and `hydratedFamilies` does not name either family, so the
-        // planner withholds them. 430 inverts these two lines, and because it
-        // changes nothing else, any failure it produces is attributable to it.
-        #expect(storedWeather == nil,
-                "430 is the flip — if this is non-nil, 429 flipped by accident")
+        // **PATCH 430 — THE FLIP, AND THESE TWO LINES ARE IT.** The fixture's
+        // `whole()` bootstrap holds no weather and no gear, so both are still
+        // nil — but now for the OTHER of the two distinct reasons 357 named:
+        // the family read cleanly and holds nothing, rather than the build not
+        // feeding it. `aStockedDatabaseFeedsBoth` below is the one that proves
+        // the flip, because it is the one with rows.
+        #expect(storedWeather == nil, "the fixture holds no weather")
         #expect(storedGear == nil)
 
         // PATCH 358, AND THESE TWO LINES CHANGED MEANING WITHOUT CHANGING.

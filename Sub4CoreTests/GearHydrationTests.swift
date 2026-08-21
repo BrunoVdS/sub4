@@ -84,7 +84,15 @@ struct GearHydrationTests {
     func servedFromBecomesWhole() {
         let s = store()
         s.hydrate(zones: [], ftp: 270)
-        #expect(s.servedFrom.line.contains("until slice B5"))
+        // **430 CHANGED THIS SENTENCE AND THE CHANGE IS THE POINT.** Before the
+        // flip the half-hydrated state had one cause and the line named the
+        // slice. Now it has another — B5 shipped and the gear table is empty —
+        // and naming the slice would send a reader to the ladder instead of to
+        // the import. §12.15, §12.127.5.
+        #expect(!s.servedFrom.line.contains("until slice B5"),
+                "the line names a slice that has landed")
+        #expect(s.servedFrom.line.contains("nothing stored to hydrate from"))
+
         s.hydrate(gear: [stored("s1", kind: .shoe, retired: false)])
         #expect(s.servedFrom.line == "the database")
     }
@@ -131,12 +139,10 @@ struct WeatherHydrationTests {
         #expect(w.servedFrom.line == "the database")
     }
 
-    /// **429 IS THE MACHINERY AND NOT THE FLIP.** 430 inverts these.
-    @Test("Neither family is fed yet")
-    func neitherIsFedYet() {
-        #expect(!PersistenceAuthority.hydrates(.weather))
-        #expect(!PersistenceAuthority.hydrates(.gear))
-        #expect(WeatherStore.shared.servedFrom.line == "the app's own files",
-                "the singleton is on its files until 430")
+    /// **430 IS THE FLIP.**
+    @Test("Both families are fed")
+    func bothAreFed() {
+        #expect(PersistenceAuthority.hydrates(.weather))
+        #expect(PersistenceAuthority.hydrates(.gear))
     }
 }

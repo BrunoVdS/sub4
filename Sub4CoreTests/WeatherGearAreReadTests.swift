@@ -51,25 +51,23 @@ struct WeatherGearAreReadTests {
         #expect(b.weatherGear.gear?.first?.kind == .shoe)
     }
 
-    /// **THE GAP IS THE SLICE.** Named rather than counted: a bare
-    /// `!isEmpty` would pass for any slice in flight and for a family somebody
-    /// forgot to feed.
-    @Test("Eleven families are declared and nine are fed")
-    func elevenReadNineFed() {
+    /// **THE GAP CLOSED AT 430.** Kept as an inversion rather than deleted:
+    /// it read `[.weather, .gear]` from 428 to 429 and reads empty now, and the
+    /// day B6 declares a family without feeding it this fails and names it.
+    @Test("Eleven families are declared and eleven are fed")
+    func elevenReadElevenFed() {
         #expect(PersistenceAuthority.Family.allCases.count == 11)
-        #expect(PersistenceAuthority.hydratedFamilies.count == 9)
+        #expect(PersistenceAuthority.hydratedFamilies.count == 11)
         let unfed = Set(PersistenceAuthority.Family.allCases)
             .subtracting(PersistenceAuthority.hydratedFamilies)
-        #expect(unfed == [.weather, .gear])
+        #expect(unfed.isEmpty, "B5 closed at 430 — a family declared and not fed is the next slice")
     }
 
-    /// **428 IS THE MACHINERY AND NOT THE FLIP**, and this is the assertion
-    /// that says so. 429 inverts it.
-    @Test("Neither family is hydrated yet")
-    func neitherIsHydratedYet() {
-        #expect(!PersistenceAuthority.hydrates(.weather),
-                "429 is the flip — if this fails, 428 did it by accident")
-        #expect(!PersistenceAuthority.hydrates(.gear))
+    /// **430 IS THE FLIP**, and this is the assertion that says so.
+    @Test("Both families are hydrated")
+    func bothAreHydrated() {
+        #expect(PersistenceAuthority.hydrates(.weather))
+        #expect(PersistenceAuthority.hydrates(.gear))
     }
 
     /// Two cases rather than one, so half of B5 can be rolled back. The

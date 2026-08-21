@@ -123,12 +123,10 @@ struct DetailHydrationTests {
     func bothFamiliesAreFed() {
         let read = Set(PersistenceAuthority.Family.allCases)
         let fed = PersistenceAuthority.hydratedFamilies
-        // **428 — THIS IS NO LONGER THE WHOLE-SET ASSERTION AND MUST NOT BE.**
-        // B5 declares `.weather` and `.gear` and feeds neither, so the set
-        // difference is the slice in flight rather than a defect. What this
-        // test is ABOUT is B4's two, so it asks about B4's two.
-        #expect(read.subtracting(fed) == [.weather, .gear],
-                "the only unfed families are B5's, in flight since 428")
+        // 430 — B5 landed and the whole-set assertion is true again. It is
+        // still not what this test is ABOUT, which is B4's two; kept because a
+        // slice in flight is exactly what it would catch.
+        #expect(read.subtracting(fed).isEmpty, "eleven declared, eleven fed")
         #expect(PersistenceAuthority.hydrates(.details))
         #expect(PersistenceAuthority.hydrates(.traces))
         // AND THE LAUNCH STILL DOES NOT NAME THE STORE — the assertion below

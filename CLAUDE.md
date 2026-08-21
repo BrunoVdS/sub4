@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 429 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 430 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -412,9 +412,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 429, 2026-08-21
+## 5. State — patch 430, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 429; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 430; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -430,7 +430,7 @@ code wins and this section is the defect.
 | **D7 B2** — notes, commutes, match decisions, plan moves | done, 355–358 and 377 |
 | **D7 B3** — the activities | **done, 379–383** |
 | **D7 B4** — details, traces | **DONE, 388–398** — `D7-B4-GROUNDWORK.md`, §12.139–§12.142 |
-| **D7 B5** — weather, gear | **425–429 built, NOT flipped** — 430 is the line |
+| **D7 B5** — weather, gear | **FLIPPED AT 430** — 425–429 built it, 430 is the line. **Unverified: the campaign has not run.** |
 | D7 B6 — derived metrics | not started |
 | D7 B7 — reviews | not started, and blocked until a real review exists |
 | D7 B8 — sync cursor, work queue, rejections, revisions | not started |
@@ -444,7 +444,7 @@ Ten lines in the paste say it — the first fact to check when a screen is wrong
 - **the database**: the plan and its trimmings, the constants, the athlete's
   zones and FTP, the notes, the commute decisions, the match decisions, the
   plan moves, the activities, **and the details and traces**
-- **the app's own files**: gear and weather (B5), reviews (B7), the sync
+- **the app's own files**: reviews (B7), the sync
   cursor, work queue and rejection receipts (B8, all `UserDefaults`).
   `AthleteStore` is half-and-half and says so.
 
@@ -843,7 +843,15 @@ run happened. §12.135–§12.150.
    outside the one rule that stops hydrations writing — §12.157.2 again, and
    the pattern is now `func hydrate(?!s\b)\w*\b`. `WeatherStore.servedFrom`
    and `ProgressTabView`'s wear guard are wired now **so the flip stays one
-   line**. §12.179. **430 IS THE FLIP.**
+   line**. §12.179. **430 IS THE FLIP — eleven read, eleven fed**, and one
+   sentence had to change with it: `AthleteStore`'s half-hydrated line said
+   `until slice B5`, which after the flip would send a reader to the ladder
+   instead of to the import (§12.127.5's fifth instance). **The test that
+   proves the flip is the one with ROWS in it** — a fixture holding no weather
+   and no gear withholds both for the legitimate reason and looks identical
+   either side of the line. §12.180.
+   **B5 IS CODE-COMPLETE AND UNVERIFIED — `docs/D7-B5-GROUNDWORK.md` §13 is the
+   campaign, and it is the first B-slice campaign that is not read-only.**
 9. **Then Bruno's list.**
 10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed

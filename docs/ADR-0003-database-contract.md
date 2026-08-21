@@ -8962,6 +8962,72 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.180 D7 slice B5 flips — patch 430
+
+**Two cases into `hydratedFamilies`. Eleven read, eleven fed.** Everything B5
+needed was built and switched off across 425–429 — the two columns, the
+importer, the comparison, the read, the hydration — so **nothing but this line
+changes**, and any failure it produces is attributable to it. 346's four were,
+382's three were, 398's zero were.
+
+**The gap closes for the fourth time**, and the next to open is B6's.
+
+### 12.180.1 One sentence had to change with it, and it was a constant
+
+`AthleteStore.hydrate(zones:ftp:)` set
+`.partial(fromDatabase: "zones and FTP", fromFiles: "gear, until slice B5")`.
+That value is only ever READ when the gear did not arrive — and **after the flip
+there are two reasons for that, not one**: the build does not feed the family,
+or the family read cleanly and holds nothing.
+
+Printing `until slice B5` on a device where B5 shipped and the `gear` table is
+simply empty would send a reader to the ladder instead of to the import.
+§12.127.5's rule — **a sentence about what a store currently HOLDS cannot be a
+constant** — and its fifth instance. The store asks the authority, exactly as
+`DetailStore.fill` does.
+
+### 12.180.2 Five inversions, and one of them has now been rewritten four times
+
+`nothingIsFedThatIsNotRead` has read `[.details, .traces]` from 394, empty from
+398, `[.weather, .gear]` from 428, and empty again now. **Kept as an inversion
+every time rather than deleted**, which is what makes the change visible in a
+diff — and 428 named the families rather than asserting non-emptiness precisely
+so that this patch had to edit the line and say what it closed.
+
+`bothFamiliesAreFed`, `elevenReadNineFed`, `neitherIsHydratedYet` and
+`neitherIsFedYet` invert with it.
+
+### 12.180.3 The test that proves the flip is the one with rows in it
+
+`HydrationDecisionTests`' `whole()` fixture holds no weather and no gear, so the
+planner withholds both — **for the legitimate reason**, and a test where both
+are nil looks identical before and after the flip. That is §12.164's hole in
+miniature: an assertion about the ingredients rather than the function.
+
+`aStockedDatabaseFeedsBoth` is the fixture with a reading and a gear row in it,
+and it is the assertion that fails when the flip is reverted.
+
+**And reverting the flip is caught twice over**: RULE 5 fails first, on two pins
+that still say 11, before the suite runs at all. With the pins moved too, six
+tests across three suites fail. Both were checked rather than assumed.
+
+### 12.180.4 What B5 leaves behind
+
+**`Shoe.primary` is the only approved difference left that is a value.** It has
+no column by patch 324's decision, and 429's uncapped grep found one write and
+zero reads.
+
+`gear.retiredUTC` remains approved for a different and narrower reason since
+427: it is written, and it is derived from the database's own rows with no
+counterpart in the store to walk against.
+
+**B5 is code-complete and unverified.** `docs/D7-B5-GROUNDWORK.md` §13 is the
+campaign, and it is the first B-slice campaign that is not read-only — it
+rehearses file removal, and `athlete.json` is the only copy of the retired-gear
+inference.
+
+---
+
 ## 12.179 The hydration machinery, complete and unreachable — patch 429, D7 slice B5
 
 `WeatherStore.hydrate`, `AthleteStore.hydrate(gear:)`, two hydratable
