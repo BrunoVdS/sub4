@@ -120,10 +120,19 @@ struct HydrationDecisionTests {
                                         bootstrap: whole())
         guard case .hydrate(let plan, let constants, let zones, let ftp,
                             let authored, let decisions,
-                            _, let storedActivities) = i else {
+                            _, let storedActivities,
+                            let storedWeather, let storedGear) = i else {
             Issue.record("every family loaded, so the stores must be fed")
             return
         }
+        // **PATCH 429 — BOTH NIL, AND THAT IS THE PATCH.** The machinery is
+        // complete and `hydratedFamilies` does not name either family, so the
+        // planner withholds them. 430 inverts these two lines, and because it
+        // changes nothing else, any failure it produces is attributable to it.
+        #expect(storedWeather == nil,
+                "430 is the flip — if this is non-nil, 429 flipped by accident")
+        #expect(storedGear == nil)
+
         // PATCH 358, AND THESE TWO LINES CHANGED MEANING WITHOUT CHANGING.
         //
         // At 357b nil had two causes — the build did not hydrate these

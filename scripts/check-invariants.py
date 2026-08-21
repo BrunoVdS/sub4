@@ -715,7 +715,23 @@ PERSISTENCE_VERBS = ["dirty", "save(", "write(to:", "removeItem", "set("]
 #
 # THE RULE CAUGHT THIS REMOVAL, which is the half that is easy to get wrong: a
 # floor that only checks "at least N" reads a deletion as a pass.
-HYDRATING_STORES = 8
+# **PATCH 429 WIDENED THE PATTERN, AND THAT IS THE INTERESTING HALF.**
+# It was `func hydrate\b`, so a hydration named anything longer — `hydrateGear`
+# was the first — matched nothing and was never read for a write. §12.157.2's
+# lesson, which cost three patches over RULE 13's population: **a rule can
+# inherit a grep's blind spot.** The name was fixed too (`hydrate(gear:)`, an
+# overload like every other store's), but the pattern is what stops the next one.
+#
+# 8 -> 10: both new ones are B5's — `WeatherStore.hydrate` and
+# `AthleteStore.hydrate(gear:)`.
+#
+# **AND THE FIRST WIDENING WAS TOO WIDE.** `func hydrate\w*` also matched
+# `PersistenceAuthority.hydrates(_:)`, which is the PREDICATE — it answers
+# "does this build feed that family" and cannot write anything. Counting it
+# would have inflated the floor with a function this rule has no opinion about,
+# which is the same defect in the other direction: a rule reading something it
+# was not written to read. `(?!s\b)` excludes exactly that one name.
+HYDRATING_STORES = 10
 
 
 def no_hydration_writes():
@@ -745,7 +761,7 @@ def no_hydration_writes():
     seen = 0
     for f in app_sources():
         body = strip_comments(f.read_text())
-        for m in re.finditer(r"\n\s*(?:@\w+\s+)*(?:static\s+)?func hydrate\b", body):
+        for m in re.finditer(r"\n\s*(?:@\w+\s+)*(?:static\s+)?func hydrate(?!s\b)\w*\b", body):
             fn = braced(body, body[m.start():m.end()])
             if fn is None:
                 continue

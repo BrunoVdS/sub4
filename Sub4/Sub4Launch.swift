@@ -330,7 +330,7 @@ final class Sub4Launch {
             return outcome
         case .hydrate(let plan, let constants, let zones, let ftp,
                       let authored, let decisions, let storedMoves,
-                      let storedActivities):
+                      let storedActivities, let storedWeather, let storedGear):
             PlanStore.shared.hydrate(from: plan)
             // BEFORE `applyMoves`, NOT AFTER. The plan is corrected FROM this
             // store, so a store hydrated afterwards would be right and the
@@ -383,6 +383,24 @@ final class Sub4Launch {
             if let storedActivities {
                 ActivityStore.shared.hydrate(from: storedActivities)
                 what += ", the activities"
+            }
+            // PATCH 429 — THE MACHINERY, AND IT IS UNREACHABLE UNTIL 430.
+            //
+            // Both nil in this build, for the reason 380's comment gives
+            // above: the planner asks whether this build feeds the family and
+            // this file has no branch of its own. **Both stores are already
+            // constructed by the time this runs** — `WeatherStore.shared` and
+            // `AthleteStore.shared` are touched by `ContentView`'s stored
+            // properties — so hydrating them here costs the launch nothing it
+            // was not already spending. That is what makes them unlike
+            // `DetailStore`, which the note below is about.
+            if let storedWeather {
+                WeatherStore.shared.hydrate(from: storedWeather)
+                what += ", the weather"
+            }
+            if let storedGear {
+                AthleteStore.shared.hydrate(gear: storedGear)
+                what += ", the gear"
             }
             // **THE DETAILS AND THE TRACES ARE NOT HYDRATED FROM HERE, AND
             // 394 IS WHY — patch 395, §12.139.**

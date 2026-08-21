@@ -374,6 +374,31 @@ nonisolated struct DatabaseBootstrap: Sendable {
         return a
     }
 
+    /// **PATCH 429 — D7 slice B5, and both come out of one read.**
+    ///
+    /// Nil for the two distinct reasons every family before them is nil for:
+    /// the build does not feed it (430 is the line), or the read succeeded and
+    /// the table holds nothing. **An empty table hands over nil rather than an
+    /// empty payload**, because hydrating from it would blank the store while
+    /// `weather.json` and `athlete.json` still hold the data — §12.8.1, and the
+    /// same rule that keeps a device between its first launch and its first
+    /// sync from losing its history.
+    var hydratableWeather: [ActivityWeather]? {
+        guard case .loaded(let w, _, _) = weatherGear, !w.isEmpty else { return nil }
+        return w
+    }
+
+    /// **`StoredGear`, NOT `Shoe`, AND THE MAPPING IS THE STORE'S.**
+    /// `DatabaseBootstrap` is `nonisolated` and `Shoe` is nested in a
+    /// main-actor class, so constructing one here is the SE-0434 trap
+    /// CLAUDE.md names — reading a stored property off the main actor works,
+    /// constructing the type does not. The split into shoes, bikes and retired
+    /// belongs with the arrays anyway. `AthleteStore.hydrate(gear:)`.
+    var hydratableGear: [WeatherGearLoad.StoredGear]? {
+        guard case .loaded(_, let g, _) = weatherGear, !g.isEmpty else { return nil }
+        return g
+    }
+
     // **THE TWO HYDRATABLES THAT WERE HERE MOVED INTO `DetailStore` — 395.**
     //
     // Their rule did not change and is not lost: a clean read of an empty
@@ -638,7 +663,15 @@ nonisolated enum HydrationPlanner {
                      // reasons: this build does not feed the family (381 is
                      // the line), or the table read cleanly and holds nothing.
                      // The plan and the athlete are still all-or-nothing.
-                     activities: [Activity]?)
+                     activities: [Activity]?,
+                     // PATCH 429 — D7 slice B5, the fifth and sixth. Nil for
+                     // those same two distinct reasons, and they are two
+                     // parameters rather than one because `hydratedFamilies`
+                     // names two cases: rolling back half of B5 has to reach
+                     // this far, or the two-character edit stops one line
+                     // short of doing anything.
+                     weather: [ActivityWeather]?,
+                     gear: [WeatherGearLoad.StoredGear]?)
     }
 
     /// ORDER MATTERS AND IT IS THE POINT.
@@ -685,7 +718,15 @@ nonisolated enum HydrationPlanner {
                 // opposite places, and one combined check would collapse them
                 // into one nil.
                 activities: PersistenceAuthority.hydrates(.activities)
-                    ? bootstrap.hydratableActivities : nil)
+                    ? bootstrap.hydratableActivities : nil,
+                // PATCH 429. FALSE IN THIS BUILD, AND THAT IS THE PATCH —
+                // `hydratedFamilies` does not name `.weather` or `.gear` until
+                // 430, so the machinery below is complete and unreachable.
+                // Asked SEPARATELY, so half of B5 can be rolled back.
+                weather: PersistenceAuthority.hydrates(.weather)
+                    ? bootstrap.hydratableWeather : nil,
+                gear: PersistenceAuthority.hydrates(.gear)
+                    ? bootstrap.hydratableGear : nil)
         }
         return .leaveOnFiles(
             .nothingStored(bootstrap.firstEmpty ?? "a family this build does not name"))

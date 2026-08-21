@@ -785,6 +785,50 @@ final class AthleteStore {
                               fromFiles: "gear, until slice B5")
     }
 
+    /// **THE HALF B1 DID NOT TAKE — patch 429, D7 slice B5.**
+    ///
+    /// Unreachable until the flip: `hydratedFamilies` does not name `.gear`,
+    /// so the planner hands nil and this is never called. Written now so the
+    /// flip is one line somewhere else, which is what made 346's four failures
+    /// attributable. §12.103.
+    ///
+    /// **THE THREE ARRAYS ARE REBUILT FROM `kind` AND `isRetired`**, which is
+    /// the whole of what 425–427 were for: before them a `gear` row could not
+    /// say which array it belonged in, and this function could not have been
+    /// written at all.
+    ///
+    /// **`primary` BECOMES FALSE FOR EVERYTHING, AND NOTHING READS IT.**
+    /// `Shoe.primary` is set by the endpoint parse and consulted by no view,
+    /// no calculation and no diagnostic — an uncapped grep at 429 found one
+    /// write and zero reads. It is Strava's answer to "which pair is the
+    /// default", it has no column by decision (patch 324's approved
+    /// difference), and hydrating cannot invent one. Said out loud because a
+    /// field that quietly changes value at a flip is exactly what a read-back
+    /// is for, and this one is invisible to it.
+    ///
+    /// **ORDER: `.shoe` LAST.** Retirement outranks kind — a retired bike is
+    /// retired first — and `.unknown` goes to `shoes` because that is where
+    /// `allGear` has always put unclassified gear, with `wearIsMeaningful`
+    /// stopping the wear bar rather than the array stopping it.
+    ///
+    /// IT DOES NOT WRITE — see `PlanStore.hydrate`.
+    func hydrate(gear stored: [WeatherGearLoad.StoredGear]) {
+        var s: [Shoe] = [], b: [Shoe] = [], r: [Shoe] = []
+        for row in stored {
+            let shoe = Shoe(id: row.externalID, name: row.name,
+                            distanceM: row.distanceM, primary: false,
+                            kind: row.kind, retired: row.isRetired)
+            if row.isRetired { r.append(shoe) }
+            else if row.kind == .bike { b.append(shoe) }
+            else { s.append(shoe) }
+        }
+        shoes = s; bikes = b; retired = r
+        // **WHOLE AT LAST.** B1 took the zones and the FTP and said so; this is
+        // the sentence that had `until slice B5` in it for eighty-three
+        // patches.
+        servedFrom = .database
+    }
+
     /// **WHAT THE LAST READ OF `athlete.json` FOUND — patch 418, §12.163.**
     ///
     /// This store and `AthleteConstants` were the two `UNPROTECTED_STORE_CEILING`

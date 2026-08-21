@@ -4144,6 +4144,11 @@ struct DatabaseHealthView: View {
         // fed yet. 380's argument one slice later: a store with no line cannot
         // be told from a store nobody wired in (§12.54.2), and the line has to
         // exist BEFORE the thing it reports on. They say the files until 395.
+        // PATCH 429 — THE ELEVENTH STORE LINE, AND THE FAMILY IS NOT FED YET.
+        // 380's argument one slice later: a store with no line cannot be told
+        // from a store nobody wired in (§12.54.2), and the line has to exist
+        // BEFORE the thing it reports on. It says the files until 430.
+        l.append("Weather store reads: \(WeatherStore.shared.servedFrom.line)")
         l.append("Detail store reads: \(DetailStore.shared.detailsServedFrom.line)")
         l.append("Trace store reads: \(DetailStore.shared.tracesServedFrom.line)")
         return l

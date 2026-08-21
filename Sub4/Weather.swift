@@ -252,6 +252,28 @@ final class WeatherStore {
     static let shared = WeatherStore()
 
     private(set) var byActivity: [String: ActivityWeather] = [:]
+
+    /// **WHERE THIS STORE'S READINGS CAME FROM — patch 429, D7 slice B5.**
+    ///
+    /// Every other store in the ladder has had one of these since its own
+    /// slice, and `The file` prints ten of them. Weather had none, because
+    /// until B5 there was only ever one answer. **The flip is what makes the
+    /// question askable, so the line has to exist BEFORE the flip** — a store
+    /// with no line cannot be told from a store nobody wired in, and the line
+    /// has to exist before the thing it reports on. 380's argument, one slice
+    /// later. §12.54.2.
+    private(set) var servedFrom: StoreSource = .files
+
+    /// D7 slice B5. Replaces the readings with the database's.
+    ///
+    /// IT DOES NOT WRITE — see `NotesStore.hydrate(from:)`. `weather.json` is
+    /// still written by every fetch and is still complete, which is what makes
+    /// the slice reversible by deleting one case from `hydratedFamilies`.
+    func hydrate(from stored: [ActivityWeather]) {
+        byActivity = Dictionary(stored.map { ($0.activityId, $0) },
+                                uniquingKeysWith: { first, _ in first })
+        servedFrom = .database
+    }
     /// Ids whose fetch failed this session.
     ///
     /// IN MEMORY ONLY, AND THAT IS A CORRECTION.

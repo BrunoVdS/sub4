@@ -134,7 +134,7 @@ struct ActivityHydrationTests {
 
         switch HydrationPlanner.decide(mode: .shadow("B3 — a test"),
                                        bootstrap: b) {
-        case .hydrate(_, _, _, _, _, _, _, let storedActivities):
+        case .hydrate(_, _, _, _, _, _, _, let storedActivities, _, _):
             #expect(!isNil(storedActivities),
                     "the payload travels once the family is fed")
             #expect(storedActivities?.count == 1)
@@ -154,7 +154,7 @@ struct ActivityHydrationTests {
 
         switch HydrationPlanner.decide(mode: .shadow("B3 — a test"),
                                        bootstrap: b) {
-        case .hydrate(_, _, _, _, _, _, _, let storedActivities):
+        case .hydrate(_, _, _, _, _, _, _, let storedActivities, _, _):
             #expect(isNil(storedActivities),
                     "the build wants the family and the table holds nothing")
         case .leaveOnFiles:

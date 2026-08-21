@@ -511,15 +511,38 @@ struct ProgressTabView: View {
         }
     }
 
+    /// **THE WEAR BAR IS FOR SHOES — patch 429, and the flip is why it is now.**
+    ///
+    /// 600 and 800 km describe a running shoe; on a bicycle they are
+    /// meaningless and on gear whose kind nobody recorded they are a guess.
+    /// Patch 267 split `bikes` into its own array for exactly that reason, and
+    /// until 425 the reason could not be read from a `Shoe`.
+    ///
+    /// **Latent until B5 and reachable after it.** This section renders
+    /// `activeShoes`, which is the `shoes` array — and once
+    /// `AthleteStore.hydrate(gear:)` rebuilds that array from rows, an item of
+    /// `.unknown` kind lands in it. Wiring the guard in the patch BEFORE the
+    /// flip is what keeps the flip attributable.
     private func shoeRow(_ shoe: AthleteStore.Shoe) -> some View {
-        let tint = Self.shoeTint(shoe.wear)
+        // **NOT `shoe.wear` DIRECTLY.** A bike or an unclassified item keeps
+        // its distance, loses the verdict, and the tint goes with it — an
+        // amber "worn" on a bicycle at 600 km would be a judgement nothing
+        // supports.
+        let meaningful = shoe.wearIsMeaningful
+        let tint = meaningful ? Self.shoeTint(shoe.wear) : Color.dim
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Text(shoe.name).font(.caption).foregroundStyle(Color.ink)
                     .lineLimit(1)
-                if let word = Self.shoeWord(shoe.wear) {
+                if meaningful, let word = Self.shoeWord(shoe.wear) {
                     Text(word).font(.caption2.weight(.bold))
                         .foregroundStyle(tint)
+                } else if !meaningful {
+                    // SAYS WHAT IT IS RATHER THAN GOING QUIET — §12.54.2. A row
+                    // with no bar and no word cannot be told from a row the
+                    // layout dropped.
+                    Text(shoe.kindLabel).font(.caption2)
+                        .foregroundStyle(Color.dim)
                 }
                 Spacer(minLength: 4)
                 Text("\(Int(shoe.km)) km")
@@ -529,7 +552,12 @@ struct ProgressTabView: View {
             // TrackBar, not ProgressView — wear is a magnitude against a
             // budget, not a completion count, and the tint IS the state here,
             // which is exactly the job TrackBar was extracted for.
-            TrackBar(fraction: shoe.wearFraction, tint: tint)
+            //
+            // ABSENT rather than empty when the wear means nothing: a bar at
+            // zero is a claim that the gear is new.
+            if meaningful {
+                TrackBar(fraction: shoe.wearFraction, tint: tint)
+            }
         }
     }
 

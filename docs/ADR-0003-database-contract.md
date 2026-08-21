@@ -8962,6 +8962,78 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.179 The hydration machinery, complete and unreachable — patch 429, D7 slice B5
+
+`WeatherStore.hydrate`, `AthleteStore.hydrate(gear:)`, two hydratable
+accessors, two planner parameters and two calls in `Sub4Launch`. **All of it
+dead in this build**, because `hydratedFamilies` names neither family. 430 is
+the line.
+
+### 12.179.1 The store owns the mapping, and SE-0434 is why
+
+`hydratableGear` hands over `[StoredGear]` rather than `[Shoe]`.
+`DatabaseBootstrap` is `nonisolated` and `Shoe` is nested in a main-actor
+class — **reading a stored property off the main actor works; constructing the
+type does not**, CLAUDE.md's rule and its sixth instance here. The split into
+shoes, bikes and retired belongs with the arrays anyway.
+
+**And that function could not have been written before 425–427.** Until `kind`
+and `isRetired` existed a `gear` row could not say which array it belonged in.
+That is the whole of what those three patches bought, and this is the first
+thing to spend it.
+
+**Retirement outranks kind.** A retired bike is retired first, or it sits in
+`bikes` and reads as gear the athlete still owns. `.unknown` goes to `shoes`,
+because that is where `allGear` has always put unclassified gear — and
+`wearIsMeaningful` is what withholds the verdict, rather than the array doing
+it.
+
+### 12.179.2 `primary` becomes false for everything, and nothing reads it
+
+Hydrated gear cannot carry `Shoe.primary`: it has no column, by patch 324's
+approved decision. **An uncapped grep found one write and zero reads** — the
+endpoint parse sets it and no view, calculation or diagnostic consults it.
+
+Said out loud because **a field that quietly changes value at a flip is exactly
+what a read-back is for, and this one is invisible to it.** The comparison does
+not walk `primary` — that is what "approved" means — so nothing would have
+reported the change. It is harmless because of the grep, not because of the
+design.
+
+### 12.179.3 Two things wired now precisely so the flip is one line
+
+- **`WeatherStore.servedFrom`.** Every other store in the ladder has had one
+  since its own slice and `The file` prints ten; weather had none, because until
+  B5 there was only ever one answer. **The line has to exist before the thing it
+  reports on** — 380's argument, one slice later. It says the files until 430.
+- **`ProgressTabView`'s wear bar is guarded.** That section renders
+  `activeShoes`, which is the `shoes` array, and once `hydrate(gear:)` rebuilds
+  it from rows an `.unknown` item lands in it. The bar is **absent** rather than
+  zero — a bar at zero is a claim that the gear is new — and the row says
+  `Kind not known` rather than going quiet (§12.54.2).
+
+### 12.179.4 RULE 8 could not see `hydrateGear`, and that is the patch's real find
+
+The rule matched `func hydrate\b`. **`\b` after `hydrate` excludes
+`hydrateGear`**, so the first draft's function was never read for a write at
+all — a hydration outside the one rule that exists to keep hydrations from
+writing.
+
+§12.157.2's lesson exactly, which cost three patches over RULE 13's population:
+**a grep counts appearances, not declarations, and a rule can inherit that.**
+
+Fixed twice over. The function is now `hydrate(gear:)`, an overload like every
+other store's, and **the pattern is `func hydrate(?!s\b)\w*\b`** so the next
+`hydrateSomething` cannot hide either.
+
+**And the first widening was too wide.** `func hydrate\w*` also matched
+`PersistenceAuthority.hydrates(_:)`, which is the PREDICATE — it answers *does
+this build feed that family* and cannot write anything. Counting it would have
+inflated the floor with a function the rule has no opinion about: the same
+defect in the other direction. `HYDRATING_STORES` is 10, and all ten are real.
+
+---
+
 ## 12.178 The machinery, and the gap that is the slice — patch 428, D7 slice B5
 
 **Eleven families declared, nine fed.** The bootstrap reads weather and gear on
