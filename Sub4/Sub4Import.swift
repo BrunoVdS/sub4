@@ -86,6 +86,14 @@ nonisolated enum Sub4Import {
         /// Activities naming gear the athlete profile does not hold. Counted
         /// rather than refused: a missing shoe is not a reason to lose a run.
         var gearUnresolved = 0
+        /// Retired gear whose last-use date was written or moved — patch 426.
+        var gearRetirementDated = 0
+        /// **RETIRED GEAR THIS RUN COULD NOT DATE, AND IT IS NOT A FAILURE.**
+        /// No activity this app holds names the item, so the newest one does
+        /// not exist. Counted rather than left as an absent line: a retirement
+        /// with no date and a retirement nobody looked for read alike
+        /// otherwise (§12.54.2), and `isRetired` still says the gear is gone.
+        var gearRetirementUndated = 0
 
         // Patch 225 — the authored stores. Counted separately because losing a
         // note and losing an activity are not the same loss: one can be
@@ -374,6 +382,12 @@ nonisolated enum Sub4Import {
                      + "\(activitiesInserted) new, \(activitiesUpdated) refreshed")
             l.append("  gear: \(gearInserted) new, \(gearAlreadyPresent) known, "
                      + "\(gearRefreshed) refreshed, \(gearUnresolved) unresolved")
+            // UNCONDITIONAL — patch 426. Zero retired gear is the state this
+            // athlete may well be in, and it must not read like a line nobody
+            // wired in.
+            l.append("  retired gear: \(gearRetirementDated) dated from an "
+                     + "activity, \(gearRetirementUndated) with no activity "
+                     + "to date them by")
             l.append("  notes: \(notesSeen) seen, \(notesImported) new, "
                      + "\(notesUpdated) refreshed, \(notesRemoved) removed")
             l.append("  reviews: \(reviewsSeen) seen, \(reviewsImported) new, "
@@ -589,6 +603,12 @@ nonisolated enum Sub4Import {
                                   now: now, into: &report)
                 }
 
+                // AFTER THE ACTIVITIES, AND HERE THE ORDER IS THE WHOLE
+                // MECHANISM — patch 426. The date is the newest activity
+                // naming the gear, and on a first run those activities are
+                // written by the loop immediately above.
+                try dateRetiredGear(d, shoes: shoes, into: &report)
+
                 // AFTER the activities, and it does not currently matter — a
                 // note references its plan session, not an activity, and
                 // `activityID` is left NULL for the matcher to fill. Ordered
@@ -762,8 +782,14 @@ nonisolated enum Sub4Import {
                                    into report: inout Report) throws -> [String: String] {
         var map: [String: String] = [:]
         for shoe in shoes {
+            // PATCH 426 — the two facts 425 mapped. `kind` falls back to
+            // `unknown` and NOT to `shoe`: a store that does not know must not
+            // teach the database something it invented. §12.176.
+            let kind = (shoe.kind ?? .unknown).rawValue
+            let isRetired = shoe.retired ?? false
+
             if let row = try Row.fetchOne(d, sql: """
-                SELECT id, name, distanceM FROM gear
+                SELECT id, name, distanceM, kind, isRetired FROM gear
                 WHERE accountID = ? AND sourceID = ? AND externalID = ?
                 """, arguments: [accountID, sourceID, shoe.id]),
                let existing = row["id"] as String? {
@@ -776,23 +802,101 @@ nonisolated enum Sub4Import {
                 // that cannot go quiet cannot report that the refresh stopped.
                 let sameName = (row["name"] as String?) == shoe.name
                 let sameDistance = (row["distanceM"] as Double?) == shoe.distanceM
-                if !sameName || !sameDistance {
+                // **THE FIRST IMPORT AFTER 426 REFRESHES ALMOST EVERY ROW, AND
+                // THAT IS THE POINT.** Every existing row reads `unknown` and
+                // `false`, and the store now knows better for most of them. A
+                // refresh that left them alone would leave the migration's
+                // honest defaults standing as if they were answers.
+                let sameKind = (row["kind"] as String?) == kind
+                let sameRetired = (row["isRetired"] as Bool?) == isRetired
+                if !sameName || !sameDistance || !sameKind || !sameRetired {
                     try d.execute(sql: """
-                        UPDATE gear SET name = ?, distanceM = ? WHERE id = ?
-                        """, arguments: [shoe.name, shoe.distanceM, existing])
+                        UPDATE gear SET name = ?, distanceM = ?, kind = ?,
+                                        isRetired = ?
+                        WHERE id = ?
+                        """, arguments: [shoe.name, shoe.distanceM, kind,
+                                          isRetired, existing])
                     report.gearRefreshed += 1
                 }
                 continue
             }
             let id = UUID().uuidString
             try d.execute(sql: """
-                INSERT INTO gear (id, accountID, sourceID, externalID, name, distanceM)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """, arguments: [id, accountID, sourceID, shoe.id, shoe.name, shoe.distanceM])
+                INSERT INTO gear (id, accountID, sourceID, externalID, name,
+                                  distanceM, kind, isRetired)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [id, accountID, sourceID, shoe.id, shoe.name,
+                                  shoe.distanceM, kind, isRetired])
             map[shoe.id] = id
             report.gearInserted += 1
         }
         return map
+    }
+
+    /// **WHEN A RETIRED PIECE OF GEAR WAS LAST USED — patch 426, §12.176.**
+    ///
+    /// B5's decision 3. Strava reports no retirement date and there is no
+    /// reason to think one exists: gear stops being listed, and that is all
+    /// that ever happens. So the date is a fact this app owns — the newest
+    /// activity naming the item — rather than a timestamp recording when the
+    /// app happened to look, which is what "the day we noticed" would be
+    /// (§12.15 as a date).
+    ///
+    /// **IT JOINS THROUGH `activity_gear_reference`, NOT `activity.gearID`,
+    /// AND THAT IS THE TABLE'S STATED PURPOSE.** Its index on
+    /// `(sourceID, externalID)` was created at patch 216 to answer *"which
+    /// activities used b6932581"* — "the question that produced this table,
+    /// and the one asked when the bikes are eventually fetched and the
+    /// references become resolvable." This is that question. It is also the
+    /// robust join: the reference is written for every activity naming gear,
+    /// resolved or not, so it survives the case §12's own comment describes —
+    /// 474 activities imported with a null `gearID` because the first run
+    /// happened before the shoe list had refreshed.
+    ///
+    /// **IT MAY NEVER WRITE NULL OVER A VALUE**, and TWO things stop it —
+    /// which is worth writing down, because only one of them was designed to.
+    ///
+    /// `Sub4Import.run(activities: [])` is a real call; the authored
+    /// write-through makes it on every note, decision and move. A plain
+    /// assignment would find no activities and erase a correct date on an
+    /// import that was not about gear at all.
+    ///
+    /// 1. **The `guard let newest` below is the protection.** No maximum, no
+    ///    statement, and the run is counted as undated instead.
+    /// 2. **The `retiredUTC <> ?` clause protects it as well, by accident.**
+    ///    With a NULL parameter, `retiredUTC <> NULL` is NULL and
+    ///    `retiredUTC IS NULL` is false, so the `WHERE` matches nothing.
+    ///    **That clause is there for the COUNTER** — `gearRetirementDated`
+    ///    must mean *moved*, not *touched*, for `gearRefreshed`'s reason — and
+    ///    its NULL-safety is three-valued logic rather than intent.
+    ///
+    /// Said out loud because a test that passes under either cannot tell them
+    /// apart, and `aGearOnlyImportDoesNotEraseTheDate` is exactly that test.
+    private static func dateRetiredGear(_ d: Database,
+                                        shoes: [AthleteStore.Shoe],
+                                        into report: inout Report) throws {
+        for shoe in shoes where shoe.retired == true {
+            let newest = try String.fetchOne(d, sql: """
+                SELECT MAX(a.startUTC)
+                FROM activity_gear_reference r
+                JOIN activity a ON a.id = r.activityID
+                WHERE r.sourceID = ? AND r.externalID = ?
+                """, arguments: [sourceID, shoe.id])
+            guard let newest else {
+                report.gearRetirementUndated += 1
+                continue
+            }
+            // Only when it MOVED, for `gearRefreshed`'s reason: a counter that
+            // cannot go quiet cannot report that the pass stopped working.
+            try d.execute(sql: """
+                UPDATE gear SET retiredUTC = ?
+                WHERE accountID = ? AND sourceID = ? AND externalID = ?
+                  AND (retiredUTC IS NULL OR retiredUTC <> ?)
+                """, arguments: [newest, accountID, sourceID, shoe.id, newest])
+            // `changesCount` is SQLite's own answer to "did that statement
+            // move anything", which is exactly what the counter means.
+            if d.changesCount > 0 { report.gearRetirementDated += 1 }
+        }
     }
 
     // MARK: One activity

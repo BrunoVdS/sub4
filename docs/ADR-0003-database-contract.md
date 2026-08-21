@@ -8962,6 +8962,93 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.176 The importer is told, at last — patch 426, D7 slice B5
+
+`importGear` writes `kind` and `isRetired`, and a pass after the activity loop
+writes `retiredUTC`. **Three things came out of investigating it that the
+prompt did not contain, and two of them changed the patch.**
+
+### 12.176.1 425 mapped half the fact
+
+Retirement is flattened by **the same line** as the kind — `s.gear = allGear` —
+and 425 carried only the kind. A `Shoe` from `retired` reached `importGear`
+indistinguishable from one in `shoes`.
+
+`Shoe.retired: Bool?` is the other half, treated identically: optional for the
+decode hazard, `nil` meaning *a file written before this patch*, recovered by
+`loadFromCache` from which key it decoded from. **A new migration,
+`2026-08-21-gear-retired`, rather than an edit to `2026-08-21-gear-kind`** — a
+migration is history and CLAUDE.md's rule has no exception for *it has probably
+not run yet*.
+
+### 12.176.2 Why a boolean when there is already a date
+
+**Because WHETHER and WHEN come apart, twice.**
+
+1. **A derived date can be unknown.** Retired gear with no surviving activity
+   yields no maximum. With the date as the only marker, *retired, last use
+   unknown* and *not retired* would be the same NULL — §12.15, and this project
+   has paid for that exact collision at §12.15, §12.54.2, §12.153.9 and §12.155.
+2. **A derived value is recomputed.** `Sub4Import.run(activities: [])` is a real
+   call that the authored write-through makes on every note, decision and move.
+   A plain assignment would find no activities and **destroy a correct date on
+   an import that was not about gear at all.**
+
+`isRetired` is stated rather than derived, so nothing can recompute it away.
+
+### 12.176.3 The join is the one `activity_gear_reference` was built for
+
+Not `activity.gearID`. The reference table's index on `(sourceID, externalID)`
+was created at patch 216 to answer *"which activities used b6932581"* — its own
+comment calls that "the question that produced this table, and the one asked
+when the bikes are eventually fetched and the references become resolvable."
+**This is that question**, ten patches later.
+
+It is also the robust join. The reference is written for **every** activity
+naming gear, resolved or not, so it survives the case §12's own comment
+describes: 474 activities imported with a null `gearID` because the first run
+happened before the shoe list had refreshed.
+`theReferenceSurvivesTheOrdering` is that case as a test.
+
+### 12.176.4 TWO guards stop the erasure and only one was designed to
+
+Found by sabotage. Removing the `WHERE retiredUTC <> ?` clause changed nothing,
+because the `guard let newest else { continue }` above it had already returned.
+
+**And the clause protects it as well, by accident.** With a NULL parameter,
+`retiredUTC <> NULL` is NULL and `retiredUTC IS NULL` is false, so the `WHERE`
+matches nothing. **The clause is there for the COUNTER** —
+`gearRetirementDated` must mean *moved* and not *touched*, for `gearRefreshed`'s
+reason — and its NULL-safety is three-valued logic rather than intent.
+
+`aGearOnlyImportDoesNotEraseTheDate` passes under either, so **it cannot say
+which**, and it says so. 409's control 4 is the precedent: a control that does
+not discriminate is worth keeping and worth labelling. The one that notices is
+`retiredGearWithNoActivityIsStillRetired`, through the counter.
+
+### 12.176.5 And the second sabotage found a hole rather than confirming a guard
+
+Deleting the retirement half of `kinded` left **every test green**, because all
+of them passed `retired:` explicitly. The path a device takes is
+`athlete.json` → `loadFromCache` → `allGear` → the importer, and the fact is
+array membership until the first of those.
+`retirementSurvivesTheFile` drives that whole path with a pre-425 file
+containing no `kind` or `retired` key at all. **§12.164's lesson again — ask the
+function, not its ingredients — and this time sabotage is what asked it.**
+
+### 12.176.6 The first import after this refreshes almost every gear row
+
+Every existing row reads `unknown` and `false`. The refresh compares both new
+columns, so it corrects them — and `gearRefreshed` will be large exactly once.
+**A refresh that left them alone would leave the migration's honest defaults
+standing as if they were answers.**
+
+`retired gear: N dated from an activity, M with no activity to date them by`
+prints unconditionally. Zero retired gear is a state this athlete may well be
+in, and it must not read like a line nobody wired in.
+
+---
+
 ## 12.175 The mapping for gear's kind — patch 425, D7 slice B5
 
 **The §12 mapping, written before the importer** — this project's rule, and

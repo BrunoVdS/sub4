@@ -66,8 +66,14 @@ final class AthleteStore {
     /// real case: `retired` holds items whose kind is genuinely `.unknown` and
     /// may one day hold one resolved from a source that knew. Filling only
     /// `nil` is what makes this safe to run on every load.
-    nonisolated static func kinded(_ list: [Shoe], _ kind: GearKind) -> [Shoe] {
-        list.map { $0.kind == nil ? $0.withKind(kind) : $0 }
+    nonisolated static func kinded(_ list: [Shoe], _ kind: GearKind,
+                                   retired: Bool) -> [Shoe] {
+        list.map {
+            var out = $0
+            if out.kind == nil { out.kind = kind }
+            if out.retired == nil { out.retired = retired }
+            return out
+        }
     }
     private(set) var lastFetch: Date?
     private(set) var lastError: String?
@@ -214,6 +220,23 @@ final class AthleteStore {
         /// returns no type, so retired gear arrives untyped. §12.15.
         var kind: GearKind?
 
+        /// **WHETHER THIS GEAR IS STILL HELD — patch 426, §12.176.**
+        ///
+        /// Flattened by the same line as `kind`: membership of `retired` is the
+        /// fact, and `allGear` concatenates the three arrays before anything
+        /// downstream can see which one an item came from. 425 carried the kind
+        /// and left this behind.
+        ///
+        /// Optional for `kind`'s reason — a synthesised `init(from:)` ignores
+        /// Swift defaults — and `nil` means the same thing: a file written
+        /// before this patch, whose answer is recoverable from which key it
+        /// decoded from.
+        ///
+        /// **IT IS STATED, NOT DERIVED.** `gear.retiredUTC` is computed from
+        /// the activities naming this gear and can be unknown; this cannot.
+        /// The two come apart, which is why the database has both.
+        var retired: Bool?
+
         var km: Double { distanceM / 1000 }
 
         /// Running shoes are usually retired somewhere in 600–800 km. The range
@@ -261,6 +284,13 @@ final class AthleteStore {
             var out = self
             out.kind = k
             return out
+        }
+
+        /// **WHAT A SCREEN SHOULD SAY ABOUT THIS ITEM.** Unconditional, and
+        /// `unknown` says so rather than going quiet — §12.54.2.
+        nonisolated var kindLabel: String {
+            let base = (kind ?? .shoe).label
+            return (retired ?? false) ? "\(base) · retired" : base
         }
 
         // MARK: Self-test
@@ -514,7 +544,12 @@ final class AthleteStore {
                     // running thresholds on a bicycle — and would be right most
                     // of the time, which is what makes it dangerous rather than
                     // merely wrong. §12.132's third bucket, printed.
-                    kind: .unknown)
+                    kind: .unknown,
+                    // **TRUE BY CONSTRUCTION.** `resolveRetiredGear` is the
+                    // only caller and it asks only about ids that activities
+                    // name and the profile no longer holds. Reaching this line
+                    // IS the retirement.
+                    retired: true)
     }
 
     nonisolated static func refreshProblems(zones: Int, gear: Int) -> [String] {
@@ -641,7 +676,11 @@ final class AthleteStore {
                      name: $0.name ?? fallbackName,
                      distanceM: $0.distance ?? 0,
                      primary: $0.primary ?? false,
-                     kind: kind)
+                     kind: kind,
+                     // Anything this endpoint lists is gear the athlete still
+                     // holds. Retirement is the absence from this response and
+                     // nothing else — there is no flag to read.
+                     retired: false)
             }
         }
         return (shoes: gear(a.shoes, fallbackName: "Shoe", kind: .shoe),
@@ -751,14 +790,15 @@ final class AthleteStore {
         // So the same rule applies on the way out of the cache as on the way
         // out of the endpoint, and no file needs rewriting for the database to
         // learn what it already knew. `kinded` leaves a kind that IS set alone.
-        shoes = Self.kinded(c.shoes, .shoe)
+        shoes = Self.kinded(c.shoes, .shoe, retired: false)
         // Absent in every file written before patch 267, which is the whole
         // reason the column is optional. Empty until the next refresh.
-        bikes = Self.kinded(c.bikes ?? [], .bike)
+        bikes = Self.kinded(c.bikes ?? [], .bike, retired: false)
         // NOT `.shoe`. Retired gear is the one list whose kind was never known
         // — see `fetchGear` — so an item that arrived without one keeps
-        // `.unknown` rather than being told what it was.
-        retired = Self.kinded(c.retired ?? [], .unknown)
+        // `.unknown` rather than being told what it was. The retirement,
+        // though, is exactly what this array means.
+        retired = Self.kinded(c.retired ?? [], .unknown, retired: true)
         lastFetch = c.fetched
         ftp = c.ftp
     }

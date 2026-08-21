@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 425 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 426 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -412,9 +412,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 425, 2026-08-21
+## 5. State — patch 426, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 425; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 426; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -808,8 +808,18 @@ run happened. §12.135–§12.150.
    every `athlete.json` on disk. **`nil` is not `unknown`**: nil is a pre-425
    file whose kind is recoverable from which array it decoded from, and
    `loadFromCache` recovers it. `wearIsMeaningful` is new and false for bikes
-   and unknowns. **Nothing writes the column yet — 426 is the importer.**
-   §12.175.
+   and unknowns. **426 IS THE IMPORTER AND IT FOUND THAT 425 MAPPED HALF THE
+   FACT** — retirement is flattened by the same `allGear` line, so `Shoe`
+   gained `retired: Bool?` and `2026-08-21-gear-retired` adds `gear.isRetired`.
+   **WHETHER and WHEN come apart**: a derived date can be unknown, and
+   `Sub4Import.run(activities: [])` — which the authored write-through makes on
+   every note — would recompute it to NULL and destroy it. `retiredUTC` is the
+   newest activity naming the gear, joined through **`activity_gear_reference`,
+   the question its 216 index was built to answer**, which also survives an
+   activity imported before its gear. **Sabotage found a hole rather than
+   confirming a guard**: deleting the retirement half of `kinded` left every
+   test green until `retirementSurvivesTheFile` drove the real path.
+   §12.175, §12.176.
 9. **Then Bruno's list.**
 10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed

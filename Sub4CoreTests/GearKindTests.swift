@@ -123,7 +123,7 @@ struct GearKindModelTests {
     /// fact is not gone, it is in which key the item decoded from.
     @Test("A pre-425 file recovers its kinds from the arrays it decoded from")
     func aPreExistingFileKeepsItsKind() {
-        let kinded = AthleteStore.kinded([shoe("a"), shoe("b")], .bike)
+        let kinded = AthleteStore.kinded([shoe("a"), shoe("b")], .bike, retired: false)
         #expect(kinded.allSatisfy { $0.kind == .bike })
     }
 
@@ -131,7 +131,7 @@ struct GearKindModelTests {
     /// authority over the item, and `retired` is where those two disagree.
     @Test("A kind already set is never overwritten")
     func anExistingKindSurvives() {
-        let kinded = AthleteStore.kinded([shoe("a", kind: .bike)], .shoe)
+        let kinded = AthleteStore.kinded([shoe("a", kind: .bike)], .shoe, retired: false)
         #expect(kinded.first?.kind == .bike,
                 "the array overwrote a kind the item already knew")
     }
@@ -141,7 +141,7 @@ struct GearKindModelTests {
     /// would be a guess that is usually right.
     @Test("Retired gear with no kind stays unknown")
     func retiredGearIsNotCalledAShoe() {
-        let kinded = AthleteStore.kinded([shoe("r")], .unknown)
+        let kinded = AthleteStore.kinded([shoe("r")], .unknown, retired: true)
         #expect(kinded.first?.kind == .unknown)
         #expect(kinded.first?.wearIsMeaningful == false,
                 "a wear bar on gear of unknown kind puts 600/800 km of running-shoe thresholds on something nobody identified")
