@@ -785,8 +785,8 @@ nonisolated enum Sub4Import {
             // PATCH 426 — the two facts 425 mapped. `kind` falls back to
             // `unknown` and NOT to `shoe`: a store that does not know must not
             // teach the database something it invented. §12.176.
-            let kind = (shoe.kind ?? .unknown).rawValue
-            let isRetired = shoe.retired ?? false
+            let kind = shoe.storedKind.rawValue
+            let isRetired = shoe.storedRetired
 
             if let row = try Row.fetchOne(d, sql: """
                 SELECT id, name, distanceM, kind, isRetired FROM gear

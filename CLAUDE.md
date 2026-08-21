@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 426 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 427 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -412,9 +412,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 426, 2026-08-21
+## 5. State — patch 427, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 426; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 427; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -819,7 +819,17 @@ run happened. §12.135–§12.150.
    activity imported before its gear. **Sabotage found a hole rather than
    confirming a guard**: deleting the retirement half of `kinded` left every
    test green until `retirementSurvivesTheFile` drove the real path.
-   §12.175, §12.176.
+   §12.175, §12.176. **427 MAKES THE READ-BACK ABLE TO DISAGREE** — gear goes
+   from two compared fields to four, and `knownActivityIDs` reads
+   `activities.json` (decision 5), **failing OPEN** so an unreadable file makes
+   every reading look unknown rather than quietly passing. **The 324 fixtures
+   caught a 427 defect**: the importer resolved a missing kind to `unknown` and
+   the comparison to `.shoe`, so every pre-425 file would have reported a
+   difference on every item — `storedKind` is the one owner now, while
+   `wearIsMeaningful` keeps `?? .shoe` because that is a RENDERING answer, not a
+   storage one. `gear.retiredUTC` stays approved with a REWRITTEN reason — it is
+   written now, and only the DATE lacks a counterpart. §12.177.
+   **Still to come: 428 wires the machinery, 429 is the flip.**
 9. **Then Bruno's list.**
 10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed

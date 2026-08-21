@@ -106,9 +106,18 @@ nonisolated enum WeatherGearLoad: Sendable {
         let externalID: String
         let name: String
         let distanceM: Double
-        /// A column the importer has never written. Read anyway, so the
-        /// diagnostic can say it is empty rather than say nothing.
+        /// **WRITTEN SINCE PATCH 426** — the newest activity naming this
+        /// gear. Read since 324, when it was a column nothing filled and the
+        /// diagnostic's job was to say it was empty rather than say nothing.
         let retiredUTC: String?
+        /// PATCH 427. `nil` cannot occur — the column is `NOT NULL DEFAULT
+        /// 'unknown'` — but an unrecognised value can, and mapping it into
+        /// `GearKind` here rather than at the comparison means a row this
+        /// reader cannot reconstitute is SKIPPED, exactly as an unrecognised
+        /// weather provider is, instead of silently becoming `unknown`.
+        let kind: GearKind
+        /// PATCH 427. Stated by the importer, never derived — see §12.176.2.
+        let isRetired: Bool
     }
 
     var isTrustworthy: Bool {
@@ -168,15 +177,21 @@ nonisolated enum WeatherGearRoundTrip {
                   + "keeps what survives Strava's retirement — the name and the "
                   + "distance — and this is not that.",
             patch: "324"),
+        // **REWRITTEN AT 427, AND THE OLD REASON WAS RIGHT WHEN IT WAS
+        // WRITTEN.** 324 said retirement was thrown away twice; 426 stopped
+        // that — `gear.isRetired` now carries the fact and IS compared. What
+        // remains approved is only the DATE.
         ApprovedDifference(
             field: "gear.retiredUTC",
-            reason: "a column the importer has never written, and there is no "
-                  + "field to compare it against. NOT a decision like "
-                  + "user_note.activityID: retirement is known at decode time "
-                  + "and thrown away twice, once by AthleteStore collapsing it "
-                  + "into primary: false and once by an INSERT that names six "
-                  + "columns and omits this one. §12.67.4.",
-            patch: "324")
+            reason: "written since 426 and derived from the database's own "
+                  + "rows — the newest activity naming this gear, joined "
+                  + "through activity_gear_reference. The store holds no "
+                  + "retirement date to compare it against, and deriving one "
+                  + "app-side would read ActivityStore, which the database has "
+                  + "fed since 381: a comparison that could not disagree. "
+                  + "Proved by test instead. The FACT of retirement is "
+                  + "compared — see gear.isRetired. §12.177.",
+            patch: "427")
     ]
 
     struct Report: Sendable {
@@ -192,8 +207,10 @@ nonisolated enum WeatherGearRoundTrip {
         var gearInApp = 0
         var gearInDatabase = 0
         var gearCompared = 0
-        /// Two per item — the name and the distance. The other two fields are
-        /// on the approved list and there is nothing to walk.
+        /// **FOUR per item since 427** — the name, the distance, the kind and
+        /// the retirement. It was two until 425/426 gave both sides something
+        /// to disagree about; `Shoe.primary` and `gear.retiredUTC` remain on
+        /// the approved list, and there is nothing to walk them against.
         var gearFieldsCompared = 0
 
         var rowsSkipped = 0
@@ -242,6 +259,24 @@ nonisolated enum WeatherGearRoundTrip {
         /// something writes the column, and printed unconditionally so the day
         /// it stops being zero is visible — §12.54.2.
         var gearCarryingRetirement = 0
+        /// **PATCH 427.** How many gear rows the DATABASE marks retired — the
+        /// fact, as against `gearCarryingRetirement`'s date. The two differ
+        /// exactly when a retirement could not be dated (§12.176.2), and
+        /// printing both is what makes that state visible instead of arithmetic
+        /// somebody has to do.
+        var gearRetiredInDatabase = 0
+        /// The database's kind census, so a screen can say `12 shoes, 3 bikes,
+        /// 5 of unknown kind` rather than leave the reader to infer it from an
+        /// absence. §12.54.2.
+        var gearShoes = 0
+        var gearBikes = 0
+        var gearOfUnknownKind = 0
+        /// **HOW MANY ACTIVITY IDS THE FILTER KNEW, AND WHERE THEY CAME FROM —
+        /// patch 427.** `readingsForUnknownActivities` is meaningless without
+        /// it: a filter that knew nothing calls every reading unknown, and a
+        /// filter nobody wired in does the same. §12.15.
+        var knownActivities = 0
+        var rosterCameFrom = "not stated"
 
         var totalCompared: Int { readingsCompared + gearCompared }
 
@@ -285,6 +320,8 @@ nonisolated enum WeatherGearRoundTrip {
                 "  readings only in the database: \(readingsOnlyInDatabase.count)",
                 "  readings for an activity the app does not hold: "
                 + "\(readingsForUnknownActivities)",
+                "  the roster that decided that: \(knownActivities) activities, "
+                + "from \(rosterCameFrom)",
                 "  reading fields that differ: \(readingDifferences.count)",
                 "  readings with no stored source: \(readingsWithNoStoredSource)",
                 "  readings from Apple Weather: \(appleLine)",
@@ -296,7 +333,10 @@ nonisolated enum WeatherGearRoundTrip {
                 "  gear kept after the source dropped it: "
                 + "\(gearKeptAfterTheSourceDropped.count)",
                 "  gear fields that differ: \(gearDifferences.count)",
+                "  gear the database marks retired: \(gearRetiredInDatabase)",
                 "  gear carrying a retirement date: \(gearCarryingRetirement)",
+                "  gear by kind: \(gearShoes) shoes, \(gearBikes) bikes, "
+                + "\(gearOfUnknownKind) of unknown kind",
                 "  rows the reader could not read: \(rowsSkipped)",
                 "  approved differences: \(approved.count) "
                 + "(\(approved.map(\.field).joined(separator: ", ")))",
@@ -318,14 +358,21 @@ nonisolated enum WeatherGearRoundTrip {
     /// activity the app does not hold can be counted as explained rather than
     /// reported as missing. Without it the only honest answer would be "some of
     /// these are fine and this screen cannot tell you which".
+    /// `rosterCameFrom` is a sentence, not a flag: it reaches the paste, and
+    /// the device is the only place the wiring can be told apart. See
+    /// §12.177.3 — no unit test discriminates it, and that is written down
+    /// rather than left to be assumed.
     static func compare(storeWeather: [ActivityWeather],
                         storeGear: [AthleteStore.Shoe],
                         knownActivityIDs: Set<String>,
+                        rosterCameFrom: String = "not stated",
                         database: WeatherGearLoad) -> Report {
 
         var r = Report()
         r.readingsInApp = storeWeather.count
         r.gearInApp = storeGear.count
+        r.knownActivities = knownActivityIDs.count
+        r.rosterCameFrom = rosterCameFrom
         r.readingsWithNoStoredSource = storeWeather.filter { $0.source == nil }.count
         r.appReadingsFromAppleWeather =
             storeWeather.filter { $0.provider == .appleWeather }.count
@@ -339,6 +386,10 @@ nonisolated enum WeatherGearRoundTrip {
         r.databaseReadingsFromAppleWeather =
             dbWeather.filter { $0.provider == .appleWeather }.count
         r.gearCarryingRetirement = dbGear.filter { $0.retiredUTC != nil }.count
+        r.gearRetiredInDatabase = dbGear.filter(\.isRetired).count
+        r.gearShoes = dbGear.filter { $0.kind == .shoe }.count
+        r.gearBikes = dbGear.filter { $0.kind == .bike }.count
+        r.gearOfUnknownKind = dbGear.filter { $0.kind == .unknown }.count
 
         // MARK: Weather, by Strava's activity id
 
@@ -416,10 +467,22 @@ nonisolated enum WeatherGearRoundTrip {
             }
             check("name", a.name == b.name)
             check("distanceM", a.distanceM == b.distanceM)
-            // `primary` and `retiredUTC` are on the approved list. Not walked,
-            // because there is nothing on the other side to walk against —
-            // counting them would inflate the denominator with comparisons
-            // that never happened.
+            // **PATCH 427 — THE TWO FIELDS THAT COULD NOT DISAGREE UNTIL NOW.**
+            // Before 425 neither side carried them, so there was nothing to
+            // compare and no entry on the approved list either: a difference
+            // that cannot be expressed appears on no list (§12.175.1).
+            //
+            // **`storedKind` AND `storedRetired`, NOT AN INLINE `??`.** The
+            // importer and this comparison must resolve a missing kind the same
+            // way or a pre-425 file reports a difference on every item — which
+            // is what the first draft of 427 did, and what the existing
+            // fixtures in `WeatherGearRepositoryTests` caught. §12.43.
+            check("kind", a.storedKind == b.kind)
+            check("retired", a.storedRetired == b.isRetired)
+            // `primary` and `retiredUTC` stay on the approved list, and 427
+            // rewrites the second one's reason: it is now WRITTEN, and it has
+            // no counterpart in the store to walk against. Counting it would
+            // inflate the denominator with a comparison that never happened.
         }
 
         return r
@@ -480,14 +543,25 @@ nonisolated enum WeatherGearRepository {
                 for row in try Row.fetchAll(d, sql: gearSQL, arguments: [accountID]) {
                     guard let externalID = row["externalID"] as String?,
                           let name = row["name"] as String?,
-                          let distanceM = row["distanceM"] as Double? else {
+                          let distanceM = row["distanceM"] as Double?,
+                          let isRetired = row["isRetired"] as Bool? else {
+                        skipped += 1; continue
+                    }
+                    // THE SAME RULE AS THE WEATHER PROVIDER ABOVE. A value the
+                    // enum does not know is a row this reader cannot
+                    // reconstitute; resolving it to `.unknown` would make a
+                    // corrupt row compare equal to an honest one.
+                    guard let rawKind = row["kind"] as String?,
+                          let kind = GearKind(rawValue: rawKind) else {
                         skipped += 1; continue
                     }
                     gear.append(WeatherGearLoad.StoredGear(
                         externalID: externalID,
                         name: name,
                         distanceM: distanceM,
-                        retiredUTC: row["retiredUTC"] as String?))
+                        retiredUTC: row["retiredUTC"] as String?,
+                        kind: kind,
+                        isRetired: isRetired))
                 }
 
                 return .loaded(weather: readings, gear: gear, skipped: skipped)
@@ -528,7 +602,7 @@ nonisolated enum WeatherGearRepository {
     /// fall out as "only in the database" rather than filtered away in SQL
     /// where nothing would count them.
     private static let gearSQL = """
-        SELECT externalID, name, distanceM, retiredUTC
+        SELECT externalID, name, distanceM, retiredUTC, kind, isRetired
           FROM gear
          WHERE accountID = ?
          ORDER BY externalID

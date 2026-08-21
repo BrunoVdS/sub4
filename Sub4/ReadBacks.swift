@@ -169,6 +169,20 @@ enum ReadBacks {
                               directoryFound: true)
     }
 
+    /// **THE ACTIVITY ROSTER, READ FROM THE FILE — patch 427.**
+    ///
+    /// One question and one answer: which activity ids does this app hold? The
+    /// weather read-back asks it to decide whether a database reading belongs
+    /// to something the app still knows about.
+    ///
+    /// Empty when the container or the file cannot be read, and that direction
+    /// is deliberate — see `weatherGear`.
+    @MainActor
+    static func activitiesSources() -> Set<String> {
+        guard let dir = AppSupportItem.container else { return [] }
+        return Set(ActivityStore(directory: dir).activities.map(\.id))
+    }
+
     static func authoredSources() -> AuthoredSources {
         guard let dir = AppSupportItem.container else {
             return AuthoredSources(notes: [], commutes: [], decisions: [],
@@ -397,13 +411,25 @@ enum ReadBacks {
     /// `bikes` and `retired` separately; 324 passed `shoes` and the comparison
     /// reported five bikes as "kept after the source dropped it". §12.68.6.
     ///
-    /// **STILL EVIDENCE, AND `knownActivityIDs` IS THE PART THAT IS NOT** —
-    /// §12.126.3. The weather readings come from `WeatherStore` and the gear
-    /// from the half of `AthleteStore` B1 did not take, so both VALUES are
-    /// file-backed until B5; only the id FILTER is database-derived, and a
-    /// filter that shrinks makes a check fail rather than pass. The declaration
-    /// names the two fields whose values it reads, which is what decides the
-    /// classification.
+    /// **`knownActivityIDs` READS THE FILE SINCE 427 — B5's decision 5.**
+    ///
+    /// It was `Set(ActivityStore.shared.activities.map(\.id))`, and
+    /// `ActivityStore` has been database-fed since 381. The values were always
+    /// file-backed — the readings from `WeatherStore`, the gear from the half
+    /// of `AthleteStore` B1 did not take — so only the id FILTER was
+    /// database-derived, and §12.126.3 argued it was survivable because a
+    /// filter that shrinks makes a check fail rather than pass.
+    ///
+    /// **That argument was true and it was the last one of its kind.** 419 took
+    /// the roll-up's self-referential count to zero (§12.168) and leaving this
+    /// behind at B5 would have put something back. `activitiesSources()` reads
+    /// `activities.json` through the seam `ActivityStore` already offers —
+    /// RULE 13 counts it — exactly as `athleteSources()` does.
+    ///
+    /// **AND IT FAILS OPEN, NOT CLOSED.** If the file cannot be read the
+    /// filter is EMPTY, which counts every database reading as belonging to an
+    /// unknown activity — visible in `readingsForUnknownActivities` rather
+    /// than silently passing. The old behaviour failed the other way.
     static func weatherGear(_ db: Sub4Database)
     async -> (load: WeatherGearLoad, report: WeatherGearRoundTrip.Report,
               source: ReadBackSource) {
@@ -413,7 +439,8 @@ enum ReadBacks {
         return (load, WeatherGearRoundTrip.compare(
             storeWeather: Array(WeatherStore.shared.byActivity.values),
             storeGear: AthleteStore.shared.allGear,
-            knownActivityIDs: Set(ActivityStore.shared.activities.map(\.id)),
+            knownActivityIDs: activitiesSources(),
+            rosterCameFrom: "activities.json, read directly",
             database: load),
                 .liveStores([.from(.weather, "the readings the store holds"),
                              .from(.gear, "AthleteStore's file half")]))

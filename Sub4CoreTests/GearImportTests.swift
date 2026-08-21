@@ -245,3 +245,126 @@ struct GearImportTests {
                 "the date was taken from activity.gearID, which run one left null")
     }
 }
+
+/// **PATCH 427 — WHAT THE ROUND TRIP CAN NOW DISAGREE ABOUT.**
+///
+/// Before 425 neither side carried the kind, so the comparison had nothing to
+/// walk and the approved list had no entry for it: a difference that cannot be
+/// expressed appears on no list. These are the two fields joining the walk, and
+/// the negative controls that prove they can fail.
+@Suite
+@MainActor
+struct GearRoundTripFieldTests {
+
+    private func shoe(_ id: String, kind: GearKind?, retired: Bool?)
+    -> AthleteStore.Shoe {
+        AthleteStore.Shoe(id: id, name: "Pair", distanceM: 412_000,
+                          primary: false, kind: kind, retired: retired)
+    }
+
+    private func compared(_ store: [AthleteStore.Shoe],
+                          _ db: Sub4Database) -> WeatherGearRoundTrip.Report {
+        WeatherGearRoundTrip.compare(storeWeather: [], storeGear: store,
+                                     knownActivityIDs: [],
+                                     database: WeatherGearRepository.load(db))
+    }
+
+    @Test("A kind that disagrees is caught and named")
+    func aKindDifferenceIsCaught() throws {
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [], shoes: [
+            shoe("g1", kind: .bike, retired: false)])
+
+        // Same gear, same name, same distance — and the app now calls it a shoe.
+        let r = compared([shoe("g1", kind: .shoe, retired: false)], db)
+        #expect(r.gearDifferences == ["g1 · kind"])
+        #expect(!r.isHealthy)
+    }
+
+    @Test("A retirement that disagrees is caught and named")
+    func aRetirementDifferenceIsCaught() throws {
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [], shoes: [
+            shoe("g1", kind: .shoe, retired: true)])
+
+        let r = compared([shoe("g1", kind: .shoe, retired: false)], db)
+        #expect(r.gearDifferences == ["g1 · retired"])
+    }
+
+    /// **THE ASYMMETRY THE FIRST DRAFT OF 427 HAD.** The importer resolved a
+    /// missing kind to `unknown` and the comparison to `.shoe`, so a file
+    /// written before 425 reported a difference on every single item.
+    @Test("A pre-425 file agrees with what the importer wrote from it")
+    func anUnrecordedKindDoesNotDisagreeWithItself() throws {
+        let db = try Sub4Database.inMemory()
+        let unrecorded = [shoe("g1", kind: nil, retired: nil)]
+        _ = try Sub4Import.run(into: db, activities: [], shoes: unrecorded)
+
+        let r = compared(unrecorded, db)
+        #expect(r.gearDifferences.isEmpty,
+                "the importer and the comparison resolve a missing kind differently")
+        #expect(r.gearFieldsCompared == 4, "four fields per item since 427")
+    }
+
+    @Test("The census counts what the database holds, by kind and by retirement")
+    func theCensusIsReported() throws {
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [], shoes: [
+            shoe("s1", kind: .shoe, retired: false),
+            shoe("s2", kind: .shoe, retired: false),
+            shoe("b1", kind: .bike, retired: false),
+            shoe("r1", kind: .unknown, retired: true)])
+
+        let r = compared([], db)
+        #expect(r.gearShoes == 2)
+        #expect(r.gearBikes == 1)
+        #expect(r.gearOfUnknownKind == 1)
+        #expect(r.gearRetiredInDatabase == 1)
+        // Retired, and no activity named it — so the FACT is known and the
+        // DATE is not. The two counters differ, which is the state §12.176.2
+        // added a column to keep visible.
+        #expect(r.gearCarryingRetirement == 0)
+    }
+
+    /// A row whose `kind` the enum does not know is SKIPPED, like an
+    /// unrecognised weather provider — not silently resolved to `unknown`.
+    @Test("A kind the enum does not know is skipped, not resolved")
+    func anUnrecognisedKindIsSkipped() throws {
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [], shoes: [
+            shoe("g1", kind: .shoe, retired: false)])
+        try db.queue.write { d in
+            try d.execute(sql: "UPDATE gear SET kind = 'sandal' WHERE externalID = 'g1'")
+        }
+
+        let load = WeatherGearRepository.load(db)
+        #expect(load.gear?.isEmpty == true, "a corrupt kind was reconstituted")
+        #expect(load.skipped == 1, "the skipped row was not counted")
+    }
+
+    /// **THE FILTER'S OWN PROVENANCE REACHES THE PASTE.** Decision 5 moved the
+    /// roster to `activities.json`, and `readingsForUnknownActivities` is
+    /// meaningless without knowing what "known" was.
+    @Test("The roster's size and origin are printed")
+    func theRosterIsNamed() throws {
+        let db = try Sub4Database.inMemory()
+        let r = WeatherGearRoundTrip.compare(
+            storeWeather: [], storeGear: [], knownActivityIDs: ["a", "b"],
+            rosterCameFrom: "activities.json, read directly",
+            database: WeatherGearRepository.load(db))
+        let line = r.diagnosticLines.first { $0.contains("the roster that decided that") }
+        #expect(line?.contains("2 activities") == true)
+        #expect(line?.contains("activities.json, read directly") == true)
+    }
+
+    /// And a caller that does not say where its roster came from says so,
+    /// rather than letting the line imply a file it never read.
+    @Test("An unstated roster says it is unstated")
+    func anUnstatedRosterSaysSo() throws {
+        let db = try Sub4Database.inMemory()
+        let r = WeatherGearRoundTrip.compare(
+            storeWeather: [], storeGear: [], knownActivityIDs: [],
+            database: WeatherGearRepository.load(db))
+        #expect(r.diagnosticLines.contains { $0.contains("from not stated") })
+    }
+}

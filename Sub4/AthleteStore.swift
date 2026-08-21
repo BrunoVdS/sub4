@@ -271,7 +271,32 @@ final class AthleteStore {
         /// been readable from a `Shoe` itself.
         ///
         /// Callers that draw a wear bar ask THIS, not `wear`.
+        ///
+        /// **`?? .shoe` HERE IS A RENDERING DECISION AND NOT THE STORAGE ONE.**
+        /// A pre-425 file has no kind, and every one of those items was drawn
+        /// as a shoe yesterday; a patch that only carries a fact must not
+        /// change what a screen does. `storedKind` answers the other question
+        /// and answers it differently, on purpose — see below.
         nonisolated var wearIsMeaningful: Bool { (kind ?? .shoe) == .shoe }
+
+        /// **WHAT THE DATABASE IS TOLD THIS IS, AND THE ONE PLACE THAT
+        /// DECIDES — patch 427, §12.43.**
+        ///
+        /// `nil` means *not recorded*, and `unknown` is the database's word for
+        /// exactly that. The importer and the round-trip comparison were each
+        /// deciding it separately at 426/427 and **they disagreed**: the
+        /// importer wrote `unknown` and the comparison expected `.shoe`, so a
+        /// pre-425 file would have reported a difference on every item. Caught
+        /// by the existing `WeatherGearRepositoryTests` fixtures, which is what
+        /// they were for.
+        ///
+        /// Two defaults for one `nil` is defensible only because they answer
+        /// two different questions. Both are named, and neither is inline.
+        nonisolated var storedKind: GearKind { kind ?? .unknown }
+
+        /// The storage answer for retirement. Both sides already agreed on
+        /// `false`; this exists so they cannot stop agreeing.
+        nonisolated var storedRetired: Bool { retired ?? false }
 
         /// Value-semantics helper for `kinded`. `id`, `name`, `distanceM` and
         /// `primary` are `let` and stay that way — only the kind was ever

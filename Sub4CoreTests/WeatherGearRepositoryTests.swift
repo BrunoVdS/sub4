@@ -335,7 +335,9 @@ struct WeatherGearRepositoryTests {
         #expect(r.readingsCompared == 2)
         #expect(r.readingFieldsCompared == 22, "eleven per reading")
         #expect(r.gearCompared == 2)
-        #expect(r.gearFieldsCompared == 4, "two per item — the rest are approved")
+        // FOUR PER ITEM SINCE 427, not two: `kind` and `retired` joined the
+        // walk when 425/426 gave both sides something to disagree about.
+        #expect(r.gearFieldsCompared == 8, "four per item — the rest are approved")
         #expect(r.totalCompared == 4)
         #expect(r.unexplained == 0)
         #expect(r.gearCarryingRetirement == 0)

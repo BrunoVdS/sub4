@@ -8962,6 +8962,80 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.177 The read-back can disagree about gear — patch 427, D7 slice B5
+
+`StoredGear` reads `kind` and `isRetired`, the comparison walks them, and the
+gear denominator goes from **two fields per item to four**. B5's decision 5
+lands with it: `knownActivityIDs` reads `activities.json`.
+
+### 12.177.1 The existing fixtures caught an asymmetry the new tests would not have
+
+The first draft resolved a missing kind **two different ways**: `importGear`
+wrote `shoe.kind ?? .unknown` and `compare` checked `(a.kind ?? .shoe)`. On a
+pre-425 `athlete.json` — which is every file on every device — the read-back
+would have reported a difference **on every single item**.
+
+`WeatherGearRepositoryTests`' own fixtures build `Shoe`s with no kind, so they
+failed immediately. **Tests written for 324 caught a defect introduced at 427**,
+which is the whole argument for keeping a fixture that predates the field.
+
+`Shoe.storedKind` and `Shoe.storedRetired` are the fix: one owner for the
+storage answer, §12.43. **And `wearIsMeaningful` keeps `?? .shoe` on purpose** —
+that is a RENDERING decision, not a storage one. A pre-425 item was drawn as a
+shoe yesterday and a patch that only carries a fact must not change what a
+screen does. **Two defaults for one `nil` is defensible only because they
+answer two different questions**, so both are named and neither is inline.
+
+### 12.177.2 `gear.retiredUTC` stays approved, and its reason is rewritten
+
+324's reason — *"a column the importer has never written… thrown away twice"* —
+was true when it was written and is not true now. 426 writes it.
+
+**What remains approved is only the DATE.** It is derived from the database's
+own rows, the store holds no retirement date to compare against, and deriving
+one app-side would read `ActivityStore`, which the database has fed since 381 —
+a comparison that could not disagree. So it is **proved by test rather than by
+the read-back**, and the entry says so. **The FACT of retirement is compared**;
+`gear.isRetired` is the field, and it can now fail.
+
+`Shoe.primary` is unchanged and stays the only untouched entry.
+
+### 12.177.3 The roster reads the file, and no unit test can tell
+
+`knownActivityIDs` was `Set(ActivityStore.shared.activities.map(\.id))`.
+§12.126.3 argued that was survivable because only the FILTER was
+database-derived and a filter that shrinks makes a check fail rather than pass.
+**True, and it was the last one of its kind** — 419 took the roll-up's
+self-referential count to zero and leaving this at B5 would have put something
+back.
+
+`activitiesSources()` reads through the seam `ActivityStore` already offers.
+**It fails OPEN**: an unreadable file yields an empty roster, which counts every
+database reading as belonging to an unknown activity — loudly visible in
+`readingsForUnknownActivities` rather than silently passing. The old wiring
+failed the other way.
+
+**AND NO UNIT TEST DISCRIMINATES THE WIRING**, because in a test host both the
+singleton and the seam are empty. That is §12.164's hole and it cannot be closed
+here, so the discriminator is printed instead: `the roster that decided that: N
+activities, from …`. A caller that does not say reads `from not stated`.
+**Recorded rather than assumed** — 426's `aGearOnlyImportDoesNotEraseTheDate`
+set the precedent for admitting a control that cannot discriminate.
+
+### 12.177.4 The census, because a residual is not a list
+
+`gear by kind: N shoes, M bikes, K of unknown kind`, and **both retirement
+counters**: `gear the database marks retired` beside `gear carrying a retirement
+date`. They differ exactly when a retirement could not be dated — the state
+§12.176.2 added a column to keep visible — and printing one without the other
+would leave that arithmetic to the reader.
+
+An unrecognised `kind` **skips the row**, exactly as an unrecognised weather
+provider does. Resolving it to `.unknown` would make a corrupt row compare equal
+to an honest one.
+
+---
+
 ## 12.176 The importer is told, at last — patch 426, D7 slice B5
 
 `importGear` writes `kind` and `isRetired`, and a pass after the activity loop
