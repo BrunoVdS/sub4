@@ -923,7 +923,10 @@ run happened. §12.135–§12.150.
    rather than agreeing zero with zero. **And the run found a gap in the tester,
    not the slice**: `gear in the app` read 11 while `athlete.json` was hidden,
    because the store rewrote it (`.absent` is trustworthy) — restore kept the
-   rewrite correctly **and said nothing**. 433a reports it. §12.188.
+   rewrite correctly **and said nothing**. 433a reports it — and **the device
+   confirmed it at 16:22**: `kept from an earlier test:
+   athlete.json.written-while-hidden`, turning an inference into an
+   observation with one glance and no campaign. §12.188.
 9. **Then Bruno's list.**
 10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed

@@ -504,6 +504,18 @@ the unconditional line, **which outlives the test** — a kept copy is a fact
 about the container, not about the current hiding, and the paste is read
 afterwards.
 
+**AND THE DEVICE CONFIRMED IT AT 16:22, ON PATCH 433a:**
+
+```
+Legacy files hidden for a test
+none — every legacy file is in its place · kept from an earlier test:
+athlete.json.written-while-hidden
+```
+
+**The rewrite was an inference and is now an observation.** No campaign was
+needed and no second hide — the evidence had been sitting on the phone for
+seventeen minutes; it only lacked something able to say so. §12.188.1.
+
 ### 10.2 Outstanding
 
 **Nothing.** Every row has been exercised or recorded as not applicable.

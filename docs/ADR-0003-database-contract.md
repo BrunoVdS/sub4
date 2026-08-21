@@ -8977,12 +8977,30 @@ app side, an agreement of zero against zero would have been the failure. The
 section turned red and counted **606 differences it could not explain**. Zero
 compared to 606 is not agreement, and the screen said so without being asked.
 
-### 12.188.1 `gear in the app` read 11 while its file was hidden
+### 12.188.1 `gear in the app` read 11 while its file was hidden — INFERRED, THEN SEEN
 
 The seam reads `athlete.json` and nothing else, so the file was **back** within
 sixty seconds. That is 433's own rule 4 happening for real: `StoreLoad.absent`
 is **trustworthy**, so the store read nothing, decided that was legitimate, and
 saved a fresh one.
+
+**AND THAT WAS AN INFERENCE UNTIL 16:22, WHEN THE DEVICE SHOWED THE ARTEFACT.**
+
+```
+Legacy files hidden for a test
+none — every legacy file is in its place · kept from an earlier test:
+athlete.json.written-while-hidden
+```
+
+One glance on patch 433a, against state the phone had been holding for
+seventeen minutes. **The rewrite happened, restore kept it, and the file is
+still there.** The paragraph above now says *we saw* rather than *we think* —
+and the instrument that settled it is the one this patch added, which is the
+cheapest kind of confirmation there is: **build the diagnostic, then read it
+against the state that provoked it.**
+
+**Note what was NOT needed**: no campaign, no second hide, no re-running part E.
+The evidence was already on the device; it only lacked something able to say so.
 
 **Restore kept the rewrite exactly as designed — and reported
 `moved athlete.json, weather.json`.** The preservation is the interesting half
