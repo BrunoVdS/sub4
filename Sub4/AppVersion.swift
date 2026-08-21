@@ -73,7 +73,7 @@ enum AppVersion {
     /// prevent, and it is worse than having no number at all: a stale reading
     /// here normally means nothing landed, so it argues for re-installing
     /// patches that are already in place.
-    static let patch = 436
+    static let patch = 437
 
     /// The letter fix-up sitting on top of `patch`, or `nil` for a clean
     /// numbered patch. See the header: 283a was installed while the phone said

@@ -8962,6 +8962,58 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.192 The lifecycle screen said where the bytes are, not which copy is read — patch 437
+
+Task 0A tranche 1b, and the **same drift as 434 one screen over**.
+
+`DataLifecycle`'s `storage` answers *where the bytes are* and has answered it
+truthfully throughout — `weather.json` really does exist and really is still
+written. What it stopped saying at each flip is **which copy the app actually
+reads.** Since 430 the weather on an activity card comes out of SQLite, and the
+one document in this app whose entire job is to be true about where a person's
+data lives named only the file.
+
+`servedFromDatabase` is the fix, and `servedFromLine` derives the sentence:
+*"The app reads this from the database (slice B5); the file beside it is kept as
+a mirror and is still written."*
+
+### 12.192.1 It is deliberately NOT a `StorageLocation`, and that is a safety decision
+
+`DisconnectRule.removeEverything` walks `storage` and calls `remove(item)` on
+every `.applicationSupport` entry. **Naming the database directory in the weather
+category would make a Strava disconnect delete the database.**
+
+The runbook's opening already warns that the current disconnect *"can remove the
+database directory while an open database queue still exists"* and assigns it to
+a later task. This patch must not create a second route to the same outcome, so
+the new property is disclosure-only and nothing in deletion, export or receipts
+reads it. **Defaulted and last**, for the reason written above
+`onStravaDisconnect`: fourteen call sites pass arguments in declaration order.
+
+### 12.192.2 Joined, because this is the third prose disclosure to drift in four patches
+
+`everyFedFamilyIsDeclared` walks `hydratedFamilies` and requires each one to be
+named by some category — with the families that have no category of their own
+listed **explicitly** rather than silently skipped, so a family missing from
+both lists still fails.
+
+434 was the Database screen, 437 is the lifecycle screen, and both were prose
+somebody had to remember to edit. Sabotaged by removing weather's declaration;
+two assertions fail.
+
+### 12.192.3 And erasing the simulator found something older than this patch
+
+The simulator wedged mid-patch (`Application failed preflight checks`), and
+erasing it made **`SkipStandingTests.recordingASkipRoundTrips` fail** — then pass
+on the very next run against identical code.
+
+**That test passes only because an earlier run left state behind.** It is not
+this patch's defect and it is not flakiness: it is a real order dependency that
+every green run in this project has been quietly relying on. Recorded here, and
+taken as its own patch rather than folded into an unrelated one.
+
+---
+
 ## 12.191 The only test where `ALTER TABLE` runs over rows — patch 436
 
 Task 0A tranche 3. **Every B5 test starts from `Sub4Database.inMemory()`, which

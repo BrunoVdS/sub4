@@ -203,3 +203,73 @@ struct PreB5UpgradeTests {
         #expect(rows.last?["retiredUTC"] as String? == nil)
     }
 }
+
+/// **PATCH 437 — THE LIFECYCLE SCREEN HAD THE SAME DRIFT AS THE DATABASE
+/// SCREEN.** Task 0A tranche 1b.
+///
+/// `storage` answers *where the bytes are* and has always answered it
+/// truthfully. What it stopped saying at each flip is **which copy the app
+/// actually reads** — and 434 found exactly this shape one screen over.
+///
+/// So the disclosure is derived and joined, not written: a family that is fed
+/// and named by no category fails here, which is what would have caught 430.
+@Suite
+struct LifecycleDisclosesWhichCopyTests {
+
+    private var declared: Set<PersistenceAuthority.Family> {
+        Set(DataLifecycle.entries.flatMap(\.servedFromDatabase))
+    }
+
+    @Test("Every family the app feeds is named by some category")
+    func everyFedFamilyIsDeclared() {
+        for family in PersistenceAuthority.hydratedFamilies
+        where !isCoveredElsewhere(family) {
+            #expect(declared.contains(family),
+                    "\(family.rawValue) is read from the database and the lifecycle inventory does not say so")
+        }
+    }
+
+    /// **NAMED, NOT SILENTLY SKIPPED.** These families have no category of their
+    /// own in the inventory — the plan and its trimmings are the bundled plan,
+    /// the authored families are covered by their own entries' storage, and the
+    /// activity payloads sit under categories this patch did not touch. Each is
+    /// a decision to be revisited when its category is written, and a family
+    /// missing from BOTH lists is what the assertion above catches.
+    private func isCoveredElsewhere(_ f: PersistenceAuthority.Family) -> Bool {
+        switch f {
+        case .plan, .extras, .authored, .decisions, .moves,
+             .activities, .details, .traces:  true
+        case .athlete, .gear, .weather:       false
+        }
+    }
+
+    @Test("The sentence names the slice and says the file is still written")
+    func theSentenceIsHonest() throws {
+        let weather = try #require(DataLifecycle.entries.first { $0.category == .weather })
+        let line = try #require(weather.servedFromLine)
+        #expect(line.contains("B5"))
+        #expect(line.contains("mirror"))
+        #expect(line.contains("still written"),
+                "a reader could think the file had gone")
+    }
+
+    /// Two slices in one category, and the sentence has to carry both.
+    @Test("A category fed by two slices names both")
+    func twoSlicesAreBothNamed() throws {
+        let athlete = try #require(DataLifecycle.entries.first {
+            $0.category == .athleteProfile
+        })
+        let line = try #require(athlete.servedFromLine)
+        #expect(line.contains("B1"))
+        #expect(line.contains("B5"))
+    }
+
+    /// A category nothing feeds says nothing, rather than claiming a database
+    /// copy that does not exist. §12.54.2's other direction.
+    @Test("A category no slice has taken has no line")
+    func anUnfedCategorySaysNothing() throws {
+        let reviews = DataLifecycle.entries.first { $0.category == .reviews }
+        #expect(reviews?.servedFromLine == nil,
+                "a category no slice has taken is claiming a database copy")
+    }
+}

@@ -109,6 +109,15 @@ struct DataLifecycleView: View {
             field("Why", e.purpose)
             field("Where", e.storage.map(\.label).joined(separator: "\n"))
 
+            // PATCH 437. `Where` says where the bytes are; this says which copy
+            // the app reads. Since 430 the weather on an activity card comes
+            // out of SQLite and `weather.json` is a mirror, and this screen —
+            // whose whole job is to be true about where a person's data lives —
+            // said only the file. Absent for a category no slice has taken.
+            if let served = e.servedFromLine {
+                field("Which copy is read", served)
+            }
+
             if e.sharedWith.isEmpty {
                 field("Shared with", "Nobody. This has never left your phone.")
             } else {

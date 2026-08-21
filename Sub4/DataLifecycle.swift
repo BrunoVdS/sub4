@@ -356,6 +356,45 @@ struct DataCategoryEntry {
     /// in reasonable time", which points nowhere near the cause.
     let onStravaDisconnect: DisconnectRule
 
+    /// **WHICH HYDRATION FAMILIES NOW SERVE THIS CATEGORY — patch 437.**
+    ///
+    /// Task 0A tranche 1b. `storage` answers *where the bytes are* and has
+    /// answered it truthfully throughout; what it stopped saying at each flip is
+    /// **which copy the app actually reads.** Since 430 the weather on an
+    /// activity card comes out of SQLite and `weather.json` is a mirror, and
+    /// this file — whose entire job is to be true about where a person's data
+    /// lives — said only the file.
+    ///
+    /// **DISCLOSURE ONLY, AND STRUCTURALLY SO.** It is deliberately NOT a
+    /// `StorageLocation`: `DisconnectRule.removeEverything` walks `storage` and
+    /// deletes each `.applicationSupport` item, so naming the database there
+    /// would make a Strava disconnect remove the database directory. The
+    /// runbook already names that hazard for a later task; this patch must not
+    /// create a second way to reach it. Nothing in deletion, export or receipts
+    /// reads this property.
+    ///
+    /// **DEFAULTED AND LAST**, for the reason the comment above `onStravaDisconnect`
+    /// gives: fourteen call sites pass arguments in declaration order.
+    var servedFromDatabase: [PersistenceAuthority.Family] = []
+
+    /// The sentence the lifecycle screen shows, derived rather than written —
+    /// §12.127.5, and the third disclosure in three patches that had drifted
+    /// because somebody had to remember to edit prose.
+    var servedFromLine: String? {
+        guard !servedFromDatabase.isEmpty else { return nil }
+        let fed = servedFromDatabase.filter(PersistenceAuthority.hydrates)
+        guard !fed.isEmpty else {
+            return "The app reads this from its own files. The database holds a "
+                 + "copy that nothing serves yet."
+        }
+        let slices = Set(fed.map(\.slice)).sorted().joined(separator: " and ")
+        let mirrored = fed.count == servedFromDatabase.count
+            ? "" : " The rest is still read from the files."
+        return "The app reads this from the database (slice \(slices)); the file "
+             + "beside it is kept as a mirror and is still written."
+             + mirrored
+    }
+
     var isStravaDerived: Bool { lineage.contains(.strava) }
 }
 
@@ -579,7 +618,8 @@ enum DataLifecycle {
             deletionRule: "Removed by Delete local data.",
             gaps: ["Rows are keyed by Strava activity id, so the key itself "
                  + "carries Strava lineage (ADR-0002 — re-key at 4A M4)."],
-            onStravaDisconnect: .removeEverything),
+            onStravaDisconnect: .removeEverything,
+            servedFromDatabase: [.weather]),
 
         DataCategoryEntry(
             category: .athleteProfile,
@@ -611,7 +651,10 @@ enum DataLifecycle {
                 // The cost is stated rather than hidden: with no override typed,
                 // the app has no maximum heart rate afterwards and cannot score
                 // a session until Health supplies one.
-                clearsFields: ["hrMaxObserved", "hrMaxObservedOn", "hrMaxObservedName"])),
+                clearsFields: ["hrMaxObserved", "hrMaxObservedOn", "hrMaxObservedName"]),
+            // Two slices in one category: B1 took the zones, the FTP and the
+            // resting figures; B5 took the gear. `servedFromLine` names both.
+            servedFromDatabase: [.athlete, .gear]),
 
         DataCategoryEntry(
             category: .matchDecisions,
