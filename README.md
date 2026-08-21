@@ -7,7 +7,7 @@ to state a number it cannot support.
 Built for Operation Sub-4: a 34-week block starting 27 July 2026, targeting a
 sub-4:00 marathon in March 2027.
 
-*Current at patch 438, 21 August 2026. **`CLAUDE.md` §5 is this project's only statement
+*Current at patch 439, 21 August 2026. **`CLAUDE.md` §5 is this project's only statement
 of current state**; this README says what the repository IS and points there for where the
 work has got to. Exact live counts belong on the Database screen, and every patch decision
 is in `docs/ADR-0003-database-contract.md` §12.*

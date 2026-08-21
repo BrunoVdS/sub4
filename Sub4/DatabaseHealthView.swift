@@ -4208,6 +4208,11 @@ struct DatabaseHealthView: View {
         // a device left with its files hidden must say so from either. §12.187.
         l.append("Legacy files hidden for a test: "
                  + LegacyFileTest.line(in: AppSupportItem.container))
+        // PATCH 439. The same folder said in the four terms a support paste may
+        // carry — path, hash, bytes, status — and never its contents. §12.7
+        // governs what leaves the phone; a hash is an identity, not a
+        // disclosure. Unconditional, so "none" is an answer rather than a gap.
+        l.append(contentsOf: LegacyFileTest.inventoryLines(in: AppSupportItem.container))
         l.append("Gear facts recovered from the file at hydration: "
                  + "\(AthleteStore.shared.gearRecoveredFromTheFile)")
         l.append("Detail store reads: \(DetailStore.shared.detailsServedFrom.line)")

@@ -83,6 +83,12 @@ struct LegacyFixtureTests {
                 // occasion it could — a `pathComponent != "snapshots"` test
                 // would have compiled and quietly done the wrong thing.
                 case .snapshotDirectory:    break
+                // PATCH 439, and the second time this switch has paid for
+                // itself. `hidden-for-test/` holds COPIES of the very files
+                // above — a corpus of legacy inputs containing the app's own
+                // moved-aside `athlete.json` would fixture the copy and the
+                // original as two inputs. §12.194.
+                case .internalTestArtifact: break
                 }
             }
         }

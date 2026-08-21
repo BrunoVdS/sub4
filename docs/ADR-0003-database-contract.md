@@ -8962,6 +8962,96 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.194 `hidden-for-test/` was in no inventory at all — patch 439
+
+Task 0A tranche 2, first half. 433 gave the app a way to move its legacy files
+aside so a slice could be asked whether it still needed them. It renames, it
+never deletes, and it is correct. **What nobody wrote down is what the resulting
+DIRECTORY is.**
+
+So it was in nothing: not `appSupportItems`, so **"Delete local data" walked
+straight past it**; not the disconnect rules; not the export manifest; not a
+snapshot; not a receipt. And while a test is running that folder holds the
+**only** copy of `athlete.json` and `weather.json` — the athlete's gear, zones
+and 606 weather readings. **A privacy flow that leaves those on the phone is the
+same defect `details.json` was**, arriving through a test control instead of
+through an old version of the app.
+
+`AppSupportItem.internalTestArtifact` and `DataCategory.internalTestArtifacts`
+give it the role the runbook asks for — *non-authoritative internal test
+artifact* — and it cuts four ways.
+
+### 12.194.1 Covered by the delete, excluded from the other three, by CASE
+
+`LegacySnapshot.plan` and `LegacyReader` exclude it the way they exclude
+`snapshots/`: **by case, not by name.** `hidden-for-test/athlete.json` parses,
+decodes and looks exactly like the input it is a copy of, so source parity
+reading it would compare the database against a file the app moved aside — agree
+perfectly, and prove nothing (§12.125's shape). A `pathComponent != "hidden-for-test"`
+check would compile and quietly do the wrong thing the first time somebody
+renamed the folder.
+
+**Adding the case broke four switches, three of them in the test target.** That
+is the case-over-name-check decision paying for itself for the second time; 247
+recorded the first.
+
+### 12.194.2 Excluded is not the same as silent
+
+The export drops it because every byte inside is a **duplicate** of a file the
+export already carries under its own name, and handing a person two
+`athlete.json`s with nothing saying which the app reads is worse than one. That
+argument only holds if the reader can check it, so the manifest names the
+omission in `excluded`.
+
+**And there is one case where the copy is NOT a duplicate: a test in progress.**
+The live file is absent, and the export loop skips a declared item whose file is
+not on disk with the comment *"nothing stored; not an omission worth
+reporting"* — right for a store that never wrote, **wrong for a file the app
+moved sixty seconds ago.** So `plan` now walks `LegacyFileTest.hiddenNow` and
+names each hidden file in `excluded` with how to get it back.
+
+### 12.194.3 A disconnect keeps it, and that is a last-copy guard
+
+Everything in the folder carries Strava lineage, so the naive rule is
+`.removeEverything` — and it would be wrong in the one direction that cannot be
+undone. **While a test is running the only `athlete.json` that exists is the one
+inside**, and a disconnect taken at that moment would destroy the athlete's gear
+and zones outright, under cover of a privacy action. `.keep` with the hazard
+named, the gap recorded, and the scoped receipted removal — tranche 2's second
+half — as the safe route.
+
+Same shape as 437's decision one screen over: a generic walker over a declared
+list is exactly as dangerous as the list is careless.
+
+### 12.194.4 What a support paste may say about it
+
+`LegacyFileTest.inventory` answers in four terms — **path, hash, bytes, status** —
+and never the contents. §12.7 governs what leaves this phone; a hash is an
+identity, not a disclosure, and `weather.json` is 606 readings taken at places
+and times. **Three statuses, and the third is the point**: *the only copy*,
+*kept from an earlier test*, and *unrecognised*. A folder that classified
+everything it did not recognise as one of the two it did would swallow whatever
+arrives next — §12.132.
+
+**And it does not roll its own SHA-256.** The first draft did, 130 lines of it,
+which is §12.43 in its purest form: `LegacySnapshot.hex` already existed and
+`AuthoredExport` already held a second copy. There is one owner now and the
+second copy calls it — two hashers disagreeing would make an export's manifest
+and a snapshot's manifest differ about one file with nothing saying why.
+
+### 12.194.5 The suite objected twice, and both objections were right
+
+`gapsAreActionable` refused a gap that cited no step, and
+`exportSkipsNonExportableStores` refused a non-exportable category holding a
+file — the trap 281 built around the database exemption, firing on the second
+member it ever had. The second is what produced §12.194.2: the exemption is
+only safe because the manifest names what it leaves out.
+
+Sabotaged twice — the snapshot exclusion, and the redaction — two assertions
+each. 1898 tests in 183 suites.
+
+---
+
 ## 12.193 The evidence manifests are machine-evaluable, and the checker can fail — patch 438
 
 Task 0A's last tranche. The runbook's later tasks say *"starts only after an

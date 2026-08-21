@@ -454,6 +454,21 @@ enum DataLifecycleCoordinator {
             included.append(item.pathComponent)
         }
 
+        // **A FILE AN INTERNAL TEST IS HOLDING IS NAMED, NOT SILENTLY ABSENT —
+        // patch 439, §12.194.2.**
+        //
+        // The loop above skips a declared item whose file is not on disk, with
+        // the comment "nothing stored; not an omission worth reporting" — which
+        // is right for a store that has never written. It is WRONG for a file
+        // `LegacyFileTest.hide` moved into `hidden-for-test/` sixty seconds
+        // ago: the data exists, the person owns it, and an export that leaves
+        // it out unremarked is the quiet loss this manifest exists to prevent.
+        for name in LegacyFileTest.hiddenNow(in: AppSupportItem.container ?? URL(fileURLWithPath: "/")) {
+            excluded.append("\(name) — moved aside by an internal test and not "
+                          + "exported; put it back from the Database screen and "
+                          + "build the export again")
+        }
+
         // Preferences, per category, so the reader can tell a correction they
         // made from a diagnostic the app wrote.
         var prefs: [String: Any] = [:]

@@ -370,6 +370,13 @@ enum LegacySnapshot {
             // Where the copies go. Excluded by case, deliberately, so this
             // cannot recurse into its own output.
             case .snapshotDirectory: continue
+            // NOT A CANONICAL INPUT — patch 439, and the same argument one step
+            // along. `hidden-for-test/` holds copies of the very files above,
+            // so capturing it would put two versions of `athlete.json` in one
+            // manifest with nothing saying which the app reads. Its own
+            // path/hash/bytes inventory is what records it, in
+            // `LegacyFileTest`. §12.194.
+            case .internalTestArtifact: continue
             case .file(let name), .legacyFile(let name):
                 out.append(describe(declared: name, relative: name,
                                     url: base.appendingPathComponent(name), fm: fm))

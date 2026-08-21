@@ -130,6 +130,26 @@ nonisolated enum AppSupportItem: Equatable, Hashable {
     /// privacy measure.
     case snapshotDirectory(String)
 
+    /// A directory holding legacy files an INTERNAL build moved aside, plus any
+    /// file a store wrote while its own was hidden — `hidden-for-test/`,
+    /// patch 433, declared here at 439.
+    ///
+    /// **IT IS NOT A MIGRATION INPUT AND IT IS NOT AUTHORITATIVE.** Its role is
+    /// `nonAuthoritativeInternalTestArtifact`: a copy that exists so a slice can
+    /// be asked whether it still needs its file. `LegacySnapshot.plan` and
+    /// `LegacyReader` exclude it by CASE, for the same reason `snapshotDirectory`
+    /// is excluded by case — a name check would work today and break the first
+    /// time somebody renamed a folder.
+    ///
+    /// **AND IT IS STILL THE ATHLETE'S DATA, WHICH IS THE WHOLE POINT OF
+    /// DECLARING IT.** Until 439 nothing in this inventory knew the directory
+    /// existed, so "Delete local data" walked straight past it — and while a
+    /// test was running it held the ONLY copy of `athlete.json` and
+    /// `weather.json`. A privacy flow that leaves the athlete's gear and 606
+    /// weather readings on disk is the same defect `details.json` was
+    /// (§12.194), arriving through a test control instead of an old version.
+    case internalTestArtifact(String)
+
     var displayName: String {
         switch self {
         case .file(let f):       f
@@ -137,6 +157,7 @@ nonisolated enum AppSupportItem: Equatable, Hashable {
         case .legacyFile(let f): "\(f) — written by an older version"
         case .databaseDirectory(let d): "\(d)/ — the database and its journal files"
         case .snapshotDirectory(let d): "\(d)/ — dated copies of your files, taken before the migration reads them"
+        case .internalTestArtifact(let d): "\(d)/ — files an internal build moved aside for a test, never migration input"
         }
     }
 
@@ -149,12 +170,14 @@ nonisolated enum AppSupportItem: Equatable, Hashable {
         case .legacyFile(let f): f
         case .databaseDirectory(let d): d
         case .snapshotDirectory(let d): d
+        case .internalTestArtifact(let d): d
         }
     }
 
     var isDirectory: Bool {
         switch self {
-        case .directory, .databaseDirectory, .snapshotDirectory: true
+        case .directory, .databaseDirectory, .snapshotDirectory,
+             .internalTestArtifact:                              true
         case .file, .legacyFile:                                 false
         }
     }
@@ -321,6 +344,11 @@ enum DataCategory: String, CaseIterable, Identifiable, Codable {
     /// preference keys; the app writes twenty-four, and the seventeen missing
     /// ones would have survived a delete-my-data flow written against it.
     case appSettings
+    /// Added in 439, Task 0A tranche 2. Not a discovery of new data — a
+    /// discovery that a directory 433 created was in NO inventory: not the
+    /// delete flow, not the disconnect rules, not the export manifest, not a
+    /// snapshot, not a receipt. §12.194.
+    case internalTestArtifacts
 
     var id: String { rawValue }
 }
@@ -962,7 +990,68 @@ enum DataLifecycle {
             deletionRule: "Removed by Delete local data, which returns the app to "
                         + "its defaults — including switching every transfer off.",
             gaps: [],
-            onStravaDisconnect: .keep(why: "these are your settings, including the record of which transfers you permitted"))
+            onStravaDisconnect: .keep(why: "these are your settings, including the record of which transfers you permitted")),
+
+        // MARK: - The one category that is not data this app went and got
+        //
+        // PATCH 439, Task 0A tranche 2. §12.194.
+        DataCategoryEntry(
+            category: .internalTestArtifacts,
+            title: "Files an internal test moved aside",
+            whatItIs: "When an internal build asks whether the app still needs a "
+                    + "legacy file, it MOVES that file into hidden-for-test/ "
+                    + "rather than deleting it, and moves it back afterwards. "
+                    + "Anything the app wrote while the original was hidden is "
+                    + "kept beside it rather than overwritten. So this folder "
+                    + "holds copies of your own files — your gear and zones, "
+                    + "your weather readings — and nothing else.",
+            purpose: "Proving a slice of the migration is finished: that the app "
+                   + "draws the same screens with the old file out of reach. It "
+                   + "exists only in builds signed for this phone.",
+            // THE LINEAGE IS THE HIDDEN FILES' OWN, and it is what makes
+            // `aiShareable: false` a consequence rather than a promise — the
+            // suite refuses `true` for anything carrying Strava lineage.
+            lineage: [.strava, .weatherProvider, .device],
+            storage: [.applicationSupport(
+                .internalTestArtifact(LegacyFileTest.directoryName))],
+            retention: .indefinite,
+            sharedWith: [],
+            // NEVER EXPORTED. `plan(includingSensorTraces:)` drops any item
+            // whose categories are not all exportable AND records the omission
+            // in the manifest, so this is an excluded line a reader can see
+            // rather than a silence.
+            isExportable: false,
+            aiShareable: false,
+            deletionRule: "Removed by Delete local data along with everything "
+                        + "else — it is your data and a delete that walked past "
+                        + "it would leave your gear and your weather on the "
+                        + "phone. The internal control puts every moved file "
+                        + "back; this folder is what is left over afterwards.",
+            gaps: ["A Strava disconnect leaves this folder alone, because while "
+                 + "a test is running the copy inside it is the ONLY copy of "
+                 + "your athlete file — see onStravaDisconnect. The scoped, "
+                 + "receipted removal that clears a leftover safely is Task 0A "
+                 + "tranche 2's second half; ADR-0003 §12.194.",
+                   "An export taken while a test is running does not carry the "
+                 + "hidden file itself. The export manifest names it in "
+                 + "excluded rather than omitting it in silence — ADR-0003 "
+                 + "§12.194.2."],
+            // KEPT, AND THE REASON IS A LAST-COPY GUARD RATHER THAN AN OVERSIGHT.
+            //
+            // Everything in here carries Strava lineage, so the naive answer is
+            // `.removeEverything` — and it would be wrong in the one direction
+            // that cannot be undone. While a test is running the live
+            // `athlete.json` is ABSENT and the copy in this folder is the only
+            // one that exists; a disconnect taken at that moment would destroy
+            // the athlete's gear and zones outright, under cover of a privacy
+            // action. `DisconnectTests.onlyStravaLineageIsRemoved` guards the
+            // opposite direction and `stravaDerivedIsAlteredOrExplained`
+            // demands this sentence.
+            onStravaDisconnect: .keep(why: "while an internal test is running "
+                                    + "the copy in here is the only copy of your "
+                                    + "athlete file, so a Strava disconnect will "
+                                    + "not touch it — put the files back, then "
+                                    + "clear the folder"))
     ]
 
     // MARK: Queries

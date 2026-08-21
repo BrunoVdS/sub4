@@ -120,6 +120,71 @@ nonisolated enum LegacyFileTest {
             .sorted()
     }
 
+    // MARK: - The inventory a support paste may carry — patch 439, §12.194
+
+    /// One file inside `hidden-for-test/`, said in the four terms the runbook
+    /// allows into redacted output: **path, hash, bytes, status.**
+    ///
+    /// **NEVER THE CONTENTS.** `athlete.json` names gear and `weather.json`
+    /// names 606 readings taken at places and times; §12.7 governs what leaves
+    /// this phone in a paste, and a hash is an identity rather than a
+    /// disclosure.
+    struct Artifact: Equatable, Sendable {
+        /// Relative to Application Support, so it is a path a person can act on
+        /// without being an absolute one that names the container UUID.
+        let path: String
+        let sha256: String
+        let bytes: Int
+        let status: Status
+
+        enum Status: String, Equatable, Sendable {
+            /// The original, moved aside by `hide`. **While this exists the
+            /// live file does not, so this is the only copy.**
+            case hiddenOriginal = "the only copy — the live file is hidden"
+            /// Written by a store while its own file was hidden, kept by
+            /// `restore` rather than overwritten (§12.188).
+            case keptFromAnEarlierTest = "kept from an earlier test"
+            /// Something else, in a directory only this file writes to. Named
+            /// rather than skipped: a category that quietly drops what it does
+            /// not recognise is §12.132.
+            case unrecognised = "unrecognised — not written by this control"
+        }
+
+        var line: String { "\(path) · \(bytes) bytes · \(sha256) · \(status.rawValue)" }
+    }
+
+    /// Everything in `hidden-for-test/`, hashed. Empty when the directory does
+    /// not exist, which is the ordinary state.
+    static func inventory(in container: URL?) -> [Artifact] {
+        guard let container else { return [] }
+        let dir = container.appendingPathComponent(directoryName)
+        let hidden = Set(names)
+        return contents(of: container).sorted().map { name in
+            let url = dir.appendingPathComponent(name)
+            let data = (try? Data(contentsOf: url)) ?? Data()
+            let status: Artifact.Status =
+                hidden.contains(name) ? .hiddenOriginal
+                : name.hasSuffix(".written-while-hidden") ? .keptFromAnEarlierTest
+                : .unrecognised
+            return Artifact(path: "\(directoryName)/\(name)",
+                            sha256: LegacySnapshot.hex(data),
+                            bytes: data.count,
+                            status: status)
+        }
+    }
+
+    /// **UNCONDITIONAL, AND IT CARRIES A DENOMINATOR.** A section that renders
+    /// nothing when the folder is empty cannot be told from one nobody wired in
+    /// — §12.54.2, and this folder is the athlete's own data.
+    static func inventoryLines(in container: URL?) -> [String] {
+        let found = inventory(in: container)
+        guard !found.isEmpty else {
+            return ["internal test artifacts: none — hidden-for-test/ is empty or absent"]
+        }
+        return ["internal test artifacts: \(found.count)"]
+             + found.map { "  " + $0.line }
+    }
+
     private static func contents(of container: URL) -> [String] {
         let dir = container.appendingPathComponent(directoryName)
         return (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []

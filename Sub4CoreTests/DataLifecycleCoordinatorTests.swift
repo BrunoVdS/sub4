@@ -99,7 +99,12 @@ struct DataLifecycleCoordinatorTests {
             // Patch 247, and declared before the first capture for exactly the
             // reason spelled out above `db`: a folder holding copies of every
             // file in this list is the last thing a delete flow may walk past.
-            "snapshots"          // LegacySnapshot.directoryName
+            "snapshots",         // LegacySnapshot.directoryName
+            // PATCH 439, Task 0A tranche 2. Created by `LegacyFileTest` at 433
+            // and in NO inventory until now — so "Delete local data" walked
+            // past a folder that, while a test was running, held the ONLY copy
+            // of `athlete.json` and `weather.json`. §12.194.
+            "hidden-for-test"    // LegacyFileTest.directoryName
         ]
         #expect(declared == written,
                 "missing: \(written.subtracting(declared)); undeclared: \(declared.subtracting(written))")
@@ -117,7 +122,7 @@ struct DataLifecycleCoordinatorTests {
     @Test("Directories are declared as directories")
     func directoriesAreDirectories() {
         let dirs = Set(DataLifecycle.appSupportItems.filter(\.isDirectory).map(\.pathComponent))
-        #expect(dirs == ["details", "streams", "db", "snapshots"],
+        #expect(dirs == ["details", "streams", "db", "snapshots", "hidden-for-test"],
                 "directory set is \(dirs)")
     }
 
@@ -260,7 +265,18 @@ struct DataLifecycleCoordinatorTests {
     func exportSkipsNonExportableStores() {
         // Exempt on FORMAT grounds. Anything else that is not exportable is
         // withheld on secrecy grounds and must not hold a file at all.
-        let exemptOnFormatGrounds: Set<DataCategory> = [.database]
+        let exemptOnFormatGrounds: Set<DataCategory> = [
+            .database,
+            // PATCH 439. Exempt on DUPLICATION grounds, not secrecy: every byte
+            // in `hidden-for-test/` is a copy of a file the export already
+            // carries under its own name, and exporting both would hand a
+            // person two `athlete.json`s with nothing saying which the app
+            // reads. The trap that makes this safe is
+            // `theExportNamesWhatATestIsHolding` below — the ONE case where the
+            // copy is not a duplicate is a test in progress, and there the
+            // manifest names the missing original out loud. §12.194.2.
+            .internalTestArtifacts
+        ]
 
         for item in DataLifecycle.appSupportItems {
             let owners = DataLifecycle.categories(holding: item)

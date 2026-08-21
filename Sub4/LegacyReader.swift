@@ -143,11 +143,18 @@ enum LegacyReader {
                                store: store, fm: fm)
             })
 
-        case .databaseDirectory, .snapshotDirectory:
+        case .databaseDirectory, .snapshotDirectory, .internalTestArtifact:
             // Not legacy inputs. `LegacyStore` cannot name one — the switch is
             // exhaustive over `AppSupportItem`, not over this enum's own cases
             // — and reaching here would mean `item` started returning
             // something it has no business returning.
+            //
+            // **`.internalTestArtifact` IS THE ONE THAT COULD PLAUSIBLY HAVE
+            // BEEN READ — patch 439.** `hidden-for-test/athlete.json` parses,
+            // decodes and looks exactly like the input it is a copy of. Source
+            // parity reading it would compare the database against a file the
+            // app moved aside, and agree, and prove nothing. Excluded by CASE
+            // and not by name, for the reason `.snapshotDirectory` is.
             return LegacyReading(store: store, files: [])
         }
     }

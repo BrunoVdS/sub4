@@ -52,7 +52,6 @@
 //
 
 import Foundation
-import CryptoKit
 
 /// One store, as it was on disk.
 nonisolated struct AuthoredExportEntry: Codable, Hashable, Sendable {
@@ -164,7 +163,9 @@ nonisolated enum AuthoredExport {
         return url
     }
 
-    private static func hex(_ data: Data) -> String {
-        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-    }
+    /// **ONE OWNER — patch 439, §12.43.** This was a second copy of
+    /// `LegacySnapshot.hex`, and 439 was about to add a third. Two of them
+    /// hashing differently would make an export's manifest and a snapshot's
+    /// manifest disagree about one file with nothing saying why.
+    private static func hex(_ data: Data) -> String { LegacySnapshot.hex(data) }
 }

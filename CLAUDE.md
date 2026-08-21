@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 438 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 439 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -370,6 +370,16 @@ magnitude, and `test.sh` fails below 500 for the same reason.
 ./scripts/selftest-evidence.sh # proves the evidence-manifest validator can refuse
 ```
 
+**`hidden-for-test/` HAS A ROLE SINCE 439 — AND UNTIL THEN IT HAD NONE.**
+433's control renames the legacy files aside; nobody wrote down what the
+resulting DIRECTORY is, so it was in no inventory — **"Delete local data" walked
+past a folder that, while a test is running, holds the ONLY copy of
+`athlete.json` and `weather.json`.** `AppSupportItem.internalTestArtifact` makes
+it deletable, excluded from snapshots and source parity BY CASE, excluded from
+the export with the omission NAMED, and kept by a Strava disconnect as a
+last-copy guard. A support paste may say path, hash, bytes and status — never
+contents. §12.194.
+
 **THE EVIDENCE MANIFESTS ARE MACHINE-EVALUABLE SINCE 438.** The runbook's later
 tasks key off the word `accepted` in `docs/evidence/post-b5/`, so
 `scripts/evidence-manifest.py` validates status-with-a-signed-approval,
@@ -472,9 +482,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 438, 2026-08-21
+## 5. State — patch 439, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 438; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 439; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
