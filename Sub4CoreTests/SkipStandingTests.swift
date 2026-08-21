@@ -29,6 +29,7 @@
 
 import Testing
 import Foundation
+import GRDB
 @testable import Sub4
 
 @Suite("Whether a session was skipped")
@@ -227,14 +228,27 @@ struct SkipWriteTests {
                                 decision: none) == .skipped)
     }
 
+    private func freshDefaults() throws -> UserDefaults {
+        try #require(UserDefaults(suiteName: "skip-440-\(UUID().uuidString)"))
+    }
+
     /// `setOverride(sessionUid:activityId:)` records the skip and
     /// `clearOverride(sessionUid:)` takes it back — the primitives 272 built,
     /// which is why 368 needs no store of its own.
+    ///
+    /// **THIS TEST USED `Matcher.shared` UNTIL 440, AND IT PASSED ONLY ON A
+    /// SIMULATOR AN EARLIER RUN HAD ALREADY DIRTIED.** The singleton commits to
+    /// `Sub4Launch.shared.database` — the app's REAL database, which is open in
+    /// the test process — and `match_decision.accountID` references `account`.
+    /// On a freshly erased container there is no account row, the insert fails
+    /// the foreign key, and `setOverride` correctly refuses to publish. Run it
+    /// again and it passes, because the first run left the row behind.
+    ///
+    /// So it is the seam now, like every other test of this store. §12.195.
     @Test("Recording and clearing a skip round-trips")
-    func recordingASkipRoundTrips() {
-        let m = Matcher.shared
-        let uid = "wk-99-skip-test-\(UUID().uuidString)"
-        defer { m.clearOverride(sessionUid: uid) }
+    func recordingASkipRoundTrips() throws {
+        let m = Matcher(defaults: try freshDefaults())
+        let uid = "wk-99-skip-test"
 
         #expect(m.decisions[uid] == nil)
 
@@ -246,5 +260,66 @@ struct SkipWriteTests {
 
         m.clearOverride(sessionUid: uid)
         #expect(m.decisions[uid] == nil, "the skip could not be taken back")
+    }
+
+    // MARK: What the dirty simulator was hiding — patch 440
+
+    /// **THE STATE THAT BROKE IT, DRIVEN ON PURPOSE.**
+    ///
+    /// 412's controls reach a refusal by DROPPING the table, which is a
+    /// database somebody broke. This is a database that is perfectly healthy
+    /// and simply has no account row yet — the state every phone is in before
+    /// its first import, and the state a freshly erased simulator is in for the
+    /// whole of the first test run.
+    ///
+    /// The refusal is CORRECT: a decision the database would not take must not
+    /// show a tick (§12.157). What was wrong was a test relying on the row
+    /// being there.
+    @Test("Before the account row exists, a skip does not stick")
+    func aSkipIsRefusedUntilTheAccountRowExists() throws {
+        let db = try Sub4Database.inMemory()
+        let m = Matcher(defaults: try freshDefaults(), database: db)
+
+        m.setOverride(sessionUid: "wk-03-x", activityId: nil)
+
+        #expect(m.decisions["wk-03-x"] == nil,
+                "a decision the foreign key refused was published anyway")
+        #expect(m.lastCommit != .reached)
+    }
+
+    /// The positive control, and without it the one above passes for a database
+    /// that refuses everything — zero compared to zero.
+    @Test("Once the account exists the skip reaches the rows and can be taken back")
+    func aSkipReachesTheRows() throws {
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [], shoes: [])
+        let m = Matcher(defaults: try freshDefaults(), database: db)
+
+        m.setOverride(sessionUid: "wk-03-x", activityId: nil)
+        #expect(m.decisions["wk-03-x"] != nil, "the skip did not stick")
+        #expect(m.lastCommit == .reached)
+        #expect(try rows(db) == 1)
+
+        // READ WITH SQL, not through the reader that shares the writer's
+        // filter — 411 shipped exactly that bug for a day.
+        let stored = try db.queue.read { d in
+            try String.fetchOne(d, sql: """
+                SELECT COALESCE(activityID, 'null') FROM match_decision
+                WHERE accountID = ? AND planSessionUID = ?
+                """, arguments: [Sub4Import.accountID, "wk-03-x"])
+        }
+        #expect(stored == "null", "the skip named an activity in the row")
+
+        m.clearOverride(sessionUid: "wk-03-x")
+        #expect(m.decisions["wk-03-x"] == nil)
+        #expect(try rows(db) == 0, "the row outlived the decision")
+    }
+
+    private func rows(_ db: Sub4Database) throws -> Int {
+        try db.queue.read { d in
+            try Int.fetchOne(d, sql: """
+                SELECT COUNT(*) FROM match_decision WHERE accountID = ?
+                """, arguments: [Sub4Import.accountID]) ?? 0
+        }
     }
 }

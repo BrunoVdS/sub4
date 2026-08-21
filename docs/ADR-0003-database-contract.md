@@ -8962,6 +8962,61 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.195 A test that passed only on a simulator an earlier run had dirtied — patch 440
+
+Found at 437, by erasing a wedged simulator.
+`SkipStandingTests.recordingASkipRoundTrips` failed — then passed on the very
+next run against identical code. **Not flakiness. A real order dependency, and
+every green run this project has ever had was relying on it.**
+
+### 12.195.1 The mechanism, measured rather than guessed
+
+The test used `Matcher.shared`. That singleton commits to
+`Sub4Launch.shared.database` — **the app's real database, and it is open inside
+the test process** — and `match_decision.accountID` REFERENCES `account`. A
+freshly erased container has no account row, so the insert fails the foreign key
+and `setOverride` correctly refuses to publish.
+
+Confirmed with a throwaway probe rather than argued from the schema:
+
+```
+database nil? false — upsert: .refused("SQLite error 19: FOREIGN KEY constraint
+failed - while executing `INSERT INTO match_decision …`")
+```
+
+Run it a second time and it passes, because **the first run left the account row
+in the simulator's container** and the container outlives the run.
+
+### 12.195.2 The refusal was right; the test was wrong
+
+Nothing in the app is broken here. A decision the database will not take must
+not show a tick — that is 412's contract (§12.157) working exactly as written.
+What was wrong is a test reaching past its seam into the app's real database,
+which is RULE 13's hazard **seen from the test's side**: 409's leak was a store
+reaching the singleton, this is a test doing it.
+
+So it is `Matcher(defaults:)` now, like every other test of this store.
+
+### 12.195.3 And the state that broke it is now driven on purpose
+
+412's controls reach a refusal by DROPPING the table — a database somebody
+broke. **This is a database that is perfectly healthy and simply has no account
+row yet**: the state every phone is in before its first import, and the state a
+freshly erased simulator is in for the whole of the first run. It had no test.
+
+Two now, with the positive control beside the negative one, because a refusal
+test alone passes for a database that refuses everything. Sabotaged by making
+`.refused` publish anyway; the negative control fails.
+
+### 12.195.4 The measurement that had never been taken
+
+**The full suite now passes on a freshly erased simulator** — 1,900 tests in 183
+suites — and again on the dirty one. That run had never been done, which is why
+this sat for as long as it did. Worth repeating whenever a suite starts touching
+the app's own stores.
+
+---
+
 ## 12.194 `hidden-for-test/` was in no inventory at all — patch 439
 
 Task 0A tranche 2, first half. 433 gave the app a way to move its legacy files

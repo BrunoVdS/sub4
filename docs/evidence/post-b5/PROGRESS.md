@@ -17,7 +17,7 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 | | |
 |---|---|
 | **Current task** | **Task 0A** — close current truth, lifecycle and evidence tooling |
-| **Patch** | 439 |
+| **Patch** | 440 |
 | **Tree** | verified from source at each patch, not from the runbook's recorded numbers |
 | **Next gate** | Task 0A's remaining tranches, then one narrow Strava-disabled campaign, then Task 0B |
 
@@ -44,7 +44,7 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 
 | Finding | Where | State |
 |---|---|---|
-| **`SkipStandingTests.recordingASkipRoundTrips` passes only on a dirty simulator** | found at 437 by erasing a wedged simulator; fails on a clean one, passes on the next run against identical code | **open** — a real order dependency every green run has relied on. Its own patch, not folded into an unrelated one |
+| **`SkipStandingTests.recordingASkipRoundTrips` passed only on a dirty simulator** | found at 437 | **closed at 440** — the test used `Matcher.shared`, which commits to the app's REAL database; `match_decision.accountID` references `account` and a fresh container has none, so the FK refused and the refusal was correct. On the seam now, with the no-account state driven on purpose. **The full suite is green on a freshly erased simulator** — a run nobody had ever done (§12.195) |
 
 ## Housekeeping carried from B5
 
@@ -71,3 +71,4 @@ combined Task 0 acceptance manifest.
 | 437 | Task 0A tranche 1b — the lifecycle screen says which copy is read |
 | 438 | Task 0A tranche 5 — the evidence manifest schema, validator and ten fixtures |
 | 439 | Task 0A tranche 2a — `hidden-for-test/` gets a role, and the delete flow stops walking past it |
+| 440 | the order dependency found at 437 — a test that passed only on a dirty simulator |

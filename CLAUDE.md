@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 439 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 440 (2026-08-22).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -359,8 +359,8 @@ stopped being true at 342. Rename it `docs/REVIEW-2026-08-10-…` when convenien
 
 ## 3. Build, test, run
 
-**The suite is the gate, and it is fast.** 1,622 tests in 149 suites, well under a second
-at patch 387. The run prints the current total; this figure is here for the order of
+**The suite is the gate, and it is fast.** 1,900 tests in 183 suites at patch 440,
+well under a second of test time. The run prints the current total; this figure is here for the order of
 magnitude, and `test.sh` fails below 500 for the same reason.
 
 ```sh
@@ -407,6 +407,16 @@ the hole. Hard fail — the tree was at zero when it landed. §12.147.
 **Why this matters:** ⌘R compiles the app target only, so test-target compile errors
 accumulate invisibly. Patches 275, 276 and 277 all ran on the phone while the test target
 had not compiled since 273. Run the suite from the CLI so that cannot recur.
+
+**AND RUN IT ONCE ON A FRESHLY ERASED SIMULATOR — 440.**
+`SkipStandingTests.recordingASkipRoundTrips` passed for seventy patches only
+because an earlier run had left an `account` row in the simulator's container:
+it used `Matcher.shared`, which commits to the app's REAL database, and
+`match_decision.accountID` references `account`. Erase, run, and the refusal is
+correct while the test is not. **That run had never been done.** The suite is
+green on a clean container as of 440 — `xcrun simctl erase <udid>` before
+`./scripts/test.sh`, whenever a suite starts touching the app's own stores.
+§12.195.
 
 **Never run `xcodebuild test` while Xcode is building.** They share DerivedData and the
 collision surfaces as `invalid reuse after initialization failure` on files that are fine.
@@ -482,9 +492,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 439, 2026-08-21
+## 5. State — patch 440, 2026-08-22
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 439; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 440; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
