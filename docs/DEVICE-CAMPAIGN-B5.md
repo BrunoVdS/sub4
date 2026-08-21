@@ -7,7 +7,7 @@
 | **Groundwork** | `docs/D7-B5-GROUNDWORK.md` — §6's five decisions, all approved 21 August |
 | **ADR** | §12.175–§12.182a |
 | **Time** | about twenty-five minutes. **Part D needs a Release build. Part E moves files.** |
-| **State** | **PARTS A–D PASSED — eighteen of eighteen**, and **part E's step 14 passed**. **Rows 19–22 are BLOCKED**: the container download is not a faithful copy and must not be written back. §10.1h. |
+| **State** | **PARTS A–D PASSED — eighteen of eighteen**, and part E's snapshot with them. **Rows 19–22 were blocked and are UNBLOCKED at 433** — the app hides its own files now (§12.187). Install 433 and run part E. |
 
 **THIS IS THE FIRST B-SLICE CAMPAIGN THAT IS NOT READ-ONLY.** Part E moves
 `athlete.json` and `weather.json` aside to prove the app no longer needs them.
@@ -61,8 +61,10 @@ Preconditions: `Integrity: ok`, `Orphaned rows: 0`, `Foreign keys: on`,
 
 ## 3. Safety preconditions — READ THIS ONE
 
-- **Part E moves two files.** `athlete.json` and `weather.json`. **Move, never
-  delete.**
+- **Part E hides two files** — `athlete.json` and `weather.json` — **through
+  the app, since 433.** It renames rather than deletes and the button to undo it
+  is beside the one that did it. **The Xcode container route is forbidden**:
+  §12.186 and §10.1h.
 - **`athlete.json` IS THE ONLY COPY OF THE RETIRED-GEAR INFERENCE.** Strava
   publishes no retired list; `resolveRetiredGear` rebuilds it one fetch at a
   time, capped at ten per run, from activities naming gear the profile no longer
@@ -125,18 +127,30 @@ Preconditions: `Integrity: ok`, `Orphaned rows: 0`, `Foreign keys: on`,
 ### Part E — the files go · *steps 14–19*
 
 14. **Database health → Protected snapshot → take one.** Record the id.
-15. **THIS STEP IS SUSPENDED — see §10.1h.** It read: *move the two files out
-    through Xcode's container download*. On 21 August that download came back
-    **without the database, without either live payload folder and without four
-    of the stores**, so writing it back would destroy the app's data rather than
-    test it. **Do not replace the device container.**
-    A safe route has to exist in the app itself before rows 19–22 can run.
+15. **REWRITTEN AT 433. The container route is suspended** — on 21 August that
+    download came back **without the database, without either live payload
+    folder and without four of the stores**, in both build configurations, so
+    writing it back would destroy the app's data rather than test it.
+    **Never use Xcode's "Replace Container" on this app** (§12.186).
+
+    **Instead: Database health → The app's own files → `Hide the legacy files`.**
+    It RENAMES `athlete.json` and `weather.json` into `hidden-for-test/` beside
+    them. It never deletes, never touches the database, `details/` or
+    `streams/`, and the state is a directory so it survives the force-quit that
+    is the test. Read the outcome line under the button and the row
+    **`Legacy files hidden for a test`** — it must name both files, in red.
 16. **Force-quit and relaunch.**
 17. **Progress → shoes**: the same six rows, the same figures.
     **An activity detail**: the same weather.
 18. **Database health → Read-back · weather and gear → ⬆︎** — share. It reads
     the files for its app side, so this export is expected to be **loud**.
-19. **Put both files back. Force-quit, relaunch, export the read-back again.**
+19. **`Put the legacy files back`** — the same section; the button changes
+    label when something is hidden. Then force-quit, relaunch, and export the
+    read-back again.
+    **If the app saved while the files were hidden**, restore keeps that write
+    as `<name>.written-while-hidden` inside `hidden-for-test/` rather than
+    overwriting the original. Nothing is lost either way; report it if it
+    happens.
 
 ---
 
@@ -448,8 +462,9 @@ one under pressure.
 
 ### 10.2 Outstanding
 
-**Rows 19 to 22 — blocked, not failed.** Whether the files can go. The route
-written for them is unsafe on this device; see §10.1h and §10.1i.
+**Rows 19 to 22 — runnable again on patch 433.** Whether the files can go.
+Steps 15 and 19 are rewritten to use the app's own control; the container route
+is forbidden (§10.1h).
 
 Record each part below, and say plainly which rows were not exercised. **A
 partial campaign is evidence for its rows only, never for the whole slice.**

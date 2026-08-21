@@ -1,0 +1,177 @@
+//
+//  LegacyFileTest.swift
+//  Sub4
+//
+//  Can the app do without its legacy files? — patch 433, ADR-0003 §12.187.
+//
+//  WHY THIS EXISTS AT ALL
+//  ----------------------
+//  Every D7 slice ends with the same unanswered question: **the store now reads
+//  rows, so is the file still load-bearing?** Every slice's groundwork has asked
+//  for it and no slice has been able to run it.
+//
+//  §12.160.6 records three patches asking for a disposable device — 1A could
+//  not show the restore REPAIRS, 414 could not show a scoped REMOVAL, 415 could
+//  not show a removal recorded and surviving. **B5's row 19 is the fourth**, and
+//  it is the one that decides whether a slice is COMPLETE rather than merely
+//  correct.
+//
+//  AND THE ROUTE THAT WAS WRITTEN FOR IT IS UNSAFE — §12.186. Xcode's container
+//  download omits the database, both payload folders and four stores, silently,
+//  in both build configurations. Writing one back destroys everything it does
+//  not contain.
+//
+//  So the app does it to itself, atomically, in one place, reversibly.
+//
+//  THE RULES THIS OBEYS
+//  --------------------
+//  1. **IT RENAMES. IT NEVER DELETES.** Files move into a subdirectory beside
+//     them and come back from it. Nothing is written over and nothing is
+//     removed. "Never use the only copy of authored data for a destructive
+//     test" is the standing rule, and the way to obey it is not to be
+//     destructive.
+//  2. **THE HIDING SURVIVES A RELAUNCH.** The location is a directory on disk,
+//     not a flag in memory, so `restore` works after a force-quit — which is
+//     the whole point, since the test IS a force-quit.
+//  3. **IT NEVER TOUCHES THE DATABASE OR THE PAYLOAD FOLDERS.** Only the named
+//     files. `details/` and `streams/` are B4's and are 1,371 files; the
+//     database is the thing being tested and hiding it would test nothing.
+//  4. **A FILE WRITTEN WHILE HIDDEN IS KEPT.** `StoreLoad.absent` is
+//     TRUSTWORTHY (§12.116's ladder), so a store whose file is hidden reads
+//     nothing, decides that is legitimate, and **writes a fresh one on the next
+//     save**. Restore therefore finds a live file where it wants to put the
+//     original back. It moves that one aside as `.written-while-hidden` rather
+//     than overwriting it, so both copies exist and neither is a guess.
+//  5. **INTERNAL BUILDS ONLY**, through `BuildProvenance` and not `#if DEBUG` —
+//     §12.140, RULE 9. A control that hides the athlete's data has no business
+//     existing in a build that reached a stranger.
+//
+
+import Foundation
+
+/// Moves the legacy files aside and back, so a slice can be asked whether it
+/// still needs them.
+nonisolated enum LegacyFileTest {
+
+    /// Beside the files, not inside a temporary directory the system may
+    /// reclaim. A test that loses what it hid is worse than no test.
+    static let directoryName = "hidden-for-test"
+
+    /// **B5's TWO, AND THE LIST IS DELIBERATELY SHORT.**
+    ///
+    /// `athlete.json` carries the gear and the zones; `weather.json` carries
+    /// 606 readings. Both families were flipped at 430 and both are what row 19
+    /// asks about.
+    ///
+    /// **NOT every legacy file.** Hiding seven at once answers "does the app
+    /// work without its files", which is D8's question and not a slice's; when
+    /// something then broke, nothing would say which file it wanted. B7 and B8
+    /// each add their own name here, in their own patch, when their own slice
+    /// flips.
+    static let names = ["athlete.json", "weather.json"]
+
+    /// Written for the paste and for the two buttons. Every case says what
+    /// happened rather than returning a Bool somebody has to interpret.
+    enum Outcome: Equatable, Sendable {
+        case moved([String])
+        case nothingToMove(String)
+        case refused(String)
+
+        var line: String {
+            switch self {
+            case .moved(let names):
+                names.isEmpty ? "nothing moved"
+                              : "moved \(names.sorted().joined(separator: ", "))"
+            case .nothingToMove(let why): "nothing to do — \(why)"
+            case .refused(let why):       "REFUSED — \(why)"
+            }
+        }
+    }
+
+    /// What is hidden right now. Read off the disk, so it is still right after
+    /// a force-quit.
+    static func hiddenNow(in container: URL) -> [String] {
+        let dir = container.appendingPathComponent(directoryName)
+        let found = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+        return found.filter { names.contains($0) }.sorted()
+    }
+
+    /// **UNCONDITIONAL, AND IT NAMES THE FILES.** A test that leaves data
+    /// hidden and says nothing is a test that eats an athlete's history —
+    /// §12.54.2 with something at stake.
+    static func line(in container: URL?) -> String {
+        guard let container else {
+            return "Application Support is unreachable, so nothing could be checked"
+        }
+        let hidden = hiddenNow(in: container)
+        return hidden.isEmpty
+            ? "none — every legacy file is in its place"
+            : "HIDDEN: \(hidden.joined(separator: ", ")) — put them back"
+    }
+
+    static func hide(in container: URL) -> Outcome {
+        let fm = FileManager.default
+        let dir = container.appendingPathComponent(directoryName)
+        // REFUSE RATHER THAN MERGE. A second hide over a first would bury the
+        // original under a file the app wrote while it was hidden.
+        let already = hiddenNow(in: container)
+        guard already.isEmpty else {
+            return .refused("\(already.joined(separator: ", ")) already hidden — "
+                          + "put them back first")
+        }
+        do {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            return .refused(String(describing: error))
+        }
+
+        var moved: [String] = []
+        for name in names {
+            let live = container.appendingPathComponent(name)
+            guard fm.fileExists(atPath: live.path) else { continue }
+            do {
+                try fm.moveItem(at: live, to: dir.appendingPathComponent(name))
+                moved.append(name)
+            } catch {
+                // PARTIAL IS REPORTED, NOT ROLLED BACK. Whatever moved is in a
+                // directory this file can find again, and `restore` is the way
+                // back; a rollback that also failed would leave two half-states
+                // and no sentence describing either.
+                return .refused("\(name): \(error) — \(moved.count) already moved, "
+                              + "put them back")
+            }
+        }
+        return moved.isEmpty
+            ? .nothingToMove("neither file is present to begin with")
+            : .moved(moved)
+    }
+
+    static func restore(in container: URL) -> Outcome {
+        let fm = FileManager.default
+        let dir = container.appendingPathComponent(directoryName)
+        let hidden = hiddenNow(in: container)
+        guard !hidden.isEmpty else {
+            return .nothingToMove("nothing is hidden")
+        }
+
+        var moved: [String] = []
+        for name in hidden {
+            let live = container.appendingPathComponent(name)
+            let stored = dir.appendingPathComponent(name)
+            do {
+                // RULE 4 — see the header. The store wrote a fresh file while
+                // its own was hidden, and both are kept.
+                if fm.fileExists(atPath: live.path) {
+                    try fm.moveItem(
+                        at: live,
+                        to: dir.appendingPathComponent("\(name).written-while-hidden"))
+                }
+                try fm.moveItem(at: stored, to: live)
+                moved.append(name)
+            } catch {
+                return .refused("\(name): \(error) — \(moved.count) restored")
+            }
+        }
+        return .moved(moved)
+    }
+}

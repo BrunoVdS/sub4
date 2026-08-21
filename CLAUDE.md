@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 432 (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 433 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -432,9 +432,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 432, 2026-08-21
+## 5. State — patch 433, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 432; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 433; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
@@ -904,7 +904,17 @@ run happened. §12.135–§12.150.
    **B5's CODE IS CONFIRMED; THE SLICE IS NOT.** The campaign has not run:
    the rendering, the weather card, the no-weather case, the file-removal
    rehearsal and a RELEASE launch reading are all outstanding.
-   `docs/DEVICE-CAMPAIGN-B5.md`.
+   `docs/DEVICE-CAMPAIGN-B5.md`. **PARTS A–D PASSED, eighteen of eighteen**, and
+   part E's snapshot with them. **Rows 19–22 were BLOCKED** — Xcode's container
+   download omits the database, both payload folders and four stores, in either
+   configuration (§12.186), and writing one back would destroy what it does not
+   contain. **433 UNBLOCKS THEM FROM INSIDE THE APP**: two internal-build
+   buttons that RENAME `athlete.json` and `weather.json` aside and back, never
+   delete, never touch the database or the payload folders, survive a relaunch
+   because the state is a directory, and **keep a file the store wrote while its
+   own was hidden** — `StoreLoad.absent` is trustworthy, so the store rewrites
+   it. §12.187. **This is the fourth patch to want a disposable fixture and the
+   first to get one.**
 9. **Then Bruno's list.**
 10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed

@@ -8962,6 +8962,66 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.187 The app hides its own legacy files — patch 433
+
+**Every D7 slice ends with the same unanswered question: the store reads rows
+now, so is the file still load-bearing?** Four patches have asked for a way to
+find out — §12.160.6 records 1A, 414 and 415, and B5's row 19 is the fourth —
+and the route written for it turned out to be unsafe (§12.186).
+
+Two buttons, in internal builds only: **Hide the legacy files** and **Put the
+legacy files back**.
+
+### 12.187.1 Five rules, and every one of them is about not losing anything
+
+1. **It renames; it never deletes.** Files move into `hidden-for-test/` beside
+   them and come back from it. *Never use the only copy of authored data for a
+   destructive test* — and the way to obey that is not to be destructive.
+2. **The hiding survives a relaunch**, because the state is a directory on disk
+   rather than a flag in memory. The test IS a force-quit.
+3. **It never touches the database or the payload folders.** Only two named
+   files. `details/` and `streams/` are 1,371 files and B4's; the database is
+   what is being tested.
+4. **A file written while hidden is kept.** `StoreLoad.absent` is
+   **trustworthy** (§12.116's ladder), so a store whose file is hidden reads
+   nothing, decides that is legitimate, and **writes a fresh one on the next
+   save.** Restore therefore finds a live file where the original belongs; it
+   moves that one to `.written-while-hidden` rather than overwriting it.
+5. **Internal builds only**, through `BuildProvenance` and not `#if DEBUG` —
+   §12.140, RULE 9.
+
+### 12.187.2 The list is two names, and short on purpose
+
+`athlete.json` and `weather.json`. **Not every legacy file**: hiding seven at
+once answers *does the app work without its files*, which is **D8's** question
+and not a slice's — and when something broke, nothing would say which file it
+wanted. B7 and B8 each add their own name, in their own patch, when their own
+slice flips.
+
+### 12.187.3 The refusal had to say WHICH refusal it was
+
+Sabotage removed the `already.isEmpty` guard and `hidingTwiceIsRefused` **still
+passed** — because `moveItem` cannot write over the stored copy, so the second
+hide fails at the filesystem instead. A test that only asked *was it refused*
+could not tell a deliberate refusal from an accidental one.
+
+It now asserts the **sentence**: `already hidden … put them back first`. **The
+deliberate refusal is the only one that names what to do next**, and that is the
+difference worth testing. Third time in two days that a control turned out not
+to discriminate — §12.153's control 4, 426's
+`aGearOnlyImportDoesNotEraseTheDate`, and this.
+
+### 12.187.4 Unconditional, on the screen and in the paste
+
+`Legacy files hidden for a test: none — every legacy file is in its place`, or
+`HIDDEN: athlete.json, weather.json — put them back`, in red.
+
+**A test that leaves data hidden and says nothing is a test that eats a
+history.** §12.54.2 with something at stake, and the reason the line exists in
+both places rather than only where the buttons are.
+
+---
+
 ## 12.186 Xcode's container download omits files, and it does it silently — 21 August 2026
 
 B5's campaign step 15 asked for the two legacy files to be moved aside through

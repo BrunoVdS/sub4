@@ -222,6 +222,12 @@ struct DatabaseHealthView: View {
     /// grid starts at 2026-01-01 and both of this device's are 2025. §12.169.
     @State private var openActivity: Activity?
 
+    /// PATCH 433. Read from the disk when the screen opens and after each
+    /// press, so the buttons cannot disagree with the files.
+    @State private var hiddenLegacyFiles: [String] =
+        AppSupportItem.container.map { LegacyFileTest.hiddenNow(in: $0) } ?? []
+    @State private var legacyFileTestOutcome: String?
+
     /// PATCH 332. Nil until the share button writes a file. `ShareItem` is the
     /// wrapper `ShareSheet.swift` owns so that `.sheet(item:)` has something
     /// `Identifiable` without a retroactive conformance on `URL`.
@@ -1525,6 +1531,47 @@ struct DatabaseHealthView: View {
     /// second index would be a second thing to keep in step (§12.43).
     private static func resolve(_ id: String) -> Activity? {
         ActivityStore.shared.activities.first { $0.id == id }
+    }
+
+    /// **HIDE THE LEGACY FILES, AND PUT THEM BACK — patch 433, §12.187.**
+    ///
+    /// It renames; it never deletes. `details/`, `streams/` and the database
+    /// are never touched. The state is a directory on disk, so it survives the
+    /// force-quit that IS the test.
+    ///
+    /// **INTERNAL BUILDS ONLY**, through `BuildProvenance` rather than
+    /// `#if DEBUG` — §12.140. A control that hides the athlete's data has no
+    /// business existing in a build that reached a stranger.
+    @ViewBuilder
+    private var legacyFileTestRows: some View {
+        // UNCONDITIONAL WHEREVER THE CONTROL EXISTS. A test that leaves data
+        // hidden and says nothing is a test that eats a history.
+        LabeledContent("Legacy files hidden for a test",
+                       value: LegacyFileTest.line(in: AppSupportItem.container))
+            .font(.caption2)
+            .foregroundStyle(hiddenLegacyFiles.isEmpty ? Color.dim : Color.red)
+
+        if ReleaseGates.isInternalBuild, let dir = AppSupportItem.container {
+            if hiddenLegacyFiles.isEmpty {
+                Button("Hide the legacy files") {
+                    legacyFileTestOutcome = LegacyFileTest.hide(in: dir).line
+                    hiddenLegacyFiles = LegacyFileTest.hiddenNow(in: dir)
+                }
+                .font(.caption)
+            } else {
+                Button("Put the legacy files back") {
+                    legacyFileTestOutcome = LegacyFileTest.restore(in: dir).line
+                    hiddenLegacyFiles = LegacyFileTest.hiddenNow(in: dir)
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.accent4)
+            }
+            if let legacyFileTestOutcome {
+                Text("  \(legacyFileTestOutcome)")
+                    .font(.caption2).foregroundStyle(Color.dim)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 
     private static func isLimited(_ until: Date?) -> Bool {
@@ -3569,6 +3616,11 @@ struct DatabaseHealthView: View {
                 Button("Survey the app's files") { runSurvey() }
             }
 
+            // **PATCH 433 — THE ONLY WAY TO ASK WHETHER A SLICE IS FINISHED.**
+            // §12.187. One `@ViewBuilder` function, so this section's depth is
+            // unchanged (§12.76), and internal builds only.
+            legacyFileTestRows
+
             if let survey {
                 ForEach(survey) { reading in
                     if reading.files.count > 1 {
@@ -4152,6 +4204,10 @@ struct DatabaseHealthView: View {
         // PATCH 432. UNCONDITIONAL. Zero is the expected reading from the
         // second launch after B5 onward, and a zero that stays zero is what
         // says the write-through carried the facts back. §12.182.
+        // PATCH 433. UNCONDITIONAL, and in the paste as well as on the screen:
+        // a device left with its files hidden must say so from either. §12.187.
+        l.append("Legacy files hidden for a test: "
+                 + LegacyFileTest.line(in: AppSupportItem.container))
         l.append("Gear facts recovered from the file at hydration: "
                  + "\(AthleteStore.shared.gearRecoveredFromTheFile)")
         l.append("Detail store reads: \(DetailStore.shared.detailsServedFrom.line)")
