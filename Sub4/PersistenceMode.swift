@@ -181,6 +181,17 @@ nonisolated enum PersistenceAuthority {
         // reverted apart, and a label that said one would describe half a
         // rollback as none of one.
         + "; B4 — the details and the traces"
+        // **PATCH 434 — AND B5 FLIPPED AT 430, THREE PATCHES BEFORE THIS
+        // LINE MOVED.** From 430 to 433a the app told the athlete on the
+        // Database screen that its weather and gear came from files, while
+        // `hydratedFamilies` had been feeding both from rows since the flip.
+        //
+        // §12.127.5's shape once more — a sentence about what the app
+        // CURRENTLY DOES, stored as a constant — and this time nothing
+        // coupled it to the thing it describes. `everyHydratedFamilyIsDisclosed`
+        // is that coupling, and it fails on the day a slice flips without
+        // this string moving. §12.189.
+        + "; B5 — the weather and the gear"
 
     /// WHICH FAMILIES THIS BUILD ACTUALLY HYDRATES — patch 357, §12.102.
     ///
@@ -211,6 +222,28 @@ nonisolated enum PersistenceAuthority {
         /// read before it is fed is what 344/346, 357/358 and 379/382 all
         /// looked like.
         case details, traces
+
+        /// **WHICH SLICE FED THIS FAMILY — patch 434.**
+        ///
+        /// Exhaustive, so a new case cannot be added without answering, and it
+        /// is the join `everyHydratedFamilyIsDisclosed` walks: a family that is
+        /// fed must have its slice named in `sliceUnderTest`, or the app is
+        /// telling the athlete something that stopped being true.
+        ///
+        /// **The letters are the ladder's, not this file's.** They come from
+        /// `PLAN-cutover-v2.md` and appear in ADR §12 throughout; a family whose
+        /// slice letter changed would be a renaming of the ladder rather than a
+        /// change here.
+        var slice: String {
+            switch self {
+            case .plan, .extras, .athlete:              "B1"
+            case .authored, .decisions, .moves:         "B2"
+            case .activities:                           "B3"
+            case .details, .traces:                     "B4"
+            case .weather, .gear:                       "B5"
+            }
+        }
+
         /// **PATCH 428 — D7 slice B5, AND TWO CASES FOR ONE READ.**
         ///
         /// `WeatherGearRepository.load` is a single `db.queue.read` returning

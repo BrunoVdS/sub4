@@ -439,11 +439,28 @@ def pinned_counts_match_the_source():
     if fam is None:
         fail(rule, "PersistenceAuthority.Family could not be located")
         return
+    # **IT COUNTS DECLARATIONS, NOT THE WORD `case` — patch 434.**
+    #
+    # It used to take every line in the enum's body beginning `case `, which is
+    # right until somebody writes a `switch` inside the enum. 434 added
+    # `Family.slice`, whose exhaustive switch has five `case` lines, and the
+    # rule reported ELEVEN cases as TWENTY-TWO — a gate failing while nothing
+    # was wrong, which is §12.185's shape and the second time in one day.
+    #
+    # An enum case declaration is at the enum's own indentation and is never
+    # indented under a `switch`; a switch's arms are deeper and its `case` is
+    # followed by a `.`-prefixed pattern or ends in `:`. Requiring a bare
+    # identifier list separates them without parsing Swift.
     cases = []
     for line in fam.split("\n"):
         s = line.strip()
-        if s.startswith("case "):
-            cases += [c.strip() for c in s[5:].split(",") if c.strip()]
+        if not s.startswith("case "):
+            continue
+        body = s[5:].split("//")[0].strip()
+        # A switch arm ends in `:` and names patterns with a leading dot.
+        if body.endswith(":") or body.startswith("."):
+            continue
+        cases += [c.strip() for c in body.split(",") if c.strip()]
     truth["Family.allCases.count"] = len(cases)
 
     m = re.search(r"static let hydratedFamilies: Set<Family> = \[(.*?)\]",

@@ -8962,6 +8962,48 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.189 The app said the weather came from files for three patches — patch 434
+
+`PersistenceMode.sliceUnderTest` is the sentence the athlete reads on the
+Database screen as **`Reads from: …`**. It ended at *"B4 — the details and the
+traces"*.
+
+**B5 flipped at 430.** For 430, 431, 432, 433 and 433a the app told its own owner
+that its weather and gear came from files, while `hydratedFamilies` had been
+feeding both from rows the whole time.
+
+§12.127.5, for the sixth time: **a sentence about what the app CURRENTLY DOES
+cannot be a constant.** What made this one survive five patches is that nothing
+compared it to the thing it describes — and both halves were edited in the same
+patch at every previous flip, so the drift had never been possible before.
+
+### 12.189.1 The join, and it points both ways
+
+`Family.slice` is an exhaustive switch — a new case cannot be added without
+answering it — and `everyHydratedFamilyIsDisclosed` walks every fed family and
+requires its slice letter in the sentence. Sabotaged by restoring the string to
+its 430 state; it fails naming B5.
+
+`nothingIsDisclosedThatIsNotFed` is the other direction, because **a join checked
+one way is unchecked the other** (§12.129): a slice named in the sentence with no
+family behind it would advertise a flip that had not happened.
+
+### 12.189.2 And RULE 5's parser had the same defect as RULE 14 did this morning
+
+Adding `Family.slice` made `check-invariants.py` report **eleven cases as
+twenty-two**: it counted every line in the enum's body beginning `case `, and an
+exhaustive switch inside an enum is five more of those.
+
+**A gate failing while nothing is wrong**, which is §12.185's shape and the
+second instance in one day. It now requires a bare identifier list — a switch arm
+ends in `:` or begins with `.` — so a rule about enum cases counts enum cases.
+
+**Both of today's gate defects were in rules I wrote or touched**, and neither was
+findable by a test: one reported success when it had failed, one failed when
+nothing was wrong, and this third counted the wrong thing. §12.183, §12.185.
+
+---
+
 ## 12.188 B5 is verified, and the test found a gap in the tester — patch 433a
 
 **Twenty-two of twenty-two.** Device, 21 August, patches 432 and 433.

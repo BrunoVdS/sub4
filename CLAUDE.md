@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 433a (2026-08-21).** §5.3 is the 390 device run, Compare and
+**Current at patch 434 (2026-08-21).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -50,7 +50,8 @@ In this order, and only what the task needs:
 | what is true right now | **§5 of this file** |
 | why a decision was taken | `docs/ADR-0003-database-contract.md` §12 |
 | what happened on a given day | `git log`, and the handoffs |
-| where the work is going | `docs/PLAN-codebase-modernization-and-feature-delivery.md` |
+| **what to build next, in order** | **`docs/PLAN-post-B5-database-cutover-execution.md`** — the controlling runbook since B5 closed |
+| where the work is going, long-range | `docs/PLAN-codebase-modernization-and-feature-delivery.md` |
 
 **The handoffs are history, not state.** `HANDOFF-2026-08-05.md`,
 `HANDOFF-2026-08-05-late.md`, `HANDOFF-2026-08-06.md` and `HANDOFF-2026-08-16.md`
@@ -60,6 +61,20 @@ something got the way it is. ADR §12 supersedes all four.
 **The `docs/context/` files are dated exports and several are months behind.**
 Their index says so per file. `sub4-database.md` is the one to be careful with:
 its rules are still good and its state section stopped at patch 319.
+
+**`docs/PLAN-post-B5-database-cutover-execution.md` IS THE CONTROLLING RUNBOOK.**
+Twenty-one numbered tasks from the end of B5 to the architecture handoff, each
+with a finding, a binary exit gate and a prompt. **Run them in numeric order**;
+it supersedes the post-B5 portions of
+`PLAN-database-cutover-findings-and-ai-prompts.md`, which is a patch-399 review
+and history. Three of its rules change how this project has been worked:
+
+- **One task at a time**, and an AI may split a task into patches but may not
+  drift into the next numbered one.
+- **Report the diff and ask before committing or pushing.** The runbook grants
+  neither.
+- **Confirm patch, migrations, hydrated families and test count FROM SOURCE** at
+  the start of every task. Its own recorded numbers are dated evidence.
 
 **`SUB4_CURRENT_PEER_REVIEW_AND_REMEDIATION_PLAN.md` is a review of patch 338,
 not the present, whatever its filename says.** It sits at the repository root
@@ -432,9 +447,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 433a, 2026-08-21
+## 5. State — patch 434, 2026-08-21
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 433a; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 434; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.

@@ -97,3 +97,56 @@ struct WeatherGearAreReadTests {
         #expect(b.diagnosticLines.filter { $0.hasPrefix("  weather") }.count == 1)
     }
 }
+
+/// **PATCH 434 — THE DISCLOSURE AND THE HYDRATION HAD NOTHING JOINING THEM.**
+///
+/// `sliceUnderTest` is the sentence the athlete reads on the Database screen as
+/// `Reads from: …`. B5 flipped at 430 and that string was not extended until
+/// 434, so for three patches the app said its weather and gear came from files
+/// while `hydratedFamilies` had been feeding both from rows.
+///
+/// §12.127.5's shape — a sentence about what the app CURRENTLY DOES, stored as
+/// a constant — and the reason it went unnoticed is that nothing compared the
+/// two. This is that comparison, and it would have failed on the day of the flip.
+@Suite
+struct DisclosureMatchesHydrationTests {
+
+    @Test("Every hydrated family has its slice named in what the app discloses")
+    func everyHydratedFamilyIsDisclosed() throws {
+        let sentence = try #require(PersistenceAuthority.sliceUnderTest)
+        for family in PersistenceAuthority.hydratedFamilies.sorted(by: {
+            $0.rawValue < $1.rawValue
+        }) {
+            #expect(sentence.contains(family.slice),
+                    "the app feeds \(family.rawValue) from the database and does not say so")
+        }
+    }
+
+    /// The other direction: a slice named but fed by nothing would advertise a
+    /// flip that has not happened. §12.129 — a join checked one way is
+    /// unchecked the other.
+    @Test("No slice is disclosed that nothing is fed from")
+    func nothingIsDisclosedThatIsNotFed() throws {
+        let sentence = try #require(PersistenceAuthority.sliceUnderTest)
+        let fedSlices = Set(PersistenceAuthority.hydratedFamilies.map(\.slice))
+        for slice in ["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8"]
+        where sentence.contains(slice) {
+            #expect(fedSlices.contains(slice),
+                    "the app claims \(slice) is under test and feeds no family from it")
+        }
+    }
+
+    /// Exhaustive by construction — the switch cannot compile with a case
+    /// missing — but the letters themselves are the ladder's and worth pinning
+    /// so a rename is a decision rather than a typo.
+    @Test("Every family belongs to a named slice")
+    func everyFamilyHasASlice() {
+        for family in PersistenceAuthority.Family.allCases {
+            #expect(family.slice.hasPrefix("B"), "\(family.rawValue) has no slice")
+        }
+        #expect(PersistenceAuthority.Family.weather.slice == "B5")
+        #expect(PersistenceAuthority.Family.gear.slice == "B5")
+        #expect(PersistenceAuthority.Family.details.slice == "B4")
+        #expect(PersistenceAuthority.Family.plan.slice == "B1")
+    }
+}
