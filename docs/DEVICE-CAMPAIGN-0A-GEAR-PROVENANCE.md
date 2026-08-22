@@ -218,4 +218,75 @@ the files and a reader could then argue the screen was drawn from that read.
 
 ## 7. Result
 
-**Not run.** Record it here, step by step, when it is.
+**Running — 22 August 2026, patch 440, Debug.** Parts A and B below.
+
+### 7.1 Part A — 06:42–06:47. SIX OF SEVEN, and the seventh is step 4
+
+Installed 06:30; `Source patch 440`, `Configuration: Debug`. **That also closes
+the "Debug build on the phone" housekeeping item** that was due before Task 3.
+
+| # | reading | verdict |
+|---|---|---|
+| 1 | patch **440**, built 22 Aug 06:30, **Debug** | pass |
+| 2 | `Athlete store reads: the database` · `Weather store reads: the database` | pass |
+| 3 | `Gear facts recovered from the file at hydration: 0` | pass |
+| 4 | `internal test artifacts: 1` — `hidden-for-test/athlete.json.written-while-hidden · 1507 bytes · d8cc76b5f678622fc18f53e7cd2a2552d6dde122c3096721e2da2ebbebda1ad2 · kept from an earlier test` | pass — **439's first device reading, and the tranche 2b preview** |
+| 5 | read-back: `reading fields that differ: 0`, `gear fields that differ: 0`, `unexplained differences: 0`; `gear by kind: 6 shoes, 4 bikes, 1 of unknown kind`; `gear carrying a retirement date: 1`; app side `from activities.json, read directly` | pass — identical to 21 August |
+| 6 | the shoes photograph | **OUTSTANDING** |
+| 7 | survey: `athlete: readable`, `weather: readable` | pass |
+
+**The survey went further than the row asked.** It opened and classified all
+1,371 payload files — `detail: 699 files, 699 readable, 0 at fault`,
+`streams: 672 files, 672 readable, 0 at fault` — from a different reader than
+the paste's `counted but not opened` line, and the two agree. The B4 mirror is
+not merely present; it is readable file by file. `legacyDetails` and
+`legacyStreams` absent.
+
+**`Unreadable stores: none` does NOT substitute for step 5, and this is worth
+recording.** That line describes stores that were *read* this launch, and since
+B5 flipped, `AthleteStore` and `WeatherStore` hydrate from the database and may
+never open their files. **A store that never read cannot report an unreadable
+read**, so "none" there is consistent with `athlete.json` being missing, empty
+or truncated. §12.155's shape, found while validating a campaign rather than
+while writing one.
+
+### 7.2 Part B — 06:48–06:53. TWO OF TWO
+
+| # | reading | verdict |
+|---|---|---|
+| 8 | all three switches off at 06:48; still off at 06:51 after a force-quit and relaunch | pass |
+| 9 | `Attempted 22 Aug 06:53` in orange, and beneath it, verbatim: *"Read activities from Strava" is switched off under Data & privacy, so nothing was requested.* | pass |
+
+**THE PAIRING IS THE PROOF.** `Attempted` reads **06:53** while `Last refresh`
+still reads **06:40** and `Zones held` still reads 5 — two rows a call that
+quietly succeeded could not both satisfy. Before patch 232 this button returned
+in silence, and that state was indistinguishable from this one.
+
+`Next window: none pending` beside it: the background scheduler has nothing
+queued either, so the refusal is not only for the press.
+
+**And step 8's navigation was wrong in the first draft of this document.**
+It said "Settings → Strava"; the button is in **Sync & data**. The Strava
+section's line — *"Read activities from Strava is switched off. Data & privacy,
+above."* — is a **static notice** that renders whether or not anything was ever
+attempted, so reading it proves the gate is shut and nothing about a refusal.
+**A campaign step that cannot fail is not a step** — §12.15 in an instruction
+rather than in the code, and §12.162.5's family.
+
+**Recorded, and helpful rather than a confound:** `Last refresh 22 Aug 06:40` —
+a real Strava zones-and-gear refresh ran after the 06:30 install and before the
+gates went off at 06:48. Both the database and `athlete.json` were freshly
+reconciled from the source before Part A's baseline at 06:43.
+
+**The leftover is untouched by any of this**: step 9's paste reports the same
+1507 bytes and the same `d8cc76b5…` hash as step 2's.
+
+**One measurement, recorded and NOT acted on.** Step 9's launch was clean —
+`left the app during the window: no` — and read `first free main-thread turn:
+0.024 s`, `longest main-thread stall: 1.078 s over 522 samples`. **That is
+Debug.** B6a's 1.0 s trigger is on the **Release** stall, last measured
+0.608 / 0.613 s at patch 432 (§12.184), so this does not move it.
+
+### 7.3 Parts C–E
+
+Not yet run. Part C begins once step 4 is in.
