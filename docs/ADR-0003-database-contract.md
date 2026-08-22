@@ -8962,6 +8962,79 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.203 The container download, measured a third time — patch 447
+
+**Task 0B's completeness-negative test, run against the real artefact.** The
+runbook asks for exactly this: *"feed the protected known partial B5
+`.xcappdata` capture to the completeness-negative test while keeping it outside
+the repository; it must fail."* On 22 August one arrived — 86 MB, taken at
+14:41 — and it fails.
+
+### 12.203.1 What the download carried, and what it did not
+
+| | |
+|---|---|
+| `db/` | **ABSENT** — the 39 MB database |
+| `details/` | **ABSENT** — 699 files |
+| `activities.json`, `athlete.json`, `weather.json`, `notes.json`, `proposals.json` | **ABSENT** — five stores |
+| `evidence/` | **ABSENT** |
+| `streams/` | **160 of 672 files** |
+| `commutes.json`, `constants.json`, `moves.json`, `hidden-for-test/` | present |
+| `snapshots/` | present, 47 MB |
+| `Preferences/be.apatch.Sub4.plist` | present |
+
+**The new failure mode is `streams/`.** The two downloads on 21 August omitted
+whole directories; this one produced a directory that is **present and 76 %
+empty**. That is strictly worse, because an absent folder announces itself and a
+truncated one does not — every file in it hashes correctly.
+
+### 12.203.2 And the snapshots came through byte-for-byte
+
+Both snapshots in the download were verified against their own manifests:
+
+```
+2026-08-21-123201  taken by 432   1380 of 1380 verified · 0 missing · 0 mismatched
+2026-08-22-071101  taken by 441a  1380 of 1380 verified · 0 missing · 0 mismatched
+```
+
+**The download carries two complete verified copies of everything it dropped.**
+That is the strongest vindication the snapshot design has had: the transport
+that lost the live payload could not touch a folder that had been written once
+and left alone.
+
+### 12.203.3 A hypothesis, labelled as one
+
+What survived was last written **days** ago; what vanished is what the running
+app holds open or had just rewritten — the database, both payload directories,
+and the stores each sync touches. It is consistent with the download skipping
+files the app has open, and it explains the partial `streams/`.
+
+**It is a hypothesis and it is not worth acting on**, because the failure is
+silent either way. A route that might be complete if the app is quit is not a
+route; §12.186's conclusion is unchanged and now measured three times.
+
+### 12.203.4 The consequence that matters most
+
+**`evidence/` is absent, so the container download cannot retrieve a package
+either.** The package must leave the phone through the app's own share — which
+is what 446 built and why it exists.
+
+### 12.203.5 The validator says which artefact you brought
+
+Three lines about missing files would leave a reader thinking the package was
+damaged rather than that they validated **the wrong thing**. It now recognises
+an app container — by the `.xcappdata` in the path, or by the app's own folders
+appearing where a manifest should be — and says so, with the reason and what to
+do instead. A fixture drives the message.
+
+**NEVER INSTALL THIS `.xcappdata` WITH XCODE'S REPLACE CONTAINER** (§12.186).
+Writing it back would delete the database, `details/`, five stores and 512
+traces, and would replace them with nothing.
+
+22 validator properties.
+
+---
+
 ## 12.202 Taking a package, and warning before it leaves — patch 446
 
 Task 0B, tranche 5. The control, and the sentences that stand between the most

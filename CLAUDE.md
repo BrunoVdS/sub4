@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 446 (2026-08-22).** §5.3 is the 390 device run, Compare and
+**Current at patch 447 (2026-08-22).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -506,6 +506,14 @@ Database screen" has been rejected as too thin twice.
   second reference → `Models 2.swift` → invalid redeclaration. Wrecked the project twice.
   This is a real advantage now: you can add Swift files with `Write` and never touch
   `project.pbxproj`.
+- **AND A THIRD DOWNLOAD ON 22 AUGUST WAS WORSE — 447.** No `db/`, no
+  `details/`, five stores absent, no `evidence/`, and **`streams/` present with
+  160 of 672 files**. A truncated directory is worse than an absent one: every
+  file in it hashes correctly. **The two snapshots inside it verified 1380 of
+  1380 each, byte for byte** — the transport that lost the live payload could
+  not touch a folder written once and left alone. And since `evidence/` is
+  dropped too, **the container route cannot retrieve a package either**; the
+  app's own share is the way off the phone. §12.203.
 - **NEVER USE XCODE'S "REPLACE CONTAINER" ON THIS APP.** Its **Download
   Container** silently omits files: on 21 August two downloads seven minutes
   apart both came back **without the 39 MB database, without live `details/` and
@@ -556,9 +564,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 446, 2026-08-22
+## 5. State — patch 447, 2026-08-22
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 446; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 447; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.

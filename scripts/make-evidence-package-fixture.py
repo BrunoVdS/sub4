@@ -290,7 +290,19 @@ def main(argv: list[str]) -> int:
         (p / "snapshot" / "streams").rmdir()
         (p / "snapshot" / "streams").write_bytes(b"not a directory\n")
 
+    def looks_like_a_container(p: Path):
+        # An app container, not a package: the folders are there and the
+        # manifest is not. This is the artefact somebody will validate by
+        # mistake, because Xcode produces it and it looks plausible.
+        (p / "manifest.json").unlink()
+        (p / "support-report.txt").unlink()
+        shutil.rmtree(p / "snapshot")
+        (p / "database-diagnostic-copy.sqlite").unlink()
+        (p / "snapshots").mkdir()
+        (p / "streams").mkdir()
+
     for name, damage in [
+        ("looks-like-a-container", looks_like_a_container),
         ("directory-became-a-file", directory_became_a_file),
         ("no-database", drop_database),
         ("missing-preference", drop_preference),

@@ -81,9 +81,34 @@ def unsafe(relative: str) -> str | None:
 
 # --- structure --------------------------------------------------------------
 
+def looks_like_a_container(package: Path) -> bool:
+    """An Application Support directory, or an Xcode `.xcappdata` around one.
+
+    **NAMED, BECAUSE THIS IS THE MISTAKE THAT WILL BE MADE.** The route this
+    whole thing replaces is Xcode's *Download Container*, and its output looks
+    superficially like something worth validating: it has the app's folders in
+    it. Three lines about missing files would leave a reader thinking the
+    package was damaged rather than that they validated the wrong artefact —
+    and the container is exactly the artefact that lies about completeness
+    (§12.186).
+    """
+    if any(part.endswith(".xcappdata") for part in package.parts):
+        return True
+    tells = {"snapshots", "streams", "details", "db"}
+    return sum(1 for name in tells if (package / name).exists()) >= 2
+
+
 def check_structure(package: Path, r: Report) -> dict | None:
     if not package.is_dir():
         r.fail(f"{package} is not a directory")
+        return None
+    if not (package / MANIFEST).is_file() and looks_like_a_container(package):
+        r.fail("this is an app container, not an evidence package. Xcode's "
+               "Download Container is the route the package exists to replace: "
+               "it reports success while omitting files, so nothing in it can "
+               "be treated as a complete capture. Take a package in the app "
+               "(Database health → Starting evidence) and send it from there.")
+        r.did()
         return None
     for name in (MANIFEST, REPORT, SNAPSHOT_DIR):
         if not (package / name).exists():

@@ -111,7 +111,15 @@ refuses inner-manifest-disagrees "does not match the one" \
 echo "18. A DECLARED EMPTY DIRECTORY REPLACED BY SOMETHING ELSE"
 refuses directory-became-a-file "does not hold one" "a directory that is not one"
 
-echo "19. VALIDATING NOTHING IS NOT A PASS"
+echo "19. AN APP CONTAINER, VALIDATED BY MISTAKE"
+# THE ARTEFACT THIS WHOLE THING REPLACES. Xcode's Download Container output
+# looks plausible — the app's folders are in it — and it is exactly the capture
+# that lies about completeness. Measured for real on 22 August: 160 of 672
+# traces, no database, no details/, five stores absent. §12.203.
+refuses looks-like-a-container "this is an app container, not an evidence package" \
+        "an Xcode container mistaken for a package"
+
+echo "20. VALIDATING NOTHING IS NOT A PASS"
 set +e
 $V > /dev/null 2>&1
 STATUS=$?
@@ -119,14 +127,14 @@ set -e
 (( STATUS == 2 )) || fail "an empty run exited $STATUS; it must be 2"
 ok "exit 2"
 
-echo "20. DETERMINISTIC REPEAT"
+echo "21. DETERMINISTIC REPEAT"
 A="$($V "$FIXTURES/good/$ID")"
 B="$($V "$FIXTURES/good/$ID")"
 [[ "$A" == "$B" ]] || fail "two runs over one package disagree:
 $(diff <(echo "$A") <(echo "$B") || true)"
 ok "identical output"
 
-echo "21. AND IT NEVER WRITES TO WHAT IT READS"
+echo "22. AND IT NEVER WRITES TO WHAT IT READS"
 # A validator that tidied its input would destroy the evidence it was asked to
 # check — and a package is often the only copy of the state it describes.
 BEFORE="$(find "$FIXTURES/good/$ID" -type f -exec shasum -a 256 {} \; | sort)"

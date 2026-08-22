@@ -17,7 +17,7 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 | | |
 |---|---|
 | **Current task** | **Task 0B** — the starting-evidence package, **all five tranches landed at 442–446; the campaign is next**. Task 0A is ACCEPTED — `docs/evidence/post-b5/task-0a.json`, 22 August 2026 08:18 UTC, *"I accept 0A."* Next is **Task 0B** |
-| **Patch** | 446 |
+| **Patch** | 447 |
 | **Tree** | verified from source at each patch, not from the runbook's recorded numbers |
 | **Next gate** | **Task 0B** — the starting-evidence package. Its manifest cites `task-0a` as a predecessor by hash, which is the first real use of 438's chain |
 
@@ -58,6 +58,16 @@ needs no hand-rolled copy — which the runbook forbids.
 | Decision | Blocks | Runbook's recommended starting position |
 |---|---|---|
 | ~~Retained `hidden-for-test/athlete.json.written-while-hidden` disposition~~ | ~~tranche 2~~ | **DECIDED 22 Aug: scoped receipted removal.** Preview is on the device — `hidden-for-test/athlete.json.written-while-hidden · 1507 bytes · d8cc76b5f678622fc18f53e7cd2a2552d6dde122c3096721e2da2ebbebda1ad2` |
+
+## Measured, 22 August — the completeness-negative control
+
+An 86 MB Xcode container download was fed to the validator and **fails**. What
+it carried: no `db/`, no `details/`, five stores absent, no `evidence/`, and
+**`streams/` present with 160 of 672 files** — a truncated directory, which is
+worse than an absent one because every file in it hashes. **Both snapshots
+inside it verified 1380 of 1380 byte-for-byte.** Since `evidence/` is dropped
+too, the container route cannot retrieve a package; the app's share is the only
+way off the phone. §12.203.
 
 ## Carried forward as design, not yet scheduled
 
@@ -105,3 +115,4 @@ combined Task 0 acceptance manifest.
 | 444 | Task 0B tranche 3 — the package, and the lifecycle declaration that comes with it |
 | 445 | Task 0B tranche 4 — the off-device validator and sixteen fixtures |
 | 446 | Task 0B tranche 5 — the control, the warning, and the bug driving it found |
+| 447 | the container download measured a third time — the completeness-negative test, against the real artefact |
