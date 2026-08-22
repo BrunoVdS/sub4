@@ -1,0 +1,255 @@
+//
+//  EvidencePackageSection.swift
+//  Sub4
+//
+//  Taking a package, and warning before it leaves — patch 446, §12.202.
+//
+//  **ITS OWN `View` TYPE FROM THE FIRST LINE, AND 441 IS WHY.** That patch
+//  added rows to `DatabaseHealthView` as a `@ViewBuilder` function, the phone
+//  crashed opening the screen (§12.76), and the fix for that then broke the row
+//  above it (§12.197). CLAUDE.md §2 says adding to that screen is a structural
+//  change rather than an edit. This is the structure, up front.
+//
+//  THE ORDER OF THE THREE PRESSES IS THE DESIGN
+//  --------------------------------------------
+//  1. **Take an evidence package…** — opens the warning. Takes nothing yet.
+//  2. **Take it** — only after the warning has been on screen. The capture runs
+//     off the main actor with the barrier held.
+//  3. **Send it…** — packs and opens the share sheet, and is only offered once
+//     a package exists.
+//
+//  A single button that captured and shared would put the most sensitive file
+//  this app can produce one tap from AirDrop.
+//
+
+import SwiftUI
+
+struct EvidencePackageSection: View {
+
+    enum Stage: Equatable {
+        case idle
+        case warning
+        case working(String)
+        case done(String)
+        case failed(String)
+    }
+
+    @State private var stage: Stage = .idle
+    @State private var packages: [String] = EvidencePackage.ids(base: AppSupportItem.container)
+    @State private var work: Task<Void, Never>?
+    @State private var shared: ShareItem?
+    @State private var expanded: Set<String> = []
+
+    var body: some View {
+        Section {
+            // UNCONDITIONAL. A package is a copy of everything this app holds,
+            // so how many are on the phone is a fact its owner is entitled to
+            // see without pressing anything.
+            LabeledContent("Evidence packages",
+                           value: EvidencePackage.line(base: AppSupportItem.container))
+                .font(.caption2)
+                .foregroundStyle(packages.isEmpty ? Color.dim : Color.accent4)
+
+            if ReleaseGates.isInternalBuild {
+                controls
+                existing
+            }
+        } header: {
+            Text("Starting evidence")
+        } footer: {
+            Text("A package is one folder holding a verified copy of every file "
+               + "the app has written, a copy of the database taken at a single "
+               + "instant, and a record binding the two. It is made only when "
+               + "you ask, and it is checked off this phone by "
+               + "scripts/validate-evidence-package.py in the project.")
+                .font(.caption2)
+        }
+        .sheet(item: $shared) { item in ShareSheet(items: [item.url]) }
+    }
+
+    // MARK: The three presses
+
+    @ViewBuilder
+    private var controls: some View {
+        switch stage {
+        case .idle:
+            Button("Take an evidence package…") { stage = .warning }
+                .font(.caption)
+
+        case .warning:
+            // **BEFORE, NOT IN A FOOTNOTE AFTERWARDS.** The protection this app
+            // applies ends the moment the file leaves it, and the only honest
+            // place to say so is above the button that starts it.
+            Text(EvidencePackageShare.warningTitle)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.accent4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(Array(EvidencePackageShare.warningLines.enumerated()), id: \.offset) { _, line in
+                Text("  " + line)
+                    .font(.caption2).foregroundStyle(Color.dim)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button("Take it") { take() }
+                .font(.caption.weight(.semibold))
+            Button("Not now") { stage = .idle }
+                .font(.caption)
+
+        case .working(let what):
+            HStack { ProgressView(); Text(what).font(.caption) }
+            // A capture is seconds of file work. The stop is offered because a
+            // control that cannot be stopped is one people avoid starting.
+            Button("Stop", role: .destructive) { work?.cancel() }
+                .font(.caption)
+
+        case .done(let line), .failed(let line):
+            Text("  " + line)
+                .font(.caption2)
+                .foregroundStyle({ if case .failed = stage { Color.red } else { Color.dim } }())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+            Button("Done") { stage = .idle }
+                .font(.caption)
+        }
+    }
+
+    @ViewBuilder
+    private var existing: some View {
+        ForEach(packages, id: \.self) { id in
+            Button(expanded.contains(id) ? "\(id) — delete it?" : id) {
+                if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+            }
+            .font(.caption)
+            if expanded.contains(id) {
+                Button("Send \(id)…") { send(id) }
+                    .font(.caption.weight(.semibold))
+                // A package is a copy of everything, so deleting one loses
+                // nothing — the live data it was taken from is untouched.
+                Button("Delete \(id)", role: .destructive) { delete(id) }
+                    .font(.caption)
+            }
+        }
+    }
+
+    // MARK: Doing it
+
+    private func take() {
+        guard let container = AppSupportItem.container,
+              let database = Sub4Launch.shared.database else {
+            stage = .failed("Application Support or the database is unreachable.")
+            return
+        }
+        guard let hold = EvidenceBarrier.beginHold() else {
+            stage = .failed(EvidenceBarrier.Refusal
+                .alreadyHeld(since: EvidenceBarrier.iso8601(Date())).line)
+            return
+        }
+        // READ ON THE MAIN ACTOR, where the inventory and the defaults live.
+        // Inside the detached task below they would not be reachable — the
+        // mistake `LegacySnapshot.capture`'s `items` parameter exists to stop.
+        let items = DataLifecycle.appSupportItems
+        let keys = DataLifecycle.preferenceKeys
+        let version = AppVersion.patchLabel
+        let short = AppVersion.short
+        let configuration = AppVersion.configuration
+        // READ HERE TOO. `AppVersion.patch` and `.revision` are main-actor
+        // properties, and a `@Sendable` closure cannot reach them — SE-0434's
+        // rule, arriving as a warning rather than as a crash for once.
+        let patch = AppVersion.patch
+        let revision = AppVersion.revision
+        let provenance = ReleaseGates.distributionLabel
+        let artifacts = LegacyFileTest.inventory(in: container)
+        let record = EvidencePackage.BarrierRecord(
+            writersAskedToWait: EvidenceBarrier.Writer.asked.map(\.rawValue),
+            writersDetectedOnly: EvidenceBarrier.Writer.detectedOnly.map(\.rawValue),
+            turnedAwayDuringCapture: Dictionary(
+                uniqueKeysWithValues: EvidenceBarrier.refusals.map { ($0.key.rawValue, $0.value) }),
+            notWatched: EvidencePackage.notWatchedWhy.keys.sorted(),
+            notWatchedWhy: EvidencePackage.notWatchedWhy)
+        let supplement = try? LegacySnapshot.preferenceSupplement(
+            keys: keys,
+            values: Bundle.main.bundleIdentifier
+                .flatMap { UserDefaults.standard.persistentDomain(forName: $0) }
+                ?? UserDefaults.standard.dictionaryRepresentation())
+        let now = Date()
+
+        stage = .working("Taking a package…")
+        work = Task {
+            let outcome = await Task.detached(priority: .userInitiated) {
+                EvidencePackage.write(
+                    hold: hold, database: database, base: container,
+                    allItems: items, preferenceKeys: keys,
+                    defaults: .standard,
+                    identity: { id in
+                        EvidencePackage.Identity(
+                            captureID: id,
+                            capturedUTC: EvidenceBarrier.iso8601(now),
+                            app: short, patch: patch, revision: revision,
+                            configuration: configuration, provenance: provenance)
+                    },
+                    now: now, barrierWriters: record,
+                    // **PREFERENCE-INCLUSIVE, WHICH IS THE WHOLE POINT OF THE
+                    // SUPPLEMENT.** `capture(at:)` derives its stamp from the
+                    // same instant `EvidencePackage.write` derives the capture
+                    // id from, so the two agree by construction rather than by
+                    // being passed around.
+                    takeSnapshot: { _ in
+                        try LegacySnapshot.capture(
+                            at: now, appVersion: version, base: container,
+                            items: items,
+                            supplements: supplement.map { [$0] } ?? []).manifest
+                    },
+                    // THE TASK'S OWN CANCELLATION, checked between stages by
+                    // `EvidencePackage.write`. Stopping mid-file would leave a
+                    // partial one; stopping between stages leaves a folder the
+                    // writer then removes whole.
+                    shouldCancel: { Task.isCancelled },
+                    artifacts: artifacts,
+                    snapshotsRoot: container.appendingPathComponent(
+                        LegacySnapshot.directoryName, isDirectory: true))
+            }.value
+
+            // **ON EVERY PATH.** A barrier left up stops the sync, the backfill
+            // and the background refresh for the rest of the launch.
+            EvidenceBarrier.endHold()
+            switch outcome {
+            case .success(let manifest):
+                stage = .done("\(manifest.identity.captureID) — "
+                            + "\(manifest.snapshotCopy.count) files and a database "
+                            + "copy of \(manifest.database.bytes) bytes, "
+                            + "\(manifest.database.tables.count) tables. "
+                            + "Send it from the list below.")
+            case .failure(let why):
+                stage = .failed(why.line)
+            }
+            packages = EvidencePackage.ids(base: AppSupportItem.container)
+            work = nil
+        }
+    }
+
+    private func send(_ id: String) {
+        guard let container = AppSupportItem.container else { return }
+        let package = container
+            .appendingPathComponent(EvidencePackage.directoryName, isDirectory: true)
+            .appendingPathComponent(id, isDirectory: true)
+        switch EvidencePackageShare.zip(packageAt: package, captureID: id,
+                                        into: FileManager.default.temporaryDirectory) {
+        case .success(let url): shared = ShareItem(url: url)
+        case .failure(let why): stage = .failed(why.line)
+        }
+    }
+
+    private func delete(_ id: String) {
+        guard let container = AppSupportItem.container else { return }
+        let package = container
+            .appendingPathComponent(EvidencePackage.directoryName, isDirectory: true)
+            .appendingPathComponent(id, isDirectory: true)
+        do {
+            try FileManager.default.removeItem(at: package)
+            stage = .done("\(id) removed. The data it copied is untouched.")
+        } catch {
+            stage = .failed("FAILED — \(id) could not be removed: \(error.localizedDescription)")
+        }
+        expanded.remove(id)
+        packages = EvidencePackage.ids(base: AppSupportItem.container)
+    }
+}

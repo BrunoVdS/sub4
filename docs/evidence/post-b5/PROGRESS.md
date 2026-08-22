@@ -16,8 +16,8 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 
 | | |
 |---|---|
-| **Current task** | **Task 0B** — the starting-evidence package, tranches 1–4 of 5 landed at 442–445. Task 0A is ACCEPTED — `docs/evidence/post-b5/task-0a.json`, 22 August 2026 08:18 UTC, *"I accept 0A."* Next is **Task 0B** |
-| **Patch** | 445 |
+| **Current task** | **Task 0B** — the starting-evidence package, **all five tranches landed at 442–446; the campaign is next**. Task 0A is ACCEPTED — `docs/evidence/post-b5/task-0a.json`, 22 August 2026 08:18 UTC, *"I accept 0A."* Next is **Task 0B** |
+| **Patch** | 446 |
 | **Tree** | verified from source at each patch, not from the runbook's recorded numbers |
 | **Next gate** | **Task 0B** — the starting-evidence package. Its manifest cites `task-0a` as a predecessor by hash, which is the first real use of 438's chain |
 
@@ -29,8 +29,8 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 | 2 | the transaction-consistent database copy, through GRDB's backup API | **443** | **done** — five refusals, counts compared on both sides, one file with its journal folded in, RULE 17 (§12.199) |
 | 3 | the package: snapshot + copy + manifest + redacted report, one capture id | **444** | **done** — declared in the lifecycle inventory in the same patch as the writer; three unwatched directories named in the manifest with reasons; the snapshot re-hashed inside the package (§12.200) |
 | 4 | the off-device validator and its fixtures | **445** | **done** — shares nothing with the app, never writes, sixteen fixtures each damaged one way, twenty properties in `selftest-evidence-package.sh`, run as preflight stage 4 (§12.201) |
-| 5 | the share UI, protection warning, cancellation and low-space refusals | — | open |
-| 6 | the campaign — one run, after all five | — | open |
+| 5 | the share UI, protection warning, cancellation and low-space refusals | **446** | **done** — its own `View` type from the first line; three presses; the warning asserted; cancellation between stages; the zip made outside the package. **Driving it on the simulator found the empty-directory bug thirteen tests missed** (§12.202) |
+| 6 | the campaign — one run, after all five | — | **next** — not yet written. A package captured through the UI to completion is the one thing no test can prove |
 
 **Findings that shaped it**, both measured rather than assumed: `content_revision`
 has a table and **zero writers**, so the runbook's "use a current revision as
@@ -104,3 +104,4 @@ combined Task 0 acceptance manifest.
 | 443 | Task 0B tranche 2 — the diagnostic database copy, and RULE 17 |
 | 444 | Task 0B tranche 3 — the package, and the lifecycle declaration that comes with it |
 | 445 | Task 0B tranche 4 — the off-device validator and sixteen fixtures |
+| 446 | Task 0B tranche 5 — the control, the warning, and the bug driving it found |

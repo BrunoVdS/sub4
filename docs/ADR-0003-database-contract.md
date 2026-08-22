@@ -8962,6 +8962,79 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.202 Taking a package, and warning before it leaves — patch 446
+
+Task 0B, tranche 5. The control, and the sentences that stand between the most
+sensitive file this app produces and a share sheet.
+
+### 12.202.1 Its own `View` type from the first line
+
+441 added rows to `DatabaseHealthView` as a `@ViewBuilder` function, the phone
+crashed opening the screen (§12.76), and the fix for that broke the row above it
+(§12.197). CLAUDE.md §2 says adding to that screen is a structural change rather
+than an edit. `EvidencePackageSection` is that structure, up front rather than
+after a crash.
+
+### 12.202.2 Three presses, and the order is the design
+
+**Take an evidence package…** opens a warning and takes nothing. **Take it**
+runs the capture off the main actor with the barrier held. **Send it…** packs
+and shares, and is only offered once a package exists. A single button that
+captured and shared would put a copy of every note, route and trace one tap from
+AirDrop.
+
+The warning is four sentences held in `EvidencePackageShare` rather than in the
+view, **so they can be asserted** — a warning nobody can test is a warning that
+quietly loses a clause. Sabotaged by deleting the one about AI providers; the
+control fails.
+
+### 12.202.3 Cancellation between stages, never inside one
+
+`shouldCancel` is checked **between** the snapshot, the copy and the database —
+stopping mid-file leaves a partial file, stopping between stages leaves a folder
+the writer removes whole. It reads `Task.isCancelled` from inside the detached
+task, so the Stop button is the task's own cancellation and nothing new. The
+line reads *"Stopped after …"* rather than FAILED, because a person who changed
+their mind has not had a failure.
+
+### 12.202.4 One file, packed outside the package
+
+`NSFileCoordinator`'s `.forUploading` gives a zip of the directory, into a
+temporary folder — **never beside the package**, where it would be swept into
+the next capture's fingerprint and into the next package.
+
+### 12.202.5 AND DRIVING IT ON THE SIMULATOR FOUND THE BUG THIRTEEN GREEN TESTS DID NOT
+
+The first press of **Take it** answered:
+
+> `FAILED — the snapshot inside the package does not match the one that was
+> verified: details: the copy could not be read back; streams: the copy could
+> not be read back`
+
+`LegacySnapshot` records a **declared empty directory** as `copied: true` with
+**no hash** — deliberately, because leaving it uncopied made an otherwise
+healthy snapshot permanently incomplete. The package writer treated every entry
+as a file and tried to hash a directory.
+
+**Every container in the suite held only files.** That is why thirteen controls
+passed. `CopiedFile.sha256` is optional now — nil meaning *a shape, not a file*
+— the validator requires a directory there and refuses one that is empty in the
+manifest and occupied on disk, and the fixture carries one so the case is
+exercised rather than assumed. Sabotaging the fix reproduces the device's words
+exactly.
+
+**The lesson is the old one about fixtures**: every test built the same shape,
+so the suite agreed with itself. §12.85.7's family — a fixture that never varies
+is a fixture that never asks.
+
+**Not yet proven on a device: a package captured through the UI to completion.**
+The failure path is proven, the writer is proven by test, and the successful
+capture is what the campaign is for.
+
+1957 tests in 188 suites, 21 validator properties.
+
+---
+
 ## 12.201 A validator that shares nothing with what it validates — patch 445
 
 Task 0B, tranche 4. The runbook asks for *a pinned, read-only off-device

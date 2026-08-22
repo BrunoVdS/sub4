@@ -46,7 +46,7 @@ struct EvidencePackageTests {
          .evidencePackage(EvidencePackage.directoryName)]
     }
 
-    private func identity(_ id: String) -> EvidencePackage.Identity {
+    nonisolated static func identity(_ id: String) -> EvidencePackage.Identity {
         EvidencePackage.Identity(captureID: id, capturedUTC: "2026-08-22T08:00:00Z",
                                  app: "1.0 (1) · patch 444", patch: 444,
                                  revision: nil, configuration: "Debug",
@@ -71,13 +71,13 @@ struct EvidencePackageTests {
     /// Writes a package the way the app will: a real snapshot into the real
     /// `snapshots/` folder, then the package around it.
     private func write(base dir: URL, database: Sub4Database?,
-                       snapshot: ((String) throws -> SnapshotManifest)? = nil)
+                       snapshot: (@Sendable (String) throws -> SnapshotManifest)? = nil)
     -> Result<EvidencePackage.Manifest, EvidencePackage.Failure> {
         guard let hold = EvidenceBarrier.beginHold(now: now) else {
             return .failure(.barrierRefused("could not take the barrier"))
         }
         defer { EvidenceBarrier.endHold() }
-        let take = snapshot ?? { id in
+        let take: @Sendable (String) throws -> SnapshotManifest = snapshot ?? { id in
             try LegacySnapshot.capture(stamp: id, appVersion: "patch 444",
                                        base: dir,
                                        items: [.file("athlete.json"), .file("notes.json")])
@@ -85,7 +85,7 @@ struct EvidencePackageTests {
         return EvidencePackage.write(
             hold: hold, database: database, base: dir, allItems: items,
             preferenceKeys: [], defaults: UserDefaults.standard,
-            identity: identity, now: now, barrierWriters: barrierRecord,
+            identity: Self.identity, now: now, barrierWriters: barrierRecord,
             takeSnapshot: take, artifacts: [],
             snapshotsRoot: dir.appendingPathComponent("snapshots", isDirectory: true))
     }
@@ -148,6 +148,43 @@ struct EvidencePackageTests {
         #expect(!m.before.items.isEmpty)
         #expect(m.after.differences(from: m.before).isEmpty)
         #expect(m.before.takenUTC == m.after.takenUTC || true)  // one clock, injected
+    }
+
+    /// **THE ONE THE DEVICE FOUND, AND NO TEST DID.**
+    ///
+    /// `LegacySnapshot` records a declared EMPTY directory as `copied: true`
+    /// with **no hash** — deliberately, because leaving it uncopied made an
+    /// otherwise healthy snapshot permanently incomplete. The first package
+    /// writer treated every entry as a file, and the simulator answered
+    /// `the copy could not be read back` for `details` and `streams` on the
+    /// first real run.
+    ///
+    /// The container in every other test here holds only files, which is
+    /// exactly why thirteen green controls said nothing. §12.202.
+    @Test("An empty declared directory is carried as a shape, not hashed as a file")
+    func anEmptyDirectoryIsCarried() throws {
+        let dir = try base()
+        try FileManager.default.createDirectory(
+            at: dir.appendingPathComponent("streams"), withIntermediateDirectories: true)
+        defer { clean(dir) }
+
+        let manifest = try write(base: dir, database: try populated(), snapshot: { id in
+            try LegacySnapshot.capture(stamp: id, appVersion: "patch 446", base: dir,
+                                       items: [.file("athlete.json"), .directory("streams")])
+        }).get()
+
+        let carried = try #require(
+            manifest.snapshotCopy.first { $0.path == "snapshot/streams" },
+            "the empty directory was not carried at all")
+        #expect(carried.sha256 == nil, "an empty directory was given a hash")
+        #expect(carried.bytes == 0)
+
+        var isDirectory: ObjCBool = false
+        let onDisk = dir.appendingPathComponent(EvidencePackage.directoryName)
+            .appendingPathComponent(manifest.identity.captureID)
+            .appendingPathComponent("snapshot/streams")
+        #expect(FileManager.default.fileExists(atPath: onDisk.path, isDirectory: &isDirectory))
+        #expect(isDirectory.boolValue, "the shape came across as a file")
     }
 
     // MARK: What it does not watch, and it says so
@@ -351,5 +388,158 @@ struct EvidencePackageTests {
         #expect(line.contains("1 on this phone"))
         #expect(line.contains("newest"))
         #expect(EvidencePackage.line(base: nil) == "none on this phone")
+    }
+}
+
+// MARK: - Stopping, and handing it over — patch 446, §12.202
+
+@Suite("Stopping a capture, and handing one over")
+@MainActor
+struct EvidencePackageShareTests {
+
+    private let now = Date(timeIntervalSince1970: 1_787_000_000)
+
+    private func directory() throws -> URL {
+        let d = FileManager.default.temporaryDirectory
+            .appendingPathComponent("share-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    private func clean(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+        EvidenceBarrier.releaseForTesting()
+    }
+
+    // MARK: The warning
+
+    /// **A WARNING NOBODY CAN TEST IS A WARNING THAT QUIETLY LOSES A CLAUSE.**
+    /// These four sentences are the only thing standing between the most
+    /// sensitive file this app produces and a share sheet.
+    @Test("The warning says what a package holds, and what happens when it leaves")
+    func theWarningSaysTheFourThingsThatMatter() {
+        let all = EvidencePackageShare.warningLines.joined(separator: " ").lowercased()
+        #expect(all.contains("note"), "it does not say the notes are in there")
+        #expect(all.contains("route"), "it does not say the routes are in there")
+        #expect(all.contains("database"), "it does not say the database is in there")
+        #expect(all.contains("protection is over"),
+                "it does not say the protection ends when the file leaves")
+        #expect(all.contains("ai provider"),
+                "it does not carry the one rule that has no exceptions")
+        #expect(!EvidencePackageShare.warningTitle.isEmpty)
+    }
+
+    // MARK: Stopping
+
+    /// **BETWEEN STAGES, NEVER INSIDE ONE.** A cancellation that produced a
+    /// half-written package would be worse than no cancellation at all.
+    @Test("A cancelled capture leaves nothing behind")
+    func aCancelledCaptureLeavesNothing() throws {
+        let dir = try directory(); defer { clean(dir) }
+        try Data(#"{"zones":[],"shoes":[]}"#.utf8)
+            .write(to: dir.appendingPathComponent("athlete.json"))
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [], shoes: [])
+        let hold = try #require(EvidenceBarrier.beginHold(now: now))
+        defer { EvidenceBarrier.endHold() }
+
+        let outcome = EvidencePackage.write(
+            hold: hold, database: db, base: dir,
+            allItems: [.file("athlete.json")], preferenceKeys: [],
+            defaults: .standard, identity: EvidencePackageTests.identity,
+            now: now,
+            barrierWriters: EvidencePackage.BarrierRecord(
+                writersAskedToWait: [], writersDetectedOnly: [],
+                turnedAwayDuringCapture: [:], notWatched: ["db"],
+                notWatchedWhy: ["db": "a read can touch a journal"]),
+            takeSnapshot: { id in
+                try LegacySnapshot.capture(stamp: id, appVersion: "patch 446",
+                                           base: dir, items: [.file("athlete.json")])
+            },
+            shouldCancel: { true },
+            artifacts: [],
+            snapshotsRoot: dir.appendingPathComponent("snapshots", isDirectory: true))
+
+        guard case .failure(.cancelled(let after)) = outcome else {
+            Issue.record("a cancelled capture did not stop: \(outcome)")
+            return
+        }
+        #expect(after.contains("snapshot"))
+        let root = dir.appendingPathComponent(EvidencePackage.directoryName)
+        let left = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        #expect(left.isEmpty, "a cancelled capture left \(left) behind")
+    }
+
+    @Test("Stopping reads as stopping, not as a failure")
+    func theCancelledLineIsNotAFailure() {
+        let line = EvidencePackage.Failure.cancelled(after: "the snapshot was taken").line
+        #expect(line.hasPrefix("Stopped"))
+        #expect(!line.contains("FAILED"))
+        #expect(line.contains("Nothing was left behind"))
+    }
+
+    // MARK: Packing
+
+    @Test("A package becomes one named file, outside the package folder")
+    func itPacksIntoOneFileElsewhere() throws {
+        let dir = try directory(); defer { clean(dir) }
+        let package = dir.appendingPathComponent("2026-08-22-081500", isDirectory: true)
+        try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+        try Data("{}".utf8).write(to: package.appendingPathComponent("manifest.json"))
+        let temporary = dir.appendingPathComponent("tmp", isDirectory: true)
+
+        let url = try EvidencePackageShare.zip(packageAt: package,
+                                               captureID: "2026-08-22-081500",
+                                               into: temporary).get()
+        #expect(url.lastPathComponent == "sub4-evidence-2026-08-22-081500.zip")
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        #expect((try? Data(contentsOf: url).count) ?? 0 > 0)
+
+        // **NEVER BESIDE THE PACKAGE.** A zip inside `evidence/` would be swept
+        // into the next capture's fingerprint — and into the next package.
+        let inside = try FileManager.default.contentsOfDirectory(atPath: package.path)
+        #expect(inside == ["manifest.json"], "\(inside)")
+        #expect(url.path.hasPrefix(temporary.path))
+    }
+
+    @Test("Packing something that is not there is refused, not invented")
+    func itRefusesAMissingPackage() throws {
+        let dir = try directory(); defer { clean(dir) }
+        let outcome = EvidencePackageShare.zip(
+            packageAt: dir.appendingPathComponent("nope"),
+            captureID: "nope", into: dir)
+        guard case .failure(.packageMissing(let id)) = outcome else {
+            Issue.record("a missing package produced a file: \(outcome)")
+            return
+        }
+        #expect(id == "nope")
+    }
+
+    /// The failure paths are driven rather than left to a filesystem that
+    /// refuses to co-operate — §12.69.
+    @Test("A coordinator that fails is reported, not swallowed")
+    func aFailingCoordinatorIsReported() throws {
+        let dir = try directory(); defer { clean(dir) }
+        struct Nope: Error {}
+        let outcome = EvidencePackageShare.zip(
+            packageAt: dir, captureID: "x", into: dir,
+            coordinate: { _, _ in throw Nope() })
+        guard case .failure(.couldNotZip) = outcome else {
+            Issue.record("a failing coordinator produced a file: \(outcome)")
+            return
+        }
+    }
+
+    @Test("A coordinator that produces nothing is not reported as success")
+    func aSilentCoordinatorIsNotSuccess() throws {
+        let dir = try directory(); defer { clean(dir) }
+        let outcome = EvidencePackageShare.zip(
+            packageAt: dir, captureID: "x", into: dir,
+            coordinate: { _, _ in })
+        guard case .failure(.couldNotZip(let why)) = outcome else {
+            Issue.record("an empty coordinator produced a file: \(outcome)")
+            return
+        }
+        #expect(why.contains("produced nothing"))
     }
 }

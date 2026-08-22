@@ -103,7 +103,15 @@ nonisolated enum EvidencePackage {
 
     struct CopiedFile: Codable, Sendable, Equatable {
         let path: String
-        let sha256: String
+        /// **NIL MEANS A DIRECTORY, AND THAT IS NOT A SHORTCUT.**
+        ///
+        /// `LegacySnapshot` records a declared EMPTY directory as copied with
+        /// no hash — deliberately, because leaving it `copied == false` made an
+        /// otherwise healthy snapshot permanently incomplete. So the package
+        /// has to carry the shape without inventing a hash for it. The first
+        /// draft did not, treated `details/` as a file, and the device answered
+        /// `the copy could not be read back` on the first real run.
+        let sha256: String?
         let bytes: Int
     }
 
@@ -136,6 +144,8 @@ nonisolated enum EvidencePackage {
         case databaseCopyFailed(String)
         case barrierRefused(String)
         case couldNotWriteManifest(String)
+        /// **THE ATHLETE CHANGED THEIR MIND, AND NOTHING IS LEFT BEHIND.**
+        case cancelled(after: String)
 
         var line: String {
             switch self {
@@ -158,6 +168,8 @@ nonisolated enum EvidencePackage {
                 why
             case .couldNotWriteManifest(let why):
                 "FAILED — the manifest could not be written: \(why)"
+            case .cancelled(let after):
+                "Stopped after \(after). Nothing was left behind."
             }
         }
     }
@@ -197,10 +209,11 @@ nonisolated enum EvidencePackage {
                       allItems: [AppSupportItem],
                       preferenceKeys: [String],
                       defaults: UserDefaults,
-                      identity: (String) -> Identity,
+                      identity: @Sendable (String) -> Identity,
                       now: Date,
                       barrierWriters: BarrierRecord,
-                      takeSnapshot: (String) throws -> SnapshotManifest,
+                      takeSnapshot: @Sendable (String) throws -> SnapshotManifest,
+                      shouldCancel: @Sendable () -> Bool = { false },
                       artifacts: [LegacyFileTest.Artifact],
                       snapshotsRoot: URL?,
                       fm: FileManager = .default) -> Result<Manifest, Failure> {
@@ -262,6 +275,16 @@ nonisolated enum EvidencePackage {
                 throw Stop()
             }
 
+            // **CHECKED BETWEEN STAGES, NOT INSIDE THEM.** Stopping halfway
+            // through a file copy leaves a partial file; stopping between
+            // stages leaves a folder this function then removes whole. A
+            // cancellation that produced a half-package would be worse than no
+            // cancellation at all.
+            if shouldCancel() {
+                innerFailure = .cancelled(after: "the snapshot was taken")
+                throw Stop()
+            }
+
             // 2. The snapshot, copied in and RE-HASHED here. A manifest
             //    carrying only the original's hashes would describe a folder
             //    somewhere else.
@@ -269,6 +292,11 @@ nonisolated enum EvidencePackage {
             do { copied = try copySnapshot(snapshot, from: snapshotsRoot,
                                            into: dir, fm: fm) }
             catch let f as Failure { innerFailure = f; throw Stop() }
+
+            if shouldCancel() {
+                innerFailure = .cancelled(after: "the snapshot was copied in")
+                throw Stop()
+            }
 
             // 3. The database, one commit boundary.
             guard let database else {
@@ -344,6 +372,9 @@ nonisolated enum EvidencePackage {
 
         var out: [CopiedFile] = []
         var problems: [String] = []
+        // An entry with no hash is a declared EMPTY DIRECTORY, not a file.
+        let hashless = Set(snapshot.entries.filter { $0.copied && $0.sha256 == nil }
+                                           .map(\.relativePath))
         var names = snapshot.entries.filter { $0.copied }.map(\.relativePath)
         names.append("manifest.json")
 
@@ -356,6 +387,20 @@ nonisolated enum EvidencePackage {
                 try fm.copyItem(at: from, to: to)
             } catch {
                 problems.append("\(relative): \(error)")
+                continue
+            }
+            if hashless.contains(relative) {
+                // The SHAPE is carried; there is nothing to hash. Recorded so
+                // the validator can require a directory rather than a file.
+                var isDirectory: ObjCBool = false
+                guard fm.fileExists(atPath: to.path, isDirectory: &isDirectory),
+                      isDirectory.boolValue else {
+                    problems.append("\(relative): the snapshot recorded an empty "
+                                  + "directory and the package holds something else")
+                    continue
+                }
+                out.append(CopiedFile(path: "\(snapshotFolderName)/\(relative)",
+                                      sha256: nil, bytes: 0))
                 continue
             }
             guard let data = try? Data(contentsOf: to) else {

@@ -139,6 +139,20 @@ def check_recorded_files(package: Path, manifest: dict, r: Report) -> None:
         seen.add(relative)
 
         target = package / relative
+        # **NO HASH MEANS A DECLARED EMPTY DIRECTORY**, which the snapshot
+        # records as copied on purpose — leaving it uncopied made an otherwise
+        # healthy snapshot permanently incomplete. The package carries the
+        # shape; there is nothing to hash, and requiring a file here would fail
+        # every real capture.
+        if entry.get("sha256") is None:
+            if not target.is_dir():
+                r.fail(f"{relative} is recorded as an empty directory and the "
+                       "package does not hold one")
+            elif any(target.iterdir()):
+                r.fail(f"{relative} is recorded as an EMPTY directory and the "
+                       "package's copy has something in it")
+            r.did()
+            continue
         if not target.is_file():
             r.fail(f"{relative} is recorded and MISSING from the package")
             continue

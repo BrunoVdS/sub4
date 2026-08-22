@@ -109,6 +109,15 @@ def build_good(root: Path) -> Path:
                         "sha256": digest, "copied": True, "error": None})
         copied.append({"path": f"snapshot/{name}", "sha256": digest, "bytes": size})
 
+    # A DECLARED EMPTY DIRECTORY — recorded as copied with NO hash, which is
+    # what LegacySnapshot does on purpose. The first package writer treated it
+    # as a file and the device answered "the copy could not be read back".
+    (package / "snapshot" / "streams").mkdir(parents=True, exist_ok=True)
+    entries.append({"declared": "streams", "relativePath": "streams",
+                    "exists": True, "bytes": 0, "modifiedUTC": None,
+                    "sha256": None, "copied": True, "error": None})
+    copied.append({"path": "snapshot/streams", "sha256": None, "bytes": 0})
+
     # A DECLARED ABSENCE — a retired format that cannot exist on this install.
     entries.append({"declared": "details.json", "relativePath": "details.json",
                     "exists": False, "bytes": None, "modifiedUTC": None,
@@ -276,7 +285,13 @@ def main(argv: list[str]) -> int:
                 entry["bytes"] = len(data)
         save(p, m)
 
+    def directory_became_a_file(p: Path):
+        # The shape the package must carry, replaced by something else.
+        (p / "snapshot" / "streams").rmdir()
+        (p / "snapshot" / "streams").write_bytes(b"not a directory\n")
+
     for name, damage in [
+        ("directory-became-a-file", directory_became_a_file),
         ("no-database", drop_database),
         ("missing-preference", drop_preference),
         ("partial-snapshot", partial_snapshot),

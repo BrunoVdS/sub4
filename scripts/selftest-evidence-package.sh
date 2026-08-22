@@ -108,7 +108,10 @@ echo "17. THE SNAPSHOT'S OWN MANIFEST DISAGREES WITH THE OUTER ONE"
 refuses inner-manifest-disagrees "does not match the one" \
         "an inner manifest edited to match its own hash"
 
-echo "18. VALIDATING NOTHING IS NOT A PASS"
+echo "18. A DECLARED EMPTY DIRECTORY REPLACED BY SOMETHING ELSE"
+refuses directory-became-a-file "does not hold one" "a directory that is not one"
+
+echo "19. VALIDATING NOTHING IS NOT A PASS"
 set +e
 $V > /dev/null 2>&1
 STATUS=$?
@@ -116,14 +119,14 @@ set -e
 (( STATUS == 2 )) || fail "an empty run exited $STATUS; it must be 2"
 ok "exit 2"
 
-echo "19. DETERMINISTIC REPEAT"
+echo "20. DETERMINISTIC REPEAT"
 A="$($V "$FIXTURES/good/$ID")"
 B="$($V "$FIXTURES/good/$ID")"
 [[ "$A" == "$B" ]] || fail "two runs over one package disagree:
 $(diff <(echo "$A") <(echo "$B") || true)"
 ok "identical output"
 
-echo "20. AND IT NEVER WRITES TO WHAT IT READS"
+echo "21. AND IT NEVER WRITES TO WHAT IT READS"
 # A validator that tidied its input would destroy the evidence it was asked to
 # check — and a package is often the only copy of the state it describes.
 BEFORE="$(find "$FIXTURES/good/$ID" -type f -exec shasum -a 256 {} \; | sort)"
