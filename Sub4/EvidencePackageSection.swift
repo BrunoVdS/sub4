@@ -26,11 +26,27 @@ import SwiftUI
 
 struct EvidencePackageSection: View {
 
+    /// **PRESENTED BY THE SCREEN, NOT BY THIS SECTION — patch 448b, §12.206.**
+    ///
+    /// `DatabaseHealthView` carries a comment from patch 332 saying exactly
+    /// this: *presentation modifiers live at the container, because a sheet
+    /// presented from inside a `List` row is presented from a view the list is
+    /// free to recycle.* 446 attached `.sheet` to this Section anyway, and on
+    /// the device pressing Send closed the whole Database screen — the row went
+    /// away and took the presentation with it. The item is handed up instead.
+    @Binding var shared: ShareItem?
+
     enum Stage: Equatable {
         case idle
         case warning
         case working(String)
         case done(String)
+        /// **ITS OWN CASE, BECAUSE THE COLOUR WAS ARGUING WITH THE WORDS.**
+        /// A cancellation went to `.failed` and rendered in red under the
+        /// sentence "Nothing was left behind." Somebody who changed their mind
+        /// has not had a failure, and 448 exists to say so — §12.15 in a
+        /// colour. Patch 448b.
+        case stopped(String)
         case failed(String)
     }
 
@@ -41,7 +57,6 @@ struct EvidencePackageSection: View {
     /// detached task, which does not inherit cancellation, so the flag has to
     /// be something both ends hold.
     @State private var stop = CaptureStop()
-    @State private var shared: ShareItem?
     @State private var expanded: Set<String> = []
 
     var body: some View {
@@ -68,7 +83,6 @@ struct EvidencePackageSection: View {
                + "scripts/validate-evidence-package.py in the project.")
                 .font(.caption2)
         }
-        .sheet(item: $shared) { item in ShareSheet(items: [item.url]) }
     }
 
     // MARK: The three presses
@@ -116,7 +130,7 @@ struct EvidencePackageSection: View {
             .font(.caption)
             .disabled(what.hasPrefix("Stopping"))
 
-        case .done(let line), .failed(let line):
+        case .done(let line), .stopped(let line), .failed(let line):
             Text("  " + line)
                 .font(.caption2)
                 .foregroundStyle({ if case .failed = stage { Color.red } else { Color.dim } }())
@@ -239,6 +253,9 @@ struct EvidencePackageSection: View {
                             + "copy of \(manifest.database.bytes) bytes, "
                             + "\(manifest.database.tables.count) tables. "
                             + "Send it from the list below.")
+            case .failure(.cancelled(let after)):
+                // NOT `.failed`. See `Stage.stopped`.
+                stage = .stopped(EvidencePackage.Failure.cancelled(after: after).line)
             case .failure(let why):
                 stage = .failed(why.line)
             }

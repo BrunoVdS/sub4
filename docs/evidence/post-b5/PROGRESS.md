@@ -17,7 +17,7 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 | | |
 |---|---|
 | **Current task** | **Task 0B** — the starting-evidence package, **all five tranches landed at 442–446; the campaign is next**. Task 0A is ACCEPTED — `docs/evidence/post-b5/task-0a.json`, 22 August 2026 08:18 UTC, *"I accept 0A."* Next is **Task 0B** |
-| **Patch** | 448a |
+| **Patch** | 448b |
 | **Tree** | verified from source at each patch, not from the runbook's recorded numbers |
 | **Next gate** | **Task 0B** — the starting-evidence package. Its manifest cites `task-0a` as a predecessor by hash, which is the first real use of 438's chain |
 
@@ -69,6 +69,12 @@ inside it verified 1380 of 1380 byte-for-byte.** Since `evidence/` is dropped
 too, the container route cannot retrieve a package; the app's share is the only
 way off the phone. §12.203.
 
+## Found while running campaign 0B, not yet closed
+
+| Finding | Where | State |
+|---|---|---|
+| **Two other Sections attach `.sheet`** | `DataControlsView`, `ReleaseGatesView` — exempt BY NAME in RULE 19 | **open** — neither has been driven on a device for this, and one presents the location-consent sheet, which is a consent gate rather than a convenience. §12.206.1 |
+
 ## Carried forward as design, not yet scheduled
 
 | Item | Where | State |
@@ -118,3 +124,4 @@ combined Task 0 acceptance manifest.
 | 447 | the container download measured a third time — the completeness-negative test, against the real artefact |
 | 448 | campaign 0B Part C — a Stop that could not be seen, over a stage that could not be stopped |
 | 448a | and the Stop that landed and read the wrong task's flag — RULE 18 |
+| 448b | campaign 0B Part F — Send closed the screen it was presented from — RULE 19 |

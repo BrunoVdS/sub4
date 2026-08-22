@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 448a (2026-08-22).** §5.3 is the 390 device run, Compare and
+**Current at patch 448b (2026-08-22).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -380,6 +380,13 @@ magnitude, and `test.sh` fails below 500 for the same reason.
 ./scripts/selftest-evidence-package.sh  # proves the package validator can refuse
 ```
 
+**AND A FOURTH — 448b.** Pressing Send closed the whole Database screen: a
+`.sheet` attached to a Section is presented from **a row the List is free to
+recycle**, and `DatabaseHealthView` has carried that exact warning since 332 —
+in the file where the mistake was made. The item is handed up through a
+`@Binding` now. **RULE 19** guards it, with two other sections exempt BY NAME
+rather than silently. §12.206.
+
 **AND THEN A THIRD, WHICH 448 CREATED — 448a.** `Task.detached` **does not
 inherit cancellation**, so `shouldCancel: { Task.isCancelled }` written inside
 one reads a flag nobody can set. The Stop landed, acknowledged on screen, and
@@ -579,9 +586,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 448a, 2026-08-22
+## 5. State — patch 448b, 2026-08-22
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 448a; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 448b; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.

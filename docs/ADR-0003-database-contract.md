@@ -8962,6 +8962,50 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.206 A sheet presented from a row the list may recycle — patch 448b
+
+Pressing **Send** closed the whole Database screen. The share sheet never got a
+chance.
+
+`DatabaseHealthView` has carried the reason since **patch 332**, in a comment
+directly above its own presentation modifiers:
+
+> *Presentation modifiers live here rather than on a Section, because a sheet
+> presented from inside a `List` row is presented from a view the list is free
+> to recycle.*
+
+446 attached `.sheet(item:)` to `EvidencePackageSection` — **in the same file
+that carries the warning** — and the row went away and took the presentation
+with it, dismissing its own presenter on the way.
+
+The item is handed up through a `@Binding` to the screen's existing
+`shared` state, which has presented every ⬆︎ on that screen since 332.
+
+### 12.206.1 No test can see it
+
+The suite does not run a `List`, so nothing in it can observe a recycled row.
+This is the fourth defect in Task 0B that a green suite said nothing about and
+one press on the device found. RULE 19 is the guard: a `View` whose body **is**
+a `Section` may not attach `.sheet`.
+
+**Two other sections do the same** — `DataControlsView` and `ReleaseGatesView` —
+and they are **exempt by name**, not silently. Neither has been driven on a
+device for this, and one of them presents the location-consent sheet, which is a
+consent gate rather than a convenience. Recorded as a work item rather than
+swept up mid-campaign: *an exemption with a name is a work item; an unlisted one
+is a hole.*
+
+### 12.206.2 And the colour was arguing with the words
+
+A cancellation went to `.failed` and rendered in **red** under the sentence
+*"Nothing was left behind."* 448 exists to say that stopping is not failing, and
+the colour said otherwise. `Stage.stopped` is its own case now — §12.15 in a
+colour rather than a sentence.
+
+1964 tests in 188 suites, 19 invariants.
+
+---
+
 ## 12.205 The Stop landed and read the wrong task's flag — patch 448a
 
 448 fixed a Stop that said nothing and a stage that could not be interrupted.

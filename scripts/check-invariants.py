@@ -1552,6 +1552,47 @@ def no_cancellation_is_read_across_a_detached_task():
                    "(`CaptureStop`).")
 
 
+def a_section_never_presents_a_sheet():
+    """RULE 19 — a `View` whose body IS a `Section` does not attach `.sheet`.
+
+    `DatabaseHealthView` has carried the reason since patch 332: *presentation
+    modifiers live at the container, because a sheet presented from inside a
+    `List` row is presented from a view the list is free to recycle.*
+
+    446 attached one to `EvidencePackageSection` anyway — in the same file that
+    carries the comment — and on the device pressing Send **closed the whole
+    Database screen**. The row went away and took the presentation with it. No
+    test can see this: the suite does not run a `List`.
+
+    Two other sections do the same and are recorded rather than swept up
+    (§12.206). They are exempt by name until somebody drives them on a device;
+    an exemption with a name is a work item, an unlisted one is a hole.
+    """
+    rule = "a section never presents a sheet"
+    # DRIVEN ON A DEVICE AND FOUND HEALTHY, OR SIMPLY NOT YET DRIVEN. Either
+    # way the entry is the record of the question, not permission.
+    not_yet_driven = {"DataControlsView.swift", "ReleaseGatesView.swift"}
+    checked = 0
+    for path in sorted(APP.glob("*.swift")):
+        body = strip_comments(path.read_text())
+        span = braced_span(body, "var body: some View")
+        if span is None:
+            continue
+        block = body[span[0]:span[1]]
+        root = re.search(r"\{\s*(\w+)", block)
+        if not root or root.group(1) != "Section":
+            continue
+        checked += 1
+        if ".sheet(" in block and path.name not in not_yet_driven:
+            fail(rule, f"{path.name}'s body is a Section and it attaches "
+                       "`.sheet`. A List is free to recycle the row that "
+                       "presents it, and on 22 August that closed the whole "
+                       "Database screen when Send was pressed. Hand the item "
+                       "up to the container with a @Binding, the way "
+                       "DatabaseHealthView has done since 332.")
+    counted(rule, checked, 4, "sections read")
+
+
 RULES = [
     a_seam_never_reaches_the_launchs_database,
     every_store_that_records_a_read_refuses_a_write,
@@ -1571,6 +1612,7 @@ RULES = [
     every_asked_writer_is_actually_asked,
     a_verification_never_reads_its_own_input,
     no_cancellation_is_read_across_a_detached_task,
+    a_section_never_presents_a_sheet,
 ]
 
 for r in RULES:

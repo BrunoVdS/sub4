@@ -467,7 +467,7 @@ struct DatabaseHealthView: View {
         // PATCH 446. After the survey and before the benchmark: it is about the
         // files the survey has just described, and it is the one control on
         // this screen that produces something to send off the phone.
-        EvidencePackageSection()
+        EvidencePackageSection(shared: $shared)
         benchmarkSection
         diagnosticsSection(db)
     }

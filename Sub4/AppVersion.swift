@@ -81,7 +81,7 @@ enum AppVersion {
     ///
     /// One lowercase letter. `AppVersionTests` holds it to that, because "a1"
     /// or "A" would sort and read differently everywhere this is printed.
-    static let revision: String? = "a"
+    static let revision: String? = "b"
 
     /// "284", or "284a" once a fix-up has landed on it. THE FORM TO DISPLAY —
     /// `patch` alone cannot tell a device that has the fix-up from one that
