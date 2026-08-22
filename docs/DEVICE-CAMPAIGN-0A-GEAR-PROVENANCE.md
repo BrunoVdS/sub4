@@ -312,6 +312,48 @@ reconciled from the source before Part A's baseline at 06:43.
 Debug.** B6a's 1.0 s trigger is on the **Release** stall, last measured
 0.608 / 0.613 s at patch 432 (§12.184), so this does not move it.
 
-### 7.3 Parts C–E
+### 7.3 Part C — 06:56–06:58. FOUR OF FOUR, AND THIS IS THE ANSWER
 
-Not yet run. Part C begins once step 4 is in.
+| # | reading | verdict |
+|---|---|---|
+| 10 | row **red**: `HIDDEN: athlete.json, weather.json — put them back`; the button flips to `Put the legacy files back`; outcome `moved athlete.json, weather.json` | pass |
+| 11 | shoes after a cold launch with both files hidden: **534, 516, 324, 248, 114, 108** — six rows, every one with a bar | **pass — identical to the baseline** |
+| 12 | weather on an activity: `Overcast 21 °C · Felt 23 °C · Wind 10 km/h WSW · Humidity 83 %`, with `Open-Meteo · ERA5 · mean of 2 hourly readings across the session` | pass |
+| 13 | `Athlete store reads: the database` · `Weather store reads: the database` · bootstrap `weather and gear: 606 readings, 11 gear` · `Gear facts recovered from the file at hydration: 0` · `internal test artifacts: 3`, all hashed | pass |
+
+**B5 CAMPAIGN ROW 19 IS CLOSED.** The gear and the weather were drawn from a
+cold launch with both legacy files renamed out of reach, with Strava switched
+off and its refusal observed at 06:53, and with the rendering read **before**
+any file-side diagnostic ran. No route is left by which those six rows came
+from a file.
+
+The detail screen also drew its splits, its note, its target verdict and its
+per-kilometre heart rates with `athlete.json` gone. Not B5's, but worth knowing
+nothing else leaned on the file either.
+
+#### 7.3.1 THE FINDING — same size, different hash
+
+```
+hidden-for-test/athlete.json                      · 1507 bytes · f3657c1e…
+hidden-for-test/athlete.json.written-while-hidden · 1507 bytes · d8cc76b5…
+hidden-for-test/weather.json                      · 179147 bytes · 7b1a2a1b…
+```
+
+**The two athlete files are the same length and are not the same document.**
+The one the app wrote on 21 August is not a duplicate of the original.
+
+**A `bytes` column alone would have shown two identical numbers** and invited
+exactly the wrong conclusion — that the rewrite reproduced the file. The hash is
+what makes the difference visible, and this is 439's first device run.
+
+It changes tranche 2b's brief: the leftover cannot be dismissed as a copy of
+what is already there. It is still the athlete's own data, superseded by the
+live file, and the removal's last-copy guards are what make clearing it safe.
+
+The three statuses rendered as specified — `the only copy — the live file is
+hidden` for both originals, `kept from an earlier test` for the leftover. The
+classifier's third bucket is doing real work.
+
+### 7.4 Parts D–E
+
+Not yet run.
