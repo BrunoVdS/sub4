@@ -234,3 +234,270 @@ struct InternalTestArtifactTests {
         #expect(LegacyFileTest.inventory(in: nil).isEmpty)
     }
 }
+
+// MARK: - Clearing the leftover — patch 441, §12.196
+
+/// **FOUR REFUSALS, EACH DRIVEN, PLUS THE ONE THAT MADE THE OTHERS POSSIBLE.**
+///
+/// The runbook's Task 0A asks for a scoped removal that refuses unless nothing
+/// is hidden, the live counterpart exists AND reads, the path is on an
+/// allow-list rather than a glob, and a verified snapshot holds a copy. A
+/// refusal nothing drives is a refusal nobody has tested — §12.69 — and this
+/// control deletes a copy of the athlete's own data.
+@Suite("Removing one internal-test leftover")
+@MainActor
+struct TestArtifactRemovalTests {
+
+    private let version = "patch 441 (test)"
+    private let now = Date(timeIntervalSince1970: 1_787_000_000)
+
+    /// **A REAL `athlete.json`, NOT `{}`.** The first draft used an empty
+    /// object and every happy-path assertion failed with
+    /// *"the file reads as JSON but not as this store\'s data"* — which is the
+    /// classifier being right. Refusal 2 is that the live file READS, and a
+    /// fixture that does not read cannot exercise the path where it does.
+    private nonisolated static let liveAthlete = #"{"zones":[],"shoes":[]}"#
+
+    /// A truncated one, for the case where the live file exists and is broken.
+    private nonisolated static let brokenAthlete = #"{"zones":[{"index":1,"min":100"#
+
+    /// A container with the folder, and whatever the case needs in it.
+    ///
+    /// `liveAthlete` is `nonisolated` because it is a DEFAULT ARGUMENT, and a
+    /// default argument is evaluated at the CALL SITE rather than inside the
+    /// function — §12.95.4's rule, showing up here as a Swift 6 warning rather
+    /// than as a missed grep.
+    private func container(live: String? = liveAthlete,
+                           leftover: String? = "{\"written\":true}",
+                           stranger: String? = nil,
+                           hidden: Bool = false,
+                           snapshot: Bool = true) throws -> URL {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("removal-\(UUID().uuidString)")
+        let dir = base.appendingPathComponent(LegacyFileTest.directoryName,
+                                              isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if let live { try Data(live.utf8).write(to: base.appendingPathComponent("athlete.json")) }
+        if let leftover {
+            try Data(leftover.utf8)
+                .write(to: dir.appendingPathComponent("athlete.json.written-while-hidden"))
+        }
+        if let stranger {
+            try Data(stranger.utf8).write(to: dir.appendingPathComponent("notes.txt"))
+        }
+        // THE SNAPSHOT IS TAKEN BY THE REAL CAPTURE, not by hand-writing a
+        // manifest. A fixture manifest would prove the reader parses JSON; this
+        // proves the removal accepts what `LegacySnapshot` actually produces.
+        if snapshot {
+            _ = try LegacySnapshot.capture(stamp: "2026-08-22-070000",
+                                           appVersion: version,
+                                           base: base,
+                                           items: [.file("athlete.json")])
+        }
+        if hidden { _ = LegacyFileTest.hide(in: base) }
+        return base
+    }
+
+    private func clean(_ base: URL) { try? FileManager.default.removeItem(at: base) }
+
+    // MARK: The allow-list is a construction
+
+    /// **NOT A GLOB.** `*.written-while-hidden` would delete whatever a future
+    /// patch puts in this folder under that suffix for a different reason.
+    @Test("What may be removed is derived from the vocabulary")
+    func theAllowListComesFromTheNames() {
+        #expect(TestArtifactRemoval.removableNames
+                == Set(LegacyFileTest.names.map { "\($0).written-while-hidden" }))
+        #expect(TestArtifactRemoval.counterpart(of: "athlete.json.written-while-hidden")
+                == "athlete.json")
+        #expect(TestArtifactRemoval.counterpart(of: "anything-else.written-while-hidden") == nil)
+        #expect(TestArtifactRemoval.counterpart(of: "athlete.json") == nil)
+    }
+
+    // MARK: The happy path — and it has to exist, or every refusal below is vacuous
+
+    @Test("With every check satisfied it removes exactly one file and receipts it")
+    func itRemovesAndReceipts() throws {
+        let base = try container()
+        defer { clean(base) }
+
+        let preview = TestArtifactRemoval.preview(in: base)
+        #expect(preview.canProceed, "\(preview.lines)")
+        #expect(preview.counterpart == "athlete.json")
+        #expect(preview.snapshotID == "2026-08-22-070000")
+        let target = try #require(preview.target)
+        #expect(target.path == "hidden-for-test/athlete.json.written-while-hidden")
+
+        let outcome = TestArtifactRemoval.remove(confirming: preview, in: base,
+                                                 now: now, appVersion: version)
+        let receipt = try #require(try? outcome.get(), "refused: \(outcome)")
+        #expect(receipt.verifiedAbsent, "the removal did not check its own work")
+        #expect(receipt.sha256 == target.sha256)
+        #expect(receipt.bytes == target.bytes)
+        #expect(receipt.snapshotID == "2026-08-22-070000")
+
+        // The file is gone, read off the disk rather than from the receipt.
+        let gone = base.appendingPathComponent(LegacyFileTest.directoryName)
+            .appendingPathComponent("athlete.json.written-while-hidden")
+        #expect(!FileManager.default.fileExists(atPath: gone.path))
+
+        // THE LIVE FILE IS UNTOUCHED. The whole hazard in one assertion.
+        let stillLive = base.appendingPathComponent("athlete.json")
+        #expect(FileManager.default.fileExists(atPath: stillLive.path))
+    }
+
+    /// **THE BUG THIS CAUGHT BEFORE IT SHIPPED.** The receipt is written into
+    /// the folder it cleaned. Without its own status it would classify as
+    /// `unrecognised`, and the control refuses when the folder holds anything
+    /// unrecognised — so the first successful removal would have left behind
+    /// the exact file that made every later removal impossible.
+    @Test("A removal does not poison the next one")
+    func theReceiptIsNotAStranger() throws {
+        let base = try container()
+        defer { clean(base) }
+
+        _ = TestArtifactRemoval.remove(confirming: TestArtifactRemoval.preview(in: base),
+                                       in: base, now: now, appVersion: version)
+
+        let held = LegacyFileTest.inventory(in: base)
+        #expect(held.count == 1)
+        #expect(held.first?.status == .removalReceipt, "\(held)")
+
+        let again = TestArtifactRemoval.preview(in: base)
+        #expect(again.refusals == [.nothingToRemove],
+                "a receipt from the last removal blocks the next: \(again.lines)")
+    }
+
+    // MARK: Refusal 1 — nothing may be hidden
+
+    /// While a test is running the live file is ABSENT and this folder holds
+    /// the only copy of it.
+    @Test("It refuses while a test is running")
+    func itRefusesWhileSomethingIsHidden() throws {
+        let base = try container(hidden: true)
+        defer { clean(base) }
+
+        let preview = TestArtifactRemoval.preview(in: base)
+        #expect(!preview.canProceed)
+        #expect(preview.refusals.contains(.somethingIsHidden(["athlete.json"])),
+                "\(preview.refusals)")
+    }
+
+    // MARK: Refusal 2 — the live counterpart must exist AND read
+
+    @Test("It refuses when the live file is not there")
+    func itRefusesWithNoLiveCounterpart() throws {
+        let base = try container(live: nil, snapshot: false)
+        defer { clean(base) }
+
+        let preview = TestArtifactRemoval.preview(in: base)
+        #expect(preview.refusals.contains(.liveCounterpartMissing("athlete.json")),
+                "\(preview.refusals)")
+    }
+
+    /// **EXISTS IS NOT READS.** A live `athlete.json` that stops part way makes
+    /// the leftover the best copy on the phone, and that is the moment not to
+    /// delete it. The reason is the classifier's own sentence — the same one
+    /// the survey row shows (§12.43).
+    @Test("It refuses when the live file is there and broken")
+    func itRefusesWhenTheLiveFileIsBroken() throws {
+        let base = try container(live: Self.brokenAthlete)
+        defer { clean(base) }
+
+        let preview = TestArtifactRemoval.preview(in: base)
+        let refused = preview.refusals.contains { r in
+            if case .liveCounterpartUnreadable(let name, _) = r { return name == "athlete.json" }
+            return false
+        }
+        #expect(refused, "a truncated live file did not stop the removal: \(preview.refusals)")
+    }
+
+    // MARK: Refusal 3 — an allow-list, not a wildcard
+
+    /// Something this control did not write is NAMED and left alone, rather
+    /// than swept up with the rest — §12.132, over a delete.
+    @Test("It refuses when the folder holds something it did not write")
+    func itRefusesOverAStranger() throws {
+        let base = try container(stranger: "left by something else")
+        defer { clean(base) }
+
+        let preview = TestArtifactRemoval.preview(in: base)
+        #expect(preview.refusals.contains(.notAllowListed(["hidden-for-test/notes.txt"])),
+                "\(preview.refusals)")
+        #expect(!preview.canProceed)
+
+        // And it really does not remove it.
+        _ = TestArtifactRemoval.remove(confirming: preview, in: base,
+                                       now: now, appVersion: version)
+        let stranger = base.appendingPathComponent(LegacyFileTest.directoryName)
+            .appendingPathComponent("notes.txt")
+        #expect(FileManager.default.fileExists(atPath: stranger.path))
+    }
+
+    // MARK: Refusal 4 — a verified snapshot holding this file
+
+    @Test("It refuses without a complete snapshot holding the live file")
+    func itRefusesWithNoSnapshot() throws {
+        let base = try container(snapshot: false)
+        defer { clean(base) }
+
+        let preview = TestArtifactRemoval.preview(in: base)
+        #expect(preview.refusals.contains(.noVerifiedSnapshot("athlete.json")),
+                "\(preview.refusals)")
+    }
+
+    // MARK: The confirmation is a permission, not a lock
+
+    /// **`remove` RE-EVALUATES.** A preview can be minutes old, and a test can
+    /// have started in between.
+    @Test("A stale confirmation does not carry")
+    func aStaleConfirmationIsRefused() throws {
+        let base = try container()
+        defer { clean(base) }
+
+        let preview = TestArtifactRemoval.preview(in: base)
+        #expect(preview.canProceed)
+
+        // The world moves after the reader agreed.
+        _ = LegacyFileTest.hide(in: base)
+
+        let outcome = TestArtifactRemoval.remove(confirming: preview, in: base,
+                                                 now: now, appVersion: version)
+        guard case .failure(let why) = outcome else {
+            Issue.record("a stale confirmation removed a file while a test was running")
+            return
+        }
+        #expect(why == .somethingIsHidden(["athlete.json"]))
+
+        // And the leftover is still there.
+        let kept = base.appendingPathComponent(LegacyFileTest.directoryName)
+            .appendingPathComponent("athlete.json.written-while-hidden")
+        #expect(FileManager.default.fileExists(atPath: kept.path))
+    }
+
+    // MARK: The preview always says something
+
+    /// A preview that renders nothing when it cannot proceed reads like a
+    /// permission — §12.15 over a delete button.
+    @Test("Every preview state produces a line")
+    func thePreviewIsUnconditional() throws {
+        let empty = TestArtifactRemoval.preview(in: nil)
+        #expect(empty.lines.count == 1)
+        #expect(empty.lines[0].contains("unreachable"))
+
+        let base = try container(leftover: nil)
+        defer { clean(base) }
+        let nothing = TestArtifactRemoval.preview(in: base)
+        #expect(nothing.lines.contains { $0.contains("nothing to remove") },
+                "\(nothing.lines)")
+
+        let ready = try container()
+        defer { clean(ready) }
+        let lines = TestArtifactRemoval.preview(in: ready).lines
+        #expect(lines.contains { $0.contains("would remove") })
+        #expect(lines.contains { $0.contains("every check passed") })
+        // The hash is in the preview, so the reader confirms a specific file
+        // rather than a description of one.
+        #expect(lines.contains { $0.count > 64 && $0.contains("bytes") })
+    }
+}

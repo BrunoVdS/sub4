@@ -228,6 +228,13 @@ struct DatabaseHealthView: View {
         AppSupportItem.container.map { LegacyFileTest.hiddenNow(in: $0) } ?? []
     @State private var legacyFileTestOutcome: String?
 
+    /// PATCH 441. **NIL UNTIL THE READER ASKS.** The preview is not computed on
+    /// every redraw: it hashes files and reads snapshot manifests, and a delete
+    /// control that quietly does work before anybody presses anything is a
+    /// delete control nobody chose to start.
+    @State private var removalPreview: TestArtifactRemoval.Preview?
+    @State private var removalOutcome: String?
+
     /// PATCH 332. Nil until the share button writes a file. `ShareItem` is the
     /// wrapper `ShareSheet.swift` owns so that `.sheet(item:)` has something
     /// `Identifiable` without a retroactive conformance on `URL`.
@@ -1571,6 +1578,60 @@ struct DatabaseHealthView: View {
                     .font(.caption2).foregroundStyle(Color.dim)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            removalRows(in: dir)
+        }
+    }
+
+    /// **CLEARING THE LEFTOVER — patch 441, §12.196.**
+    ///
+    /// Preview, then confirm, then remove. Two presses, because the first one
+    /// answers a question — *which exact file, and is it safe* — that the
+    /// reader cannot otherwise ask. `TestArtifactRemoval` re-evaluates every
+    /// refusal inside the second press, so the gap between them is not a hole.
+    ///
+    /// Its own `@ViewBuilder` function for §12.76's reason: this section's
+    /// top-level child count does not move.
+    @ViewBuilder
+    private func removalRows(in dir: URL) -> some View {
+        if removalPreview == nil && !LegacyFileTest.writtenWhileHidden(in: dir).isEmpty {
+            Button("Clear the file kept from an earlier test…") {
+                removalPreview = TestArtifactRemoval.preview(in: dir)
+                removalOutcome = nil
+            }
+            .font(.caption)
+        }
+        if let preview = removalPreview {
+            // UNCONDITIONAL AND ALWAYS REASONED. A preview that renders nothing
+            // when it cannot proceed reads like a permission — §12.15 over a
+            // delete button.
+            ForEach(Array(preview.lines.enumerated()), id: \.offset) { _, line in
+                Text("  \(line)")
+                    .font(.caption2)
+                    .foregroundStyle(preview.canProceed ? Color.dim : Color.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+            if preview.canProceed {
+                Button("Remove it permanently", role: .destructive) {
+                    let outcome = TestArtifactRemoval.remove(
+                        confirming: preview, in: dir, now: Date(),
+                        appVersion: AppVersion.short)
+                    switch outcome {
+                    case .success(let receipt): removalOutcome = receipt.line
+                    case .failure(let why):     removalOutcome = why.line
+                    }
+                    removalPreview = nil
+                }
+                .font(.caption.weight(.semibold))
+            }
+            Button("Leave it alone") { removalPreview = nil; removalOutcome = nil }
+                .font(.caption)
+        }
+        if let removalOutcome {
+            Text("  \(removalOutcome)")
+                .font(.caption2).foregroundStyle(Color.dim)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
         }
     }
 

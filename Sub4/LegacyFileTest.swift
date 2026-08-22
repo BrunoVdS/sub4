@@ -144,6 +144,16 @@ nonisolated enum LegacyFileTest {
             /// Written by a store while its own file was hidden, kept by
             /// `restore` rather than overwritten (§12.188).
             case keptFromAnEarlierTest = "kept from an earlier test"
+            /// A receipt written by `TestArtifactRemoval` — patch 441. The
+            /// folder is the app's record of its own internal tests, so what it
+            /// used to hold belongs in it.
+            ///
+            /// **IT NEEDED ITS OWN CASE, AND NOT FOR TIDINESS.** Without one it
+            /// would classify as `unrecognised`, and `TestArtifactRemoval`
+            /// refuses when the folder holds anything unrecognised — so the
+            /// first successful removal would have left behind the exact file
+            /// that made every later removal impossible. §12.196.3.
+            case removalReceipt = "a receipt for a removal"
             /// Something else, in a directory only this file writes to. Named
             /// rather than skipped: a category that quietly drops what it does
             /// not recognise is §12.132.
@@ -165,6 +175,8 @@ nonisolated enum LegacyFileTest {
             let status: Artifact.Status =
                 hidden.contains(name) ? .hiddenOriginal
                 : name.hasSuffix(".written-while-hidden") ? .keptFromAnEarlierTest
+                : (name.hasPrefix(TestArtifactRemoval.receiptPrefix)
+                   && name.hasSuffix(".json")) ? .removalReceipt
                 : .unrecognised
             return Artifact(path: "\(directoryName)/\(name)",
                             sha256: LegacySnapshot.hex(data),

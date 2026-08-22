@@ -8962,6 +8962,79 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.196 Clearing one internal-test leftover, with four refusals — patch 441
+
+Task 0A tranche 2b, and Bruno's decision of 22 August: **scoped receipted
+removal**, not indefinite retention.
+
+433's control renames the legacy files aside and back. When a store writes a
+fresh file while its own is hidden, `restore` **keeps** that write rather than
+overwriting the original (§12.188), so the folder can be left holding
+`athlete.json.written-while-hidden`. One has been on the phone since 21 August:
+**1507 bytes, `d8cc76b5…`** — and the campaign proved it is not a duplicate of
+the live file, which is the same length and a different hash (§12.194's
+inventory, first device run).
+
+**It is a copy of the athlete's own data**, so it does not get `try?
+fm.removeItem`. The runbook names the shape — preview → confirm → remove →
+verify → receipt — and four conditions. Each is a **refusal with a reason**.
+
+### 12.196.1 The four, and why each one
+
+1. **Nothing may be hidden.** While a test is running the live file is ABSENT
+   and this folder holds the only copy of it.
+2. **The live counterpart must exist AND READ** — through `LegacyClassifier`,
+   the same rule the survey row uses (§12.43). *Exists* is not *reads*: a
+   truncated live `athlete.json` makes the leftover the best copy on the phone,
+   and that is precisely the moment not to delete it. The refusal carries the
+   classifier's own sentence.
+3. **The path is on an allow-list built from the vocabulary**, never a glob.
+   `LegacyFileTest.names` decides what may be removed; anything else in the
+   folder is refused **by name** rather than swept up (§12.132 over a delete).
+   A `*.written-while-hidden` wildcard would delete whatever a future patch puts
+   there for a different reason.
+4. **A complete snapshot still on disk must hold a hashed, verified copy of the
+   live counterpart** — not "a snapshot exists", one that copied *this file*.
+   That is what makes the removal reversible from evidence rather than from
+   memory.
+
+### 12.196.2 The confirmation is a permission, not a lock
+
+`remove` **re-evaluates all four** and does not trust the `Preview` it is
+handed. A preview can be minutes old and a test can have started in between; it
+also requires the agreed target to still be the file on disk, by hash, so an
+agreement to remove one file cannot transfer to another. Sabotaged by making it
+trust the preview: the stale-confirmation control fails.
+
+### 12.196.3 The receipt needed its own status, and not for tidiness
+
+The receipt is written **into the folder it cleaned** — that folder is the app's
+record of its own internal tests, so what it used to hold belongs in it.
+`LifecycleLog` was the obvious home and is wrong for this one: it is
+memory-only *by design*, because a record of a deletion must not outlive the
+deletion it describes — and this receipt has to be citable in a Task 0A
+manifest weeks later. "Delete local data" still removes the folder whole.
+
+**Without its own `Artifact.Status` the receipt classified as `unrecognised`,
+and refusal 3 fires on anything unrecognised — so the first successful removal
+would have left behind the exact file that made every later removal
+impossible.** Caught by the control before it shipped; sabotage reproduces it
+verbatim: `notAllowListed(["hidden-for-test/removed-….json"])`.
+
+### 12.196.4 What it still cannot check, stated rather than implied
+
+The inventory hashes what is **inside** `hidden-for-test/`, so it can prove the
+leftover is untouched but **cannot hash the restored live file**. After a
+restore the original's identity rests on exclusion — the folder held exactly two
+files, the leftover is still there by hash, the other is gone, and restore
+renames rather than copies. Sound, and indirect. The campaign recorded it, and
+the honest fix is for `hide` to record a manifest of what it moved with hashes,
+so `restore` and this removal can verify rather than infer. Not this patch.
+
+Ten controls, two sabotages. 1910 tests in 184 suites.
+
+---
+
 ## 12.195 A test that passed only on a simulator an earlier run had dirtied — patch 440
 
 Found at 437, by erasing a wedged simulator.
