@@ -73,6 +73,12 @@ echo "=== 4/4  evidence manifests ==="
 # the four the runner and the shape owe, in under a second.
 ./scripts/selftest-evidence.sh
 echo
+# PATCH 445, §12.201. The off-device validator, driven against sixteen
+# synthetic packages each damaged in exactly one way — including the shape
+# Xcode's container download actually produced: every hash matching, and files
+# quietly missing.
+./scripts/selftest-evidence-package.sh
+echo
 # And then the REAL manifests, if any exist yet. A glob that matches nothing is
 # not an empty pass here: the validator exits 2 when given no input, so the
 # absence is stated rather than skipped.

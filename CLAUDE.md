@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 444 (2026-08-22).** §5.3 is the 390 device run, Compare and
+**Current at patch 445 (2026-08-22).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -377,7 +377,17 @@ magnitude, and `test.sh` fails below 500 for the same reason.
 ./scripts/preflight.sh     # test + Release build; run before anything destructive
 ./scripts/selftest-lock.sh     # proves the repository lock, in under a second
 ./scripts/selftest-evidence.sh # proves the evidence-manifest validator can refuse
+./scripts/selftest-evidence-package.sh  # proves the package validator can refuse
 ```
+
+**AND THE PACKAGE VALIDATOR SHARES NOTHING WITH THE APP — 445.**
+`scripts/validate-evidence-package.py` reads a package the way a stranger would,
+because a checker that shares code with the thing it checks inherits its blind
+spots — which is what Xcode's container download demonstrated. It **never
+writes**, a hot journal is a refusal rather than a tidy-up, and **completeness
+is not a hash property**: a capture that drops files silently passes every hash
+check, so the snapshot's own manifest is walked instead. Sixteen synthetic
+fixtures, each damaged in exactly one way. §12.201.
 
 **TASK 0B HAS STARTED, AND ITS HARD HALF IS THE BARRIER — 442.** The package is
 two captures at two moments, so a package whose halves disagree is worse than
@@ -538,9 +548,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 444, 2026-08-22
+## 5. State — patch 445, 2026-08-22
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 444; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 445; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.

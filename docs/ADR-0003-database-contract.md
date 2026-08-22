@@ -8962,6 +8962,68 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.201 A validator that shares nothing with what it validates — patch 445
+
+Task 0B, tranche 4. The runbook asks for *a pinned, read-only off-device
+validator*, and the reason is §12.186: **a checker that shares code with the
+thing it checks inherits its blind spots.** Xcode's container download reported
+success while omitting the database, both payload folders and four stores.
+
+`scripts/validate-evidence-package.py` reads a package the way a stranger would
+— from the filesystem, with the standard library, knowing only the manifest's
+shape. **Not one line is shared with the app**, and it deliberately compares the
+two fingerprints as raw JSON rather than modelling Swift's enum encoding: a
+validator that had to track `ItemReading.Kind` would break the day it gained a
+case, and would be checking its model rather than the package.
+
+### 12.201.1 It never writes, and a hot journal is a failure rather than a tidy-up
+
+SQLite is opened through a `file:…?mode=ro` URI, and a journal sidecar beside
+the database copy is a **refusal**. A validator that cleaned its input would
+destroy the evidence it was asked to check — and a package is often the only
+copy of the state it describes. Property 20 hashes every file before and after
+a run and requires them identical.
+
+### 12.201.2 The check the `.xcappdata` fails, and every hash still matches
+
+**Completeness is not a hash property.** A capture that drops files without
+saying so passes every hash check ever written, because the files it dropped
+are not in the list it hashes. So the validator walks the snapshot's own
+manifest: everything recorded as *copied* must be in the package, and
+everything recorded as *not present on the phone* must not be — the second
+catching a package that describes a different device.
+
+### 12.201.3 Sixteen fixtures, built rather than committed
+
+The runbook names twelve; four more come from the manifest's own shape. Each
+damages **exactly one thing**, so a failure names the check that caught it
+rather than a pile: omitted database · missing preference · partial snapshot ·
+a file with identical LENGTH and different bytes · tampered manifest · hot WAL ·
+unsafe path · duplicate path · mismatched pre/post · unwatched-with-no-reason ·
+truncated database · a copy claiming to be a restore artifact · an unknown
+schema version · a resurrected absence · a mismatched capture id · an inner
+manifest edited to match its own hash.
+
+**Synthetic and redacted**: two tiny JSON files and a four-row database. A
+fixture cut from real data would put the athlete's history in the repository to
+test a hash comparison. **Built, not committed**, because a binary whose hash
+must stay in step with a JSON file beside it rots the first time either is
+touched.
+
+### 12.201.4 The first run found the defect that mattered most
+
+The truncated-database fixture produced a **traceback**: `PRAGMA quick_check`
+raises `database disk image is malformed`, and the first draft let it escape.
+**A validator that crashes on damaged input cannot report on damaged input,
+which is the only input it exists for.** Every database read is guarded now and
+each failure is recorded as a problem rather than an abort.
+
+Twenty properties, and each checks the REASON rather than the exit status —
+§12.191.3, which 444 lost a sabotage to three patches ago. Sabotaged twice: the
+completeness walk and the hash comparison, one property each.
+
+---
+
 ## 12.200 One folder that can be checked from somewhere else — patch 444
 
 Task 0B, tranche 3. What it replaces is the reason it exists: Xcode's *Download
