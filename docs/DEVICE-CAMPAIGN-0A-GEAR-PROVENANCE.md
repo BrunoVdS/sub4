@@ -7,7 +7,7 @@
 | **Closes** | B5 campaign row 19's residual ambiguity — `docs/DEVICE-CAMPAIGN-B5.md` §10.1j and §10.1k |
 | **ADR** | §12.187, §12.188, §12.194, and this campaign's result |
 | **Time** | about twenty minutes |
-| **State** | **NOT RUN** |
+| **State** | **COMPLETE — SEVENTEEN OF SEVENTEEN**, 22 August 2026, patch 440, Debug, 06:42–07:13. §7 |
 
 **THIS IS NOT A RERUN OF THE B5 CAMPAIGN.** That campaign is accepted at
 twenty-two of twenty-two and nothing here repeats it. This asks one question it
@@ -354,6 +354,72 @@ The three statuses rendered as specified — `the only copy — the live file is
 hidden` for both originals, `kept from an earlier test` for the leftover. The
 classifier's third bucket is doing real work.
 
-### 7.4 Parts D–E
+### 7.4 Part D — 07:01. TWO OF TWO, AND STEP 15 ANSWERED ITS QUESTION
 
-Not yet run.
+| # | reading | verdict |
+|---|---|---|
+| 14 | `athlete: not on this phone` · `weather: not on this phone` — five minutes after hiding, across a cold launch | **pass, and it is the finding** |
+| — | step 16: patch **440**, built 22 Aug 06:30, **Debug** | pass |
+
+**NO MIRROR CAME BACK.** On 21 August, with Strava reachable, `athlete.json` was
+rewritten inside sixty seconds. Today, gates shut, nothing rewrote it in five
+minutes across a full launch — and that launch **did** hydrate the athlete and
+the gear from the database.
+
+**LAUNCH HYDRATION DOES NOT WRITE, OBSERVED RATHER THAN ASSERTED.** RULE 8
+claims it by reading all eight `hydrate` bodies, because no assertion in the
+suite can reach it. This is the first time the phone has been in a state where
+a write would have been VISIBLE, and there was none. The rule and the device
+agree.
+
+The 21 August writer was therefore almost certainly the Strava refresh path.
+Consistent, not proven — one observation over one window — but the gate is the
+only variable that moved. `Activities arriving late: no sync this launch`
+corroborates it from the other side.
+
+### 7.5 Part E — 07:05–07:13. THREE OF THREE
+
+| # | reading | verdict |
+|---|---|---|
+| 15 | `moved athlete.json, weather.json` — **and nothing more**; the row is no longer red | **pass, and the prediction held** |
+| 16 | after a force-quit: `athlete: readable`, `weather: readable`; `none — every legacy file is in its place`; `internal test artifacts: 1`, still `1507 bytes · d8cc76b5…` | pass |
+| 17 | `Last refresh 22 Aug 07:13`, off 06:40; `Returned 5 zones, 10 gear, 1 retired`; no orange rows; `Next window after 09:08` | pass |
+
+**STEP 15'S PREDICTION WAS THE DISCRIMINATING ONE.** It was written before the
+press: the outcome line should say `moved …` and **not** `AND KEPT`, because
+nothing had been written while hidden. It did. On 21 August the same control
+reported a kept rewrite. **Two runs, one variable, and the control reported the
+difference rather than reading the same either way** — which is the property
+433a was built for and this is the first run where it could have failed.
+
+The leftover's hash is unchanged at `d8cc76b5…` across hide, five minutes
+hidden, and restore. Nothing in this campaign touched it.
+
+**AND THE CLOSING PRESS CARRIED §12.68 ON LIVE DATA.** The 07:13 refresh
+returned **10 gear** while the app holds **11**. Strava's profile has dropped
+one; the app kept it, marked retired, carrying a date — matching the read-back's
+`gear in the database: 11`, `gear the database marks retired: 1`,
+`gear carrying a retirement date: 1`. *After Strava, thrown away becomes gone*,
+and the app is now the only thing that remembers that gear exists.
+
+### 7.6 Verdict
+
+**SEVENTEEN OF SEVENTEEN — 22 August 2026, patch 440, Debug, 06:42–07:13.**
+
+**B5 campaign row 19's residual ambiguity is closed.** The gear and the weather
+were drawn from a cold launch with both legacy files renamed out of reach, with
+Strava switched off and its refusal observed at 06:53, and with the rendering
+read before any file-side diagnostic ran. Both ways of disbelieving the 21
+August result are removed.
+
+**The phone is back as it started**: files restored and readable, all three
+gates on, the scheduler queued, a real refresh completed.
+
+**One thing this run could not do, recorded for the removal patch.** The
+inventory hashes what is INSIDE `hidden-for-test/`, so after a restore it proves
+the leftover is untouched but **cannot hash the restored live file**. The
+original's identity is established by exclusion — the folder held exactly two
+files, the leftover is still there by hash, the other is gone, and restore
+renames rather than copies. Sound, but indirect. **It makes a good refusal
+condition for tranche 2b: the live counterpart must hash to the value recorded
+when it was hidden.**

@@ -19,7 +19,7 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 | **Current task** | **Task 0A** — close current truth, lifecycle and evidence tooling |
 | **Patch** | 440 |
 | **Tree** | verified from source at each patch, not from the runbook's recorded numbers |
-| **Next gate** | Task 0A's remaining tranches, then one narrow Strava-disabled campaign, then Task 0B |
+| **Next gate** | **tranche 2b — the scoped receipted removal — is the last open Task 0A item.** Then the Task 0A record, then Task 0B |
 
 ## Task 0A tranches
 
@@ -32,14 +32,14 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 | 3 | Populated pre-B5 upgrade regression | **436** | **done** — migrates to `2026-08-20-run-removal`, populates as the pre-426 importer did, then applies B5; proves honest defaults *then* reconciliation (§12.191) |
 | 4 | `scripts/test.sh` cannot share a simulator or overwrite evidence | **435** | **done** — repository lock, run-stamped logs, trap-safe release, inherited by `preflight.sh` (§12.190) |
 | 5 | `docs/evidence/post-b5/` manifest schema, validator, fixtures | **438** | **done** — v1 schema, `scripts/evidence-manifest.py`, ten fixtures and thirteen properties in `scripts/selftest-evidence.sh`, run as preflight stage 4. MISSING ≠ STALE; validating nothing exits 2; `--require-recompute` refuses an unrecomputable tree digest (§12.193) |
-| 6 | Narrow Strava-disabled gear-provenance campaign | **written at 440** | **written, NOT RUN** — `docs/DEVICE-CAMPAIGN-0A-GEAR-PROVENANCE.md`, twenty steps in five parts, seventeen rows, every label read from source. Needs the phone |
+| 6 | Narrow Strava-disabled gear-provenance campaign | **written at 440, RUN 22 Aug** | **DONE — seventeen of seventeen.** B5 row 19's residual is closed: gear and weather drawn from a cold launch with both files renamed out of reach, Strava off and its refusal observed, rendering read before any file-side diagnostic. Findings: the two `athlete.json` copies are the same size and different hashes; no mirror reappeared with the gates shut, so launch hydration does not write |
 | 1c | B5 groundwork marked historical/accepted | **440** | **done** — status row and banner; the chronology is kept, and the file no longer reads as a statement about today |
 
 ## Decisions waiting on Bruno
 
 | Decision | Blocks | Runbook's recommended starting position |
 |---|---|---|
-| Retained `hidden-for-test/athlete.json.written-while-hidden` disposition | tranche 2 | scoped receipted removal after last-copy proof; otherwise immutable private evidence with owner and expiry, live copy gone by Task 18 |
+| ~~Retained `hidden-for-test/athlete.json.written-while-hidden` disposition~~ | ~~tranche 2~~ | **DECIDED 22 Aug: scoped receipted removal.** Preview is on the device — `hidden-for-test/athlete.json.written-while-hidden · 1507 bytes · d8cc76b5f678622fc18f53e7cd2a2552d6dde122c3096721e2da2ebbebda1ad2` |
 
 ## Found while working, not yet closed
 

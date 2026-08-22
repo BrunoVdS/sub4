@@ -987,6 +987,20 @@ run happened. §12.135–§12.150.
    confirmed it at 16:22**: `kept from an earlier test:
    athlete.json.written-while-hidden`, turning an inference into an
    observation with one glance and no campaign. §12.188.
+   **AND ROW 19'S RESIDUAL IS CLOSED — 22 August, seventeen of seventeen**,
+   `docs/DEVICE-CAMPAIGN-0A-GEAR-PROVENANCE.md`. With Strava switched off and
+   its refusal observed (`Attempted 06:53` while `Last refresh` stayed at
+   06:40), both files renamed out of reach, and the rendering read BEFORE any
+   file-side diagnostic, the app drew the same six shoe rows — 534, 516, 324,
+   248, 114, 108 — and the same weather card. **Three findings.** The two
+   `athlete.json` copies are **both 1507 bytes with different hashes**, so a
+   byte count alone would have said they matched — 439's inventory on its first
+   device run. **No mirror came back with the gates shut**, over five minutes
+   and a launch that hydrated the gear: RULE 8's claim that hydration does not
+   write, observed for the first time in a state where a write would have been
+   visible. And the closing refresh **returned 10 gear while the app holds 11**
+   — §12.68 on live data, the app now the only thing that remembers the
+   eleventh.
 9. **Then Bruno's list.**
 10. **B6 and B6a, B7, B8, then B9** — activate, `activateVerified` called for the first
    time, `migrationFailureBlocksTheApp` flipped to `true`, and the fail-closed
