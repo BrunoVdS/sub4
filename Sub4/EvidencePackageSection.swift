@@ -96,10 +96,20 @@ struct EvidencePackageSection: View {
 
         case .working(let what):
             HStack { ProgressView(); Text(what).font(.caption) }
-            // A capture is seconds of file work. The stop is offered because a
-            // control that cannot be stopped is one people avoid starting.
-            Button("Stop", role: .destructive) { work?.cancel() }
-                .font(.caption)
+            // **IT SAYS IT REGISTERED — patch 448, and the device is why.**
+            //
+            // `cancel()` changes nothing visible, and the next checkpoint can
+            // be seconds away, so the section looked identical whether the tap
+            // had landed or not. On 22 August that read as a dead button and
+            // three captures ran to completion. §12.15 in a control rather
+            // than a diagnostic: a press that cannot be seen to have worked
+            // will be pressed again, or given up on.
+            Button("Stop", role: .destructive) {
+                stage = .working("Stopping at the next safe point…")
+                work?.cancel()
+            }
+            .font(.caption)
+            .disabled(what.hasPrefix("Stopping"))
 
         case .done(let line), .failed(let line):
             Text("  " + line)

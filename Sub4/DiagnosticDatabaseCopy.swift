@@ -53,6 +53,18 @@ nonisolated enum DiagnosticDatabaseCopy {
     /// somebody eventually puts back.
     static let fileName = "database-diagnostic-copy.sqlite"
 
+    /// **HOW OFTEN THE BACKUP CAN BE STOPPED — patch 448.**
+    ///
+    /// GRDB's own default is `-1`: every page in one step, which is right for
+    /// consistency and made the longest stage of a capture **uninterruptible**.
+    /// 256 pages is about a megabyte — roughly 37 checkpoints on this athlete's
+    /// 39 MB database.
+    ///
+    /// **NAMED RATHER THAN WRITTEN IN THE SIGNATURE**, because the tests that
+    /// drive cancellation pass their own step and could never see the default
+    /// change back. `theDefaultCanBeStoppedAtAll` reads THIS.
+    static let defaultPagesPerStep: CInt = 256
+
     /// Journal sidecars SQLite can leave beside a database.
     static let sidecarSuffixes = ["-wal", "-shm", "-journal"]
 
@@ -102,6 +114,8 @@ nonisolated enum DiagnosticDatabaseCopy {
         case countsDisagree([String])
         case sidecarsRemain([String])
         case unreadableAfterWriting(String)
+        /// **STOPPED, AND THE HALF-WRITTEN FILE REMOVED.** Patch 448.
+        case cancelled(afterPages: Int, of: Int)
 
         var line: String {
             switch self {
@@ -125,6 +139,8 @@ nonisolated enum DiagnosticDatabaseCopy {
                 + "so its hash describes only part of it"
             case .unreadableAfterWriting(let why):
                 "FAILED — the finished copy could not be read back: \(why)"
+            case .cancelled(let done, let total):
+                "Stopped after \(done) of \(total) pages. Nothing was left behind."
             }
         }
     }
@@ -138,6 +154,8 @@ nonisolated enum DiagnosticDatabaseCopy {
                       into directory: URL,
                       now: Date,
                       spareFactor: Double = 1.2,
+                      shouldCancel: @escaping @Sendable () -> Bool = { false },
+                      pagesPerStep: CInt = Self.defaultPagesPerStep,
                       freeBytes: (URL) -> Int64? = Self.freeBytesOnVolume,
                       fm: FileManager = .default) -> Result<Reading, Failure> {
 
@@ -186,7 +204,9 @@ nonisolated enum DiagnosticDatabaseCopy {
         let verified: Result<(Reading, [String]), Failure>
         do {
             verified = try copyAndVerify(from: source, to: destination,
-                                         sourceState: sourceState, now: now)
+                                         sourceState: sourceState, now: now,
+                                         shouldCancel: shouldCancel,
+                                         pagesPerStep: pagesPerStep)
         } catch {
             try? fm.removeItem(at: destination)
             return .failure(.backupFailed(String(describing: error)))
@@ -237,7 +257,9 @@ nonisolated enum DiagnosticDatabaseCopy {
         from source: Sub4Database,
         to destination: URL,
         sourceState: (journalMode: String, bytes: Int64, tables: [String: Int]),
-        now: Date
+        now: Date,
+        shouldCancel: @escaping @Sendable () -> Bool,
+        pagesPerStep: CInt
     ) throws -> Result<(Reading, [String]), Failure> {
 
         let dest = try DatabaseQueue(path: destination.path,
@@ -245,13 +267,40 @@ nonisolated enum DiagnosticDatabaseCopy {
                                         label: "sub4-diagnostic-copy"))
 
         var last: DatabaseBackupProgress?
+        var stopped = false
+        struct Cancelled: Error {}
         do {
-            // `pagesPerStep` left at its default: one step, one read transaction
-            // on the source, no window in which the source can move between
-            // steps. The progress callback is only here to record the counts.
-            try source.queue.backup(to: dest) { progress in last = progress }
+            // **CHUNKED SINCE 448, AND IT COSTS NOTHING IN CONSISTENCY.**
+            //
+            // GRDB's default is one step, and it made the longest stage of a
+            // capture uninterruptible — 39 MB with no way to stop, which is
+            // what the device found. `backup(to:)` holds ONE read transaction
+            // on the source across every step (GRDB wraps the whole thing in
+            // `read`), so chunking changes when we can look up, not what lands.
+            //
+            // **THE STEP SIZE IS THE GRANULARITY OF "CAN I STOP".** 256 pages
+            // is about a megabyte — roughly 37 checkpoints on this athlete's
+            // 39 MB database. The first draft used 512 and the CONTROLS caught
+            // it: a 174-page test database finished in a single step, the
+            // callback fired once with `isCompleted`, and nothing could ever
+            // be stopped. A step size larger than the database is a checkpoint
+            // that never happens.
+            //
+            // The progress callback is the documented place to abort: throwing
+            // from it while the backup is incomplete aborts and rethrows.
+            try source.queue.backup(to: dest, pagesPerStep: pagesPerStep) { progress in
+                last = progress
+                if shouldCancel() && !progress.isCompleted {
+                    stopped = true
+                    throw Cancelled()
+                }
+            }
         } catch {
             try? dest.close()
+            if stopped {
+                return .failure(.cancelled(afterPages: last?.completedPageCount ?? 0,
+                                           of: last?.totalPageCount ?? 0))
+            }
             return .failure(.backupFailed(String(describing: error)))
         }
 

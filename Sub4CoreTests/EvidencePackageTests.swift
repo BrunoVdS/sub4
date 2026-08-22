@@ -470,6 +470,53 @@ struct EvidencePackageShareTests {
         #expect(left.isEmpty, "a cancelled capture left \(left) behind")
     }
 
+    /// **THE STAGE THE DEVICE ACTUALLY PRESSED STOP DURING.** The earlier
+    /// control stops before the snapshot is even copied in; this one lets the
+    /// capture reach the database and stops there, which is where twenty of the
+    /// twenty-five seconds go.
+    @Test("A capture stopped during the database copy names that stage")
+    func aCaptureStoppedInTheDatabaseCopyNamesIt() throws {
+        let dir = try directory(); defer { clean(dir) }
+        try Data(#"{"zones":[],"shoes":[]}"#.utf8)
+            .write(to: dir.appendingPathComponent("athlete.json"))
+        let db = try Sub4Database.inMemory()
+        _ = try Sub4Import.run(into: db, activities: [], shoes: [])
+        let hold = try #require(EvidenceBarrier.beginHold(now: now))
+        defer { EvidenceBarrier.endHold() }
+
+        // False until the snapshot and its copy are behind us, then true — so
+        // the capture reaches the database stage and is stopped inside it.
+        nonisolated(unsafe) var calls = 0
+        let outcome = EvidencePackage.write(
+            hold: hold, database: db, base: dir,
+            allItems: [.file("athlete.json")], preferenceKeys: [],
+            defaults: .standard, identity: EvidencePackageTests.identity,
+            now: now,
+            barrierWriters: EvidencePackage.BarrierRecord(
+                writersAskedToWait: [], writersDetectedOnly: [],
+                turnedAwayDuringCapture: [:], notWatched: ["db"],
+                notWatchedWhy: ["db": "a read can touch a journal"]),
+            takeSnapshot: { id in
+                try LegacySnapshot.capture(stamp: id, appVersion: "patch 448",
+                                           base: dir, items: [.file("athlete.json")])
+            },
+            shouldCancel: { calls += 1; return calls > 2 },
+            databasePagesPerStep: 8,
+            artifacts: [],
+            snapshotsRoot: dir.appendingPathComponent("snapshots", isDirectory: true))
+
+        guard case .failure(.cancelled(let after)) = outcome else {
+            // SHORT. Printing the whole manifest floods a failing run's log
+            // with three thousand characters nobody reads.
+            Issue.record("a capture stopped in the database copy ran to completion")
+            return
+        }
+        #expect(after.contains("database pages"), "\(after)")
+        let root = dir.appendingPathComponent(EvidencePackage.directoryName)
+        let left = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
+        #expect(left.isEmpty, "a stopped capture left \(left) behind")
+    }
+
     @Test("Stopping reads as stopping, not as a failure")
     func theCancelledLineIsNotAFailure() {
         let line = EvidencePackage.Failure.cancelled(after: "the snapshot was taken").line

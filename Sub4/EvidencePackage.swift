@@ -213,7 +213,12 @@ nonisolated enum EvidencePackage {
                       now: Date,
                       barrierWriters: BarrierRecord,
                       takeSnapshot: @Sendable (String) throws -> SnapshotManifest,
-                      shouldCancel: @Sendable () -> Bool = { false },
+                      shouldCancel: @escaping @Sendable () -> Bool = { false },
+                      /// The database copy's cancellation granularity. Passed
+                      /// through rather than hidden, so the stopped-in-the-
+                      /// backup path is drivable — a fixture database is a few
+                      /// hundred pages and the production step is 256.
+                      databasePagesPerStep: CInt = DiagnosticDatabaseCopy.defaultPagesPerStep,
                       artifacts: [LegacyFileTest.Artifact],
                       snapshotsRoot: URL?,
                       fm: FileManager = .default) -> Result<Manifest, Failure> {
@@ -304,8 +309,17 @@ nonisolated enum EvidencePackage {
                 throw Stop()
             }
             let reading: DiagnosticDatabaseCopy.Reading
-            switch DiagnosticDatabaseCopy.write(from: database, into: dir, now: now, fm: fm) {
+            switch DiagnosticDatabaseCopy.write(from: database, into: dir, now: now,
+                                                shouldCancel: shouldCancel,
+                                                pagesPerStep: databasePagesPerStep,
+                                                fm: fm) {
             case .success(let r): reading = r
+            case .failure(.cancelled(let done, let total)):
+                // **THE STAGE THAT HAD NO CHECKPOINT UNTIL 448.** It is the
+                // longest one, so it is the one a person actually presses Stop
+                // during — and it said nothing.
+                innerFailure = .cancelled(after: "\(done) of \(total) database pages")
+                throw Stop()
             case .failure(let why):
                 innerFailure = .databaseCopyFailed(why.line)
                 throw Stop()

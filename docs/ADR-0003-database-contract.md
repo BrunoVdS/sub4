@@ -8962,6 +8962,63 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.204 A Stop that could not be seen, over a stage that could not be stopped — patch 448
+
+Found by running the campaign. Bruno pressed **Stop** three times during Part C
+and reported the button unresponsive; three captures completed.
+
+**Two defects, and the first one is the reason the second went unnoticed.**
+
+### 12.204.1 The button changed nothing on screen
+
+`work?.cancel()` sets no state. The section stayed on `Taking a package…`
+whether the tap had landed or not, and the next checkpoint could be twenty
+seconds away — **so a working Stop and a dead Stop looked identical.** §12.15 in
+a control rather than a diagnostic: *a press that cannot be seen to have worked
+will be pressed again, or given up on.*
+
+It now reads `Stopping at the next safe point…` and disables itself, which also
+says the thing that was never said — that stopping happens at a boundary rather
+than instantly.
+
+### 12.204.2 The longest stage had no checkpoint at all
+
+`shouldCancel` was consulted after the snapshot and after the copy-in. **The
+database copy — 39 MB, and much the longest — had none.** A Stop pressed once
+the backup started did nothing and said nothing.
+
+GRDB's `backup(to:pagesPerStep:progress:)` is exactly the tool: throwing from
+the progress callback while the backup is incomplete aborts it. And chunking
+costs nothing in consistency, which is the thing worth being sure of — GRDB
+wraps the whole backup in one `read` on the source, so **every step runs inside
+one read transaction.** Chunking changes when we can look up, not what lands.
+
+### 12.204.3 The step size is the granularity of "can I stop", and the first two attempts got it wrong
+
+`pagesPerStep: 512` against a 174-page fixture completes in **one step**, the
+callback fires once with `isCompleted`, and nothing can ever be stopped. Both
+new controls failed immediately and said so.
+
+Then, worse: the default went back to `-1` under sabotage and **every
+cancellation test stayed green**, because each passes its own step. The guard
+written for that — `#expect(256 < 9_000)` — **compared two literals and could
+not fail.** §12.69, in a test written the same hour as the rule it was meant to
+enforce.
+
+`defaultPagesPerStep` is a named constant now and `theDefaultCanBeStoppedAtAll`
+reads it: `> 0` (because `-1` is every page in one go) and `<= 1024`. Sabotage
+produces two failures.
+
+### 12.204.4 And RULE 3 caught the repair
+
+Three of the new `#expect` messages were concatenations, so the text that prints
+on failure is not the text written (§12.110.8). The invariant failed the build
+before the tests ran.
+
+1962 tests in 188 suites. §12.204.
+
+---
+
 ## 12.203 The container download, measured a third time — patch 447
 
 **Task 0B's completeness-negative test, run against the real artefact.** The

@@ -268,6 +268,89 @@ struct DiagnosticDatabaseCopyTests {
         #expect(f.line.hasPrefix("REFUSED") || f.line.hasPrefix("FAILED"))
     }
 
+    // MARK: Stopping — patch 448, and the device is why
+
+    /// **THE LONGEST STAGE HAD NO CHECKPOINT.**
+    ///
+    /// `pagesPerStep` was left at its default — one step — so the 39 MB backup
+    /// could not be interrupted at all. On 22 August a person pressed Stop
+    /// three times during it and three captures ran to completion. The default
+    /// is not wrong for consistency; it was wrong for a control that offers to
+    /// stop.
+    @Test("A backup can be stopped, and leaves nothing behind")
+    func aBackupCanBeStopped() throws {
+        let dir = try directory(); defer { clean(dir) }
+        let db = try populated()
+
+        // A step small enough that this fixture has several of them. The
+        // production default is 256 — about a megabyte — and a step larger
+        // than the whole database is a checkpoint that never fires, which is
+        // what the first draft of this shipped with.
+        let outcome = DiagnosticDatabaseCopy.write(from: db, into: dir, now: now,
+                                                   shouldCancel: { true },
+                                                   pagesPerStep: 8)
+        guard case .failure(.cancelled(let done, let total)) = outcome else {
+            Issue.record("a backup asked to stop ran to completion: \(outcome)")
+            return
+        }
+        #expect(total > 0, "the page count was not known when it stopped")
+        #expect(done <= total)
+
+        // NOTHING LEFT BEHIND — not the copy, not a journal.
+        let left = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        #expect(left.isEmpty, "a stopped backup left \(left)")
+    }
+
+    /// Stopping is not failing. A person who changed their mind has not had a
+    /// fault, and a line that says FAILED at them is wrong about what happened.
+    @Test("Stopping reads as stopping")
+    func stoppingIsNotFailing() {
+        let line = DiagnosticDatabaseCopy.Failure.cancelled(afterPages: 12, of: 40).line
+        #expect(line.hasPrefix("Stopped"))
+        #expect(!line.contains("FAILED"))
+        #expect(line.contains("12 of 40"))
+        #expect(line.contains("Nothing was left behind"))
+    }
+
+    /// **AND IT STILL COMPLETES WHEN NOBODY ASKS IT TO STOP.** Without this the
+    /// test above passes for a backup that always aborts.
+    /// **THE DEFAULT MUST BE STOPPABLE, AND NOTHING ELSE CHECKS IT.**
+    ///
+    /// Every cancellation test above passes its own `pagesPerStep`, so putting
+    /// the default back to GRDB's `-1` — one step, the state the device found —
+    /// leaves all of them green. The first draft of this test compared two
+    /// literals (`256 < 9_000`) and could not fail; the sabotage walked
+    /// straight past it. §12.69.
+    @Test("The default step can be stopped at all")
+    func theDefaultCanBeStoppedAtAll() throws {
+        #expect(DiagnosticDatabaseCopy.defaultPagesPerStep > 0,
+                "a step of -1 is every page in one go — the uninterruptible backup 448 exists to fix")
+        #expect(DiagnosticDatabaseCopy.defaultPagesPerStep <= 1024,
+                "a step this large is a checkpoint that rarely fires")
+
+        // AND IT IS THE VALUE THE PRODUCTION PATH ACTUALLY USES. Driven, so a
+        // default nobody passes cannot drift away from the constant: this
+        // fixture is smaller than the default step, so with a sane default it
+        // completes, and with `-1` it also completes — which is why the two
+        // assertions above are the ones that discriminate, and this half only
+        // proves the constant is on the real path.
+        let dir = try directory(); defer { clean(dir) }
+        let reading = try DiagnosticDatabaseCopy.write(from: try populated(),
+                                                       into: dir, now: now).get()
+        #expect(reading.totalPageCount < Int(DiagnosticDatabaseCopy.defaultPagesPerStep),
+                "this fixture is no longer smaller than one step, so the comment above is wrong")
+    }
+
+    @Test("Chunking did not break the copy")
+    func chunkingDidNotBreakTheCopy() throws {
+        let dir = try directory(); defer { clean(dir) }
+        let reading = try DiagnosticDatabaseCopy.write(from: try populated(),
+                                                       into: dir, now: now).get()
+        #expect(reading.copiedPageCount == reading.totalPageCount)
+        #expect(reading.quickCheck == "ok")
+        #expect(reading.tables["activity"] == 2)
+    }
+
     // MARK: The line
 
     @Test("The reading's line carries every figure a reader would check")
