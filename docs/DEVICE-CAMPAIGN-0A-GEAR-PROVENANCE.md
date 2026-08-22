@@ -218,9 +218,9 @@ the files and a reader could then argue the screen was drawn from that read.
 
 ## 7. Result
 
-**Running — 22 August 2026, patch 440, Debug.** Parts A and B below.
+**Running — 22 August 2026, patch 440, Debug.** Parts A and B complete.
 
-### 7.1 Part A — 06:42–06:47. SIX OF SEVEN, and the seventh is step 4
+### 7.1 Part A — 06:42–06:53. SEVEN OF SEVEN
 
 Installed 06:30; `Source patch 440`, `Configuration: Debug`. **That also closes
 the "Debug build on the phone" housekeeping item** that was due before Task 3.
@@ -232,7 +232,7 @@ the "Debug build on the phone" housekeeping item** that was due before Task 3.
 | 3 | `Gear facts recovered from the file at hydration: 0` | pass |
 | 4 | `internal test artifacts: 1` — `hidden-for-test/athlete.json.written-while-hidden · 1507 bytes · d8cc76b5f678622fc18f53e7cd2a2552d6dde122c3096721e2da2ebbebda1ad2 · kept from an earlier test` | pass — **439's first device reading, and the tranche 2b preview** |
 | 5 | read-back: `reading fields that differ: 0`, `gear fields that differ: 0`, `unexplained differences: 0`; `gear by kind: 6 shoes, 4 bikes, 1 of unknown kind`; `gear carrying a retirement date: 1`; app side `from activities.json, read directly` | pass — identical to 21 August |
-| 6 | the shoes photograph | **OUTSTANDING** |
+| 6 | the shoes photograph — **six rows, every one with a wear bar**, matching `gear by kind: 6 shoes` | pass, 06:53 |
 | 7 | survey: `athlete: readable`, `weather: readable` | pass |
 
 **The survey went further than the row asked.** It opened and classified all
@@ -249,6 +249,31 @@ never open their files. **A store that never read cannot report an unreadable
 read**, so "none" there is consistent with `athlete.json` being missing, empty
 or truncated. §12.155's shape, found while validating a campaign rather than
 while writing one.
+
+**THE BASELINE ROW 11 COMPARES AGAINST — lifetime distance, in order:**
+
+| position | km |
+|---|---|
+| 1 | **534** |
+| 2 | **516** |
+| 3 | **324** |
+| 4 | **248** |
+| 5 | **114** |
+| 6 | **108** |
+
+**Positions and kilometres, not the names.** Two of the six carry place words,
+and §12.7 puts a screenshot in a different category from a committed file. The
+kilometres are what this row discriminates on; the photograph holds the names if
+they are ever needed.
+
+**Observed and not acted on:** row 6 renders the brand twice — the source's own
+`brand + name` concatenation coming through. Nothing to do with B5; worth a
+small patch some day.
+
+**And the zone card beside it is §12.54.2 working**: `11.6 h counted · 12
+sessions` with `7 not traced (3.6 h) — 5 strength, 1 swim, 1 ride`. The
+untraced sessions are named and accounted for rather than dropped from the
+denominator in silence.
 
 ### 7.2 Part B — 06:48–06:53. TWO OF TWO
 
