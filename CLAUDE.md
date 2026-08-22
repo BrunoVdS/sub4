@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 441 (2026-08-22).** §5.3 is the 390 device run, Compare and
+**Current at patch 442 (2026-08-22).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -379,6 +379,16 @@ magnitude, and `test.sh` fails below 500 for the same reason.
 ./scripts/selftest-evidence.sh # proves the evidence-manifest validator can refuse
 ```
 
+**TASK 0B HAS STARTED, AND ITS HARD HALF IS THE BARRIER — 442.** The package is
+two captures at two moments, so a package whose halves disagree is worse than
+none. `EvidenceBarrier` **quiesces what can be asked and detects what cannot**:
+six writers are asked to wait, four authored ones are detected only — because
+**refusing the athlete's own save to protect an evidence capture is the wrong
+trade** — and anything outside the vocabulary is caught by the pre/post
+comparison. Directories are TALLIED rather than hashed and the reading says so.
+**RULE 16** fails the build when a writer claiming to wait is wired nowhere; its
+parser was wrong twice first. §12.198.
+
 **`hidden-for-test/` HAS A ROLE SINCE 439 — AND UNTIL THEN IT HAD NONE.**
 433's control renames the legacy files aside; nobody wrote down what the
 resulting DIRECTORY is, so it was in no inventory — **"Delete local data" walked
@@ -510,9 +520,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 441, 2026-08-22
+## 5. State — patch 442, 2026-08-22
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 441; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 442; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.

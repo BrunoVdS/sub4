@@ -1369,6 +1369,93 @@ def every_fed_field_asks_a_store():
                        "stops meaning anything.")
 
 
+def every_asked_writer_is_actually_asked():
+    """RULE 16 — a writer that CLAIMS it waits must be somewhere that waits.
+
+    `EvidenceBarrier.Writer` is a vocabulary, and `isAskedToWait` is a claim
+    each case makes about itself. Nothing in the suite can check that claim:
+    the guard lives in `BackgroundRefresh`, `ActivityStore`, `DetailStore`,
+    `Weather`, `AthleteStore` and the snapshot button, and a case added to the
+    enum with `true` and wired nowhere would read, on the diagnostics line, as
+    a writer that stands down.
+
+    **§12.129 — a join checked in one direction is unchecked in the other.**
+    The suite can prove that a guard which fires stops its caller; only this can
+    prove the guard exists at all. And the reverse direction is checked too: a
+    `shouldWait(.x)` call for a case that says it is only DETECTED means one of
+    the two is lying about the trade in `EvidenceBarrier`'s header.
+    """
+    rule = "every asked writer is actually asked"
+    path = APP / "EvidenceBarrier.swift"
+    if not path.exists():
+        fail(rule, "EvidenceBarrier.swift is missing")
+        return
+    body = strip_comments(path.read_text())
+
+    # SCOPED TO THE ENUM, and the first run of this rule was not: it swept
+    # `Refusal` and `ItemReading.Kind` out of the same file and reported four
+    # cases nobody had failed to classify. A rule that cries wolf about its own
+    # misreading gets switched off.
+    vocabulary = braced_span(body, "enum Writer: String, CaseIterable, Sendable")
+    if vocabulary is None:
+        fail(rule, "could not find the Writer enum — this rule is reading the "
+                   "wrong thing, which means it has been checking nothing")
+        return
+    declared = re.findall(r"^\s*case (\w+)$",
+                          body[vocabulary[0]:vocabulary[1]], re.MULTILINE)
+    span = braced_span(body, "var isAskedToWait: Bool")
+    if span is None or not declared:
+        fail(rule, "could not read the Writer vocabulary or isAskedToWait — "
+                   "this rule is reading the wrong thing, which means it has "
+                   "been checking nothing")
+        return
+    block = body[span[0]:span[1]]
+
+    # ARM BY ARM, NOT "EVERYTHING BEFORE THE WORD `true`" — and the first draft
+    # of this rule did the latter. It split the block on the first `true`, so a
+    # case moved into a LATER `true` arm was invisible: the sabotage that
+    # promoted `.authoredNotes` passed. RULE 5 was caught by the same family at
+    # 434 (counting `case` tokens); this is the second time a rule has been
+    # written with a parser that could not see the thing it was checking.
+    arms = re.findall(r"case\s+([^:]+?):\s*(true|false)\b", block, re.S)
+    if not arms:
+        fail(rule, "isAskedToWait has no readable switch arms — this rule is "
+                   "reading the wrong thing")
+        return
+    asked, detected = [], []
+    for patterns, answer in arms:
+        names = re.findall(r"\.(\w+)", patterns)
+        (asked if answer == "true" else detected).extend(names)
+
+    unclassified = [c for c in declared if c not in asked and c not in detected]
+    if unclassified:
+        fail(rule, f"{unclassified} are declared and no arm of isAskedToWait "
+                   "answers for them")
+    counted(rule, len(asked), 6, "writers asked to wait")
+
+    called = set()
+    for f in sorted(APP.glob("*.swift")):
+        for m in re.finditer(r"EvidenceBarrier\.shouldWait\(\.(\w+)\)",
+                             strip_comments(f.read_text())):
+            called.add(m.group(1))
+
+    for w in asked:
+        if w not in called:
+            fail(rule, f"`.{w}` says it is asked to wait and nothing in Sub4/ "
+                       f"calls `EvidenceBarrier.shouldWait(.{w})`. The "
+                       "diagnostics line would count it as a writer that "
+                       "stands down while it writes straight through a capture.")
+    for w in sorted(called - set(asked)):
+        if w in detected:
+            fail(rule, f"`.{w}` is declared DETECTED-only and something calls "
+                       f"`shouldWait(.{w})` anyway. One of the two is wrong, "
+                       "and the header's trade — an athlete's save outranks an "
+                       "evidence capture — is what decides which.")
+        elif w not in declared:
+            fail(rule, f"`shouldWait(.{w})` names a writer the vocabulary does "
+                       "not declare.")
+
+
 RULES = [
     a_seam_never_reaches_the_launchs_database,
     every_store_that_records_a_read_refuses_a_write,
@@ -1385,6 +1472,7 @@ RULES = [
     no_restore_announces,
     the_scheme_runs_debug,
     every_fed_field_asks_a_store,
+    every_asked_writer_is_actually_asked,
 ]
 
 for r in RULES:

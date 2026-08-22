@@ -8962,6 +8962,89 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.198 Nothing moved while we were looking — patch 442
+
+Task 0B, tranche 1. The package Task 0B builds is **two captures taken at two
+different moments** — a protected snapshot of every legacy file, and a
+transaction-consistent copy of the database. A package whose halves describe
+different states is worse than no package: it looks complete and is quietly
+inconsistent.
+
+So the runbook's real requirement is a barrier: *capture pre-state hashes,
+fingerprints and counts; make the copies; recalculate the same values; and fail
+the package rather than publish mismatched evidence.*
+
+### 12.198.1 Quiesce what can be asked, detect what cannot
+
+Proving every writer stood down is not achievable and never will be — the next
+patch adds a writer nobody told this file about. **The guarantee therefore comes
+from DETECTION.** Asking the machine-initiated writers to wait is politeness
+that stops a capture failing for a reason nobody would call a defect; the
+pre/post comparison is what makes an **unowned** writer fail the package, which
+is the property the runbook actually names.
+
+Six writers are asked — background refresh, activity sync, trace backfill,
+weather backfill, zones-and-gear refresh, snapshot retention. Four are detected
+only. Anything not in the vocabulary at all is detected too, by construction.
+
+### 12.198.2 One deliberate departure from the runbook's wording
+
+It says *"drain/pause/refuse every currently known source refresh, background
+job, queue claim **and authored writer**"*. This refuses the first three and
+**not** the authored writers, on purpose:
+
+> **Refusing the athlete's own save to protect an evidence capture is the wrong
+> trade.** A note typed during a capture and silently dropped is lost data; a
+> package that fails and is retried costs thirty seconds.
+
+§12.8.1 — never destroy authored data to tidy up a read — points the same way,
+and `authoredWritersAreNeverRefused` pins it so nobody "completes" the wiring
+later without reading why.
+
+### 12.198.3 What it does not hash, said out loud
+
+`details/` and `streams/` are **tallied** — count, bytes, newest modification —
+not hashed. That is 1,371 files and 19 MB, the snapshot already hashes and
+verifies every one of them, and doing it twice more to answer *did anything move
+in the last four seconds* would triple the capture for no new fact. **The
+reading says which it did**; a summary presented as a hash would be the
+dishonest version of the same shortcut. `aTalliedDirectoryNoticesANewFile`
+proves the summary still moves when the directory does.
+
+Readings are four-valued — hashed, tallied, absent, unreadable. §12.15: a
+fingerprint collapsing the last two would compare equal across a file that
+vanished and a file that broke.
+
+### 12.198.4 RULE 16, and its parser was wrong twice before it worked
+
+`isAskedToWait` is a claim each case makes about itself, and **no test in the
+suite can check it** — the guards live in six other files. RULE 16 reads the
+vocabulary and fails when a case claiming to wait is not consulted anywhere, and
+fails the other way when a `shouldWait` call names a detected-only writer.
+§12.129: a join checked in one direction is unchecked in the other.
+
+**Its first draft split the switch on the first `true`**, so a case promoted in a
+LATER arm was invisible — the sabotage passed. That is RULE 5's failure at 434
+(counting `case` tokens) for the second time: *a rule written with a parser that
+cannot see the thing it checks*. Its second draft then swept `Refusal` and
+`ItemReading.Kind` out of the same file and cried wolf about four cases nobody
+had failed to classify. Arm-by-arm parsing, scoped to the enum's own braced
+span; sabotaged in both directions afterwards, one failure each.
+
+### 12.198.5 The hold is released on every path
+
+A barrier left up after a throw stops the sync, the backfill and the background
+refresh **for the rest of the launch** — far worse than a failed capture, and
+exactly what `scripts/lock.sh` is trap-safe to avoid. `aThrowReleasesTheHold`
+drives it; sabotaged by moving the release out of the `defer`.
+
+Refusals are **counted per writer**, not a Bool — 409a's lesson: *nothing tried*
+and *the barrier was never up* are different facts.
+
+1923 tests in 185 suites, 16 invariants.
+
+---
+
 ## 12.197 The fix for the crash broke the row above it — patches 441a and 441b
 
 441 added the removal rows to `DatabaseHealthView` as a `@ViewBuilder`

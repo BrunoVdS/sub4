@@ -462,6 +462,14 @@ final class AthleteStore {
         // happened, and the timestamp is the only thing that says so.
         lastAttempt = Date()
 
+        // PATCH 442. Same shape as the gate refusal below it: a reason the
+        // reader can see, not a dead button.
+        if EvidenceBarrier.shouldWait(.athleteRefresh) {
+            lastError = "An evidence capture is running, so nothing was requested."
+            lastOutcome = nil
+            return
+        }
+
         // PATCH 232. Both guards used to return in silence. On the phone that
         // read as a dead button: tapped, nothing happened, nothing said why —
         // and the gate lives in UserDefaults, which a reinstall clears, so the

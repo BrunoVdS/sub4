@@ -647,6 +647,7 @@ final class DetailStore {
     /// app less often afterwards.
     @MainActor
     func drain(limit: Int? = nil, pause: Duration? = nil) async {
+        guard !EvidenceBarrier.shouldWait(.detailBackfill) else { return }   // patch 442
         // Cheap early exit, so a closed gate costs no token refresh and no
         // wasted first request. The authoritative check is still the one inside
         // `StravaClient.detail`; this is politeness, not enforcement.

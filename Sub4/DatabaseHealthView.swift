@@ -1104,6 +1104,15 @@ struct DatabaseHealthView: View {
             snapshotting = false
             return
         }
+        // PATCH 442. Taking a snapshot prunes older ones and writes receipts,
+        // so it moves the very directory an evidence capture is fingerprinting.
+        // §12.198.
+        if EvidenceBarrier.shouldWait(.snapshotRetention) {
+            snapshotError = "An evidence capture is running. Try again when it "
+                          + "has finished."
+            snapshotting = false
+            return
+        }
         Task {
             let result: Result<SnapshotCaptureResult, Error> = await Task.detached(priority: .userInitiated) {
                 do {
@@ -4168,6 +4177,10 @@ struct DatabaseHealthView: View {
         // governs what leaves the phone; a hash is an identity, not a
         // disclosure. Unconditional, so "none" is an answer rather than a gap.
         l.append(contentsOf: LegacyFileTest.inventoryLines(in: AppSupportItem.container))
+        // PATCH 442. UNCONDITIONAL. A barrier nobody can see is a barrier
+        // nobody can check, and the count that is only DETECTED is the one a
+        // reader needs — those are the writers that can still fail a capture.
+        l.append("Evidence barrier: \(EvidenceBarrier.line)")
         l.append("Gear facts recovered from the file at hydration: "
                  + "\(AthleteStore.shared.gearRecoveredFromTheFile)")
         l.append("Detail store reads: \(DetailStore.shared.detailsServedFrom.line)")

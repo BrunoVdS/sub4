@@ -148,6 +148,16 @@ enum BackgroundRefresh {
         // is deliberately allowed to end.
         schedule()
 
+        // PATCH 442. An evidence capture is running and this would write into
+        // the middle of it. Recorded rather than silent, for the reason every
+        // other line in this function is: "nothing happened" and "we were told
+        // not to" read identically otherwise. §12.198.
+        if EvidenceBarrier.shouldWait(.backgroundRefresh) {
+            UserDefaults.standard.set(
+                "Waited — an evidence capture was running.", forKey: lastResultKey)
+            return
+        }
+
         // A request submitted before the gate closed still wakes the app. Refuse
         // here as well, and record it, so the Settings diagnostics say "off"
         // rather than "0 new activities" — which is the same sentence the app

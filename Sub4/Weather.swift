@@ -393,6 +393,7 @@ final class WeatherStore {
     }
 
     func fetchIfNeeded(_ a: Activity) async {
+        guard !EvidenceBarrier.shouldWait(.weatherBackfill) else { return }  // patch 442
         guard canFetch(a),
               let start = a.startDateUTC,
               let lat = a.startLat, let lon = a.startLon else { return }
@@ -634,6 +635,7 @@ final class WeatherStore {
     /// discovers an undocumented one. At roughly six a second this finishes a
     /// full history in under two minutes and cannot be mistaken for an attack.
     func backfill(_ all: [Activity]) async {
+        guard !EvidenceBarrier.shouldWait(.weatherBackfill) else { return }  // patch 442
         // `fetchIfNeeded` is gated and would refuse each one individually, so
         // this is not the enforcement — it is not spending ninety seconds
         // sleeping between 571 refusals and reporting a progress bar for it.

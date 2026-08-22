@@ -615,6 +615,10 @@ final class ActivityStore {
 
     @MainActor
     func sync() async {
+        // PATCH 442 — see `EvidenceBarrier`. A sync writes activities.json,
+        // the roster and the database; a capture spanning one produces a
+        // package whose halves disagree.
+        guard !EvidenceBarrier.shouldWait(.activitySync) else { return }
         guard !isSyncing else { return }
 
         let auth = StravaAuth.shared

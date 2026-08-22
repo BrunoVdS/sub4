@@ -16,10 +16,28 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 
 | | |
 |---|---|
-| **Current task** | **Task 0A is ACCEPTED** — `docs/evidence/post-b5/task-0a.json`, 22 August 2026 08:18 UTC, *"I accept 0A."* Next is **Task 0B** |
-| **Patch** | 441b |
+| **Current task** | **Task 0B** — the starting-evidence package, tranche 1 of 5 landed at 442. Task 0A is ACCEPTED — `docs/evidence/post-b5/task-0a.json`, 22 August 2026 08:18 UTC, *"I accept 0A."* Next is **Task 0B** |
+| **Patch** | 442 |
 | **Tree** | verified from source at each patch, not from the runbook's recorded numbers |
 | **Next gate** | **Task 0B** — the starting-evidence package. Its manifest cites `task-0a` as a predecessor by hash, which is the first real use of 438's chain |
+
+## Task 0B tranches
+
+| # | Tranche | Patch | State |
+|---|---|---|---|
+| 1 | the evidence barrier — quiesce, fingerprint, detect | **442** | **done** — 6 writers asked, 4 detected only, RULE 16 joins the claim to the wiring (§12.198) |
+| 2 | the transaction-consistent database copy, through GRDB's backup API | — | open |
+| 3 | the package: snapshot + copy + manifest + redacted report, one capture id | — | open |
+| 4 | the off-device validator and its fixtures | — | open |
+| 5 | the share UI, protection warning, cancellation and low-space refusals | — | open |
+| 6 | the campaign — one run, after all five | — | open |
+
+**Findings that shaped it**, both measured rather than assumed: `content_revision`
+has a table and **zero writers**, so the runbook's "use a current revision as
+supporting evidence only after proving every relevant writer advances it"
+resolves to *there is no such revision* and the package must say so. And GRDB's
+`DatabaseReader.backup(to:)` drives SQLite's own online-backup API, so tranche 2
+needs no hand-rolled copy — which the runbook forbids.
 
 ## Task 0A tranches
 
@@ -82,3 +100,4 @@ combined Task 0 acceptance manifest.
 | 441 | Task 0A tranche 2b — clearing one internal-test leftover, with four refusals |
 | 441a | the rows crashed the Database screen on the device — a separate `View` type (§12.76) |
 | 441b | and the extraction had gone on printing a file that was gone (§12.197) |
+| 442 | Task 0B tranche 1 — the evidence barrier, and RULE 16 |
