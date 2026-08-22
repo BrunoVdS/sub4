@@ -55,6 +55,34 @@
 
 import Foundation
 import GRDB
+import os
+
+/// **A STOP TWO TASKS CAN SHARE — patch 448a, and the device is why.**
+///
+/// 448 asked the capture to stop by reading `Task.isCancelled` from inside a
+/// `Task.detached` closure. **`Task.detached` does not inherit cancellation** —
+/// that is what "detached" means — so the flag it read belonged to the detached
+/// task itself, which nothing ever cancels. Pressing Stop cancelled the OUTER
+/// task, which was doing nothing but awaiting.
+///
+/// **The checkpoint could not fire, at any moment, ever.** 448 fixed a Stop
+/// that said nothing and a stage that could not be interrupted, and left the
+/// two ends unconnected — every test passed because they all inject
+/// `shouldCancel` directly and never cross the task boundary the app crosses.
+///
+/// So the flag is an object both sides hold. `OSAllocatedUnfairLock` rather
+/// than a bare `Bool`: two tasks on two threads, and a data race here would be
+/// a race over whether the athlete's Stop is honoured.
+/// `nonisolated`, because both ends of it are off the main actor: this file's
+/// default isolation is MainActor, and a `Sendable` closure in a detached task
+/// cannot reach a main-actor property — which is the compiler saying the same
+/// thing the device said.
+nonisolated final class CaptureStop: Sendable {
+    private let flag = OSAllocatedUnfairLock(initialState: false)
+
+    func stop() { flag.withLock { $0 = true } }
+    var isStopped: Bool { flag.withLock { $0 } }
+}
 
 /// Held while an evidence capture is running.
 ///

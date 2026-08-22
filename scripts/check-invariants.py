@@ -1502,6 +1502,56 @@ def a_verification_never_reads_its_own_input():
                        "backup API is correct, so both sides agree either way.")
 
 
+def no_cancellation_is_read_across_a_detached_task():
+    """RULE 18 — `Task.isCancelled` is never read inside a `Task.detached`.
+
+    **`Task.detached` does not inherit cancellation.** That is what detached
+    means, and it makes `Task.isCancelled` inside one a flag nobody sets: it
+    reads the detached task's own state, which no caller can reach.
+
+    448 wrote exactly that as an evidence capture's stop checkpoint. The button
+    acknowledged, the athlete saw it acknowledge, and the capture ran to
+    completion — **and every test passed**, because they all inject the
+    checkpoint directly and never cross the boundary the app crosses. §12.181's
+    shape: an arm no assertion reaches.
+
+    A shared flag object crosses it. `EvidenceBarrier.CaptureStop` is one.
+    """
+    rule = "no cancellation is read across a detached task"
+    offenders = []
+    spans = 0
+    for path in sorted(APP.glob("*.swift")):
+        body = strip_comments(path.read_text())
+        start = 0
+        while True:
+            found = body.find("Task.detached", start)
+            if found == -1:
+                break
+            start = found + 1
+            brace = body.find("{", found)
+            if brace == -1:
+                continue
+            depth, i = 0, brace
+            while i < len(body):
+                if body[i] == "{":
+                    depth += 1
+                elif body[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            spans += 1
+            if "Task.isCancelled" in body[brace:i]:
+                offenders.append(path.name)
+    counted(rule, spans, 28, "detached tasks read")
+    for name in sorted(set(offenders)):
+        fail(rule, f"{name} reads `Task.isCancelled` inside a `Task.detached` "
+                   "closure. A detached task does not inherit cancellation, so "
+                   "that flag is one nobody can set — the control looks like it "
+                   "stops and cannot. Share a flag object instead "
+                   "(`CaptureStop`).")
+
+
 RULES = [
     a_seam_never_reaches_the_launchs_database,
     every_store_that_records_a_read_refuses_a_write,
@@ -1520,6 +1570,7 @@ RULES = [
     every_fed_field_asks_a_store,
     every_asked_writer_is_actually_asked,
     a_verification_never_reads_its_own_input,
+    no_cancellation_is_read_across_a_detached_task,
 ]
 
 for r in RULES:

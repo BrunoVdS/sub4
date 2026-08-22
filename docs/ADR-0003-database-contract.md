@@ -8962,6 +8962,50 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.205 The Stop landed and read the wrong task's flag — patch 448a
+
+448 fixed a Stop that said nothing and a stage that could not be interrupted.
+The device then pressed Stop, **saw it acknowledge** — *"Stopping at the next
+safe point…"* — and the capture ran to completion anyway.
+
+**`Task.detached` does not inherit cancellation.** That is what detached means.
+448's checkpoint was `shouldCancel: { Task.isCancelled }` written *inside* the
+detached closure, so it read **the detached task's own flag**, which nothing can
+set. `work?.cancel()` cancelled the outer task, which was doing nothing but
+awaiting.
+
+The checkpoint could not fire at any moment, ever. Not a timing problem, not a
+granularity problem — the two ends were never connected.
+
+### 12.205.1 Every test passed, and none of them crossed the boundary
+
+The controls inject `shouldCancel` directly. That is the right way to drive the
+stages, and it means **not one of them exercised the thing the app actually
+does**: hand a checkpoint across a task boundary. §12.181's shape again — an arm
+no assertion reaches — and the third time in this task that a green suite said
+nothing about the defect the device found in one press.
+
+`CaptureStop` is a flag object both ends hold, behind an `OSAllocatedUnfairLock`
+because a race here is a race over whether the athlete's Stop is honoured.
+`aSharedStopCrossesADetachedBoundary` drives the real boundary and asserts the
+detached task reports `false` for its own cancellation — so the test would fail
+if Swift ever changed the semantics this rests on.
+
+### 12.205.2 RULE 18
+
+`Task.isCancelled` may not appear inside a `Task.detached` closure anywhere in
+`Sub4/`. Twenty-eight detached tasks are read; one offender fails the build with
+the reason and the remedy. Sabotage restores the exact line 448 shipped.
+
+**And the shape is worth naming beyond this app**: a control that *looks* like
+it stops and cannot is worse than one that never offered. It costs three
+attempts before anybody suspects the code rather than their own timing — which
+is precisely what happened here.
+
+1964 tests in 188 suites, 18 invariants. §12.205.
+
+---
+
 ## 12.204 A Stop that could not be seen, over a stage that could not be stopped — patch 448
 
 Found by running the campaign. Bruno pressed **Stop** three times during Part C

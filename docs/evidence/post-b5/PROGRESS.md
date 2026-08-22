@@ -17,7 +17,7 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 | | |
 |---|---|
 | **Current task** | **Task 0B** — the starting-evidence package, **all five tranches landed at 442–446; the campaign is next**. Task 0A is ACCEPTED — `docs/evidence/post-b5/task-0a.json`, 22 August 2026 08:18 UTC, *"I accept 0A."* Next is **Task 0B** |
-| **Patch** | 448 |
+| **Patch** | 448a |
 | **Tree** | verified from source at each patch, not from the runbook's recorded numbers |
 | **Next gate** | **Task 0B** — the starting-evidence package. Its manifest cites `task-0a` as a predecessor by hash, which is the first real use of 438's chain |
 
@@ -117,3 +117,4 @@ combined Task 0 acceptance manifest.
 | 446 | Task 0B tranche 5 — the control, the warning, and the bug driving it found |
 | 447 | the container download measured a third time — the completeness-negative test, against the real artefact |
 | 448 | campaign 0B Part C — a Stop that could not be seen, over a stage that could not be stopped |
+| 448a | and the Stop that landed and read the wrong task's flag — RULE 18 |

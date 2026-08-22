@@ -37,6 +37,10 @@ struct EvidencePackageSection: View {
     @State private var stage: Stage = .idle
     @State private var packages: [String] = EvidencePackage.ids(base: AppSupportItem.container)
     @State private var work: Task<Void, Never>?
+    /// **NOT `Task.isCancelled` — see `CaptureStop`.** The work runs in a
+    /// detached task, which does not inherit cancellation, so the flag has to
+    /// be something both ends hold.
+    @State private var stop = CaptureStop()
     @State private var shared: ShareItem?
     @State private var expanded: Set<String> = []
 
@@ -106,6 +110,7 @@ struct EvidencePackageSection: View {
             // will be pressed again, or given up on.
             Button("Stop", role: .destructive) {
                 stage = .working("Stopping at the next safe point…")
+                stop.stop()
                 work?.cancel()
             }
             .font(.caption)
@@ -183,6 +188,8 @@ struct EvidencePackageSection: View {
         let now = Date()
 
         stage = .working("Taking a package…")
+        let stop = CaptureStop()
+        self.stop = stop
         work = Task {
             let outcome = await Task.detached(priority: .userInitiated) {
                 EvidencePackage.write(
@@ -212,7 +219,11 @@ struct EvidencePackageSection: View {
                     // `EvidencePackage.write`. Stopping mid-file would leave a
                     // partial one; stopping between stages leaves a folder the
                     // writer then removes whole.
-                    shouldCancel: { Task.isCancelled },
+                    // **THE SHARED FLAG, NOT THIS TASK'S OWN.** A detached
+                    // task does not inherit cancellation, so `Task.isCancelled`
+                    // here is always false — 448's checkpoint read it and could
+                    // never fire. §12.205, RULE 18.
+                    shouldCancel: { stop.isStopped },
                     artifacts: artifacts,
                     snapshotsRoot: container.appendingPathComponent(
                         LegacySnapshot.directoryName, isDirectory: true))

@@ -19,7 +19,18 @@
 import Testing
 import Foundation
 import GRDB
+import os
 @testable import Sub4
+
+/// A box the detached closure can write into. `OSAllocatedUnfairLock` for the
+/// same reason `CaptureStop` uses one: two tasks, two threads.
+private final class SendableBox: Sendable {
+    private let state = OSAllocatedUnfairLock(initialState: false)
+    var value: Bool {
+        get { state.withLock { $0 } }
+        set { state.withLock { $0 = newValue } }
+    }
+}
 
 @Suite("Nothing moved while we were looking")
 @MainActor
@@ -310,6 +321,47 @@ struct EvidenceBarrierTests {
                                                 now: Date(timeIntervalSince1970: 99_999)).get()
         #expect(a.takenUTC != b.takenUTC)
         #expect(a.differences(from: b).isEmpty, "\(a.differences(from: b))")
+    }
+
+    // MARK: The stop two tasks share — patch 448a
+
+    /// **`Task.isCancelled` INSIDE A `Task.detached` IS A FLAG NOBODY SETS.**
+    ///
+    /// 448 asked the capture to stop that way and the checkpoint could never
+    /// fire — the device pressed Stop, saw the button acknowledge, and the
+    /// capture ran to completion anyway. Every test passed, because they all
+    /// inject `shouldCancel` directly and never cross the boundary the app
+    /// crosses. This is that boundary.
+    @Test("A detached task does not inherit cancellation, and the shared flag does cross")
+    func aSharedStopCrossesADetachedBoundary() async {
+        let stop = CaptureStop()
+        #expect(!stop.isStopped)
+
+        let sawOwnCancellation = SendableBox()
+        let outer = Task {
+            await Task.detached {
+                // The mistake, preserved: the DETACHED task's own flag.
+                sawOwnCancellation.value = Task.isCancelled
+                // And the shared one, which the caller sets.
+                while !stop.isStopped { await Task.yield() }
+            }.value
+        }
+        stop.stop()
+        outer.cancel()
+        await outer.value
+
+        #expect(stop.isStopped)
+        #expect(sawOwnCancellation.value == false,
+                "a detached task reported its parent's cancellation, and this test is wrong")
+    }
+
+    @Test("The stop starts unset and only the caller sets it")
+    func theStopStartsUnset() {
+        let a = CaptureStop()
+        let b = CaptureStop()
+        a.stop()
+        #expect(a.isStopped)
+        #expect(!b.isStopped, "two captures share one flag")
     }
 
     // MARK: The line
