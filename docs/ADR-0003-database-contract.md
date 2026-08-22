@@ -8962,6 +8962,57 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.197 The fix for the crash broke the row above it — patches 441a and 441b
+
+441 added the removal rows to `DatabaseHealthView` as a `@ViewBuilder`
+**function**. The phone crashed opening the screen; the simulator did not, on
+the same patch, with the leftover planted and the section expanded.
+
+**That is what §12.76 predicts.** The runtime body limit is a stack overflow
+evaluating the body: it compiles clean, passes the suite, and appears only on
+the device. CLAUDE.md §2 says adding to that screen is a structural change
+rather than an edit **and names the file**; 441 did not read §12.76 first.
+
+A `@ViewBuilder` function holds the section's top-level child count still, which
+is §12.76's FIRST remedy. It leaves every new child inside
+`DatabaseHealthView.body`'s type. **441a applied the second** — a separate
+`View` struct — and the screen opened. One variable moved between the two
+builds, so the diagnosis is inferred rather than measured; no crash signature
+was read.
+
+### 12.197.1 And the extraction broke a diagnostic, which is the lesson
+
+`Legacy files hidden for a test` is computed **from the disk** on every body
+evaluation. 441a moved the state that changes on a removal into the child — so
+pressing *Remove it permanently* re-ran the child's body and never the parent's.
+
+**The device showed the row still naming `athlete.json.written-while-hidden`
+two lines above a receipt reading `verified absent`.** The file was gone; the
+diagnostic said it was kept; both were on screen at once.
+
+> **WHEN YOU LIFT A SUBTREE OUT FOR DEPTH, ASK WHAT IN THE PARENT WAS
+> RECOMPUTING BECAUSE OF THE STATE YOU MOVED.**
+
+Here the answer was a sentence about the athlete's own data, wrong at the exact
+moment somebody was reading it. §12.15's family, arriving through a fix rather
+than through a feature — and the first time in this project that a *remedy*
+introduced one.
+
+### 12.197.2 One type owns the whole control
+
+`LegacyFileTestSection` holds the line, hide, restore and the removal, with all
+four pieces of state. Every press changes state this view owns, so the line
+beside it is the disk as it is. `DatabaseHealthView` declares none of it and its
+section has one child — which cuts more depth than 441a did, not less.
+
+**Driven end to end on the simulator**: snapshot taken through the app, preview
+with the real hash, `Remove it permanently`, receipt `verified absent`, the row
+above it dropping its `kept from an earlier test` clause in the same frame, and
+`removed-20260822-072026.json` on disk holding path, hash, bytes, snapshot id,
+UTC and `verifiedAbsent: true`.
+
+---
+
 ## 12.196 Clearing one internal-test leftover, with four refusals — patch 441
 
 Task 0A tranche 2b, and Bruno's decision of 22 August: **scoped receipted

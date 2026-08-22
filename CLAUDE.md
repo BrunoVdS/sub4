@@ -157,7 +157,16 @@ stopped being true at 342. Rename it `docs/REVIEW-2026-08-10-…` when convenien
   330c did both: `ShadowParitySections.swift` is 700 lines that left the screen's type.
   §12.76.
 - **`DatabaseHealthView` is where this keeps happening.** Adding to it is a structural
-  change, not an edit. Read §12.76 before adding rows to it. 331 added a Section by
+  change, not an edit. Read §12.76 before adding rows to it. **441 did not, and the
+  phone crashed opening the screen while the simulator did not** — which is exactly
+  what a runtime body limit looks like. A `@ViewBuilder` FUNCTION is only the first
+  remedy; a separate `View` TYPE is the one that worked (441a).
+  **AND THE EXTRACTION BROKE THE ROW ABOVE IT.** `Legacy files hidden for a test` is
+  computed from the disk on every body evaluation, and the state that changes moved
+  into the child — so a removal re-ran the child's body and never the parent's, and
+  the line named a file the receipt two rows below had just proved was gone.
+  **When you lift a subtree out for depth, ask what in the PARENT was recomputing
+  because of the state you moved.** 441b gives the whole control one type. §12.197. 331 added a Section by
   putting it inside an existing group and splitting its rows into two functions — the
   screen's depth did not move.
 - **A count derived from a cache answers a question about the cache** (§12.81.4). Both of

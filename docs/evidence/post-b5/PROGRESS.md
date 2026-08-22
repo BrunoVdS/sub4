@@ -17,9 +17,9 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 | | |
 |---|---|
 | **Current task** | **Task 0A** — close current truth, lifecycle and evidence tooling |
-| **Patch** | 441 |
+| **Patch** | 441b |
 | **Tree** | verified from source at each patch, not from the runbook's recorded numbers |
-| **Next gate** | **441 built; Bruno confirms the preview on the phone.** Then the Task 0A acceptance manifest, validated with `--require-recompute`, then Task 0B |
+| **Next gate** | **Every Task 0A tranche is closed.** What remains is the acceptance manifest in `docs/evidence/post-b5/`, validated with `--require-recompute`. Then Task 0B |
 
 ## Task 0A tranches
 
@@ -28,7 +28,7 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 | 1 | Reconcile current-state truth: CLAUDE §5, README, Database diagnostics | **434** | **done** — `sliceUnderTest` had said weather and gear came from files since the 430 flip; a two-way join now couples the disclosure to `hydratedFamilies` (§12.189) |
 | 1b | `DataLifecycle` names which copy is read | **437** | **done** — a disclosure-only field, derived sentence, joined to `hydratedFamilies`; NOT a `StorageLocation`, because `removeEverything` walks those (§12.192) |
 | 2a | `hidden-for-test/` role, inventory, exclusions, redacted paste | **439** | **done** — `AppSupportItem.internalTestArtifact`; deletable, excluded from snapshots and parity BY CASE, export names the omission, disconnect keeps it as a last-copy guard; path/hash/bytes/status only (§12.194) |
-| 2b | the scoped, receipted removal of the leftover copy | **441** | **built, awaiting the preview on the phone** — four refusals, each driven; `remove` re-evaluates rather than trusting the preview; the receipt is written into the folder and needed its own status (§12.196) |
+| 2b | the scoped, receipted removal of the leftover copy | **441 · 441a · 441b** | **DONE ON THE PHONE, 22 Aug 09:13.** `removed hidden-for-test/athlete.json.written-while-hidden · 1507 bytes · d8cc76b5… · snapshot 2026-08-22-071101 · 2026-08-22T07:13:14Z · verified absent`. 441a fixed a device-only crash the rows caused (§12.76); 441b fixed the stale row 441a's extraction caused (§12.197) |
 | 3 | Populated pre-B5 upgrade regression | **436** | **done** — migrates to `2026-08-20-run-removal`, populates as the pre-426 importer did, then applies B5; proves honest defaults *then* reconciliation (§12.191) |
 | 4 | `scripts/test.sh` cannot share a simulator or overwrite evidence | **435** | **done** — repository lock, run-stamped logs, trap-safe release, inherited by `preflight.sh` (§12.190) |
 | 5 | `docs/evidence/post-b5/` manifest schema, validator, fixtures | **438** | **done** — v1 schema, `scripts/evidence-manifest.py`, ten fixtures and thirteen properties in `scripts/selftest-evidence.sh`, run as preflight stage 4. MISSING ≠ STALE; validating nothing exits 2; `--require-recompute` refuses an unrecomputable tree digest (§12.193) |
@@ -74,3 +74,5 @@ combined Task 0 acceptance manifest.
 | 439 | Task 0A tranche 2a — `hidden-for-test/` gets a role, and the delete flow stops walking past it |
 | 440 | the order dependency found at 437 — a test that passed only on a dirty simulator |
 | 441 | Task 0A tranche 2b — clearing one internal-test leftover, with four refusals |
+| 441a | the rows crashed the Database screen on the device — a separate `View` type (§12.76) |
+| 441b | and the extraction had gone on printing a file that was gone (§12.197) |

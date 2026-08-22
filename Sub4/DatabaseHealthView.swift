@@ -222,11 +222,6 @@ struct DatabaseHealthView: View {
     /// grid starts at 2026-01-01 and both of this device's are 2025. §12.169.
     @State private var openActivity: Activity?
 
-    /// PATCH 433. Read from the disk when the screen opens and after each
-    /// press, so the buttons cannot disagree with the files.
-    @State private var hiddenLegacyFiles: [String] =
-        AppSupportItem.container.map { LegacyFileTest.hiddenNow(in: $0) } ?? []
-    @State private var legacyFileTestOutcome: String?
 
 
     /// PATCH 332. Nil until the share button writes a file. `ShareItem` is the
@@ -1532,48 +1527,6 @@ struct DatabaseHealthView: View {
     /// second index would be a second thing to keep in step (§12.43).
     private static func resolve(_ id: String) -> Activity? {
         ActivityStore.shared.activities.first { $0.id == id }
-    }
-
-    /// **HIDE THE LEGACY FILES, AND PUT THEM BACK — patch 433, §12.187.**
-    ///
-    /// It renames; it never deletes. `details/`, `streams/` and the database
-    /// are never touched. The state is a directory on disk, so it survives the
-    /// force-quit that IS the test.
-    ///
-    /// **INTERNAL BUILDS ONLY**, through `BuildProvenance` rather than
-    /// `#if DEBUG` — §12.140. A control that hides the athlete's data has no
-    /// business existing in a build that reached a stranger.
-    @ViewBuilder
-    private var legacyFileTestRows: some View {
-        // UNCONDITIONAL WHEREVER THE CONTROL EXISTS. A test that leaves data
-        // hidden and says nothing is a test that eats a history.
-        LabeledContent("Legacy files hidden for a test",
-                       value: LegacyFileTest.line(in: AppSupportItem.container))
-            .font(.caption2)
-            .foregroundStyle(hiddenLegacyFiles.isEmpty ? Color.dim : Color.red)
-
-        if ReleaseGates.isInternalBuild, let dir = AppSupportItem.container {
-            if hiddenLegacyFiles.isEmpty {
-                Button("Hide the legacy files") {
-                    legacyFileTestOutcome = LegacyFileTest.hide(in: dir).line
-                    hiddenLegacyFiles = LegacyFileTest.hiddenNow(in: dir)
-                }
-                .font(.caption)
-            } else {
-                Button("Put the legacy files back") {
-                    legacyFileTestOutcome = LegacyFileTest.restore(in: dir).line
-                    hiddenLegacyFiles = LegacyFileTest.hiddenNow(in: dir)
-                }
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.accent4)
-            }
-            if let legacyFileTestOutcome {
-                Text("  \(legacyFileTestOutcome)")
-                    .font(.caption2).foregroundStyle(Color.dim)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            LegacyTestArtifactRows(directory: dir)
-        }
     }
 
     private static func isLimited(_ until: Date?) -> Bool {
@@ -3621,7 +3574,7 @@ struct DatabaseHealthView: View {
             // **PATCH 433 — THE ONLY WAY TO ASK WHETHER A SLICE IS FINISHED.**
             // §12.187. One `@ViewBuilder` function, so this section's depth is
             // unchanged (§12.76), and internal builds only.
-            legacyFileTestRows
+            LegacyFileTestSection()
 
             if let survey {
                 ForEach(survey) { reading in
@@ -4505,41 +4458,86 @@ struct DatabaseHealthView: View {
     }
 }
 
-// MARK: - Clearing the leftover — patch 441a, §12.76 and §12.196
+// MARK: - The legacy-file test, whole — patch 441b, §12.76 and §12.197
 
-/// **ITS OWN `View` TYPE, AND THAT IS THE WHOLE POINT OF THIS FIX.**
+/// **HIDE THE LEGACY FILES, PUT THEM BACK, AND CLEAR WHAT IS LEFT OVER.**
+/// 433 (§12.187), 441 (§12.196), lifted out of `DatabaseHealthView` here.
 ///
-/// 441 added these rows to `DatabaseHealthView` as a `@ViewBuilder` FUNCTION.
-/// That keeps the section's top-level child count still, which is what §12.76
-/// asks for first — and it leaves every one of the new children inside
-/// `DatabaseHealthView.body`'s type. **The budget is DEPTH, and a child that
-/// draws nothing still spends it.** §12.76's second remedy is a separate `View`
-/// struct for any subtree whose dependency surface is small enough to move, and
-/// this one's is two pieces of state nothing outside ever reads.
+/// It renames; it never deletes. `details/`, `streams/` and the database are
+/// never touched. The state is a directory on disk, so it survives the
+/// force-quit that IS the test.
 ///
-/// CLAUDE.md §2 says adding to that screen is a structural change rather than
-/// an edit, and names this file. 441 did not do it. 330 and 330b are the two
-/// earlier times this was got wrong, and 330c is the shape that worked.
+/// **INTERNAL BUILDS ONLY**, through `BuildProvenance` rather than `#if DEBUG`
+/// — §12.140. A control that hides the athlete's data has no business existing
+/// in a build that reached a stranger.
 ///
-/// **Preview → confirm → remove.** Two presses, because the first answers a
-/// question — *which exact file, and is it safe* — the reader cannot otherwise
-/// ask. `TestArtifactRemoval` re-evaluates every refusal inside the second, so
-/// the gap between them is not a hole (§12.196.2).
-private struct LegacyTestArtifactRows: View {
+/// **WHY IT IS ONE TYPE — AND 441a IS THE REASON, patch 441b.**
+///
+/// 441 added the removal rows to `DatabaseHealthView` as a `@ViewBuilder`
+/// function; the phone crashed opening the screen, and 441a lifted only those
+/// rows into their own `View` (§12.76's second remedy), which fixed it. **And
+/// broke the row above them.** `Legacy files hidden for a test` is computed
+/// from the DISK on every body evaluation, and the state that changes when a
+/// file is removed had just moved into the child — so the removal re-ran the
+/// child's body and never the parent's, and the line went on naming a file the
+/// receipt two rows below had proved was gone.
+///
+/// **When you lift a subtree out for depth, ask what in the PARENT was
+/// recomputing because of the state you moved.** Here the answer was a
+/// diagnostic, and it was wrong at the exact moment somebody was reading it.
+/// The whole control lives in one type now: every press changes state this view
+/// owns, so the line beside it is always the disk as it is.
+struct LegacyFileTestSection: View {
 
-    let directory: URL
+    /// Read from the disk when the screen opens and after each press, so the
+    /// buttons cannot disagree with the files.
+    @State private var hidden: [String] =
+        AppSupportItem.container.map { LegacyFileTest.hiddenNow(in: $0) } ?? []
+    @State private var outcome: String?
 
     /// **NIL UNTIL THE READER ASKS.** The preview hashes files and reads
     /// snapshot manifests; a delete control that quietly does work before
     /// anybody presses anything is a delete control nobody chose to start.
     @State private var preview: TestArtifactRemoval.Preview?
-    @State private var outcome: String?
+    @State private var removal: String?
 
     var body: some View {
-        if preview == nil && !LegacyFileTest.writtenWhileHidden(in: directory).isEmpty {
+        // UNCONDITIONAL WHEREVER THE CONTROL EXISTS. A test that leaves data
+        // hidden and says nothing is a test that eats a history.
+        LabeledContent("Legacy files hidden for a test",
+                       value: LegacyFileTest.line(in: AppSupportItem.container))
+            .font(.caption2)
+            .foregroundStyle(hidden.isEmpty ? Color.dim : Color.red)
+
+        if ReleaseGates.isInternalBuild, let dir = AppSupportItem.container {
+            hideAndRestore(in: dir)
+            removalRows(in: dir)
+        }
+    }
+
+    @ViewBuilder
+    private func hideAndRestore(in dir: URL) -> some View {
+        if hidden.isEmpty {
+            Button("Hide the legacy files") { act { LegacyFileTest.hide(in: dir) } }
+                .font(.caption)
+        } else {
+            Button("Put the legacy files back") { act { LegacyFileTest.restore(in: dir) } }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.accent4)
+        }
+        if let outcome {
+            Text("  \(outcome)")
+                .font(.caption2).foregroundStyle(Color.dim)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func removalRows(in dir: URL) -> some View {
+        if preview == nil && !LegacyFileTest.writtenWhileHidden(in: dir).isEmpty {
             Button("Clear the file kept from an earlier test…") {
-                preview = TestArtifactRemoval.preview(in: directory)
-                outcome = nil
+                preview = TestArtifactRemoval.preview(in: dir)
+                removal = nil
             }
             .font(.caption)
         }
@@ -4555,28 +4553,40 @@ private struct LegacyTestArtifactRows: View {
                     .textSelection(.enabled)
             }
             if preview.canProceed {
-                Button("Remove it permanently", role: .destructive) { remove(preview) }
+                Button("Remove it permanently", role: .destructive) { remove(preview, in: dir) }
                     .font(.caption.weight(.semibold))
             }
-            Button("Leave it alone") { self.preview = nil; outcome = nil }
+            Button("Leave it alone") { self.preview = nil; removal = nil }
                 .font(.caption)
         }
-        if let outcome {
-            Text("  \(outcome)")
+        if let removal {
+            Text("  \(removal)")
                 .font(.caption2).foregroundStyle(Color.dim)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
         }
     }
 
+    /// One owner for *press, then re-read the disk*. The re-read is the whole
+    /// point: `hidden` is what the line's colour and the button's label are
+    /// derived from, and a press that changed the folder without refreshing it
+    /// leaves both describing the folder as it was.
+    private func act(_ press: () -> LegacyFileTest.Outcome) {
+        outcome = press().line
+        hidden = AppSupportItem.container.map { LegacyFileTest.hiddenNow(in: $0) } ?? []
+        preview = nil
+    }
+
     /// Out of the body, so the button's closure is a call rather than a
     /// `switch` the body's type has to carry.
-    private func remove(_ agreed: TestArtifactRemoval.Preview) {
-        switch TestArtifactRemoval.remove(confirming: agreed, in: directory,
+    private func remove(_ agreed: TestArtifactRemoval.Preview, in dir: URL) {
+        switch TestArtifactRemoval.remove(confirming: agreed, in: dir,
                                           now: Date(), appVersion: AppVersion.short) {
-        case .success(let receipt): outcome = receipt.line
-        case .failure(let why):     outcome = why.line
+        case .success(let receipt): removal = receipt.line
+        case .failure(let why):     removal = why.line
         }
         preview = nil
+        // AND THE SAME RE-READ. This is the line 441a broke.
+        hidden = LegacyFileTest.hiddenNow(in: dir)
     }
 }
