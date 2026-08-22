@@ -30,7 +30,7 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 | 3 | the package: snapshot + copy + manifest + redacted report, one capture id | **444** | **done** — declared in the lifecycle inventory in the same patch as the writer; three unwatched directories named in the manifest with reasons; the snapshot re-hashed inside the package (§12.200) |
 | 4 | the off-device validator and its fixtures | **445** | **done** — shares nothing with the app, never writes, sixteen fixtures each damaged one way, twenty properties in `selftest-evidence-package.sh`, run as preflight stage 4 (§12.201) |
 | 5 | the share UI, protection warning, cancellation and low-space refusals | **446** | **done** — its own `View` type from the first line; three presses; the warning asserted; cancellation between stages; the zip made outside the package. **Driving it on the simulator found the empty-directory bug thirteen tests missed** (§12.202) |
-| 6 | the campaign — one run, after all five | — | **next** — not yet written. A package captured through the UI to completion is the one thing no test can prove |
+| 6 | the campaign — one run, after all five | **written at 447** | **written, NOT RUN** — `docs/DEVICE-CAMPAIGN-0B-EVIDENCE-PACKAGE.md`, thirty steps in nine parts, twenty-two rows, every label read from source. Needs the phone and the Mac |
 
 **Findings that shaped it**, both measured rather than assumed: `content_revision`
 has a table and **zero writers**, so the runbook's "use a current revision as
