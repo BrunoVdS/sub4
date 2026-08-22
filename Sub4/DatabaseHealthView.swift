@@ -228,12 +228,6 @@ struct DatabaseHealthView: View {
         AppSupportItem.container.map { LegacyFileTest.hiddenNow(in: $0) } ?? []
     @State private var legacyFileTestOutcome: String?
 
-    /// PATCH 441. **NIL UNTIL THE READER ASKS.** The preview is not computed on
-    /// every redraw: it hashes files and reads snapshot manifests, and a delete
-    /// control that quietly does work before anybody presses anything is a
-    /// delete control nobody chose to start.
-    @State private var removalPreview: TestArtifactRemoval.Preview?
-    @State private var removalOutcome: String?
 
     /// PATCH 332. Nil until the share button writes a file. `ShareItem` is the
     /// wrapper `ShareSheet.swift` owns so that `.sheet(item:)` has something
@@ -1578,60 +1572,7 @@ struct DatabaseHealthView: View {
                     .font(.caption2).foregroundStyle(Color.dim)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            removalRows(in: dir)
-        }
-    }
-
-    /// **CLEARING THE LEFTOVER — patch 441, §12.196.**
-    ///
-    /// Preview, then confirm, then remove. Two presses, because the first one
-    /// answers a question — *which exact file, and is it safe* — that the
-    /// reader cannot otherwise ask. `TestArtifactRemoval` re-evaluates every
-    /// refusal inside the second press, so the gap between them is not a hole.
-    ///
-    /// Its own `@ViewBuilder` function for §12.76's reason: this section's
-    /// top-level child count does not move.
-    @ViewBuilder
-    private func removalRows(in dir: URL) -> some View {
-        if removalPreview == nil && !LegacyFileTest.writtenWhileHidden(in: dir).isEmpty {
-            Button("Clear the file kept from an earlier test…") {
-                removalPreview = TestArtifactRemoval.preview(in: dir)
-                removalOutcome = nil
-            }
-            .font(.caption)
-        }
-        if let preview = removalPreview {
-            // UNCONDITIONAL AND ALWAYS REASONED. A preview that renders nothing
-            // when it cannot proceed reads like a permission — §12.15 over a
-            // delete button.
-            ForEach(Array(preview.lines.enumerated()), id: \.offset) { _, line in
-                Text("  \(line)")
-                    .font(.caption2)
-                    .foregroundStyle(preview.canProceed ? Color.dim : Color.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-            }
-            if preview.canProceed {
-                Button("Remove it permanently", role: .destructive) {
-                    let outcome = TestArtifactRemoval.remove(
-                        confirming: preview, in: dir, now: Date(),
-                        appVersion: AppVersion.short)
-                    switch outcome {
-                    case .success(let receipt): removalOutcome = receipt.line
-                    case .failure(let why):     removalOutcome = why.line
-                    }
-                    removalPreview = nil
-                }
-                .font(.caption.weight(.semibold))
-            }
-            Button("Leave it alone") { removalPreview = nil; removalOutcome = nil }
-                .font(.caption)
-        }
-        if let removalOutcome {
-            Text("  \(removalOutcome)")
-                .font(.caption2).foregroundStyle(Color.dim)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
+            LegacyTestArtifactRows(directory: dir)
         }
     }
 
@@ -4561,5 +4502,81 @@ struct DatabaseHealthView: View {
         lines.append(ReviewDue.rehearsalLine(in: ProposalStore.shared.records))
 
         return lines.joined(separator: "\n")
+    }
+}
+
+// MARK: - Clearing the leftover — patch 441a, §12.76 and §12.196
+
+/// **ITS OWN `View` TYPE, AND THAT IS THE WHOLE POINT OF THIS FIX.**
+///
+/// 441 added these rows to `DatabaseHealthView` as a `@ViewBuilder` FUNCTION.
+/// That keeps the section's top-level child count still, which is what §12.76
+/// asks for first — and it leaves every one of the new children inside
+/// `DatabaseHealthView.body`'s type. **The budget is DEPTH, and a child that
+/// draws nothing still spends it.** §12.76's second remedy is a separate `View`
+/// struct for any subtree whose dependency surface is small enough to move, and
+/// this one's is two pieces of state nothing outside ever reads.
+///
+/// CLAUDE.md §2 says adding to that screen is a structural change rather than
+/// an edit, and names this file. 441 did not do it. 330 and 330b are the two
+/// earlier times this was got wrong, and 330c is the shape that worked.
+///
+/// **Preview → confirm → remove.** Two presses, because the first answers a
+/// question — *which exact file, and is it safe* — the reader cannot otherwise
+/// ask. `TestArtifactRemoval` re-evaluates every refusal inside the second, so
+/// the gap between them is not a hole (§12.196.2).
+private struct LegacyTestArtifactRows: View {
+
+    let directory: URL
+
+    /// **NIL UNTIL THE READER ASKS.** The preview hashes files and reads
+    /// snapshot manifests; a delete control that quietly does work before
+    /// anybody presses anything is a delete control nobody chose to start.
+    @State private var preview: TestArtifactRemoval.Preview?
+    @State private var outcome: String?
+
+    var body: some View {
+        if preview == nil && !LegacyFileTest.writtenWhileHidden(in: directory).isEmpty {
+            Button("Clear the file kept from an earlier test…") {
+                preview = TestArtifactRemoval.preview(in: directory)
+                outcome = nil
+            }
+            .font(.caption)
+        }
+        if let preview {
+            // UNCONDITIONAL AND ALWAYS REASONED. A preview that renders nothing
+            // when it cannot proceed reads like a permission — §12.15 over a
+            // delete button.
+            ForEach(Array(preview.lines.enumerated()), id: \.offset) { _, line in
+                Text("  \(line)")
+                    .font(.caption2)
+                    .foregroundStyle(preview.canProceed ? Color.dim : Color.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+            if preview.canProceed {
+                Button("Remove it permanently", role: .destructive) { remove(preview) }
+                    .font(.caption.weight(.semibold))
+            }
+            Button("Leave it alone") { self.preview = nil; outcome = nil }
+                .font(.caption)
+        }
+        if let outcome {
+            Text("  \(outcome)")
+                .font(.caption2).foregroundStyle(Color.dim)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
+    }
+
+    /// Out of the body, so the button's closure is a call rather than a
+    /// `switch` the body's type has to carry.
+    private func remove(_ agreed: TestArtifactRemoval.Preview) {
+        switch TestArtifactRemoval.remove(confirming: agreed, in: directory,
+                                          now: Date(), appVersion: AppVersion.short) {
+        case .success(let receipt): outcome = receipt.line
+        case .failure(let why):     outcome = why.line
+        }
+        preview = nil
     }
 }
