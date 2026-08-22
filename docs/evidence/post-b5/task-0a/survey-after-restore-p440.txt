@@ -1,0 +1,27 @@
+Sub4 1.0 (1) · patch 440 · built 22 Aug 2026 06:30
+
+The app's own files
+Unsaved stores: none
+Authored writes reaching the database: no record written since this launch
+Unreadable stores: none
+Activity roster: 699 kept of 699 offered
+  dropped by the rules: 0
+  collapsed as duplicates: 0
+  arrived out of order: no
+Activities arriving late: no sync this launch
+Activities hydrated: 699 kept of 699 offered from the database — the roster above describes activities.json
+Detail and trace files: 699 detail files and 672 trace files, counted but not opened — the store was served from the database
+
+Legacy files:
+  notes: readable
+  proposals: readable
+  activities: readable
+  athlete: readable
+  weather: readable
+  detail: 699 files, 699 readable, 0 at fault
+  streams: 672 files, 672 readable, 0 at fault
+  constants: readable
+  commutes: readable
+  moves: readable
+  legacyDetails: absent
+  legacyStreams: absent

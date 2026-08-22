@@ -16,10 +16,10 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 
 | | |
 |---|---|
-| **Current task** | **Task 0A** — close current truth, lifecycle and evidence tooling |
+| **Current task** | **Task 0A is ACCEPTED** — `docs/evidence/post-b5/task-0a.json`, 22 August 2026 08:18 UTC, *"I accept 0A."* Next is **Task 0B** |
 | **Patch** | 441b |
 | **Tree** | verified from source at each patch, not from the runbook's recorded numbers |
-| **Next gate** | **Every Task 0A tranche is closed.** What remains is the acceptance manifest in `docs/evidence/post-b5/`, validated with `--require-recompute`. Then Task 0B |
+| **Next gate** | **Task 0B** — the starting-evidence package. Its manifest cites `task-0a` as a predecessor by hash, which is the first real use of 438's chain |
 
 ## Task 0A tranches
 
@@ -40,6 +40,12 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 | Decision | Blocks | Runbook's recommended starting position |
 |---|---|---|
 | ~~Retained `hidden-for-test/athlete.json.written-while-hidden` disposition~~ | ~~tranche 2~~ | **DECIDED 22 Aug: scoped receipted removal.** Preview is on the device — `hidden-for-test/athlete.json.written-while-hidden · 1507 bytes · d8cc76b5f678622fc18f53e7cd2a2552d6dde122c3096721e2da2ebbebda1ad2` |
+
+## Carried forward as design, not yet scheduled
+
+| Item | Where | State |
+|---|---|---|
+| **An acceptance is the one field a manifest cannot check** | `docs/DESIGN-evidence-attestation.md`, written at 441b | **design only.** Tier 1 (commit-once rule, `--require-git` bracketing, push-as-witness) is free and needs no secrets; Tier 2 (SSH-signed acceptance tags) needs a NEW key — this machine has none and the remote is HTTPS — so it waits on a key-custody decision; Tier 3 (public timestamping) is rejected with a reason. Proposed home: **Task 10** |
 
 ## Found while working, not yet closed
 

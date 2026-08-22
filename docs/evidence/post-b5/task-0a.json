@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "task-0a",
+  "task": "0A",
+  "title": "Close current truth, lifecycle and evidence tooling",
+  "status": "accepted",
+  "owner": "bruno",
+  "capturedUTC": "2026-08-22T08:00:00Z",
+  "approval": {
+    "by": "bruno",
+    "atUTC": "2026-08-22T08:18:01Z",
+    "statement": "I accept 0A."
+  },
+  "predecessors": [],
+  "tree": {
+    "commit": "4a93bd863b47ca5dd332be8b910aece22673bbbd",
+    "patch": 441,
+    "digest": "ec051c2dda60fe4695aa4cc0c92829eb32e97afa57fa20fefab98c9f3a7eed28"
+  },
+  "binding": {
+    "commit": "4a93bd863b47ca5dd332be8b910aece22673bbbd",
+    "signature": {
+      "kind": "unsigned-local-commit",
+      "value": "This repository does not sign commits, so the binding is the commit id and the recomputable tree digest above, nothing more. Recorded as a gap rather than dressed up: an external signature would be a separate decision about key custody."
+    }
+  },
+  "evidence": [
+    {
+      "path": "task-0a/survey-after-restore-p440.txt",
+      "sha256": "ce3c5b4632d998871568159fe87131672b0a390fcaa7e73a4e7342fc7416872c",
+      "bytes": 920
+    },
+    {
+      "path": "task-0a/the-file-after-restore-p440.txt",
+      "sha256": "26547f373965c052a9bacb158b85e6d6340a9c525243f05b8fc762f6031c4553",
+      "bytes": 4018
+    },
+    {
+      "path": "task-0a/snapshot-before-removal-p441a.txt",
+      "sha256": "b75367f82b9b2b520e6a0686a60338a78a4e60998cf8f2d4d92268659c4b4066",
+      "bytes": 874
+    },
+    {
+      "path": "task-0a/the-file-after-removal-p441b.txt",
+      "sha256": "3e2536f5eaca0fa3126a2b40a360f82fb521d024d2ff6f461bf5cd90861c5748",
+      "bytes": 3948
+    }
+  ],
+  "notes": "Patch 441b (patch 441, revision b; the schema's patch field is an integer). Tranches: 1 at 434, 1b at 437, 1c at 440, 2a at 439, 2b at 441/441a/441b, 3 at 436, 4 at 435, 5 at 438. Device campaign docs/DEVICE-CAMPAIGN-0A-GEAR-PROVENANCE.md ran 22 August 2026, seventeen of seventeen, closing B5 campaign row 19's residual gear-provenance ambiguity. The leftover athlete.json.written-while-hidden (1507 bytes, d8cc76b5f678622fc18f53e7cd2a2552d6dde122c3096721e2da2ebbebda1ad2) was removed at 2026-08-22T07:13:14Z against snapshot 2026-08-22-071101 and verified absent; its receipt is hidden-for-test/removed-20260822-071314.json. Verification at this tree: 1910 tests in 184 suites, 15 source invariants, Release build clean, no warnings in either configuration. Evidence files are the app's own diagnostics exports, which the app states carry no session names, places or dates from the athlete's history. Screenshots taken during the campaign are NOT included and were never redacted."
+}

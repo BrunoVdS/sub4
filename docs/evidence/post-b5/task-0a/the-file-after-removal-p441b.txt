@@ -1,0 +1,61 @@
+Sub4 1.0 (1) · patch 441b · built 22 Aug 2026 09:49
+
+The file
+Sub4 1.0 (1) · patch 441b
+Built 22 Aug 2026 09:49 · Debug
+Integrity: ok
+Orphaned rows: 0
+Foreign keys: on
+Migrations: 2026-08-03-initial, 2026-08-04-domain, 2026-08-05-activity-inputs, 2026-08-05-gear-reference, 2026-08-06-proposal-inputs, 2026-08-07-open-top-zone, 2026-08-08-zone-floor-zero, 2026-08-09-plan-content, 2026-08-10-activity-detail, 2026-08-11-migration-run, 2026-08-12-run-trigger, 2026-08-13-confidence-scale, 2026-08-14-review-record-key, 2026-08-15-interrupted-run, 2026-08-16-run-recovered, 2026-08-17-authored-trigger, 2026-08-18-rows-removed, 2026-08-19-run-cause, 2026-08-20-run-removal, 2026-08-21-gear-kind, 2026-08-21-gear-retired
+Expected: 2026-08-03-initial, 2026-08-04-domain, 2026-08-05-activity-inputs, 2026-08-05-gear-reference, 2026-08-06-proposal-inputs, 2026-08-07-open-top-zone, 2026-08-08-zone-floor-zero, 2026-08-09-plan-content, 2026-08-10-activity-detail, 2026-08-11-migration-run, 2026-08-12-run-trigger, 2026-08-13-confidence-scale, 2026-08-14-review-record-key, 2026-08-15-interrupted-run, 2026-08-16-run-recovered, 2026-08-17-authored-trigger, 2026-08-18-rows-removed, 2026-08-19-run-cause, 2026-08-20-run-removal, 2026-08-21-gear-kind, 2026-08-21-gear-retired
+Size: 38985728 bytes
+Prepared: at launch
+Protection: 7 of 7 at the expected class
+  Application Support: until first unlock
+  the database's folder: until first unlock
+  the database file: until first unlock
+  details/: until first unlock
+  streams/: until first unlock
+  snapshots/: until first unlock
+  notes.json: until first unlock
+  protection writes that failed this launch: 0
+Reads from: the app's own files, with B1 — the plan, the athlete and the constants; B2 — the notes, the commute decisions, the match decisions and the plan moves; B3 — the activities; B4 — the details and the traces; B5 — the weather and the gear under test
+Hydration at launch: hydrated the plan, its trimmings, the athlete and the constants, the notes and the commute decisions, the match decisions, the plan moves, the activities, the weather, the gear
+Database bootstrap: 8 families, read at launch — the table counts further down are live and can have moved since
+  plan: 37 weeks, 260 sessions from bundled; 782 session rows in 3 versions.
+  plan trimmings: a fuelling plan, a warm-up, 20 exercises.
+  athlete: HR max 181, 15 resting months, 5 zones, FTP 270
+  notes and commutes: 7 notes, 3 commute decisions.
+  match decisions: 9 match decisions.
+  plan moves: 2 moved sessions.
+  activities: 699 activities.
+  weather and gear: 606 readings, 11 gear.
+  every read succeeded: yes
+  first fault: none
+  every family holds data: yes
+  first family with nothing: none
+  authored families keeping their files: none
+Bootstrap read: 0.115 s — 8 families
+Detail store built: 1.089 s from the database — 699 details, 672 traces, beginning 2.078 s after our first line
+Launch: 0.585 s to a free main thread · longest stall 2.759 s
+  before our first line: 6.601 s
+  our first line to the first view: 0.583 s
+  first free main-thread turn: 0.585 s
+  longest main-thread stall: 2.759 s over 328 samples, beginning 0.916 s after our first line
+  stall window: closed — 10.0 s
+  left the app during the window: no
+Plan store reads: the database
+Athlete store reads: the database
+Constants store reads: the database
+Notes store reads: the database
+Commute store reads: the database
+Matcher reads: the database
+Move store reads: the database
+Activity store reads: the database
+Weather store reads: the database
+Legacy files hidden for a test: none — every legacy file is in its place
+internal test artifacts: 1
+  hidden-for-test/removed-20260822-071314.json · 305 bytes · 7000c29e7a0fc3fa07bbccb03ec1884740c442155273735cd977985be001faa4 · a receipt for a removal
+Gear facts recovered from the file at hydration: 0
+Detail store reads: the database
+Trace store reads: the database

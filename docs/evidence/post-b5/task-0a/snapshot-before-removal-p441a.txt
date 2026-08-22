@@ -1,0 +1,24 @@
+Sub4 1.0 (1) · patch 441a · built 22 Aug 2026 09:09
+
+Protected snapshot
+Snapshot 2026-08-22-071101 · taken by patch 441a
+  1380 of 1380 copied, 19,7 MB, 2 not present, 0 failed
+  of those, retired formats: 2 (cannot exist on this install)
+  of those, stores not written: 0
+  activities.json    present, 395 KB
+  athlete.json       present, 2 KB
+  commutes.json      present, 368 bytes
+  constants.json     present, 476 bytes
+  details.json       NOT PRESENT
+  details            699 files, 1,9 MB
+  moves.json         present, 324 bytes
+  notes.json         present, 2 KB
+  UserDefaults       present, 4 KB
+  proposals.json     present, 4 bytes
+  streams.json       NOT PRESENT
+  streams            672 files, 17,3 MB
+  weather.json       present, 179 KB
+
+Full snapshot folders: 2, retention target 2
+  audit receipts for pruned copies: 8, target 20
+  total size: 42,9 MB
