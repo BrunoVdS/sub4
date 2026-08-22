@@ -102,14 +102,24 @@ them.
 7. **Force-quit. Relaunch from the icon.** Settings → **External data
    transfers** — photograph again. *A gate is a preference; this proves it
    survived the relaunch rather than living in one screen's memory.*
-8. **Settings → Strava → `Refresh zones & gear`.** Read the line that appears
-   under the button. It must say, in these words:
+8. **Settings → Sync & data → `Refresh zones & gear`** — it is below
+   `Database health`, **not** in the Strava section.
+   *(The first draft of this document said "Settings → Strava", which is wrong.
+   The Strava section carries a STATIC notice — "Read activities from Strava is
+   switched off. Data & privacy, above." — that renders whether or not anything
+   was ever attempted. A line that reads the same in both states cannot
+   discriminate between them, which is §12.15 and is exactly what this row is
+   for.)*
+
+   Read the two rows that appear after the press: **`Attempted`**, in orange
+   with a timestamp, shown only when the press produced no data — and under it,
+   in these words:
    > "Read activities from Strava" is switched off under Data & privacy, so
    > nothing was requested.
 
    **This is the proof that the one call that could refill the gear is
-   refused.** Photograph it, and photograph the `last attempted` stamp beside
-   it — a refused tap still happened, and the stamp is what says so.
+   refused.** Photograph both rows — a refused tap still happened, and
+   `Attempted` is the only thing that says so.
 9. **Database health → The file → ⬆︎** — share. *Second paste: the app with its
    files intact and its network shut.*
 
@@ -180,7 +190,7 @@ the files and a reader could then argue the screen was drawn from that read.
 | 6 | 4 | the shoes section photographed, rows counted | — |
 | 7 | 5 | `athlete` and `weather` both **readable** | anything else — **STOP** |
 | 8 | 6–7 | all three switches off, and still off after a relaunch | a switch back on after the relaunch — the gate is not persisting and the rest of the campaign proves nothing about the network |
-| 9 | 8 | the refusal sentence appears **verbatim**, and `last attempted` moves | the button does nothing visible — then the refusal is unproven, which is the whole point of the step; report it as a failure of the campaign, not of B5 |
+| 9 | 8 | the refusal sentence appears **verbatim** under an orange `Attempted` row | the button does nothing visible, or only the Strava section's static notice is seen — then the refusal is unproven, which is the whole point of the step; report it as a failure of the campaign, not of B5 |
 | 10 | 10 | the outcome line names **both** files; the row turns red | one file named — the other was already absent, which contradicts step 7. Stop and report |
 | 11 | 12 | **the same shoe rows and the same kilometres as step 4** | fewer rows, different figures, or an empty section — **the gear was coming from the file** and B5 is not complete |
 | 12 | 13 | the weather block renders with the same four figures | absent or zeroed weather — same conclusion for weather |
