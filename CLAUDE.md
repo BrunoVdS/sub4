@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 448b (2026-08-22).** §5.3 is the 390 device run, Compare and
+**Current at patch 449 (2026-08-22).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -419,6 +419,20 @@ is not a hash property**: a capture that drops files silently passes every hash
 check, so the snapshot's own manifest is walked instead. Sixteen synthetic
 fixtures, each damaged in exactly one way. §12.201.
 
+**TASK 0B's PACKAGE IS PROVEN OFF THE PHONE — 22 August, `2026-08-22-140313`.**
+60 MB, AirDropped to the Mac, `ok — 2839 checks, no problems`. **Every shared
+table matches the phone's census exactly** and the single difference —
+`grdb_migrations`, which the app's census excludes — **is explained by its own
+row count**: 221,153 + 21 = 221,174. 9,519 of 9,519 pages, 1,380 of 1,380 files,
+zero differences between the two fingerprints. §12.207.
+
+**AND FIVE DEFECTS CAME FROM ONE PRESS EACH, NOT FROM 1,964 TESTS** — an empty
+directory in a snapshot, an invisible Stop, an uninterruptible backup, a
+cancellation flag read across a detached task, and a sheet on a recycled row.
+The suite does not run a `List`, does not cross a task boundary, had no
+directory in a fixture, and has no frame to be late for. **That screen is where
+the app meets the person, and it is the surface tests do not cover.**
+
 **TASK 0B HAS STARTED, AND ITS HARD HALF IS THE BARRIER — 442.** The package is
 two captures at two moments, so a package whose halves disagree is worse than
 none. `EvidenceBarrier` **quiesces what can be asked and detects what cannot**:
@@ -586,9 +600,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 448b, 2026-08-22
+## 5. State — patch 449, 2026-08-22
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 448b; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 449; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.

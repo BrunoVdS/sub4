@@ -8962,6 +8962,70 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.207 Task 0B is proven, and work that cannot be seen has not been communicated — patch 449
+
+### 12.207.1 The package validates on a machine that has never seen the phone
+
+**22 August 2026, 14:03:13 UTC, patch 448b.** `2026-08-22-140313`, 60 MB,
+AirDropped to the Mac and checked by `scripts/validate-evidence-package.py`:
+
+```
+ok — 2839 checks, no problems
+```
+
+**Every shared table matches the phone's own census exactly**, taken forty-nine
+minutes earlier at patch 447:
+
+| | |
+|---|---|
+| phone census, 15:14 | 52 tables, **221,153** rows |
+| package copy, 16:03 | 53 tables, **221,174** rows |
+| only in the copy | `grdb_migrations` = 21 |
+| counts that differ | **none** |
+| 221,153 + 21 | **= 221,174 — reconciles exactly** |
+
+The extra table is the app's own census excluding `grdb_migrations` while the
+copy counts every table in `sqlite_master`. **The one discrepancy is explained
+by its own row count**, which is a stronger check than the totals agreeing would
+have been.
+
+The database copy: 38,989,824 bytes, **9,519 of 9,519 pages**, integrity `ok`,
+0 foreign-key violations, 21 migrations. The snapshot: **1,380 of 1,380 copied,
+0 failed**, 1,381 files carried (the extra is the snapshot's own manifest).
+`differences between the two readings: 0`, `turned away during this capture:
+none`, and all three unwatched directories named with their reasons.
+
+**That is Task 0B's central claim, and no test could have made it.**
+
+### 12.207.2 And the last defect the campaign found is the first one's shape again
+
+Zipping sixty megabytes ran **on the main actor**. The screen froze with nothing
+to say it was working, which reads as a crash — the athlete presses again, or
+gives up. Removing a package did the same, one order of magnitude down.
+
+> **Work that cannot be seen has not been communicated**, whatever it is doing
+> underneath.
+
+That is 448's invisible Stop said the other way round, and it is the fifth
+defect in Task 0B found by one press rather than by 1,964 tests. Both are
+detached now, behind a `Stage.busy` that shows a spinner and **no button** —
+because `NSFileCoordinator` has no honest mid-way stop, and a control that
+cannot do what it says is worse than none (§12.205).
+
+### 12.207.3 What five device-only defects have in common
+
+The empty directory (§12.202), the invisible Stop and the uninterruptible
+backup (§12.204), the cancellation flag read across a detached task (§12.205),
+the sheet on a recycled row (§12.206), and a frozen screen. **Not one was
+reachable from the suite**: it does not run a `List`, does not cross a task
+boundary, has no directory in a fixture, and has no frame to be late for.
+
+Three became rules (16, 18, 19) and two became controls. The pattern is the
+part worth keeping: **this screen is where the app meets the person, and that
+is the surface tests do not cover.**
+
+---
+
 ## 12.206 A sheet presented from a row the list may recycle — patch 448b
 
 Pressing **Send** closed the whole Database screen. The share sheet never got a

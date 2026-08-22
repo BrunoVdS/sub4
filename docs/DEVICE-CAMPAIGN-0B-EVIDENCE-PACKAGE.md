@@ -8,7 +8,7 @@
 | **ADR** | §12.198–§12.203 |
 | **Time** | about forty minutes, of which the captures are minutes and the reading is the rest |
 | **Needs** | the phone, a Mac with this repository, and somewhere encrypted to put a package |
-| **State** | **NOT RUN** |
+| **State** | **RUNNING — Parts A, B, C and F/G done, 22 August. §7** |
 
 **THIS IS THE ONE THING NO TEST CAN PROVE.** 1,957 tests cover the writer, the
 barrier, the copy and the validator. What they cannot do is take a package off
@@ -263,4 +263,70 @@ On the Mac, with the zip unpacked somewhere outside the repository:
 
 ## 7. Result
 
-**Not run.** Record it here, part by part, when it is.
+**Running — 22 August 2026. Five defects found, all by pressing rather than by
+testing; five patches (448, 448a, 448b, 449) and the package validated off the
+phone.**
+
+### 7.1 Parts A and B — 15:12–15:18, patch 447. SEVEN OF SEVEN
+
+Rows 1–7 all pass. Starting state: `Evidence barrier: not held · 6 writers asked
+to wait, 4 detected only`, `Evidence packages: none on this phone`, snapshot
+`2026-08-22-131445` **1380 of 1380**, census **52 tables, 221,153 rows**,
+database **38,985,728 bytes**. The warning's four clauses all present, and
+`Not now` captured nothing.
+
+### 7.2 Part C — and it took three patches to make the row performable
+
+**Row 8 failed three times before it could pass**, and each failure was a real
+defect the suite was green through:
+
+| what happened | why | patch |
+|---|---|---|
+| Stop looked dead; three captures completed | `cancel()` changed nothing on screen, so a working Stop and a dead one were identical | 448 |
+| the backup could not be interrupted at all | the longest stage — 39 MB — had **no checkpoint**; the step size is the granularity of "can I stop" | 448 |
+| Stop acknowledged and the capture finished anyway | **`Task.detached` does not inherit cancellation** — the checkpoint read a flag nobody could set | 448a |
+
+**Passed at 15:52 on 448a**: `Stopped after the snapshot was taken. Nothing was
+left behind.` with `none on this phone` after it. Rows 8, 9 and 10 pass.
+
+### 7.3 Part F — Send closed the screen it was presented from
+
+`.sheet` attached to a `Section` is presented from a row the `List` may recycle
+— a rule `DatabaseHealthView` has carried since patch 332, in the file where the
+mistake was made. Fixed at **448b**; the item is handed up to the screen.
+
+### 7.4 Part G — THE ANSWER. 16:03, patch 448b
+
+`2026-08-22-140313`, 60 MB, AirDropped and validated on the Mac:
+
+```
+ok — 2839 checks, no problems
+```
+
+| | |
+|---|---|
+| phone census, 15:14 | 52 tables, **221,153** rows |
+| package copy, 16:03 | 53 tables, **221,174** rows |
+| only in the copy | `grdb_migrations` = 21 |
+| shared tables that differ | **none** |
+| reconciliation | 221,153 + 21 = **221,174 exactly** |
+
+Database copy **9,519 of 9,519 pages**, integrity `ok`, 0 foreign-key
+violations, 21 migrations. Snapshot **1,380 of 1,380 copied, 0 failed**, 1,381
+files carried. `differences between the two readings: 0`. All three unwatched
+directories named with reasons.
+
+Rows 15, 16, 17 and 18 pass. **Row 17's check count is 2,839, not tens.**
+
+### 7.5 And a sixth, which is the first one's shape again
+
+Zipping 60 MB ran on the main actor: the screen froze with nothing to say it was
+working. **Work that cannot be seen has not been communicated.** Fixed at 449 —
+packing and removing are detached now, behind a spinner with no button, because
+`NSFileCoordinator` has no honest mid-way stop.
+
+### 7.6 Still to run
+
+**Part D** (the capture with the phone locked, rows 10–12), **Part E** (the live
+barrier refusal, rows 13–14), **Part H** (the app resuming, rows 19–20) and
+**Part I** (clearing up, rows 21–22).

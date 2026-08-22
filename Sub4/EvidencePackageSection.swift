@@ -40,6 +40,15 @@ struct EvidencePackageSection: View {
         case idle
         case warning
         case working(String)
+        /// **BUSY, BUT NOT STOPPABLE — patch 449.**
+        ///
+        /// Packing a 60 MB package into a zip and removing one are both
+        /// seconds of file work, and both ran on the main actor: the screen
+        /// simply froze, which reads as a crash rather than as work. A capture
+        /// gets `working` and a Stop; these get a spinner and no button,
+        /// because `NSFileCoordinator` has no honest mid-way stop and a button
+        /// that cannot do what it says is worse than none (§12.205).
+        case busy(String)
         case done(String)
         /// **ITS OWN CASE, BECAUSE THE COLOUR WAS ARGUING WITH THE WORDS.**
         /// A cancellation went to `.failed` and rendered in red under the
@@ -111,6 +120,12 @@ struct EvidencePackageSection: View {
                 .font(.caption.weight(.semibold))
             Button("Not now") { stage = .idle }
                 .font(.caption)
+
+        case .busy(let what):
+            HStack {
+                ProgressView()
+                Text(what).font(.caption)
+            }
 
         case .working(let what):
             HStack { ProgressView(); Text(what).font(.caption) }
@@ -264,30 +279,53 @@ struct EvidencePackageSection: View {
         }
     }
 
+    /// **OFF THE MAIN ACTOR, AND IT SAYS SO — patch 449.**
+    ///
+    /// Zipping sixty megabytes took seconds on the main actor, so the screen
+    /// froze with no indication that anything was happening. A frozen screen
+    /// reads as a crash: the athlete presses again, or gives up. Same shape as
+    /// 448's invisible Stop — **work that cannot be seen has not been
+    /// communicated**, whatever it is doing underneath.
     private func send(_ id: String) {
         guard let container = AppSupportItem.container else { return }
         let package = container
             .appendingPathComponent(EvidencePackage.directoryName, isDirectory: true)
             .appendingPathComponent(id, isDirectory: true)
-        switch EvidencePackageShare.zip(packageAt: package, captureID: id,
-                                        into: FileManager.default.temporaryDirectory) {
-        case .success(let url): shared = ShareItem(url: url)
-        case .failure(let why): stage = .failed(why.line)
+        let temporary = FileManager.default.temporaryDirectory
+        stage = .busy("Packing \(id) to send…")
+        work = Task {
+            let outcome = await Task.detached(priority: .userInitiated) {
+                EvidencePackageShare.zip(packageAt: package, captureID: id,
+                                         into: temporary)
+            }.value
+            switch outcome {
+            case .success(let url):
+                shared = ShareItem(url: url)
+                stage = .idle
+            case .failure(let why):
+                stage = .failed(why.line)
+            }
+            work = nil
         }
     }
 
+    /// Removing 1,381 files is the same story, one order of magnitude down.
     private func delete(_ id: String) {
         guard let container = AppSupportItem.container else { return }
         let package = container
             .appendingPathComponent(EvidencePackage.directoryName, isDirectory: true)
             .appendingPathComponent(id, isDirectory: true)
-        do {
-            try FileManager.default.removeItem(at: package)
-            stage = .done("\(id) removed. The data it copied is untouched.")
-        } catch {
-            stage = .failed("FAILED — \(id) could not be removed: \(error.localizedDescription)")
-        }
         expanded.remove(id)
-        packages = EvidencePackage.ids(base: AppSupportItem.container)
+        stage = .busy("Removing \(id)…")
+        work = Task {
+            let failure = await Task.detached(priority: .userInitiated) { () -> String? in
+                do { try FileManager.default.removeItem(at: package); return nil }
+                catch { return error.localizedDescription }
+            }.value
+            stage = failure.map { .failed("FAILED — \(id) could not be removed: \($0)") }
+                 ?? .done("\(id) removed. The data it copied is untouched.")
+            packages = EvidencePackage.ids(base: AppSupportItem.container)
+            work = nil
+        }
     }
 }
