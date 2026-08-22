@@ -16,8 +16,8 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 
 | | |
 |---|---|
-| **Current task** | **Task 0B** — the starting-evidence package, tranches 1–2 of 5 landed at 442–443. Task 0A is ACCEPTED — `docs/evidence/post-b5/task-0a.json`, 22 August 2026 08:18 UTC, *"I accept 0A."* Next is **Task 0B** |
-| **Patch** | 443 |
+| **Current task** | **Task 0B** — the starting-evidence package, tranches 1–3 of 5 landed at 442–444. Task 0A is ACCEPTED — `docs/evidence/post-b5/task-0a.json`, 22 August 2026 08:18 UTC, *"I accept 0A."* Next is **Task 0B** |
+| **Patch** | 444 |
 | **Tree** | verified from source at each patch, not from the runbook's recorded numbers |
 | **Next gate** | **Task 0B** — the starting-evidence package. Its manifest cites `task-0a` as a predecessor by hash, which is the first real use of 438's chain |
 
@@ -27,7 +27,7 @@ runbook itself designates for task evidence, so a progress index belongs in it.
 |---|---|---|---|
 | 1 | the evidence barrier — quiesce, fingerprint, detect | **442** | **done** — 6 writers asked, 4 detected only, RULE 16 joins the claim to the wiring (§12.198) |
 | 2 | the transaction-consistent database copy, through GRDB's backup API | **443** | **done** — five refusals, counts compared on both sides, one file with its journal folded in, RULE 17 (§12.199) |
-| 3 | the package: snapshot + copy + manifest + redacted report, one capture id | — | open |
+| 3 | the package: snapshot + copy + manifest + redacted report, one capture id | **444** | **done** — declared in the lifecycle inventory in the same patch as the writer; three unwatched directories named in the manifest with reasons; the snapshot re-hashed inside the package (§12.200) |
 | 4 | the off-device validator and its fixtures | — | open |
 | 5 | the share UI, protection warning, cancellation and low-space refusals | — | open |
 | 6 | the campaign — one run, after all five | — | open |
@@ -102,3 +102,4 @@ combined Task 0 acceptance manifest.
 | 441b | and the extraction had gone on printing a file that was gone (§12.197) |
 | 442 | Task 0B tranche 1 — the evidence barrier, and RULE 16 |
 | 443 | Task 0B tranche 2 — the diagnostic database copy, and RULE 17 |
+| 444 | Task 0B tranche 3 — the package, and the lifecycle declaration that comes with it |

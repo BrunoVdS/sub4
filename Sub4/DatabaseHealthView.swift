@@ -4181,6 +4181,11 @@ struct DatabaseHealthView: View {
         // nobody can check, and the count that is only DETECTED is the one a
         // reader needs — those are the writers that can still fail a capture.
         l.append("Evidence barrier: \(EvidenceBarrier.line)")
+        // PATCH 444. UNCONDITIONAL, and "none" is an answer — a package is a
+        // copy of everything this app holds, so how many are sitting on the
+        // phone is a fact its owner is entitled to see without asking.
+        l.append("Evidence packages: "
+                 + EvidencePackage.line(base: AppSupportItem.container))
         l.append("Gear facts recovered from the file at hydration: "
                  + "\(AthleteStore.shared.gearRecoveredFromTheFile)")
         l.append("Detail store reads: \(DetailStore.shared.detailsServedFrom.line)")

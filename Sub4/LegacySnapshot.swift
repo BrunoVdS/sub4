@@ -377,6 +377,11 @@ enum LegacySnapshot {
             // path/hash/bytes inventory is what records it, in
             // `LegacyFileTest`. §12.194.
             case .internalTestArtifact: continue
+            // AND THIS ONE WOULD RECURSE TWICE OVER — patch 444. A package
+            // CONTAINS a snapshot, so a capture that walked into `evidence/`
+            // would copy its own output, and the next capture would copy that.
+            // §12.200.
+            case .evidencePackage: continue
             case .file(let name), .legacyFile(let name):
                 out.append(describe(declared: name, relative: name,
                                     url: base.appendingPathComponent(name), fm: fm))

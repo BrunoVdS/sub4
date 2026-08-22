@@ -390,6 +390,41 @@ enum EvidenceBarrier {
     /// would silently stop the sync, the backfill and the background refresh
     /// for the rest of the launch — a far worse outcome than a failed capture,
     /// and exactly the shape `scripts/lock.sh` was written to avoid.
+    /// **BOTH READINGS, NOT JUST THE FIRST — patch 444.**
+    ///
+    /// A manifest recording only the pre-state says *this is what it was*. The
+    /// package's claim is stronger and needs both: *this is what it was, this
+    /// is what it still was afterwards, and they are the same.* A reader who
+    /// has only one of them has to take the equality on trust.
+    nonisolated struct Capture<T: Sendable>: Sendable {
+        let value: T
+        let before: Fingerprint
+        let after: Fingerprint
+    }
+
+    /// **A TOKEN ONLY `beginHold` CAN MAKE.**
+    ///
+    /// The package writer does 60 MB of file work and must not run on the main
+    /// actor; the hold flag must, because every writer that consults it does.
+    /// Splitting them leaves a hole — a caller could do the work without ever
+    /// taking the hold — so the work REQUIRES one of these, and nothing outside
+    /// this file can build one. A rule enforced by the compiler needs no rule
+    /// in `check-invariants.py`.
+    nonisolated struct Hold: Sendable {
+        fileprivate init() {}
+    }
+
+    /// Takes the barrier, or `nil` when somebody already has it.
+    static func beginHold(now: Date = Date()) -> Hold? {
+        guard !isHeld else { return nil }
+        heldSince = now
+        return Hold()
+    }
+
+    /// **CALL IT ON EVERY PATH.** A barrier left up stops the sync, the
+    /// backfill and the background refresh for the rest of the launch.
+    static func endHold() { heldSince = nil }
+
     static func capture<T: Sendable>(base: URL?,
                                      items: [AppSupportItem],
                                      preferenceKeys: [String],
@@ -397,20 +432,36 @@ enum EvidenceBarrier {
                                      defaults: UserDefaults = .standard,
                                      now: @Sendable () -> Date = { Date() },
                                      body: (Fingerprint) throws -> T)
-    -> Result<(T, Fingerprint), Refusal> {
-        guard !isHeld else {
+    -> Result<Capture<T>, Refusal> {
+        guard let hold = beginHold(now: now()) else {
             return .failure(.alreadyHeld(since: iso8601(heldSince ?? Date())))
         }
+        defer { endHold() }
         guard let base else { return .failure(.containerUnreachable) }
-        heldSince = now()
-        defer { heldSince = nil }
+        return runInside(hold: hold, base: base, items: items,
+                         preferenceKeys: preferenceKeys, database: database,
+                         defaults: defaults, now: now, body: body)
+    }
 
+    /// **NONISOLATED, AND IT NEEDS A `Hold`.** This is the half that does the
+    /// work, so it runs off the main actor — and the token is what stops it
+    /// running without the barrier up.
+    nonisolated static func runInside<T: Sendable>(
+        hold: Hold,
+        base: URL,
+        items: [AppSupportItem],
+        preferenceKeys: [String],
+        database: Sub4Database?,
+        defaults: UserDefaults,
+        now: () -> Date,
+        body: (Fingerprint) throws -> T
+    ) -> Result<Capture<T>, Refusal> {
+        _ = hold
         let before = fingerprint(base: base, items: items,
                                  preferenceKeys: preferenceKeys,
                                  database: database, defaults: defaults, now: now())
         guard case .success(let pre) = before else {
-            return .failure((try? before.get()) == nil
-                            ? refusal(of: before) : .cancelled)
+            return .failure(refusal(of: before))
         }
 
         let produced: T
@@ -427,10 +478,10 @@ enum EvidenceBarrier {
 
         let moved = post.differences(from: pre)
         guard moved.isEmpty else { return .failure(.movedDuringCapture(moved)) }
-        return .success((produced, pre))
+        return .success(Capture(value: produced, before: pre, after: post))
     }
 
-    private static func refusal(of result: Result<Fingerprint, Refusal>) -> Refusal {
+    private nonisolated static func refusal(of result: Result<Fingerprint, Refusal>) -> Refusal {
         if case .failure(let r) = result { return r }
         return .couldNotRead("unknown")
     }

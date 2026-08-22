@@ -143,7 +143,8 @@ enum LegacyReader {
                                store: store, fm: fm)
             })
 
-        case .databaseDirectory, .snapshotDirectory, .internalTestArtifact:
+        case .databaseDirectory, .snapshotDirectory, .internalTestArtifact,
+             .evidencePackage:
             // Not legacy inputs. `LegacyStore` cannot name one — the switch is
             // exhaustive over `AppSupportItem`, not over this enum's own cases
             // — and reaching here would mean `item` started returning

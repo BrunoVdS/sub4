@@ -89,6 +89,9 @@ struct LegacyFixtureTests {
                 // moved-aside `athlete.json` would fixture the copy and the
                 // original as two inputs. §12.194.
                 case .internalTestArtifact: break
+                // PATCH 444. A package holds a snapshot of every path above
+                // it; fixturing it would fixture the corpus's own backup.
+                case .evidencePackage:      break
                 }
             }
         }

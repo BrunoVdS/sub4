@@ -141,6 +141,26 @@ struct InternalTestArtifactTests {
         #expect(named, "the export omits hidden-for-test/ without saying so: \(excluded)")
     }
 
+    /// **THE TRAP THAT MAKES BOTH EXEMPTIONS SAFE.** `hidden-for-test/` and
+    /// `evidence/` are left out of the export because everything in them
+    /// duplicates a file the export already carries. That argument only holds
+    /// if the reader can check it, so the manifest must NAME each omission —
+    /// and a silent omission is the exact defect the manifest exists to
+    /// prevent.
+    @Test("The export names every duplicate it leaves out")
+    func theExportNamesEveryDuplicateItLeavesOut() throws {
+        let plan = try DataLifecycleCoordinator.plan(includingSensorTraces: false)
+        let manifest = try JSONSerialization.jsonObject(with: plan.manifest) as? [String: Any]
+        let excluded = manifest?["excluded"] as? [String] ?? []
+
+        for folder in [LegacyFileTest.directoryName, EvidencePackage.directoryName] {
+            #expect(excluded.contains { $0.contains(folder) },
+                    "the export omits \(folder) without saying so: \(excluded)")
+            #expect(plan.directories[folder] == nil)
+            #expect(plan.singles[folder] == nil)
+        }
+    }
+
     // MARK: A disconnect keeps it, and the reason is the last-copy guard
 
     /// The naive answer is `.removeEverything` — the folder carries Strava

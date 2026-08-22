@@ -98,7 +98,7 @@ struct EvidenceBarrierTests {
         #expect(sawHeld, "the barrier was not up inside its own body")
         #expect(refused, "a writer got through while the barrier was up")
         #expect(EvidenceBarrier.refusals[.activitySync] == 1)
-        #expect(try outcome.get().0 == 42)
+        #expect(try outcome.get().value == 42)
         #expect(!EvidenceBarrier.isHeld, "the hold outlived the capture")
     }
 
@@ -111,7 +111,7 @@ struct EvidenceBarrierTests {
         let dir = try base(); defer { clean(dir) }
         let db = try Sub4Database.inMemory()
         struct Boom: Error {}
-        let outcome: Result<(Int, EvidenceBarrier.Fingerprint), EvidenceBarrier.Refusal> =
+        let outcome: Result<EvidenceBarrier.Capture<Int>, EvidenceBarrier.Refusal> =
             EvidenceBarrier.capture(base: dir, items: items, preferenceKeys: [],
                                     database: db, defaults: try defaults()) { _ in
                 throw Boom()
@@ -129,7 +129,7 @@ struct EvidenceBarrierTests {
     func aSecondCaptureIsRefused() throws {
         let dir = try base(); defer { clean(dir) }
         let db = try Sub4Database.inMemory()
-        var inner: Result<(Int, EvidenceBarrier.Fingerprint), EvidenceBarrier.Refusal>?
+        var inner: Result<EvidenceBarrier.Capture<Int>, EvidenceBarrier.Refusal>?
         _ = EvidenceBarrier.capture(base: dir, items: items, preferenceKeys: [],
                                     database: db, defaults: try defaults()) { _ in
             inner = EvidenceBarrier.capture(base: dir, items: self.items,
@@ -227,10 +227,13 @@ struct EvidenceBarrierTests {
             // what it was taken against rather than re-derive it afterwards.
             pre.items.count
         }
-        let (count, fingerprint) = try outcome.get()
-        #expect(count == 1)
-        #expect(fingerprint.items.first?.path == "athlete.json")
-        guard case .hashed(let sha, let bytes) = try #require(fingerprint.items.first).kind else {
+        let captured = try outcome.get()
+        #expect(captured.value == 1)
+        #expect(captured.before.items.first?.path == "athlete.json")
+        // BOTH READINGS REACH THE CALLER — the manifest records the pair, and a
+        // reader with only one of them takes the equality on trust.
+        #expect(captured.after.differences(from: captured.before).isEmpty)
+        guard case .hashed(let sha, let bytes) = try #require(captured.before.items.first).kind else {
             Issue.record("a single file was not hashed")
             return
         }

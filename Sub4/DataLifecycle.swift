@@ -150,6 +150,22 @@ nonisolated enum AppSupportItem: Equatable, Hashable {
     /// (§12.194), arriving through a test control instead of an old version.
     case internalTestArtifact(String)
 
+    /// A directory of starting-evidence packages — `evidence/`, patch 444.
+    ///
+    /// **A PACKAGE IS A COPY OF EVERYTHING**: a verified snapshot of every
+    /// legacy file, a transaction-consistent copy of the database, and a
+    /// manifest binding them. Which makes this the single most sensitive
+    /// directory this app writes, and the one a delete flow may least afford to
+    /// walk past — §12.194's lesson, applied before the thing exists rather
+    /// than five patches after (`db` at 195 and `snapshots` at 247 did the
+    /// same).
+    ///
+    /// **EXCLUDED BY CASE from snapshots and source parity**, and for a sharper
+    /// reason than `hidden-for-test/`: a package CONTAINS a snapshot, so a
+    /// capture that walked into it would copy its own output, and the next one
+    /// would copy that.
+    case evidencePackage(String)
+
     var displayName: String {
         switch self {
         case .file(let f):       f
@@ -158,6 +174,7 @@ nonisolated enum AppSupportItem: Equatable, Hashable {
         case .databaseDirectory(let d): "\(d)/ — the database and its journal files"
         case .snapshotDirectory(let d): "\(d)/ — dated copies of your files, taken before the migration reads them"
         case .internalTestArtifact(let d): "\(d)/ — files an internal build moved aside for a test, never migration input"
+        case .evidencePackage(let d): "\(d)/ — dated evidence packages: a snapshot, a copy of the database, and what bound them"
         }
     }
 
@@ -171,13 +188,14 @@ nonisolated enum AppSupportItem: Equatable, Hashable {
         case .databaseDirectory(let d): d
         case .snapshotDirectory(let d): d
         case .internalTestArtifact(let d): d
+        case .evidencePackage(let d): d
         }
     }
 
     var isDirectory: Bool {
         switch self {
         case .directory, .databaseDirectory, .snapshotDirectory,
-             .internalTestArtifact:                              true
+             .internalTestArtifact, .evidencePackage:            true
         case .file, .legacyFile:                                 false
         }
     }
@@ -349,6 +367,10 @@ enum DataCategory: String, CaseIterable, Identifiable, Codable {
     /// delete flow, not the disconnect rules, not the export manifest, not a
     /// snapshot, not a receipt. §12.194.
     case internalTestArtifacts
+    /// Added in 444, before the first package is written — see
+    /// `AppSupportItem.evidencePackage` for why declaring it early is the
+    /// pattern rather than the exception.
+    case evidencePackages
 
     var id: String { rawValue }
 }
@@ -1051,7 +1073,48 @@ enum DataLifecycle {
                                     + "the copy in here is the only copy of your "
                                     + "athlete file, so a Strava disconnect will "
                                     + "not touch it — put the files back, then "
-                                    + "clear the folder"))
+                                    + "clear the folder")),
+
+        // MARK: - A copy of everything, in one folder — patch 444, §12.200
+        DataCategoryEntry(
+            category: .evidencePackages,
+            title: "Evidence packages",
+            whatItIs: "A dated folder holding a verified copy of every file the "
+                    + "app has written, a copy of the database taken at one "
+                    + "instant, and a record binding the two together. It is "
+                    + "made only when you ask for one, from the Database screen.",
+            purpose: "Proving, off this phone, that the move to the database "
+                   + "carried your data — without a laptop having to reach into "
+                   + "the app's private folder to find out.",
+            // THE UNION OF EVERYTHING IT COPIES. It is not new data; it is
+            // every existing kind, in one place.
+            lineage: [.strava, .appleHealth, .authored, .bundled,
+                      .weatherProvider, .device],
+            storage: [.applicationSupport(
+                .evidencePackage(EvidencePackage.directoryName))],
+            retention: .indefinite,
+            sharedWith: [],
+            // NEVER IN THE ORDINARY EXPORT. Every byte is a duplicate of
+            // something the export already carries under its own name, and a
+            // person asking for their data twice over is being handed a
+            // puzzle. It is shared deliberately, on its own, with its own
+            // warning — §12.194.2's argument.
+            isExportable: false,
+            aiShareable: false,
+            deletionRule: "Removed by Delete local data with everything else. "
+                        + "You can also delete a package on its own from the "
+                        + "Database screen once you have finished with it.",
+            gaps: ["A package is a full copy of your data and is only as "
+                 + "protected as where you put it. The app applies the same "
+                 + "protection class it uses for everything else and warns "
+                 + "before sharing; after that it is out of its hands — "
+                 + "ADR-0003 §12.200."],
+            // REMOVED ON DISCONNECT, and this one is not the last-copy case
+            // that made `hidden-for-test/` a keep. A package is never the only
+            // copy of anything — it is taken FROM the live data, which stays
+            // exactly where it was. So the Strava-derived bytes inside it can
+            // go, and your notes lose nothing by it.
+            onStravaDisconnect: .removeEverything)
     ]
 
     // MARK: Queries

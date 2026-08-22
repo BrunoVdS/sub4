@@ -666,7 +666,8 @@ struct LegacySnapshotTests {
         // by case, in `plan`, where the reason is written down.
         let expected = Set(DataLifecycle.appSupportItems.compactMap { item -> String? in
             switch item {
-            case .databaseDirectory, .snapshotDirectory, .internalTestArtifact: nil
+            case .databaseDirectory, .snapshotDirectory, .internalTestArtifact,
+                 .evidencePackage: nil
             case .file(let n), .legacyFile(let n), .directory(let n): n
             }
         })

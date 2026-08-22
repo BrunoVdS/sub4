@@ -129,7 +129,7 @@ nonisolated enum LegacyFileTest {
     /// names 606 readings taken at places and times; §12.7 governs what leaves
     /// this phone in a paste, and a hash is an identity rather than a
     /// disclosure.
-    struct Artifact: Equatable, Sendable {
+    struct Artifact: Equatable, Sendable, Codable {
         /// Relative to Application Support, so it is a path a person can act on
         /// without being an absolute one that names the container UUID.
         let path: String
@@ -137,7 +137,7 @@ nonisolated enum LegacyFileTest {
         let bytes: Int
         let status: Status
 
-        enum Status: String, Equatable, Sendable {
+        enum Status: String, Equatable, Sendable, Codable {
             /// The original, moved aside by `hide`. **While this exists the
             /// live file does not, so this is the only copy.**
             case hiddenOriginal = "the only copy — the live file is hidden"

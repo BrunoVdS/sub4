@@ -104,7 +104,11 @@ struct DataLifecycleCoordinatorTests {
             // and in NO inventory until now — so "Delete local data" walked
             // past a folder that, while a test was running, held the ONLY copy
             // of `athlete.json` and `weather.json`. §12.194.
-            "hidden-for-test"    // LegacyFileTest.directoryName
+            "hidden-for-test",   // LegacyFileTest.directoryName
+            // PATCH 444, and declared before the first package exists for the
+            // reason `db` and `snapshots` were: a folder holding a copy of
+            // everything is the last one a delete flow may walk past.
+            "evidence"           // EvidencePackage.directoryName
         ]
         #expect(declared == written,
                 "missing: \(written.subtracting(declared)); undeclared: \(declared.subtracting(written))")
@@ -122,7 +126,8 @@ struct DataLifecycleCoordinatorTests {
     @Test("Directories are declared as directories")
     func directoriesAreDirectories() {
         let dirs = Set(DataLifecycle.appSupportItems.filter(\.isDirectory).map(\.pathComponent))
-        #expect(dirs == ["details", "streams", "db", "snapshots", "hidden-for-test"],
+        #expect(dirs == ["details", "streams", "db", "snapshots", "hidden-for-test",
+                         "evidence"],
                 "directory set is \(dirs)")
     }
 
@@ -275,7 +280,16 @@ struct DataLifecycleCoordinatorTests {
             // `theExportNamesWhatATestIsHolding` below — the ONE case where the
             // copy is not a duplicate is a test in progress, and there the
             // manifest names the missing original out loud. §12.194.2.
-            .internalTestArtifacts
+            .internalTestArtifacts,
+            // PATCH 444. Exempt on DUPLICATION grounds too, and harder: a
+            // package holds a verified copy of every file the export already
+            // carries under its own name, plus a copy of the database. Putting
+            // it inside the export would hand a person their data twice over
+            // and make the export unopenable in a text editor. It is shared
+            // DELIBERATELY, on its own, with its own warning — and the export
+            // manifest names the exclusion, which
+            // `theExportNamesEveryDuplicateItLeavesOut` holds it to. §12.200.
+            .evidencePackages
         ]
 
         for item in DataLifecycle.appSupportItems {

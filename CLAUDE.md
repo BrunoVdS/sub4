@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 443 (2026-08-22).** §5.3 is the 390 device run, Compare and
+**Current at patch 444 (2026-08-22).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -397,6 +397,16 @@ counting BOTH sides — a truncated copy still hashes and still opens. **RULE 17
 exists because passing the same counts as both sides left all eleven controls
 green. §12.199.
 
+**AND 444 IS THE PACKAGE ITSELF** — `evidence/<captureID>/`: a verified copy of
+a fresh snapshot, the database copy, a private manifest and a redacted report,
+taken inside the barrier. It replaces Xcode's container download, which came
+back twice without the database, both payload folders and four stores (§12.186).
+**Three directories are outside the watch and the manifest NAMES them** —
+`evidence/` and `snapshots/` are the capture's own output, and `db/` is watched
+by row counts instead because a READ alone can touch a WAL journal. Declared in
+the lifecycle inventory in the same patch as the writer, which is what 439
+wishes 433 had done. §12.200.
+
 **`hidden-for-test/` HAS A ROLE SINCE 439 — AND UNTIL THEN IT HAD NONE.**
 433's control renames the legacy files aside; nobody wrote down what the
 resulting DIRECTORY is, so it was in no inventory — **"Delete local data" walked
@@ -528,9 +538,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 443, 2026-08-22
+## 5. State — patch 444, 2026-08-22
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 443; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 444; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.

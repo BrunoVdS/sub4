@@ -8962,6 +8962,83 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.200 One folder that can be checked from somewhere else — patch 444
+
+Task 0B, tranche 3. What it replaces is the reason it exists: Xcode's *Download
+Container* came back **twice, seven minutes apart, without the 39 MB database,
+without `details/` and `streams/`, and without four of the stores** — in both
+build configurations — while the app's own snapshot counted 1,380 of 1,380
+files a minute earlier (§12.186). **A capture route that silently omits most of
+what it is capturing cannot be the authoritative input to anything.**
+
+So the app makes the package itself: `evidence/<captureID>/` holding a verified
+copy of a fresh protected snapshot, the diagnostic database copy (§12.199), a
+private `manifest.json`, and a `support-report.txt` with nothing private in it.
+
+### 12.200.1 Declared before it exists, for the third time
+
+`AppSupportItem.evidencePackage` and `DataCategory.evidencePackages` land in the
+same patch as the writer — the pattern `db` set at 195 and `snapshots` at 247,
+and the one `hidden-for-test/` did NOT follow, which is why "Delete local data"
+walked past it for six patches (§12.194).
+
+**Excluded from snapshots and source parity by case**, and for a sharper reason
+than `hidden-for-test/`: **a package contains a snapshot**, so a capture that
+walked into `evidence/` would copy its own output and the next would copy that.
+
+**Removed on a Strava disconnect**, and this is *not* the last-copy case that
+made `hidden-for-test/` a keep: a package is never the only copy of anything —
+it is taken from live data that stays exactly where it was.
+
+### 12.200.2 Three directories the fingerprint does not watch, named in the manifest
+
+The barrier refuses a package when anything moved. Three declared locations are
+outside that watch:
+
+| not watched | why |
+|---|---|
+| `evidence/` | the capture's own output — watching it fails every package for having been written |
+| `snapshots/` | also its own output: a capture writes a folder and prunes older ones |
+| **`db/`** | **a READ alone can touch a WAL journal**, so byte-watching it would fail captures at random. The database's content is watched by row counts, integrity and the migration list — which is what matters and what bytes could not say |
+
+The third is a strengthening, not a hole. **All three are recorded in the
+manifest and printed in the report with their reasons**, because *"it did not
+fail"* and *"it was not looking"* are otherwise the same sentence (§12.15).
+Everything else is derived from `DataLifecycle.appSupportItems`, so a store
+added tomorrow is watched with nobody editing this file (§12.131.4).
+
+### 12.200.3 The snapshot is re-hashed inside the package
+
+A manifest carrying only the original's hashes would describe a folder somewhere
+else. Each copied file is hashed **against what the snapshot verified**, not
+against the source read a second time — RULE 17's lesson one artefact along.
+
+### 12.200.4 The exact reason has to survive the barrier
+
+The body throws and the barrier wraps anything that is not its own `Refusal`.
+The first draft recovered the case by **matching the description string**, which
+was lossy: an incomplete snapshot came back as a generic failure. Sabotaging
+`isComplete` then produced a passing suite — the control for it was checking a
+*different* path that happened to fail a moment later.
+
+§12.191.3 again, and it cost the same thing every time: **a test that fails for
+the wrong reason will pass when it should not.** The reason is carried out in a
+variable now and the throw is only a signal to stop; the controls assert the
+exact case.
+
+### 12.200.5 And one control was expecting the wrong behaviour
+
+`itRefusesWithNoDatabase` expected a failed database *copy*. It gets a refused
+*fingerprint*, before the body runs — because a reading taken without the
+database is not a fingerprint of this app: half the state would go unrecorded
+and the package would look complete. **The earlier refusal is the better
+behaviour, so the test changed rather than the code.**
+
+Four sabotages: the copy-hash comparison, the completeness check, the cleanup of
+a failed package, and the redaction. 1949 tests in 187 suites.
+
+---
+
 ## 12.199 A copy of the database that is evidence, not a spare — patch 443
 
 Task 0B, tranche 2. The runbook is explicit: *a transaction-consistent
