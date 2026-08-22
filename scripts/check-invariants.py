@@ -1456,6 +1456,52 @@ def every_asked_writer_is_actually_asked():
                        "not declare.")
 
 
+def a_verification_never_reads_its_own_input():
+    """RULE 17 — the copy is compared with the database, not with itself.
+
+    `DiagnosticDatabaseCopy` proves a copy is faithful by counting both sides.
+    Pass the same dictionary twice and the comparison returns empty for every
+    input, the package publishes, and **every control in the suite stays
+    green** — because the backup API is correct, so the two sides really do
+    agree and nothing can tell a real comparison from a vacuous one.
+
+    That was sabotaged at 443 and not one of eleven tests noticed. It is
+    §12.181's shape exactly: an arm of a derivation that no assertion can
+    reach, so the guard has to live here.
+
+    The general lesson is older — §12.129, and 411 shipped it for a day: **a
+    reader that filters the way the writer does agrees with a writer that
+    filtered wrong.**
+    """
+    rule = "a verification never reads its own input"
+    path = APP / "DiagnosticDatabaseCopy.swift"
+    if not path.exists():
+        fail(rule, "DiagnosticDatabaseCopy.swift is missing")
+        return
+    body = strip_comments(path.read_text())
+
+    # NOT THE DECLARATION. `func disagreements(source: [String: Int], copy:
+    # [String: Int])` matches the same shape, and the first draft of this rule
+    # reported the function's own signature as a vacuous comparison — a rule
+    # that cries wolf about its own misreading gets switched off. §12.198.4 was
+    # the same mistake one patch earlier.
+    calls = re.findall(
+        r"(?<!func )disagreements\(source:\s*([^,]+?),\s*copy:\s*([^)]+?)\)", body)
+    counted(rule, len(calls), 1, "count comparisons")
+    if not calls:
+        fail(rule, "no `disagreements(source:copy:)` call found — this rule is "
+                   "reading the wrong thing, which means it has been checking "
+                   "nothing")
+        return
+    for source, copy in calls:
+        if source.strip() == copy.strip():
+            fail(rule, f"`disagreements(source: {source.strip()}, copy: "
+                       f"{copy.strip()})` compares one reading with itself. It "
+                       "returns empty for every input and the package "
+                       "publishes. No test in the suite can see this: the "
+                       "backup API is correct, so both sides agree either way.")
+
+
 RULES = [
     a_seam_never_reaches_the_launchs_database,
     every_store_that_records_a_read_refuses_a_write,
@@ -1473,6 +1519,7 @@ RULES = [
     the_scheme_runs_debug,
     every_fed_field_asks_a_store,
     every_asked_writer_is_actually_asked,
+    a_verification_never_reads_its_own_input,
 ]
 
 for r in RULES:

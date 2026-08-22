@@ -8962,6 +8962,76 @@ is a diagnostic, whether or not it was built as one.
 
 ---
 
+## 12.199 A copy of the database that is evidence, not a spare — patch 443
+
+Task 0B, tranche 2. The runbook is explicit: *a transaction-consistent
+diagnostic SQLite copy created through the supported SQLite/GRDB backup API,
+**never by copying a live database without its WAL state***.
+
+### 12.199.1 Why `fm.copyItem` is the wrong tool and looks like the right one
+
+A file copy of an open SQLite database captures whatever the pages happened to
+say as `read` reached them. **In WAL mode the committed truth is split between
+the database and its `-wal`**, so a copy of the main file alone can be older
+than the last commit and *internally consistent about it* — the worst failure
+available, because `PRAGMA quick_check` on the result answers `ok`.
+
+`sqlite3_backup_*`, which GRDB exposes as `backup(to:)`, takes its own read
+transaction and copies page by page. Whatever the journal mode, what lands is
+one commit boundary. `pagesPerStep` is left at its default — one step, one
+transaction, no window in which the source can move between steps.
+
+### 12.199.2 Five refusals, and the fourth is the only one a hash cannot see
+
+Destination exists; not enough room (checked **before**, because running out
+halfway leaves a file that opens); an incomplete backup; **row counts that
+disagree with the source**; and sidecars beside the finished artifact.
+
+**A truncated copy still hashes, still opens, and still reports `ok`.** Counting
+both sides is the only thing that separates a faithful copy from a plausible
+one. And a `-wal` next to the artifact would mean its hash describes half of
+it — sabotaging the journal fold produces exactly
+`sidecarsRemain(["…-wal", "…-shm"])`.
+
+### 12.199.3 It is evidence. Task 9 builds the backup
+
+`isSupportedRestoreArtifact` is **stored as `false`** rather than left to be
+inferred, and the file is `database-diagnostic-copy.sqlite` — because
+`sub4.sqlite` inside a package is a file somebody eventually puts back. Naming
+is the only honest defence available: nothing can stop a copy being copied, so
+the artifact says what it is, in its name and in the manifest.
+
+### 12.199.4 The count comparison cannot fail through the public path — so it moved
+
+`aCopyThatDisagreesIsRefused` was written to drive the disagreement branch and
+**proved the opposite**: the backup carries everything, so making the two sides
+differ would need SQLite to be wrong. Kept, renamed to what it actually shows,
+and the RULE extracted as a pure function the suite drives with four shapes —
+agreement, fewer rows, a table the copy lost entirely, and a table the copy has
+that the source does not. §12.162.3's split of the decision from the read;
+§12.69 is why it was not left as an unreachable branch.
+
+### 12.199.5 RULE 17, because eleven tests could not see the sabotage
+
+Passing the same dictionary as both `source:` and `copy:` makes the comparison
+return empty for every input, the package publish, and **every control stay
+green** — the backup is correct, so both sides agree either way. Sabotaged at
+443 and not one test noticed.
+
+So the guard lives in `check-invariants.py`: the single call site's two
+arguments must be textually different. §12.181's shape (an arm no assertion can
+reach) over §12.129's older lesson — *a reader that filters the way the writer
+does agrees with a writer that filtered wrong*, which 411 shipped for a day.
+
+**Its first draft matched the function's own signature** and reported the
+declaration as a vacuous comparison. That is the second rule in two patches
+written with a parser that could not read the thing it checked (§12.198.4), and
+a rule that cries wolf about its own misreading gets switched off.
+
+1935 tests in 186 suites, 17 invariants.
+
+---
+
 ## 12.198 Nothing moved while we were looking — patch 442
 
 Task 0B, tranche 1. The package Task 0B builds is **two captures taken at two

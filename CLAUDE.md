@@ -6,7 +6,7 @@ Personal single-user iOS app for Bruno's Operation Sub-4 marathon plan
 This file is what you read first, every session. It is deliberately short.
 The detail lives in `docs/` — the index is at the bottom.
 
-**Current at patch 442 (2026-08-22).** §5.3 is the 390 device run, Compare and
+**Current at patch 443 (2026-08-22).** §5.3 is the 390 device run, Compare and
 the roll-up together; §5.4 and §5.4a are the verifier's and the roll-up's
 accountings, both derived; §5.5's first bullet is the last read-back still
 comparing the database with itself. **BOTH device campaigns ran on 19 August** —
@@ -389,6 +389,14 @@ comparison. Directories are TALLIED rather than hashed and the reading says so.
 **RULE 16** fails the build when a writer claiming to wait is wired nowhere; its
 parser was wrong twice first. §12.198.
 
+**AND 443 COPIES THE DATABASE THROUGH SQLite's OWN BACKUP API.** A file copy of
+an open database can be **older than the last commit and internally consistent
+about it**, which `quick_check` answers `ok` to. `backup(to:)` takes its own read
+transaction; the artifact is one file with its journal folded in, verified by
+counting BOTH sides — a truncated copy still hashes and still opens. **RULE 17**
+exists because passing the same counts as both sides left all eleven controls
+green. §12.199.
+
 **`hidden-for-test/` HAS A ROLE SINCE 439 — AND UNTIL THEN IT HAD NONE.**
 433's control renames the legacy files aside; nobody wrote down what the
 resulting DIRECTORY is, so it was in no inventory — **"Delete local data" walked
@@ -520,9 +528,9 @@ git; Bruno commits.
 
 ---
 
-## 5. State — patch 442, 2026-08-22
+## 5. State — patch 443, 2026-08-22
 
-**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 442; §5.3 is
+**THE ONE PLACE THIS PROJECT SAYS WHAT IS TRUE NOW.** Current at 443; §5.3 is
 the device at 390, §5.4 the accounting that has been wrong twice. Anything older
 is history and lives in ADR §12; if a number here disagrees with the code, the
 code wins and this section is the defect.
